@@ -1,0 +1,17 @@
+{
+  "name": "@qarton/cinematic-engine",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js",
+    "./core/performance": "./src/core/performance-profile.js",
+    "./motion": "./src/motion/easing.js",
+    "./scene": "./src/scene/scene-definition.js"
+  },
+  "scripts": {
+    "test": "node --test",
+    "test:watch": "node --test --watch"
+  },
+  "engines": { "node": ">=22" }
+}
