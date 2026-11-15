@@ -26,8 +26,9 @@ export function createParticleField({
     || width <= 0 || height <= 0 || lifetimeMs <= 0 || speedMin < 0 || speedMax < speedMin) {
     throw new TypeError("Particle field configuration is invalid");
   }
-  const budget = Number.isInteger(profile?.maxParticles) && profile.maxParticles >= 0
-    ? Math.min(count, profile.maxParticles)
+  const profileBudget = profile?.maxParticles ?? profile?.particleBudget;
+  const budget = Number.isInteger(profileBudget) && profileBudget >= 0
+    ? Math.min(count, profileBudget)
     : count;
   const random = createRandom(seed);
   const particles = Array.from({ length: budget }, (_, id) => {
