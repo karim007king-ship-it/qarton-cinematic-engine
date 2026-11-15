@@ -7,7 +7,7 @@ export { createDOMCharacterRenderer } from "./character/dom-character-renderer.j
 export { createCharacterStage } from "./character/character-stage.js";
 export { createSceneDefinition } from "./scene/scene-definition.js";
 export { buildLayerPlan } from "./scene/layer-plan.js";
-export { BackgroundRenderer, SceneTransitionManager, createDOMTransitionAdapter } from "./runtime/index.js";
+export { BackgroundRenderer, SceneTransitionManager, createDOMTransitionAdapter, createCinematicDirector } from "./runtime/index.js";
 export { AssetManager } from "./assets/asset-manager.js";
 
 export { computeParallaxOffset } from "./effects/parallax.js";
