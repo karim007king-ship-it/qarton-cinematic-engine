@@ -218,3 +218,25 @@ test("DOM renderer exposes deterministic speech and expression transition metada
   assert.equal(handle.dataset.expressionTransition, "1");
   renderer.destroy();
 });
+
+
+test("DOM renderer exposes facial animation hooks for host CSS and sprite sheets", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`
+  });
+  const handle = await renderer.mount({
+    id: "hero",
+    sprites: { default: "hero" }
+  });
+  await renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0,
+    expression: "neutral", breathOffsetY: -1.25, headRotation: 0.4, eyeFrame: 1
+  });
+  assert.equal(handle.dataset.eyeFrame, "1");
+  assert.equal(handle.style["--qarton-breath-y"], "-1.25px");
+  assert.equal(handle.style["--qarton-head-rotation"], "0.4deg");
+  renderer.destroy();
+});
