@@ -12,7 +12,10 @@ export function computeParallaxOffset({
   if (intensity < 0 || maxOffset < 0) {
     throw new TypeError("Parallax intensity and maxOffset must be non-negative");
   }
-  const limit = value => Math.min(maxOffset, Math.max(-maxOffset, value));
+  const limit = value => {
+    const bounded = Math.min(maxOffset, Math.max(-maxOffset, value));
+    return Object.is(bounded, -0) ? 0 : bounded;
+  };
   return Object.freeze({
     x: limit(-cameraX * depth * intensity),
     y: limit(-cameraY * depth * intensity)
