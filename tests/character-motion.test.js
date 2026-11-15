@@ -110,3 +110,47 @@ test("character dialogue cues reject invalid and overlapping intervals", () => {
     ]
   }), /cannot overlap/);
 });
+
+
+test("facial motion is deterministic, subtle, and supports reduced-motion profiles", () => {
+  const character = createCharacterController({ id: "hero" });
+  const first = character.update(900);
+  const repeated = character.update(900);
+  assert.deepEqual(
+    { breathOffsetY: first.breathOffsetY, headRotation: first.headRotation, eyeFrame: first.eyeFrame },
+    { breathOffsetY: repeated.breathOffsetY, headRotation: repeated.headRotation, eyeFrame: repeated.eyeFrame }
+  );
+  assert.ok(Math.abs(first.breathOffsetY) <= 1.25);
+  assert.ok(Math.abs(first.headRotation) <= 0.2);
+  assert.equal(character.update(0).eyeFrame, 1);
+  assert.equal(character.update(200).eyeFrame, 0);
+
+  const reduced = createCharacterController({
+    id: "hero",
+    facialMotion: { reducedMotion: true }
+  }).update(0);
+  assert.deepEqual(
+    { breathOffsetY: reduced.breathOffsetY, headRotation: reduced.headRotation, eyeFrame: reduced.eyeFrame },
+    { breathOffsetY: 0, headRotation: 0, eyeFrame: 0 }
+  );
+
+  const lowPower = createCharacterController({
+    id: "hero",
+    facialMotion: { motionScale: 0 }
+  }).update(0);
+  assert.equal(lowPower.breathOffsetY, 0);
+  assert.equal(lowPower.headRotation, 0);
+  assert.equal(lowPower.eyeFrame, 0);
+});
+
+test("facial motion follows speaking state and validates its configuration", () => {
+  const character = createCharacterController({
+    id: "speaker",
+    dialogue: [{ startMs: 0, endMs: 1000 }]
+  });
+  assert.ok(Math.abs(character.update(300).headRotation) <= 0.65);
+  assert.throws(() => createCharacterController({
+    id: "hero",
+    facialMotion: null
+  }), /facialMotion/);
+});
