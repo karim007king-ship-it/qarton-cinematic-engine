@@ -71,3 +71,17 @@ test("reset recalculates reduced-motion and save-data quality locks", () => {
   for (let i = 0; i < 4; i += 1) monitor.recordFrame(5);
   assert.equal(monitor.getProfile().tier, "low");
 });
+
+test("adaptive monitor requires consecutive windows in the same direction", () => {
+  const monitor = createAdaptivePerformanceMonitor({
+    device: { quality: "medium" },
+    sampleWindow: 1,
+    stableWindows: 2
+  });
+  monitor.recordFrame(40); // low FPS: first downgrade window
+  monitor.recordFrame(10); // high FPS: direction changes, counter resets
+  monitor.recordFrame(40); // low FPS: first downgrade window again
+  assert.equal(monitor.getProfile().tier, "medium");
+  monitor.recordFrame(40); // second consecutive low window
+  assert.equal(monitor.getProfile().tier, "low");
+});
