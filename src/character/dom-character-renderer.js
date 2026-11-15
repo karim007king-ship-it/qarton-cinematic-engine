@@ -75,6 +75,8 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     element.style.opacity = String(Math.min(1, Math.max(0, state.opacity)));
     element.dataset.expression = String(state.expression ?? "neutral");
     element.dataset.state = String(state.state ?? "idle");
+    element.dataset.pose = String(state.pose ?? "idle");
+    element.dataset.poseProgress = String(Number.isFinite(state.poseProgress) ? Math.min(1, Math.max(0, state.poseProgress)) : 0);
     element.dataset.speaking = String(state.speaking === true);
     element.dataset.mouthFrame = String(state.speaking === true && state.mouthFrame === 1 ? 1 : 0);
     element.dataset.expressionTransition = String(
@@ -90,12 +92,23 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       const { layer, image } = layerRecord;
       image.dataset.layerId = layer.id;
       image.dataset.layerRole = layer.role;
+      const poseTransform = state.layerTransforms?.[layer.id]
+        ?? state.layerTransforms?.[layer.role]
+        ?? {};
+      const translateX = Number.isFinite(poseTransform.translateX) ? poseTransform.translateX : 0;
+      const translateY = Number.isFinite(poseTransform.translateY) ? poseTransform.translateY : 0;
+      const rotation = Number.isFinite(poseTransform.rotation) ? poseTransform.rotation : 0;
+      const scaleX = Number.isFinite(poseTransform.scaleX) ? poseTransform.scaleX : 1;
+      const scaleY = Number.isFinite(poseTransform.scaleY) ? poseTransform.scaleY : 1;
       if (layer.role === "head" || layer.role === "eyes" || layer.role === "mouth") {
-        image.style.transform = `translateY(${breath}px) rotate(${headRotation}deg)`;
+        image.style.transform =
+          `translate(${translateX}px, ${translateY + breath}px) rotate(${rotation + headRotation}deg) scale(${scaleX}, ${scaleY})`;
       } else if (layer.role === "body" || layer.role === "torso") {
-        image.style.transform = `translateY(${breath}px)`;
+        image.style.transform =
+          `translate(${translateX}px, ${translateY + breath}px) rotate(${rotation}deg) scale(${scaleX}, ${scaleY})`;
       } else {
-        image.style.transform = "none";
+        image.style.transform =
+          `translate(${translateX}px, ${translateY}px) rotate(${rotation}deg) scale(${scaleX}, ${scaleY})`;
       }
       return resolveLayerAsset(record, layerRecord, state);
     }));
@@ -192,6 +205,9 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       rotation: Number.isFinite(initialState.rotation) ? initialState.rotation : 0,
       expression: typeof initialState.expression === "string" ? initialState.expression : "neutral",
       state: initialState.state ?? "idle",
+      pose: typeof initialState.pose === "string" ? initialState.pose : "idle",
+      poseProgress: Number.isFinite(initialState.poseProgress) ? initialState.poseProgress : 0,
+      layerTransforms: initialState.layerTransforms ?? {},
       speaking: initialState.speaking === true,
       mouthFrame: initialState.mouthFrame === 1 ? 1 : 0,
       eyeFrame: initialState.eyeFrame === 1 ? 1 : 0,
