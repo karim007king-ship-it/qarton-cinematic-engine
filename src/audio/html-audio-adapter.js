@@ -60,7 +60,10 @@ export function createHTMLAudioAdapter({
       const result = audio.play();
       if (result && typeof result.catch === "function") {
         result.catch(error => {
-          if (active.has(audio)) stop(audio);
+          if (active.has(audio)) {
+            stop(audio);
+            options.onEnded?.(audio);
+          }
           onPlaybackError(error, { asset, audio });
         });
       }
