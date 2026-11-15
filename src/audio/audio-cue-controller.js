@@ -56,7 +56,11 @@ export function createAudioCueController({
     if (!Number.isFinite(timeMs) || timeMs < 0 || timeMs < cursor) {
       throw new TypeError("Audio timeline time must be finite, non-negative and monotonic");
     }
-    if (paused) return Object.freeze([]);
+    if (paused) {
+      for (const cue of normalized) if (cue.atMs <= timeMs) firedIds.add(cue.id);
+      cursor = timeMs;
+      return Object.freeze([]);
+    }
     const fired = [];
     for (const cue of normalized) {
       if (firedIds.has(cue.id) || cue.atMs > timeMs) continue;
@@ -89,6 +93,7 @@ export function createAudioCueController({
       throw new TypeError("Resume time must be finite and not earlier than the audio cursor");
     }
     // Advancing the cursor skips cues that elapsed while playback was paused.
+    for (const cue of normalized) if (cue.atMs <= timeMs) firedIds.add(cue.id);
     cursor = timeMs;
     paused = false;
   }
