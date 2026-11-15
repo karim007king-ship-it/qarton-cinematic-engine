@@ -81,8 +81,7 @@ export class SceneTransitionManager {
     if (this.#destroyed) return;
     this.#destroyed = true;
     await this.clear();
-    this.#mount = null;
-    this.#crossfade = null;
-    this.#unmount = null;
+    // Keep adapters available until in-flight transitions settle. A mount
+    // may resolve after destroy(); that stale handle still needs unmount().
   }
 }
