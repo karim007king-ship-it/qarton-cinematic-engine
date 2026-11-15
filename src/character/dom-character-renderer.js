@@ -90,7 +90,7 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       const { layer, image } = layerRecord;
       image.dataset.layerId = layer.id;
       image.dataset.layerRole = layer.role;
-      if (layer.role === "head") {
+      if (layer.role === "head" || layer.role === "eyes" || layer.role === "mouth") {
         image.style.transform = `translateY(${breath}px) rotate(${headRotation}deg)`;
       } else if (layer.role === "body" || layer.role === "torso") {
         image.style.transform = `translateY(${breath}px)`;
@@ -173,7 +173,7 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
         height: "100%",
         objectFit: "contain",
         pointerEvents: "none",
-        transformOrigin: layer.role === "head" ? "50% 85%" : "center center"
+        transformOrigin: ["head", "eyes", "mouth"].includes(layer.role) ? "50% 85%" : "center center"
       }, layer.style);
       image.draggable = false;
       element.appendChild(image);
