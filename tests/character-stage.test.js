@@ -169,7 +169,7 @@ test("character stage passes layered sprite definitions to its DOM renderer", as
   await stage.mount();
   assert.equal(root.children.length, 1);
   assert.equal(root.children[0].children.length, 2);
-  await stage.update(0);
+  await stage.update(200);
   assert.equal(root.children[0].children[1].src, "https://assets.test/eyes-open.png");
   stage.destroy();
 });
