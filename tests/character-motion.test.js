@@ -232,3 +232,20 @@ test("pose clips reject malformed keyframes and overlapping clips", () => {
     ]
   }), /cannot overlap/);
 });
+
+test("facial reduced-motion preference also freezes body pose clips and ids must be unique", () => {
+  const poseClips = [{
+    id: "walk", startMs: 0, durationMs: 1000,
+    layers: { arm: [{ at: 0, rotation: 0 }, { at: 1, rotation: 40 }] }
+  }];
+  const character = createCharacterController({
+    id: "hero",
+    facialMotion: { reducedMotion: true },
+    poseClips
+  });
+  assert.equal(character.update(900).layerTransforms.arm.rotation, 0);
+  assert.throws(() => createCharacterController({
+    id: "hero",
+    poseClips: [...poseClips, { ...poseClips[0], startMs: 1000 }]
+  }), /unique id/);
+});
