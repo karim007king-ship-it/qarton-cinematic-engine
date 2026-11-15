@@ -101,3 +101,33 @@ test("switching back to the cached sprite invalidates a pending expression load"
   await focused;
   assert.equal(handle.children[0].src, "https://assets.test/neutral.png");
 });
+
+
+test("duplicate in-flight requests for the same sprite share one asset resolution", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let resolveFocused;
+  let focusedCalls = 0;
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => {
+      if (key === "focused") {
+        focusedCalls += 1;
+        return new Promise(resolve => { resolveFocused = resolve; });
+      }
+      return `https://assets.test/${key}.png`;
+    }
+  });
+  const handle = await renderer.mount({
+    id: "hero", sprites: { neutral: "neutral", focused: "focused" },
+    initialState: { expression: "neutral" }
+  });
+  const state = { id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, expression: "focused" };
+  const first = renderer.update(handle, state);
+  const second = renderer.update(handle, state);
+  await Promise.resolve();
+  assert.equal(focusedCalls, 1);
+  resolveFocused("https://assets.test/focused.png");
+  assert.deepEqual(await Promise.all([first, second]), [true, true]);
+  assert.equal(handle.children[0].src, "https://assets.test/focused.png");
+});
