@@ -129,10 +129,15 @@ test("unmount during async mount prevents a late character from remaining mounte
   const document = new Document();
   const root = new Element("main", document);
   let resolveSprite;
+  let calls = 0;
   const controller = createCharacterController({ id: "hero" });
   const stage = createCharacterStage({
     root,
-    resolveSprite: () => new Promise(resolve => { resolveSprite = resolve; }),
+    resolveSprite: () => {
+      calls += 1;
+      if (calls > 1) return "https://assets.test/hero.png";
+      return new Promise(resolve => { resolveSprite = resolve; });
+    },
     characters: [{ controller, sprites: { default: "hero" } }]
   });
   const pending = stage.mount();
