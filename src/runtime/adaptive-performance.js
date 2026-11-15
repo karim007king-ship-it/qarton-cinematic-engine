@@ -22,7 +22,7 @@ export function createAdaptivePerformanceMonitor({
     throw new TypeError("Adaptive performance monitor configuration is invalid");
   }
 
-  const locked = device.reducedMotion === true || device.saveData === true;
+  let locked = device.reducedMotion === true || device.saveData === true;
   let profile = resolveQualityProfile(device);
   let frames = [];
   let stableCount = 0;
@@ -73,6 +73,7 @@ export function createAdaptivePerformanceMonitor({
 
   function reset(nextDevice = device) {
     device = nextDevice;
+    locked = device.reducedMotion === true || device.saveData === true;
     profile = resolveQualityProfile(device);
     frames = [];
     stableCount = 0;
