@@ -24,6 +24,13 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     record.element.style.opacity = String(Math.min(1, Math.max(0, state.opacity)));
     record.element.dataset.expression = String(state.expression ?? "neutral");
     record.element.dataset.state = String(state.state ?? "idle");
+    record.element.dataset.speaking = String(state.speaking === true);
+    record.element.dataset.mouthFrame = String(state.speaking === true && state.mouthFrame === 1 ? 1 : 0);
+    record.element.dataset.expressionTransition = String(
+      Number.isFinite(state.expressionTransition)
+        ? Math.min(1, Math.max(0, state.expressionTransition))
+        : 1
+    );
   }
 
   async function resolveAsset(record, expression) {
