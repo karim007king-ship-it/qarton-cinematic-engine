@@ -102,13 +102,11 @@ test("a newer transition cancels the stale visual transition", async () => {
   const secondScene = await adapter.mount({ id: "second" }, {});
 
   const firstTransition = adapter.crossfade({ from: oldScene, to: firstScene, duration: 100 });
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let i = 0; i < 8 && waits.length === 0; i += 1) await Promise.resolve();
   assert.equal(waits.length, 1);
 
   const secondTransition = adapter.crossfade({ from: oldScene, to: secondScene, duration: 100 });
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let i = 0; i < 8 && waits.length < 2; i += 1) await Promise.resolve();
   assert.equal(waits.length, 2);
   waits[1]();
   assert.equal(await secondTransition, true);
@@ -125,8 +123,7 @@ test("unmounting a scene involved in a transition cancels that transition", asyn
   const oldScene = await adapter.mount({ id: "old" }, {});
   const nextScene = await adapter.mount({ id: "next" }, {});
   const pending = adapter.crossfade({ from: oldScene, to: nextScene, duration: 100 });
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let i = 0; i < 8 && !release; i += 1) await Promise.resolve();
   adapter.unmount(nextScene);
   assert.equal(await pending, false);
   release?.();
@@ -137,14 +134,17 @@ test("unmounting a scene involved in a transition cancels that transition", asyn
 
 test("waits for a rendering frame before starting CSS transitions", async () => {
   let frames = 0;
+  let transitionAtStart = "";
+  let nextScene;
   const { adapter } = setup({
-    nextFrame: async () => { frames += 1; }
+    nextFrame: async () => { frames += 1; },
+    wait: async () => { transitionAtStart = nextScene.style.transition; }
   });
   const oldScene = await adapter.mount({ id: "old" }, {});
-  const nextScene = await adapter.mount({ id: "next" }, {});
+  nextScene = await adapter.mount({ id: "next" }, {});
   await adapter.crossfade({ from: oldScene, to: nextScene, duration: 80 });
   assert.equal(frames, 1);
-  assert.match(nextScene.style.transition, /opacity 80ms/);
+  assert.match(transitionAtStart, /opacity 80ms/);
   assert.equal(nextScene.style.opacity, "1");
 });
 
