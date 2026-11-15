@@ -67,3 +67,24 @@ test("HTMLAudio adapter releases naturally ended voices and notifies the cue con
   assert.equal(listeners.has("ended"), false);
   adapter.destroy();
 });
+
+test("HTMLAudio adapter releases voice references when playback is rejected", async () => {
+  const audio = {
+    play: () => Promise.reject(new Error("autoplay blocked")),
+    pause() {}
+  };
+  let endedVoice = null;
+  const errors = [];
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/blocked.mp3",
+    createAudio: () => audio,
+    onPlaybackError: error => errors.push(error.message)
+  });
+  adapter.play("blocked", { onEnded: voice => { endedVoice = voice; } });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(endedVoice, audio);
+  assert.equal(adapter.setVolume(audio, 0.5), false);
+  assert.deepEqual(errors, ["autoplay blocked"]);
+  adapter.destroy();
+});
