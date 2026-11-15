@@ -53,6 +53,12 @@
   const stage = document.querySelector("#stage");
   const visualTreatment = createDOMVisualTreatmentAdapter({ root: stage });
   let visualFilter = "none";
+  function applyVisualProfile(profile) {
+    status.textContent = `Adaptive quality: ${profile.tier}`;
+    const treatment = resolveVisualTreatment({ exposure: .04, contrast: 1.08, saturation: 1.06, warmth: .22, vignette: .42, bloom: .18, grain: .12, profile, reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches });
+    visualFilter = treatment.filter;
+    visualTreatment.apply(treatment);
+  }
   const characterRoot = document.querySelector("#character-layer");
   const canvas = document.querySelector("#particles");
   const context = canvas.getContext("2d");
@@ -113,13 +119,9 @@
       content.dataset.quality = profile.tier ?? "unknown";
       return content;
     },
-    onProfileChange: profile => {
-      status.textContent = `Adaptive quality: ${profile.tier}`;
-      const treatment = resolveVisualTreatment({ exposure: .04, contrast: 1.08, saturation: 1.06, warmth: .22, vignette: .42, bloom: .18, grain: .12, profile, reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches });
-      visualFilter = treatment.filter;
-      visualTreatment.apply(treatment);
-    }
+    onProfileChange: profile => applyVisualProfile(profile)
   });
+  applyVisualProfile(runtime.getProfile());
 
   const walkPath = createMotionPath([{ x: 0, y: 0 }, { x: 120, y: -12 }, { x: 250, y: 0 }]);
   const enterPath = createMotionPath([{ x: 0, y: 0 }, { x: -90, y: -8 }, { x: -180, y: 0 }]);
