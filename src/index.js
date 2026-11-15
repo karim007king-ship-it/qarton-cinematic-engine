@@ -14,3 +14,4 @@ export { sampleCameraShake } from "./effects/camera-shake.js";
 export { createParticleField } from "./effects/particle-field.js";
 export { resolveLighting, sampleFog } from "./effects/atmosphere.js";
 export { createAudioCueController } from "./audio/audio-cue-controller.js";
+export { createAdaptivePerformanceMonitor, createRuntimeActivityGate } from "./runtime/adaptive-performance.js";
