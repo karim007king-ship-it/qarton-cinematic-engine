@@ -75,3 +75,29 @@ test("DOM character renderer validates states and cleans up on destroy", async (
   assert.equal(root.children.length, 0);
   assert.throws(() => createDOMCharacterRenderer({ root }), /resolveSprite/);
 });
+
+test("switching back to the cached sprite invalidates a pending expression load", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const pending = new Map();
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => new Promise(resolve => pending.set(key, resolve))
+  });
+  const mounting = renderer.mount({
+    id: "hero",
+    sprites: { neutral: "neutral", focused: "focused" },
+    initialState: { expression: "neutral" }
+  });
+  pending.get("neutral")("https://assets.test/neutral.png");
+  const handle = await mounting;
+  const focused = renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, expression: "focused"
+  });
+  await renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, expression: "neutral"
+  });
+  pending.get("focused")("https://assets.test/focused.png");
+  await focused;
+  assert.equal(handle.children[0].src, "https://assets.test/neutral.png");
+});
