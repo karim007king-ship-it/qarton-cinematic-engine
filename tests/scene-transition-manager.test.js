@@ -101,3 +101,24 @@ test("validates adapters and duration", () => {
     mount() {}, crossfade() {}, unmount() {}, duration: -1
   }), /duration/);
 });
+
+
+test("destroy during an asynchronous mount still releases the late scene handle", async () => {
+  let releaseMount;
+  const events = [];
+  const manager = new SceneTransitionManager({
+    mount: scene => new Promise(resolve => { releaseMount = () => resolve({ id: scene.id }); }),
+    crossfade: async () => { events.push("crossfade"); },
+    unmount: async handle => { events.push(`unmount:${handle.id}`); }
+  });
+
+  const pending = manager.transitionTo({ id: "late" }, {});
+  await Promise.resolve();
+  assert.equal(typeof releaseMount, "function");
+
+  await manager.destroy();
+  releaseMount();
+  assert.equal(await pending, false);
+  assert.deepEqual(events, ["unmount:late"]);
+  assert.equal(manager.current, null);
+});
