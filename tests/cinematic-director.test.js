@@ -86,3 +86,41 @@ test("director validates clock order and lifecycle", async () => {
   director.destroy();
   await assert.rejects(director.update(0), /destroyed/);
 });
+
+
+test("unmount invalidates an asynchronous director mount", async () => {
+  let resolveMount;
+  const calls = [];
+  const stage = {
+    mount: () => new Promise(resolve => { resolveMount = resolve; }),
+    update: async () => {},
+    unmount: () => calls.push("unmount"),
+    destroy: () => calls.push("destroy")
+  };
+  const director = createCinematicDirector({ characterStage: stage });
+  const mounting = director.mount();
+  director.unmount();
+  resolveMount(true);
+  assert.equal(await mounting, false);
+  assert.equal(director.getState().mounted, false);
+  assert.deepEqual(calls, ["unmount", "unmount"]);
+  director.destroy();
+});
+
+test("destroy invalidates an asynchronous director mount", async () => {
+  let resolveMount;
+  const calls = [];
+  const stage = {
+    mount: () => new Promise(resolve => { resolveMount = resolve; }),
+    update: async () => {},
+    unmount: () => calls.push("unmount"),
+    destroy: () => calls.push("destroy")
+  };
+  const director = createCinematicDirector({ characterStage: stage });
+  const mounting = director.mount();
+  director.destroy();
+  resolveMount(true);
+  assert.equal(await mounting, false);
+  assert.equal(director.getState().mounted, false);
+  assert.deepEqual(calls, ["destroy", "unmount"]);
+});
