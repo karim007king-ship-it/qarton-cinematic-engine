@@ -34,7 +34,8 @@ npm test
 - `buildLayerPlan(scene, profile)`: ترتيب الطبقات وتطبيق ميزانية الخلفيات.
 - `AssetManager({ loader })`: تحميل أصول عبر محمّل يوفّره التطبيق، مع دمج الطلبات المتزامنة، وذاكرة مؤقتة، و`preload()` و`release()` و`clear()`.
 - `BackgroundRenderer({ root, resolveAsset })`: عارض DOM مستقل؛ يمكن تمرير `key => assetManager.load(key)` كدالة حلّ الأصول. `render()` غير متزامنة، و`clear()` و`destroy()` لتنظيف دورة الحياة.
-- `SceneTransitionManager({ mount, crossfade, unmount, duration })`: منسّق انتقالات مستقل عن المنصة؛ يجهّز المشهد الجديد قبل الانتقال، ويحافظ على الحالي عند الفشل، ويلغي نتائج الانتقالات التي تم تجاوزها.\n- `createDOMTransitionAdapter({ root, renderScene, duration, reducedMotion, wait, animate })`: محول DOM فعلي يوفر mount / crossfade / unmount / destroy ويمكن تمرير دواله مباشرة إلى `SceneTransitionManager`. يستخدم Web Animations API عند توفره، ويرجع إلى CSS transitions مع wait قابل للحقن. تأثير dissolve الحالي هو تلاشي opacity مع blur، وليس shader أو انتقال pixel dissolve.
+- `SceneTransitionManager({ mount, crossfade, unmount, duration })`: منسّق انتقالات مستقل عن المنصة؛ يجهّز المشهد الجديد قبل الانتقال، ويحافظ على الحالي عند الفشل، ويلغي نتائج الانتقالات التي تم تجاوزها.
+- `createDOMTransitionAdapter({ root, renderScene, duration, reducedMotion, wait, animate })`: محول DOM فعلي يوفر mount / crossfade / unmount / destroy ويمكن تمرير دواله مباشرة إلى `SceneTransitionManager`. يستخدم Web Animations API عند توفره، ويرجع إلى CSS transitions مع wait قابل للحقن. الانتقال الحالي يجمع opacity مع blur، وليس shader أو pixel dissolve. الانتقالات الأحدث تلغي الحركة السابقة، كما أن unmount وdestroy يوقفان الانتقالات النشطة.
 
 كل وحدات المرحلة الأولى JavaScript ES Modules ولا تتطلب مكتبات خارجية.
 
@@ -49,7 +50,7 @@ npm test
 
 ## خارطة الطريق
 - **P0 — Foundation:** مكتمل؛ ملفات الأداء والحركة والمشهد واختبارات CI.
-- **P1 — Scene & Background Runtime:** مخطط الطبقات وعارض DOM وإدارة الأصول (cache / dedup / preload) منفذة ومغطاة باختبارات؛ منسّق دورة حياة الانتقالات ومحول DOM للـ crossfade منفذان ومغطّيان باختبارات Fake DOM؛ ما زال ينقص اختبار متصفح حقيقي، وتحميل الصور الفعلي، وتحسين إلغاء الحركة المتزامنة.
+- **P1 — Scene & Background Runtime:** مخطط الطبقات وعارض DOM وإدارة الأصول (cache / dedup / preload) منفذة ومغطاة باختبارات؛ منسّق دورة حياة الانتقالات ومحول DOM للـ crossfade منفذان ومغطّيان باختبارات Fake DOM؛ ما زال ينقص اختبار متصفح حقيقي وتحميل الصور الفعلي.
 - **P2 — Character Motion:** مسارات حركة، تعبيرات، توقيت متزامن، وواجهات sprites.
 - **P3 — Cinematic Effects:** إضاءة، ضباب، جسيمات، اهتزاز كاميرا مضبوط، وعمق parallax.
 - **P4 — Audio:** طبقات صوتية ومزامنة مع أحداث المشهد.
