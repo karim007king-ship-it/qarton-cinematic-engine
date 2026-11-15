@@ -12,7 +12,7 @@
 ```text
 src/
   core/          # إعدادات الأداء والقدرات
-  motion/        # منحنيات الحركة وأدوات التوقيت
+  motion/        # منحنيات الحركة والمسارات والخطوط الزمنية\n  character/     # متحكمات حركة الشخصيات
   scene/         # تعريف المشاهد والخلفيات والطبقات
   effects/       # مؤثرات بصرية مستقلة (لاحقاً)
   audio/         # إدارة الصوت السينمائي (لاحقاً)
@@ -30,6 +30,9 @@ npm test
 ## واجهة المرحلة الأولى
 - `resolveQualityProfile(device)`: اختيار ملف أداء low / medium / high.
 - `clamp(value, min, max)`, `lerp(from, to, progress)`, `easeInOutCubic(progress)`.
+- `createMotionPath(points)` و`sampleMotionPath(path, progress, easing)`: مسارات 2D محايدة للمنصة مع أخذ عينات للحركة.
+- `createTimeline(events)` و`getTimelineEvents(timeline, range)`: ترتيب أحداث الصوت/التعبير/الكاميرا وإرجاع الأحداث ضمن نافذة زمنية ثابتة.
+- `createCharacterController({ id, initial, motions })`: حساب موضع الشخصية وحالتها وتعبيرها وخصائصها عبر الزمن دون ربطها بـ DOM أو محرك رسم.
 - `createSceneDefinition(config)`: التحقق من تعريف مشهد وطبقاته دون الوصول إلى DOM.
 - `buildLayerPlan(scene, profile)`: ترتيب الطبقات وتطبيق ميزانية الخلفيات.
 - `AssetManager({ loader })`: تحميل أصول عبر محمّل يوفّره التطبيق، مع دمج الطلبات المتزامنة، وذاكرة مؤقتة، و`preload()` و`release()` و`clear()`.
@@ -51,11 +54,11 @@ npm test
 ## خارطة الطريق
 - **P0 — Foundation:** مكتمل؛ ملفات الأداء والحركة والمشهد واختبارات CI.
 - **P1 — Scene & Background Runtime:** مخطط الطبقات وعارض DOM وإدارة الأصول (cache / dedup / preload) منفذة ومغطاة باختبارات؛ منسّق دورة حياة الانتقالات ومحول DOM للـ crossfade منفذان ومغطّيان باختبارات Fake DOM؛ ما زال ينقص اختبار متصفح حقيقي وتحميل الصور الفعلي.
-- **P2 — Character Motion:** مسارات حركة، تعبيرات، توقيت متزامن، وواجهات sprites.
+- **P2 — Character Motion:** الأساس المنطقي للمسارات 2D والخطوط الزمنية ومتحكم الشخصية منفذ ومختبر؛ ما زال ينقص ربط sprite renderer واختبار مزامنة الحركة مع الصوت في بيئة عرض فعلية.
 - **P3 — Cinematic Effects:** إضاءة، ضباب، جسيمات، اهتزاز كاميرا مضبوط، وعمق parallax.
 - **P4 — Audio:** طبقات صوتية ومزامنة مع أحداث المشهد.
 - **P5 — Adaptive Runtime:** قياس FPS، خفض/رفع الجودة تدريجياً، إيقاف العمل بالخلفية.
 - **P6 — Integration:** محول مستقل لقرطاج، ثم اختبار Android فعلي قبل اعتماد الدمج.
 
 ## الحالة
-P0 مكتملة. في P1 أصبح لدينا عارض DOM للطبقات ومدير أصول مستقل مع دمج الطلبات المتزامنة وذاكرة مؤقتة وتحميل مسبق والتحقق من عناوين الأصول. الاختبارات تستخدم بيئة Node ومحاكاة DOM؛ محول DOM يوفر fade وdissolve بصرياً (opacity + blur) عبر Web Animations API أو CSS fallback؛ لا يتضمن حالياً shader dissolve. لم يتم بعد ربط المحرك بلعبة قرطاج أو اختبار Android، ولا ندّعي جاهزية APK.
+P0 مكتملة. في P2 أضيفت مسارات 2D وخط زمني للأحداث ومتحكم شخصية يعيد حالة قابلة للرسم دون DOM. في P1 أصبح لدينا عارض DOM للطبقات ومدير أصول مستقل مع دمج الطلبات المتزامنة وذاكرة مؤقتة وتحميل مسبق والتحقق من عناوين الأصول. الاختبارات تستخدم بيئة Node ومحاكاة DOM؛ محول DOM يوفر fade وdissolve بصرياً (opacity + blur) عبر Web Animations API أو CSS fallback؛ لا يتضمن حالياً shader dissolve. لم يتم بعد ربط المحرك بلعبة قرطاج أو اختبار Android، ولا ندّعي جاهزية APK.
