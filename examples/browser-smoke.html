@@ -46,10 +46,12 @@
     createCinematicRuntime, createSceneDefinition, createMotionPath,
     createCharacterController, createCharacterStage, createTimeline, createCinematicDirector,
     createAudioCueController, sampleCameraShake, createCameraTrack, sampleCameraTrack,\n    composeCameraPose, toCameraCSS, computeParallaxOffset,
-    createParticleField, resolveLighting
+    createParticleField, resolveLighting, resolveVisualTreatment, createDOMVisualTreatmentAdapter
   } from "../src/index.js";
 
   const stage = document.querySelector("#stage");
+  const visualTreatment = createDOMVisualTreatmentAdapter({ root: stage });
+  let visualFilter = "none";
   const characterRoot = document.querySelector("#character-layer");
   const canvas = document.querySelector("#particles");
   const context = canvas.getContext("2d");
@@ -110,7 +112,12 @@
       content.dataset.quality = profile.tier ?? "unknown";
       return content;
     },
-    onProfileChange: profile => { status.textContent = `Adaptive quality: ${profile.tier}`; }
+    onProfileChange: profile => {
+      status.textContent = `Adaptive quality: ${profile.tier}`;
+      const treatment = resolveVisualTreatment({ exposure: .04, contrast: 1.08, saturation: 1.06, warmth: .22, vignette: .42, bloom: .18, grain: .12, profile, reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches });
+      visualFilter = treatment.filter;
+      visualTreatment.apply(treatment);
+    }
   });
 
   const walkPath = createMotionPath([{ x: 0, y: 0 }, { x: 120, y: -12 }, { x: 250, y: 0 }]);
@@ -186,6 +193,7 @@
       : { x: 0, y: 0, rotation: 0 };
     const scene = stage.querySelector(".qarton-scene");
     if (scene) {
+      scene.style.filter = visualFilter;
       const cameraPose = composeCameraPose(sampleCameraTrack(cameraTrack, elapsed), camera);\n      const cameraTransform = toCameraCSS(cameraPose);\n      scene.style.transform = cameraTransform;\n      characterRoot.style.transform = cameraTransform;\n      canvas.style.transform = cameraTransform;
       for (const layer of scene.querySelectorAll("img")) {
         const offset = computeParallaxOffset({ cameraX: Math.sin(elapsed / 2400) * 12, cameraY: Math.cos(elapsed / 3100) * 5, depth: Number(layer.dataset.depth), intensity: profile.tier === "low" ? .35 : .8, maxOffset: 24 });
@@ -273,6 +281,7 @@
     cancelAnimationFrame(frameId);
     window.removeEventListener("resize", resizeCanvas);
     director.destroy();
+    visualTreatment.destroy();
     if (audioContext) await audioContext.close();
     await runtime.destroy();
     status.textContent = "Destroyed: animation loop, characters, audio, scene and cached assets released.";
