@@ -124,3 +124,27 @@ test("destroy invalidates an asynchronous director mount", async () => {
   assert.equal(director.getState().mounted, false);
   assert.deepEqual(calls, ["destroy", "unmount"]);
 });
+
+test("immediate remount after cancelling a pending mount starts a fresh operation", async () => {
+  let releaseFirst;
+  let calls = 0;
+  const stage = {
+    mount: () => {
+      calls += 1;
+      return calls === 1 ? new Promise(resolve => { releaseFirst = resolve; }) : Promise.resolve(true);
+    },
+    update: async () => {},
+    unmount() {},
+    destroy() {}
+  };
+  const director = createCinematicDirector({ characterStage: stage });
+  const staleMount = director.mount();
+  director.unmount();
+  const freshMount = director.mount();
+  assert.equal(await freshMount, true);
+  releaseFirst(true);
+  assert.equal(await staleMount, false);
+  assert.equal(calls, 2);
+  assert.equal(director.getState().mounted, true);
+  director.destroy();
+});
