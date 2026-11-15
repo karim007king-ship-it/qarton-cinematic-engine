@@ -15,7 +15,8 @@ src/
   motion/        # منحنيات الحركة والمسارات والخطوط الزمنية
   character/     # متحكمات حركة الشخصيات
   scene/         # تعريف المشاهد والخلفيات والطبقات
-  effects/       # parallax والكاميرا والجسيمات
+  effects/       # parallax واهتزاز الكاميرا والجسيمات
+  camera/        # مسارات pan / zoom / rotation للكاميرا
   audio/         # جدولة الصوت ومزامنة الـ cues
   runtime/       # عارض المشاهد وطبقات DOM
   assets/        # تحميل الأصول والتخزين المؤقت
@@ -40,13 +41,18 @@ npm test
 - `createDOMCharacterRenderer({ root, resolveSprite })`: محول اختياري لعرض sprites عبر DOM، مع حقن تحميل الأصول وحماية من نتائج التحميل القديمة.
 - `computeParallaxOffset(...)`: حساب حركة طبقات العمق مع حد أقصى للإزاحة.
 - `sampleCameraShake(...)`: اهتزاز كاميرا deterministic يتلاشى زمنياً.
+- `createCameraTrack(keyframes)`: مسار كاميرا مستقل يدعم pan وzoom وrotation عبر keyframes مرتبة زمنياً مع easing حتمي.
+- `sampleCameraTrack(track, timeMs)`: أخذ عينة من وضع الكاميرا عند أي توقيت، مع تثبيت الوضع قبل أول keyframe وبعد آخر واحد.
+- `composeCameraPose(pose, shake)`: دمج حركة الكاميرا مع اهتزازها دون تعديل المدخلات.
+- `toCameraCSS(pose)`: تحويل وضع الكاميرا إلى CSS transform لعنصر viewport يملكه التطبيق المضيف.
 - `createParticleField(...)`: حقل جسيمات deterministic يراعي `profile.particleBudget`.
 - `resolveLighting(...)` و`sampleFog(...)`: معلمات إضاءة وضباب تتكيف مع ملف الجودة.
 - `createAudioCueController({ cues, play, stop, setVolume })`: جدولة أصوات المشهد حسب التوقيت، مع pause/resume والتحكم بالصوت عبر adapter يقدمه التطبيق.
 - `createHTMLAudioAdapter({ resolveAsset, createAudio })`: adapter اختياري لـ HTMLAudio في المتصفح وAndroid WebView، مع حقن إنشاء الصوت وحجم عام لكل الأصوات.
 - `createAdaptivePerformanceMonitor(...)`: قياس أزمنة الإطارات المقدمة من المضيف، وخفض/رفع الجودة تدريجياً مع hysteresis.
 - `createRuntimeActivityGate({ onPause, onResume })`: بوابة صريحة لإيقاف واستئناف المؤثرات عندما تصبح اللعبة غير نشطة أو مخفية.
-- `createCinematicRuntime({ root, loadAsset, renderScene, ... })`: واجهة تجميع للمضيف تربط إدارة الأصول والمشاهد والانتقالات وملف الأداء في runtime واحد، دون الاعتماد على مشروع لعبة محدد.\n- `createCinematicDirector({ characterStage, audio, timeline, onEvent })`: ساعة سينمائية مشتركة تنسق تحديث الشخصيات والصوت وأحداث المشهد، وتدعم pause/resume والرجوع الزمني وإعادة تشغيل الأحداث بشكل حتمي؛ المضيف يظل مسؤولاً عن جدولة الإطارات.
+- `createCinematicRuntime({ root, loadAsset, renderScene, ... })`: واجهة تجميع للمضيف تربط إدارة الأصول والمشاهد والانتقالات وملف الأداء في runtime واحد، دون الاعتماد على مشروع لعبة محدد.
+- `createCinematicDirector({ characterStage, audio, timeline, onEvent })`: ساعة سينمائية مشتركة تنسق تحديث الشخصيات والصوت وأحداث المشهد، وتدعم pause/resume والرجوع الزمني وإعادة تشغيل الأحداث بشكل حتمي؛ المضيف يظل مسؤولاً عن جدولة الإطارات.
 - `createSceneDefinition(config)`: التحقق من تعريف مشهد وطبقاته دون الوصول إلى DOM.
 - `buildLayerPlan(scene, profile)`: ترتيب الطبقات وتطبيق ميزانية الخلفيات.
 - `AssetManager({ loader })`: تحميل أصول عبر محمّل يوفّره التطبيق، مع دمج الطلبات المتزامنة، وذاكرة مؤقتة، و`preload()` و`release()` و`clear()`.
@@ -75,4 +81,4 @@ npm test
 - **P6 — Integration:** runtime تجميعي مستقل للمضيف ومنسق سينمائي مشترك الساعة منفذان؛ يبقى إنشاء adapter خاص بقرطاج وربطه واختباره على Android خطوة منفصلة بعد اكتمال التحقق.
 
 ## الحالة
-P0 مكتملة. في P2 أضيفت مسارات 2D وخط زمني للأحداث ومتحكم شخصية محايد للمنصة ومحول DOM اختياري للـ sprites. وفي P3 أضيفت حسابات parallax وcamera shake وحقل جسيمات تكيفي deterministic ومعلمات الإضاءة والضباب. وفي P4 أضيف متحكم جدولة audio cues يعتمد على adapter خارجي ولا ينشئ AudioContext تلقائياً. وفي P5 أضيف مراقب أداء تكيفي يقيس frame-time عبر المضيف ويبدل الجودة تدريجياً، وبوابة activity gate لإيقاف واستئناف العمل. يوجد adapter HTMLAudio اختياري، لكنه لم يُختبر بعد في متصفح حقيقي أو Android. وفي P6 أضيفت واجهة `createCinematicRuntime` لتجميع المشاهد والانتقالات والأصول والأداء عبر callbacks يحددها المضيف، وأضيف `createCinematicDirector` لتنسيق الشخصيات والصوت وأحداث المشهد على ساعة واحدة؛ لم يتم ربطهما بعد بلعبة قرطاج. اختبارات DOM محاكاة ولا تثبت العرض الفعلي في المتصفح أو Android. في P1 أصبح لدينا عارض DOM للطبقات ومدير أصول مستقل مع دمج الطلبات المتزامنة وذاكرة مؤقتة وتحميل مسبق والتحقق من عناوين الأصول. تم توسيع صفحة browser smoke لتكون showcase تكاملياً يربط الخلفيات والشخصيات والمؤثرات والصوت والخط الزمني، لكنها ما زالت تحتاج تشغيلًا يدوياً في متصفح فعلي وAndroid WebView. الاختبارات تستخدم بيئة Node ومحاكاة DOM؛ محول DOM يوفر fade وdissolve بصرياً (opacity + blur) عبر Web Animations API أو CSS fallback؛ لا يتضمن حالياً shader dissolve. لم يتم بعد ربط المحرك بلعبة قرطاج أو اختبار Android، ولا ندّعي جاهزية APK.
+P0 مكتملة. في P2 أضيفت مسارات 2D وخط زمني للأحداث ومتحكم شخصية محايد للمنصة ومحول DOM اختياري للـ sprites. وفي P3 أضيفت حسابات parallax وcamera shake وحقل جسيمات تكيفي deterministic ومعلمات الإضاءة والضباب، وأضيفت وحدة camera track مستقلة لمسارات pan/zoom/rotation مع تركيب shake وتحويل CSS؛ ما زال يلزم اختبارها بصرياً في المتصفح. وفي P4 أضيف متحكم جدولة audio cues يعتمد على adapter خارجي ولا ينشئ AudioContext تلقائياً. وفي P5 أضيف مراقب أداء تكيفي يقيس frame-time عبر المضيف ويبدل الجودة تدريجياً، وبوابة activity gate لإيقاف واستئناف العمل. يوجد adapter HTMLAudio اختياري، لكنه لم يُختبر بعد في متصفح حقيقي أو Android. وفي P6 أضيفت واجهة `createCinematicRuntime` لتجميع المشاهد والانتقالات والأصول والأداء عبر callbacks يحددها المضيف، وأضيف `createCinematicDirector` لتنسيق الشخصيات والصوت وأحداث المشهد على ساعة واحدة؛ لم يتم ربطهما بعد بلعبة قرطاج. اختبارات DOM محاكاة ولا تثبت العرض الفعلي في المتصفح أو Android. في P1 أصبح لدينا عارض DOM للطبقات ومدير أصول مستقل مع دمج الطلبات المتزامنة وذاكرة مؤقتة وتحميل مسبق والتحقق من عناوين الأصول. تم توسيع صفحة browser smoke لتكون showcase تكاملياً يربط الخلفيات والشخصيات والمؤثرات والصوت والخط الزمني، لكنها ما زالت تحتاج تشغيلًا يدوياً في متصفح فعلي وAndroid WebView. الاختبارات تستخدم بيئة Node ومحاكاة DOM؛ محول DOM يوفر fade وdissolve بصرياً (opacity + blur) عبر Web Animations API أو CSS fallback؛ لا يتضمن حالياً shader dissolve. لم يتم بعد ربط المحرك بلعبة قرطاج أو اختبار Android، ولا ندّعي جاهزية APK.
