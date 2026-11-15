@@ -7,7 +7,11 @@ function assertSafeAssetUrl(value, key) {
     throw new TypeError(`Asset loader returned no URL for "${key}"`);
   }
   const url = value.trim();
-  if (/[\\u0000-\\u001f\\u007f]/.test(url) || url.startsWith("//") ||
+  const hasControlCharacter = [...url].some(character => {
+    const code = character.charCodeAt(0);
+    return code <= 31 || code === 127;
+  });
+  if (hasControlCharacter || url.startsWith("//") ||
       /^(?:javascript|vbscript|file):/i.test(url)) {
     throw new TypeError(`Asset loader returned an unsafe URL for "${key}"`);
   }
