@@ -328,3 +328,69 @@ test("DOM character renderer applies interpolated pose transforms by layer id", 
   assert.equal(handle.children[1].style.transform, "translate(3px, 4px) rotate(25deg) scale(1, 1)");
   renderer.destroy();
 });
+
+test("DOM renderer nests rig nodes and applies local transforms through parent inheritance", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`
+  });
+  const handle = await renderer.mount({
+    id: "rigged-hero",
+    layers: [
+      { id: "torso", role: "torso", sprites: { default: "torso" } },
+      { id: "head", role: "head", parent: "torso", sprites: { default: "head" } },
+      { id: "eyes", role: "eyes", parent: "head", sprites: { open: "eyes", default: "eyes" } },
+      { id: "left-arm", role: "arm", parent: "torso", sprites: { default: "arm" } }
+    ],
+    initialState: {
+      breathOffsetY: 2,
+      headRotation: 5,
+      layerTransforms: {
+        torso: { rotation: 10 },
+        head: { translateY: -4, rotation: 10 },
+        eyes: { translateX: 1 },
+        "left-arm": { rotation: -20 }
+      }
+    }
+  });
+
+  const torso = handle.children[0];
+  const head = torso.children[1];
+  const eyes = head.children[1];
+  const arm = torso.children[2];
+  assert.equal(torso.children[0].tagName, "img");
+  assert.equal(head.children[0].tagName, "img");
+  assert.equal(eyes.children[0].tagName, "img");
+  assert.match(torso.style.transform, /translate\\(0px, 2px\\).*rotate\\(10deg\\)/);
+  assert.match(head.style.transform, /translate\\(0px, -4px\\).*rotate\\(15deg\\)/);
+  assert.match(eyes.style.transform, /translate\\(1px, 0px\\).*rotate\\(0deg\\)/);
+  assert.match(arm.style.transform, /rotate\\(-20deg\\)/);
+  assert.equal(eyes.children[0].style.transform, "none");
+  renderer.destroy();
+  assert.equal(root.children.length, 0);
+});
+
+test("DOM renderer rejects broken rig relationships before resolving assets", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let resolutions = 0;
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => {
+      resolutions += 1;
+      return `https://assets.test/${key}.png`;
+    }
+  });
+  await assert.rejects(renderer.mount({
+    id: "broken-rig",
+    layers: [
+      { id: "head", role: "head", parent: "eyes", sprites: { default: "head" } },
+      { id: "eyes", role: "eyes", parent: "head", sprites: { default: "eyes" } }
+    ]
+  }), /cycle/);
+  assert.equal(resolutions, 0);
+  assert.equal(root.children.length, 0);
+  renderer.destroy();
+});
