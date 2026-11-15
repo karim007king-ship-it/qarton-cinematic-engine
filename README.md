@@ -30,7 +30,7 @@ npm test
 ```
 
 ### اختبار المتصفح الحقيقي
-شغّل خادماً محلياً من جذر المستودع (مثلاً `npx serve .`) ثم افتح `examples/browser-smoke.html`. تختبر الصفحة تحميل صور SVG وفك ترميزها فعلياً، وتركيب مشاهد متعددة الطبقات، وتحريك شخصيتين عبر Character Stage، وتنسيق حركة الشخصيات والصوت وأحداث timeline بواسطة Cinematic Director على ساعة مشتركة، وparallax وcamera shake والجسيمات، وانتقالات Web Animations API أو CSS fallback، وصوتاً مولداً محلياً يبدأ بتفاعل المستخدم، ثم تنظيف runtime والأصول. هذا اختبار يدوي في متصفح حقيقي وليس جزءاً من CI حالياً؛ نجاح اختبارات Node وحده لا يثبت سلامة العرض على Android WebView. تم ضبط حساب اهتزاز الكاميرا على توقيت Director النسبي، وتُسلسل تحديثات المشهد عبر الساعة المشتركة.
+شغّل خادماً محلياً من جذر المستودع (مثلاً `npx serve .`) ثم افتح `examples/browser-smoke.html`. تختبر الصفحة تحميل صور SVG وفك ترميزها فعلياً، وتركيب مشاهد متعددة الطبقات، وتحريك شخصيتين عبر Character Stage، وتنسيق حركة الشخصيات والصوت وأحداث timeline بواسطة Cinematic Director على ساعة مشتركة، وparallax وcamera track (pan/zoom/rotation) وcamera shake والجسيمات، وانتقالات Web Animations API أو CSS fallback، وصوتاً مولداً محلياً يبدأ بتفاعل المستخدم، ثم تنظيف runtime والأصول. هذا اختبار يدوي في متصفح حقيقي وليس جزءاً من CI حالياً؛ نجاح اختبارات Node وحده لا يثبت سلامة العرض على Android WebView. تم ضبط حساب اهتزاز الكاميرا على توقيت Director النسبي، وتُسلسل تحديثات المشهد عبر الساعة المشتركة.
 
 ## واجهة API الحالية
 - `resolveQualityProfile(device)`: اختيار ملف أداء low / medium / high.
@@ -75,7 +75,7 @@ npm test
 - **P0 — Foundation:** مكتمل؛ ملفات الأداء والحركة والمشهد واختبارات CI.
 - **P1 — Scene & Background Runtime:** مخطط الطبقات وعارض DOM وإدارة الأصول (cache / dedup / preload) منفذة ومغطاة باختبارات؛ منسّق دورة حياة الانتقالات ومحول DOM للـ crossfade منفذان ومغطّيان باختبارات Fake DOM؛ ما زال ينقص اختبار متصفح حقيقي وتحميل الصور الفعلي.
 - **P2 — Character Motion:** المسارات 2D والخطوط الزمنية ومتحكم الشخصية ومحول DOM للـ sprites منفذة ومغطاة باختبارات محاكاة؛ ما زال ينقص اختبار المتصفح الفعلي ومزامنة الحركة مع الصوت.
-- **P3 — Cinematic Effects:** parallax وcamera shake وparticle field وlighting/fog samplers منفذة؛ ما زالت مؤثرات shader والاختبار البصري الفعلي لاحقاً.
+- **P3 — Cinematic Effects:** parallax وcamera shake وcamera track لمسارات pan/zoom/rotation وparticle field وlighting/fog samplers منفذة؛ ما زالت مؤثرات shader والاختبار البصري الفعلي لاحقاً.
 - **P4 — Audio:** جدولة cues والتحكم في pause/resume والـ volume عبر adapter محايد للمنصة منفذة؛ تمت إضافة adapter لـ HTMLAudio قابل للحقن ومناسب للمتصفح وAndroid WebView؛ يبقى اختبار الصوت الفعلي على جهاز، ويمكن إضافة Web Audio متقدم لاحقاً.
 - **P5 — Adaptive Runtime:** مراقبة frame-time وتغيير الجودة مع hysteresis وبوابة إيقاف/استئناف منفذة؛ يبقى ربط Page Visibility أو lifecycle Android من المضيف واختبار الأجهزة.
 - **P6 — Integration:** runtime تجميعي مستقل للمضيف ومنسق سينمائي مشترك الساعة منفذان؛ يبقى إنشاء adapter خاص بقرطاج وربطه واختباره على Android خطوة منفصلة بعد اكتمال التحقق.
