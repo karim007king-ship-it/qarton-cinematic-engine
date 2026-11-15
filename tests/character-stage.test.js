@@ -99,3 +99,48 @@ test("character stage rolls back partial mounts and rejects updates before mount
   stage.destroy();
   await assert.rejects(stage.mount(), /destroyed/);
 });
+
+
+test("concurrent mount calls share one mounting operation", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let resolveSprite;
+  let calls = 0;
+  const controller = createCharacterController({ id: "hero" });
+  const stage = createCharacterStage({
+    root,
+    resolveSprite: () => {
+      calls += 1;
+      return new Promise(resolve => { resolveSprite = resolve; });
+    },
+    characters: [{ controller, sprites: { default: "hero" } }]
+  });
+  const first = stage.mount();
+  const second = stage.mount();
+  await Promise.resolve();
+  assert.equal(calls, 1);
+  resolveSprite("https://assets.test/hero.png");
+  assert.deepEqual(await Promise.all([first, second]), [true, true]);
+  assert.equal(root.children.length, 1);
+  stage.destroy();
+});
+
+test("unmount during async mount prevents a late character from remaining mounted", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let resolveSprite;
+  const controller = createCharacterController({ id: "hero" });
+  const stage = createCharacterStage({
+    root,
+    resolveSprite: () => new Promise(resolve => { resolveSprite = resolve; }),
+    characters: [{ controller, sprites: { default: "hero" } }]
+  });
+  const pending = stage.mount();
+  await Promise.resolve();
+  stage.unmount();
+  resolveSprite("https://assets.test/hero.png");
+  assert.equal(await pending, false);
+  assert.equal(root.children.length, 0);
+  assert.equal(await stage.mount().then(() => true), true);
+  stage.destroy();
+});
