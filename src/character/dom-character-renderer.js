@@ -20,7 +20,7 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       if (!sprites || typeof sprites !== "object" || Array.isArray(sprites)) {
         throw new TypeError("Character sprites must be an expression-to-asset map");
       }
-      return [{ id: "body", role: "body", sprites: { ...sprites }, style: {} }];
+      return [{ id: "body", role: "body", parent: null, sprites: { ...sprites }, style: {} }];
     }
     if (!Array.isArray(layers) || layers.length === 0) {
       throw new TypeError("Character layers must be a non-empty array");
