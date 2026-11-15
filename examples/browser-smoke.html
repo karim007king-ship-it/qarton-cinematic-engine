@@ -133,19 +133,54 @@
     root: characterRoot,
     resolveSprite: key => Promise.resolve(key),
     characters: [
-      { controller: createCharacterController({
-        id: "hero", initial: { x: 24, y: 120, scale: 1.08, expression: "neutral" },
-        motions: [{ id: "hero-walk", path: walkPath, startMs: 500, durationMs: 5200, expression: "determined" }]
-      }), sprites: { neutral: makeSprite("#e8c18a", "#20212b"), determined: makeSprite("#e8c18a", "#8b263d"), default: makeSprite("#e8c18a", "#20212b") } },
-      { controller: createCharacterController({
-        id: "companion", initial: { x: 650, y: 142, scale: .9, expression: "neutral", opacity: .92 },
-        motions: [{ id: "companion-enter", path: enterPath, startMs: 1100, durationMs: 4800, expression: "alert" }]
-      }), sprites: { neutral: makeSprite("#b8c7d8", "#253a55"), alert: makeSprite("#b8c7d8", "#a65b36"), default: makeSprite("#b8c7d8", "#253a55") } }
+      {
+        controller: createCharacterController({
+          id: "hero", initial: { x: 24, y: 120, scale: 1.08, expression: "neutral" },
+          motions: [{ id: "hero-walk", path: walkPath, startMs: 500, durationMs: 5200, expression: "determined" }],
+          dialogue: [{ startMs: 2100, endMs: 3900, expression: "determined" }]
+        }),
+        layers: [
+          { id: "body", role: "body", sprites: { default: makeLayerSprite("body", "#e8c18a", "#8b263d") } },
+          { id: "head", role: "head", sprites: { neutral: makeLayerSprite("head", "#e8c18a", "#17151c"), determined: makeLayerSprite("head", "#e8c18a", "#17151c", "determined"), default: makeLayerSprite("head", "#e8c18a", "#17151c") } },
+          { id: "eyes", role: "eyes", sprites: { open: makeLayerSprite("eyes", "#e8c18a"), blink: makeLayerSprite("eyes", "#e8c18a", "", "blink"), default: makeLayerSprite("eyes", "#e8c18a") } },
+          { id: "mouth", role: "mouth", sprites: { neutral: makeLayerSprite("mouth", "#e8c18a"), speakingClosed: makeLayerSprite("mouth", "#e8c18a", "", "closed"), speakingOpen: makeLayerSprite("mouth", "#e8c18a", "", "open"), default: makeLayerSprite("mouth", "#e8c18a") } }
+        ]
+      },
+      {
+        controller: createCharacterController({
+          id: "companion", initial: { x: 650, y: 142, scale: .9, expression: "neutral", opacity: .92 },
+          motions: [{ id: "companion-enter", path: enterPath, startMs: 1100, durationMs: 4800, expression: "alert" }],
+          dialogue: [{ startMs: 3300, endMs: 4700, expression: "alert" }]
+        }),
+        layers: [
+          { id: "body", role: "body", sprites: { default: makeLayerSprite("body", "#b8c7d8", "#253a55") } },
+          { id: "head", role: "head", sprites: { neutral: makeLayerSprite("head", "#b8c7d8", "#253a55"), alert: makeLayerSprite("head", "#b8c7d8", "#253a55", "alert"), default: makeLayerSprite("head", "#b8c7d8", "#253a55") } },
+          { id: "eyes", role: "eyes", sprites: { open: makeLayerSprite("eyes", "#b8c7d8"), blink: makeLayerSprite("eyes", "#b8c7d8", "", "blink"), default: makeLayerSprite("eyes", "#b8c7d8") } },
+          { id: "mouth", role: "mouth", sprites: { neutral: makeLayerSprite("mouth", "#b8c7d8"), speakingClosed: makeLayerSprite("mouth", "#b8c7d8", "", "closed"), speakingOpen: makeLayerSprite("mouth", "#b8c7d8", "", "open"), default: makeLayerSprite("mouth", "#b8c7d8") } }
+        ]
+      }
     ]
   });
 
-  function makeSprite(skin, clothes) {
-    return `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 260"><ellipse cx="80" cy="248" rx="42" ry="8" fill="#000" opacity=".35"/><circle cx="80" cy="48" r="31" fill="${skin}"/><path d="M48 42Q54 4 92 17Q116 25 111 57Q92 34 48 42" fill="#17151c"/><path d="M43 92Q80 72 117 92L137 218H23Z" fill="${clothes}"/><path d="M48 210 42 252H68L80 210 92 252H118L111 210Z" fill="#20212b"/><path d="M50 103 16 177 31 185 70 132M110 103 144 177 129 185 90 132" fill="${skin}"/></svg>`) }`;
+  function makeLayerSprite(role, skin, clothing = "", variant = "") {
+    let drawing = "";
+    if (role === "body") {
+      drawing = `<ellipse cx="80" cy="248" rx="42" ry="8" fill="#000" opacity=".35"/><path d="M43 92Q80 72 117 92L137 218H23Z" fill="${clothing}"/><path d="M48 210 42 252H68L80 210 92 252H118L111 210Z" fill="#20212b"/><path d="M50 103 16 177 31 185 70 132M110 103 144 177 129 185 90 132" fill="${skin}"/>`;
+    } else if (role === "head") {
+      drawing = `<circle cx="80" cy="48" r="31" fill="${skin}"/><path d="M48 42Q54 4 92 17Q116 25 111 57Q92 34 48 42" fill="${clothing}"/>${variant === "determined" ? '<path d="M53 39l19 5m16-5 19-5" stroke="#17151c" stroke-width="4" stroke-linecap="round"/>' : variant === "alert" ? '<path d="M54 30l18-3m16 3 18 3" stroke="#17151c" stroke-width="3" stroke-linecap="round"/>' : ""}`;
+    } else if (role === "eyes") {
+      drawing = variant === "blink"
+        ? '<path d="M59 49q8 6 16 0m10 0q8 6 16 0" fill="none" stroke="#24212a" stroke-width="3" stroke-linecap="round"/>'
+        : '<ellipse cx="67" cy="48" rx="3.5" ry="5" fill="#24212a"/><ellipse cx="94" cy="48" rx="3.5" ry="5" fill="#24212a"/>';
+    } else if (role === "mouth") {
+      drawing = variant === "open"
+        ? '<ellipse cx="80" cy="69" rx="7" ry="9" fill="#6f2635"/><path d="M74 72q6 4 12 0" stroke="#f1a3a0" stroke-width="2"/>'
+        : variant === "closed"
+          ? '<path d="M72 69q8 3 16 0" stroke="#6f2635" stroke-width="2.5" stroke-linecap="round"/>'
+          : '<path d="M72 68q8 5 16 0" stroke="#6f2635" stroke-width="2" fill="none" stroke-linecap="round"/>';
+    }
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 260">${drawing}</svg>`;
+    return `data:image/svg+xml,${encodeURIComponent(svg)}`;
   }
 
   const cameraTrack = createCameraTrack([
