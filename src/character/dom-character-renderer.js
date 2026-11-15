@@ -214,7 +214,7 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       if (rigMode) {
         container.className = `qarton-character-rig-node qarton-character-rig-node--${layer.role}`;
         Object.assign(container.style, {
-          position: "absolute", inset: "0", transformOrigin: ["head", "eyes", "mouth"].includes(layer.role) ? "50% 85%" : "center center",
+          position: "absolute", inset: "0", transformOrigin: layer.style?.transformOrigin ?? (["head", "eyes", "mouth"].includes(layer.role) ? "50% 85%" : "center center"),
           pointerEvents: "none", willChange: "transform"
         });
       }
