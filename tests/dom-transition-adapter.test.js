@@ -133,3 +133,46 @@ test("unmounting a scene involved in a transition cancels that transition", asyn
   assert.equal(nextScene.parentNode, null);
 });
 \n
+
+
+test("waits for a rendering frame before starting CSS transitions", async () => {
+  let frames = 0;
+  const { adapter } = setup({
+    nextFrame: async () => { frames += 1; }
+  });
+  const oldScene = await adapter.mount({ id: "old" }, {});
+  const nextScene = await adapter.mount({ id: "next" }, {});
+  await adapter.crossfade({ from: oldScene, to: nextScene, duration: 80 });
+  assert.equal(frames, 1);
+  assert.match(nextScene.style.transition, /opacity 80ms/);
+  assert.equal(nextScene.style.opacity, "1");
+});
+
+test("falls back to CSS when Web Animations creation throws synchronously", async () => {
+  let frames = 0;
+  const { adapter } = setup({
+    animate: () => { throw new Error("animation API unavailable"); },
+    nextFrame: async () => { frames += 1; }
+  });
+  const oldScene = await adapter.mount({ id: "old" }, {});
+  const nextScene = await adapter.mount({ id: "next" }, {});
+  assert.equal(await adapter.crossfade({ from: oldScene, to: nextScene, duration: 90 }), true);
+  assert.equal(frames, 1);
+  assert.equal(oldScene.style.opacity, "0");
+  assert.equal(nextScene.style.opacity, "1");
+});
+
+test("cleans transition state when the injected frame scheduler rejects", async () => {
+  const { adapter } = setup({
+    nextFrame: async () => { throw new Error("frame scheduling failed"); }
+  });
+  const oldScene = await adapter.mount({ id: "old" }, {});
+  const nextScene = await adapter.mount({ id: "next" }, {});
+  await assert.rejects(
+    adapter.crossfade({ from: oldScene, to: nextScene, duration: 90 }),
+    /frame scheduling failed/
+  );
+  // A subsequent instant transition proves the failed transition did not
+  // leave an active cancellation token blocking future work.
+  assert.equal(await adapter.crossfade({ from: null, to: nextScene, duration: 0 }), true);
+});
