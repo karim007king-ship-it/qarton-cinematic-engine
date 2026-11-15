@@ -15,7 +15,7 @@ src/
   motion/        # منحنيات الحركة والمسارات والخطوط الزمنية
   character/     # متحكمات حركة الشخصيات
   scene/         # تعريف المشاهد والخلفيات والطبقات
-  effects/       # parallax واهتزاز الكاميرا والجسيمات
+  effects/       # parallax واهتزاز الكاميرا والجسيمات والمعالجة البصرية
   camera/        # مسارات pan / zoom / rotation للكاميرا
   audio/         # جدولة الصوت ومزامنة الـ cues
   runtime/       # عارض المشاهد وطبقات DOM
@@ -47,6 +47,7 @@ npm test
 - `toCameraCSS(pose)`: تحويل وضع الكاميرا إلى CSS transform لعنصر viewport يملكه التطبيق المضيف.
 - `createParticleField(...)`: حقل جسيمات deterministic يراعي `profile.particleBudget`.
 - `resolveLighting(...)` و`sampleFog(...)`: معلمات إضاءة وضباب تتكيف مع ملف الجودة.
+- `resolveVisualTreatment(...)`: إعدادات color grading وvignette وbloom وgrain بصيغة CSS جاهزة، مع تخفيض تلقائي للمؤثرات حسب ملف الأداء واحترام reduced motion.
 - `createAudioCueController({ cues, play, stop, setVolume })`: جدولة أصوات المشهد حسب التوقيت، مع pause/resume والتحكم بالصوت عبر adapter يقدمه التطبيق.
 - `createHTMLAudioAdapter({ resolveAsset, createAudio })`: adapter اختياري لـ HTMLAudio في المتصفح وAndroid WebView، مع حقن إنشاء الصوت وحجم عام لكل الأصوات.
 - `createAdaptivePerformanceMonitor(...)`: قياس أزمنة الإطارات المقدمة من المضيف، وخفض/رفع الجودة تدريجياً مع hysteresis.
@@ -75,10 +76,10 @@ npm test
 - **P0 — Foundation:** مكتمل؛ ملفات الأداء والحركة والمشهد واختبارات CI.
 - **P1 — Scene & Background Runtime:** مخطط الطبقات وعارض DOM وإدارة الأصول (cache / dedup / preload) منفذة ومغطاة باختبارات؛ منسّق دورة حياة الانتقالات ومحول DOM للـ crossfade منفذان ومغطّيان باختبارات Fake DOM؛ ما زال ينقص اختبار متصفح حقيقي وتحميل الصور الفعلي.
 - **P2 — Character Motion:** المسارات 2D والخطوط الزمنية ومتحكم الشخصية ومحول DOM للـ sprites منفذة ومغطاة باختبارات محاكاة؛ ما زال ينقص اختبار المتصفح الفعلي ومزامنة الحركة مع الصوت.
-- **P3 — Cinematic Effects:** parallax وcamera shake وcamera track لمسارات pan/zoom/rotation وparticle field وlighting/fog samplers منفذة؛ ما زالت مؤثرات shader والاختبار البصري الفعلي لاحقاً.
+- **P3 — Cinematic Effects:** parallax وcamera shake وcamera track لمسارات pan/zoom/rotation وparticle field وlighting/fog samplers وCSS visual treatment منفذة؛ ما زالت مؤثرات shader والاختبار البصري الفعلي لاحقاً.
 - **P4 — Audio:** جدولة cues والتحكم في pause/resume والـ volume عبر adapter محايد للمنصة منفذة؛ تمت إضافة adapter لـ HTMLAudio قابل للحقن ومناسب للمتصفح وAndroid WebView؛ يبقى اختبار الصوت الفعلي على جهاز، ويمكن إضافة Web Audio متقدم لاحقاً.
 - **P5 — Adaptive Runtime:** مراقبة frame-time وتغيير الجودة مع hysteresis وبوابة إيقاف/استئناف منفذة؛ يبقى ربط Page Visibility أو lifecycle Android من المضيف واختبار الأجهزة.
 - **P6 — Integration:** runtime تجميعي مستقل للمضيف ومنسق سينمائي مشترك الساعة منفذان؛ يبقى إنشاء adapter خاص بقرطاج وربطه واختباره على Android خطوة منفصلة بعد اكتمال التحقق.
 
 ## الحالة
-P0 مكتملة. في P2 أضيفت مسارات 2D وخط زمني للأحداث ومتحكم شخصية محايد للمنصة ومحول DOM اختياري للـ sprites. وفي P3 أضيفت حسابات parallax وcamera shake وحقل جسيمات تكيفي deterministic ومعلمات الإضاءة والضباب، وأضيفت وحدة camera track مستقلة لمسارات pan/zoom/rotation مع تركيب shake وتحويل CSS؛ ما زال يلزم اختبارها بصرياً في المتصفح. وفي P4 أضيف متحكم جدولة audio cues يعتمد على adapter خارجي ولا ينشئ AudioContext تلقائياً. وفي P5 أضيف مراقب أداء تكيفي يقيس frame-time عبر المضيف ويبدل الجودة تدريجياً، وبوابة activity gate لإيقاف واستئناف العمل. يوجد adapter HTMLAudio اختياري، لكنه لم يُختبر بعد في متصفح حقيقي أو Android. وفي P6 أضيفت واجهة `createCinematicRuntime` لتجميع المشاهد والانتقالات والأصول والأداء عبر callbacks يحددها المضيف، وأضيف `createCinematicDirector` لتنسيق الشخصيات والصوت وأحداث المشهد على ساعة واحدة؛ لم يتم ربطهما بعد بلعبة قرطاج. اختبارات DOM محاكاة ولا تثبت العرض الفعلي في المتصفح أو Android. في P1 أصبح لدينا عارض DOM للطبقات ومدير أصول مستقل مع دمج الطلبات المتزامنة وذاكرة مؤقتة وتحميل مسبق والتحقق من عناوين الأصول. تم توسيع صفحة browser smoke لتكون showcase تكاملياً يربط الخلفيات والشخصيات والمؤثرات والصوت والخط الزمني، لكنها ما زالت تحتاج تشغيلًا يدوياً في متصفح فعلي وAndroid WebView. الاختبارات تستخدم بيئة Node ومحاكاة DOM؛ محول DOM يوفر fade وdissolve بصرياً (opacity + blur) عبر Web Animations API أو CSS fallback؛ لا يتضمن حالياً shader dissolve. لم يتم بعد ربط المحرك بلعبة قرطاج أو اختبار Android، ولا ندّعي جاهزية APK.
+P0 مكتملة. في P2 أضيفت مسارات 2D وخط زمني للأحداث ومتحكم شخصية محايد للمنصة ومحول DOM اختياري للـ sprites. وفي P3 أضيفت حسابات parallax وcamera shake وحقل جسيمات تكيفي deterministic ومعلمات الإضاءة والضباب، وأضيفت وحدة camera track مستقلة لمسارات pan/zoom/rotation مع تركيب shake وتحويل CSS، كما أضيفت طبقة visual treatment مستقلة تنتج CSS filters ودرجات vignette/bloom/grain متكيفة مع مستوى الأداء وتحترم reduced motion؛ ما زال يلزم اختبار التأثيرات بصرياً في المتصفح. وفي P4 أضيف متحكم جدولة audio cues يعتمد على adapter خارجي ولا ينشئ AudioContext تلقائياً. وفي P5 أضيف مراقب أداء تكيفي يقيس frame-time عبر المضيف ويبدل الجودة تدريجياً، وبوابة activity gate لإيقاف واستئناف العمل. يوجد adapter HTMLAudio اختياري، لكنه لم يُختبر بعد في متصفح حقيقي أو Android. وفي P6 أضيفت واجهة `createCinematicRuntime` لتجميع المشاهد والانتقالات والأصول والأداء عبر callbacks يحددها المضيف، وأضيف `createCinematicDirector` لتنسيق الشخصيات والصوت وأحداث المشهد على ساعة واحدة؛ لم يتم ربطهما بعد بلعبة قرطاج. اختبارات DOM محاكاة ولا تثبت العرض الفعلي في المتصفح أو Android. في P1 أصبح لدينا عارض DOM للطبقات ومدير أصول مستقل مع دمج الطلبات المتزامنة وذاكرة مؤقتة وتحميل مسبق والتحقق من عناوين الأصول. تم توسيع صفحة browser smoke لتكون showcase تكاملياً يربط الخلفيات والشخصيات والمؤثرات والصوت والخط الزمني، لكنها ما زالت تحتاج تشغيلًا يدوياً في متصفح فعلي وAndroid WebView. الاختبارات تستخدم بيئة Node ومحاكاة DOM؛ محول DOM يوفر fade وdissolve بصرياً (opacity + blur) عبر Web Animations API أو CSS fallback؛ لا يتضمن حالياً shader dissolve. لم يتم بعد ربط المحرك بلعبة قرطاج أو اختبار Android، ولا ندّعي جاهزية APK.
