@@ -187,3 +187,34 @@ test("failed sprite resolution rolls back the pending mount and permits retry", 
   assert.equal(handle.children[0].src, "https://assets.test/hero.png");
   renderer.destroy();
 });
+
+test("DOM renderer exposes deterministic speech and expression transition metadata", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`
+  });
+  const handle = await renderer.mount({
+    id: "speaker",
+    sprites: { neutral: "neutral", happy: "happy" },
+    initialState: { expression: "neutral" }
+  });
+  await renderer.update(handle, {
+    id: "speaker", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0,
+    expression: "happy", speaking: true, mouthFrame: 1, expressionTransition: 0.5
+  });
+  assert.equal(handle.dataset.speaking, "true");
+  assert.equal(handle.dataset.mouthFrame, "1");
+  assert.equal(handle.dataset.expressionTransition, "0.5");
+  assert.equal(handle.dataset.expression, "happy");
+
+  await renderer.update(handle, {
+    id: "speaker", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0,
+    expression: "happy", speaking: false, mouthFrame: 0
+  });
+  assert.equal(handle.dataset.speaking, "false");
+  assert.equal(handle.dataset.mouthFrame, "0");
+  assert.equal(handle.dataset.expressionTransition, "1");
+  renderer.destroy();
+});
