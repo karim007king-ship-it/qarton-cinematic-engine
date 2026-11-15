@@ -36,12 +36,16 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       // request for a different expression that is still in flight.
       record.assetVersion += 1;
       record.pendingAssetKey = null;
+      record.pendingAssetPromise = null;
       return true;
     }
+    if (record.pendingAssetKey === key && record.pendingAssetPromise) {
+      return record.pendingAssetPromise;
+    }
+
     const version = ++record.assetVersion;
     record.pendingAssetKey = key;
-    try {
-      const url = await resolveSprite(key);
+    const pending = Promise.resolve().then(() => resolveSprite(key)).then(url => {
       if (destroyed || !records.has(record.element) || version !== record.assetVersion) return false;
       if (typeof url !== "string" || !url.trim()) {
         throw new TypeError(`resolveSprite() returned an invalid URL for "${key}"`);
@@ -49,12 +53,15 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       record.image.src = url;
       record.image.alt = `${record.id} — ${expression}`;
       record.assetKey = key;
-      record.pendingAssetKey = null;
       return true;
-    } catch (error) {
-      if (version === record.assetVersion) record.pendingAssetKey = null;
-      throw error;
-    }
+    }).finally(() => {
+      if (version === record.assetVersion) {
+        record.pendingAssetKey = null;
+        record.pendingAssetPromise = null;
+      }
+    });
+    record.pendingAssetPromise = pending;
+    return pending;
   }
 
   async function mount({ id, sprites, initialState = {} } = {}) {
@@ -92,6 +99,7 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       sprites: { ...sprites },
       assetKey: null,
       pendingAssetKey: null,
+      pendingAssetPromise: null,
       assetVersion: 0
     };
     const expression = typeof initialState.expression === "string" ? initialState.expression : "neutral";
@@ -132,6 +140,8 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     const record = records.get(handle);
     if (!record) return;
     record.assetVersion += 1;
+    record.pendingAssetKey = null;
+    record.pendingAssetPromise = null;
     records.delete(handle);
     handle.remove?.();
     if (handle.parentNode === root) root.removeChild(handle);
@@ -143,6 +153,11 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     for (const handle of records.keys()) {
       handle.remove?.();
       if (handle.parentNode === root) root.removeChild(handle);
+    }
+    for (const record of records.values()) {
+      record.assetVersion += 1;
+      record.pendingAssetKey = null;
+      record.pendingAssetPromise = null;
     }
     records.clear();
   }
