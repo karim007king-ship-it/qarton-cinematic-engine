@@ -10,6 +10,7 @@
     "./motion/path": "./src/motion/path.js",
     "./motion/timeline": "./src/motion/timeline.js",
     "./character": "./src/character/character-controller.js",
+    "./character/dom": "./src/character/dom-character-renderer.js",
     "./scene": "./src/scene/scene-definition.js",
     "./runtime": "./src/runtime/index.js",
     "./assets": "./src/assets/asset-manager.js"
