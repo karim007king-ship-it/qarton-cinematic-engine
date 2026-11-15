@@ -131,3 +131,59 @@ test("duplicate in-flight requests for the same sprite share one asset resolutio
   assert.deepEqual(await Promise.all([first, second]), [true, true]);
   assert.equal(handle.children[0].src, "https://assets.test/focused.png");
 });
+
+test("invalid initial poses fail before asset resolution or DOM insertion", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let resolutions = 0;
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => {
+      resolutions += 1;
+      return `https://assets.test/${key}.png`;
+    }
+  });
+  await assert.rejects(renderer.mount({
+    id: "broken",
+    sprites: { default: "broken" },
+    initialState: { scale: -1 }
+  }), /scale cannot be negative/);
+  assert.equal(resolutions, 0);
+  assert.equal(root.children.length, 0);
+
+  const handle = await renderer.mount({
+    id: "hero",
+    sprites: { default: "hero" },
+    initialState: { scale: 1 }
+  });
+  assert.equal(root.children.length, 1);
+  renderer.destroy();
+  assert.equal(handle.parentNode, null);
+});
+
+test("failed sprite resolution rolls back the pending mount and permits retry", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let attempts = 0;
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("temporary asset failure");
+      return `https://assets.test/${key}.png`;
+    }
+  });
+  await assert.rejects(renderer.mount({
+    id: "hero",
+    sprites: { default: "hero" }
+  }), /temporary asset failure/);
+  assert.equal(root.children.length, 0);
+
+  const handle = await renderer.mount({
+    id: "hero",
+    sprites: { default: "hero" }
+  });
+  assert.equal(root.children.length, 1);
+  assert.equal(handle.children[0].src, "https://assets.test/hero.png");
+  renderer.destroy();
+});
