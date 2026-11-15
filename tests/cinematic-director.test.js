@@ -82,7 +82,7 @@ test("director validates clock order and lifecycle", async () => {
   await assert.rejects(director.update(0), /mounted/);
   await director.mount();
   await assert.rejects(director.update(-1), /non-negative/);
-  assert.throws(() => director.pause(-1), /Pause time/);
+  assert.throws(() => director.pause(-2), /Pause time/);
   director.destroy();
   await assert.rejects(director.update(0), /destroyed/);
 });
