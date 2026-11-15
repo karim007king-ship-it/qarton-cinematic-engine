@@ -77,7 +77,7 @@
       content.dataset.quality = profile.tier ?? "unknown";
       return content;
     },
-    onProfileChange: profile => { status.textContent = `Performance profile: ${profile.level ?? "updated"}`; }
+    onProfileChange: profile => { status.textContent = `Performance profile: ${profile.tier ?? "updated"}`; }
   });
 
   async function show(index) {
