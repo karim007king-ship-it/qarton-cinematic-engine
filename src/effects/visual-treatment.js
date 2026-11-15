@@ -35,7 +35,8 @@ export function resolveVisualTreatment({
     `brightness(${(1 + safeExposure * 0.35).toFixed(3)})`,
     `contrast(${safeContrast.toFixed(3)})`,
     `saturate(${safeSaturation.toFixed(3)})`,
-    `sepia(${(Math.abs(safeWarmth) * 0.22).toFixed(3)})`
+    `sepia(${(Math.max(0, safeWarmth) * 0.22).toFixed(3)})`,
+    `hue-rotate(${(Math.max(0, -safeWarmth) * 12).toFixed(3)}deg)`
   ].join(" ");
 
   return Object.freeze({
