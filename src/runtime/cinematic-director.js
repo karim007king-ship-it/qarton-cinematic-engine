@@ -35,6 +35,7 @@ export function createCinematicDirector({
 
   let mounted = false;
   let mountingPromise = null;
+  let lifecycleVersion = 0;
   let paused = false;
   let destroyed = false;
   let lastTimeMs = -1;
@@ -47,12 +48,13 @@ export function createCinematicDirector({
     assertAlive();
     if (mounted) return false;
     if (mountingPromise) return mountingPromise;
+    const version = ++lifecycleVersion;
     const operation = (async () => {
       if (characterStage) {
         const result = await characterStage.mount();
         if (!result) return false;
       }
-      if (destroyed) {
+      if (destroyed || version !== lifecycleVersion) {
         characterStage?.unmount();
         return false;
       }
@@ -118,6 +120,7 @@ export function createCinematicDirector({
 
   function unmount() {
     assertAlive();
+    lifecycleVersion += 1;
     if (characterStage) characterStage.unmount();
     audio?.stopAll({ reset: true });
     mounted = false;
@@ -128,6 +131,7 @@ export function createCinematicDirector({
   function destroy() {
     if (destroyed) return;
     destroyed = true;
+    lifecycleVersion += 1;
     characterStage?.destroy();
     audio?.destroy();
     mounted = false;
