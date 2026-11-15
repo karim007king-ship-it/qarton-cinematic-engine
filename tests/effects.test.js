@@ -1,0 +1,30 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { computeParallaxOffset } from "../src/effects/parallax.js";
+import { sampleCameraShake } from "../src/effects/camera-shake.js";
+import { createParticleField } from "../src/effects/particle-field.js";
+
+test("parallax offset scales with depth and clamps extreme movement", () => {
+  assert.deepEqual(computeParallaxOffset({ cameraX: 10, cameraY: -5, depth: 0.5 }), { x: -5, y: 2.5 });
+  assert.deepEqual(computeParallaxOffset({ cameraX: 100, depth: 2, maxOffset: 20 }), { x: -20, y: 0 });
+  assert.throws(() => computeParallaxOffset({ depth: Infinity }), /finite/);
+});
+
+test("camera shake is deterministic and decays to zero", () => {
+  const a = sampleCameraShake({ timeMs: 250, durationMs: 1000, amplitude: 8, seed: 42 });
+  const b = sampleCameraShake({ timeMs: 250, durationMs: 1000, amplitude: 8, seed: 42 });
+  assert.deepEqual(a, b);
+  assert.deepEqual(sampleCameraShake({ timeMs: 1000, durationMs: 1000, amplitude: 8 }), { x: 0, y: 0, rotation: 0 });
+  assert.throws(() => sampleCameraShake({ timeMs: -1, durationMs: 1000 }), /invalid/);
+});
+
+test("particle field is deterministic and respects adaptive particle budgets", () => {
+  const options = { count: 20, seed: 7, width: 320, height: 180, lifetimeMs: 2000, profile: { maxParticles: 6 } };
+  const a = createParticleField(options);
+  const b = createParticleField(options);
+  assert.equal(a.count, 6);
+  assert.deepEqual(a.sample(400), b.sample(400));
+  assert.equal(a.sample(400).length, 6);
+  assert.ok(a.sample(400).every(particle => particle.x >= 0 && particle.x < 320 && particle.opacity >= 0 && particle.opacity <= 1));
+  assert.throws(() => createParticleField({ count: -1, width: 100, height: 100 }), /invalid/);
+});
