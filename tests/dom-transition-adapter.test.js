@@ -200,9 +200,10 @@ test("destroy cancels an in-flight CSS transition and removes mounted scenes", a
 test("a rejected Web Animation is reported and does not block later transitions", async () => {
   let rejectTarget;
   const cancelled = [];
+  let animationIndex = 0;
   const { adapter } = setup({
     animate: (_element, _frames, options) => {
-      const isTarget = options.duration === 75;
+      const isTarget = options.duration === 75 && animationIndex++ === 1;
       const finished = isTarget
         ? new Promise((_resolve, reject) => { rejectTarget = reject; })
         : Promise.resolve();
