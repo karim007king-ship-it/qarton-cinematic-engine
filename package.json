@@ -17,7 +17,8 @@
     "./engine": "./src/runtime/cinematic-runtime.js",
     "./assets": "./src/assets/asset-manager.js",
     "./effects": "./src/effects/index.js",
-    "./audio": "./src/audio/audio-cue-controller.js"
+    "./audio": "./src/audio/audio-cue-controller.js",
+    "./audio/html": "./src/audio/html-audio-adapter.js"
   },
   "scripts": {
     "test": "node --test",
