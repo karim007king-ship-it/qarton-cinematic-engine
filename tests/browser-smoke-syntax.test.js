@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 
 test("browser showcase module script has valid JavaScript syntax", () => {
   const html = readFileSync(new URL("../examples/browser-smoke.html", import.meta.url), "utf8");
-  const scripts = [...html.matchAll(/<script\\s+type=["']module["']\\s*>([\\s\\S]*?)<\\/script>/gi)];
+  const scripts = [...html.matchAll(/<script\s+type=["']module["']\s*>([\s\S]*?)<\/script>/gi)];
   assert.equal(scripts.length, 1, "expected exactly one module script in browser showcase");
 
   const result = spawnSync(process.execPath, ["--check", "--input-type=module"], {
