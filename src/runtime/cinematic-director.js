@@ -121,6 +121,8 @@ export function createCinematicDirector({
   function unmount() {
     assertAlive();
     lifecycleVersion += 1;
+    // Do not let an immediately requested remount reuse the invalidated promise.
+    mountingPromise = null;
     if (characterStage) characterStage.unmount();
     audio?.stopAll({ reset: true });
     mounted = false;
