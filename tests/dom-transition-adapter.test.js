@@ -91,3 +91,45 @@ test("destroy removes all mounted scene wrappers and prevents new mounts", async
   assert.equal(root.children.length, 0);
   await assert.rejects(adapter.mount({ id: "later" }, {}), /destroyed/);
 });
+
+test("a newer transition cancels the stale visual transition", async () => {
+  const waits = [];
+  const { adapter } = setup({
+    wait: () => new Promise(resolve => { waits.push(resolve); })
+  });
+  const oldScene = await adapter.mount({ id: "old" }, {});
+  const firstScene = await adapter.mount({ id: "first" }, {});
+  const secondScene = await adapter.mount({ id: "second" }, {});
+
+  const firstTransition = adapter.crossfade({ from: oldScene, to: firstScene, duration: 100 });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(waits.length, 1);
+
+  const secondTransition = adapter.crossfade({ from: oldScene, to: secondScene, duration: 100 });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(waits.length, 2);
+  waits[1]();
+  assert.equal(await secondTransition, true);
+  assert.equal(await firstTransition, false);
+  assert.equal(secondScene.style.opacity, "1");
+  assert.equal(firstScene.style.opacity, "0");
+});
+
+test("unmounting a scene involved in a transition cancels that transition", async () => {
+  let release;
+  const { adapter } = setup({
+    wait: () => new Promise(resolve => { release = resolve; })
+  });
+  const oldScene = await adapter.mount({ id: "old" }, {});
+  const nextScene = await adapter.mount({ id: "next" }, {});
+  const pending = adapter.crossfade({ from: oldScene, to: nextScene, duration: 100 });
+  await Promise.resolve();
+  await Promise.resolve();
+  adapter.unmount(nextScene);
+  assert.equal(await pending, false);
+  release?.();
+  assert.equal(nextScene.parentNode, null);
+});
+\n
