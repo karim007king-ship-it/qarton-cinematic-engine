@@ -17,6 +17,9 @@ export function createDOMVisualTreatmentAdapter({ root, document = root?.ownerDo
     grain: document.createElement("div")
   };
   let destroyed = false;
+  const animationStyles = document.createElement("style");
+  animationStyles.textContent = "@keyframes qarton-film-grain { 0% { transform: translate3d(0,0,0); } 25% { transform: translate3d(-1px,1px,0); } 50% { transform: translate3d(1px,-1px,0); } 75% { transform: translate3d(-1px,-1px,0); } 100% { transform: translate3d(0,0,0); } }";
+  root.appendChild(animationStyles);
 
   for (const [name, element] of Object.entries(overlays)) {
     element.className = `qarton-visual-treatment qarton-visual-treatment--${name}`;
@@ -73,6 +76,8 @@ export function createDOMVisualTreatmentAdapter({ root, document = root?.ownerDo
     if (destroyed) return;
     clear();
     destroyed = true;
+    animationStyles.remove?.();
+    if (animationStyles.parentNode === root) root.removeChild(animationStyles);
     for (const element of Object.values(overlays)) {
       element.remove?.();
       if (element.parentNode === root) root.removeChild(element);
