@@ -54,9 +54,16 @@ export function sampleCameraTrack(track, timeMs) {
     throw new TypeError("Camera time must be a non-negative finite number");
   }
   const frames = track.keyframes;
-  if (timeMs <= frames[0].atMs) return Object.freeze({ ...frames[0] });
+  if (timeMs < frames[0].atMs) return Object.freeze({ ...track.defaultPose });
+  if (timeMs === frames[0].atMs) {
+    const { atMs, ...pose } = frames[0];
+    return Object.freeze(pose);
+  }
   const last = frames.at(-1);
-  if (timeMs >= last.atMs) return Object.freeze({ ...last });
+  if (timeMs >= last.atMs) {
+    const { atMs, ...pose } = last;
+    return Object.freeze(pose);
+  }
 
   let rightIndex = 1;
   while (frames[rightIndex].atMs < timeMs) rightIndex += 1;
