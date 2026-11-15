@@ -21,7 +21,7 @@ export function createHTMLAudioAdapter({
   }
   let volume = masterVolume;
   let destroyed = false;
-  const active = new Set();
+  const active = new Map();
 
   function play(asset, options = {}) {
     if (destroyed) throw new Error("HTMLAudio adapter has been destroyed");
@@ -34,8 +34,12 @@ export function createHTMLAudioAdapter({
     audio.src = url;
     audio.loop = options.loop === true;
     audio.preload = "auto";
-    audio.volume = Math.min(1, Math.max(0, (options.volume ?? 1) * volume));
-    active.add(audio);
+    const baseVolume = options.volume ?? 1;
+    if (!Number.isFinite(baseVolume) || baseVolume < 0 || baseVolume > 1) {
+      throw new TypeError("Audio voice volume must be between 0 and 1");
+    }
+    audio.volume = baseVolume * volume;
+    active.set(audio, baseVolume);
     const result = audio.play();
     if (result && typeof result.catch === "function") {
       result.catch(error => onPlaybackError(error, { asset, audio }));
@@ -54,7 +58,8 @@ export function createHTMLAudioAdapter({
     if (!audio || !Number.isFinite(nextVolume) || nextVolume < 0 || nextVolume > 1) {
       throw new TypeError("Audio voice volume must be between 0 and 1");
     }
-    audio.volume = Math.min(1, nextVolume);
+    active.set(audio, nextVolume);
+    audio.volume = nextVolume * volume;
   }
 
   function setMasterVolume(nextVolume) {
@@ -63,13 +68,13 @@ export function createHTMLAudioAdapter({
       throw new TypeError("Master volume must be between 0 and 1");
     }
     volume = nextVolume;
-    for (const audio of active) audio.volume = Math.min(1, (audio.__qartonBaseVolume ?? 1) * volume);
+    for (const [audio, baseVolume] of active) audio.volume = baseVolume * volume;
     return volume;
   }
 
   function destroy() {
     if (destroyed) return;
-    for (const audio of active) {
+    for (const audio of active.keys()) {
       audio.pause();
       try { audio.currentTime = 0; } catch { /* best-effort cleanup */ }
       audio.src = "";
