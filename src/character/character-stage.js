@@ -34,10 +34,13 @@ export function createCharacterStage({
     if (typeof id !== "string" || records.has(id)) {
       throw new TypeError("Character controllers need unique ids");
     }
-    if (!entry.sprites || typeof entry.sprites !== "object" || Array.isArray(entry.sprites)) {
-      throw new TypeError(`Character "${id}" requires a sprite map`);
+    if (entry.layers === undefined && (!entry.sprites || typeof entry.sprites !== "object" || Array.isArray(entry.sprites))) {
+      throw new TypeError(`Character "${id}" requires a sprite map or layered sprite definitions`);
     }
-    records.set(id, { controller: entry.controller, sprites: entry.sprites, handle: null });
+    if (entry.layers !== undefined && (!Array.isArray(entry.layers) || entry.layers.length === 0)) {
+      throw new TypeError(`Character "${id}" layers must be a non-empty array`);
+    }
+    records.set(id, { controller: entry.controller, sprites: entry.sprites, layers: entry.layers, handle: null });
   }
 
   async function performMount(version) {
@@ -45,7 +48,7 @@ export function createCharacterStage({
     try {
       for (const [id, record] of records) {
         const initialState = record.controller.update(0);
-        const handle = await renderer.mount({ id, sprites: record.sprites, initialState });
+        const handle = await renderer.mount({ id, sprites: record.sprites, layers: record.layers, initialState });
         if (destroyed || version !== lifecycleVersion) {
           renderer.unmount(handle);
           for (const item of completed.reverse()) renderer.unmount(item.handle);
