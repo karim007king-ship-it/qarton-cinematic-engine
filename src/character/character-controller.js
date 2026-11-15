@@ -5,10 +5,25 @@ import { sampleMotionPath } from "../motion/path.js";
  * Platform-neutral character sampler. It returns render state only; a host
  * renderer decides how sprites, rigs, or DOM elements consume that state.
  */
-export function createCharacterController({ id, initial = {}, motions = [], dialogue = [] } = {}) {
+export function createCharacterController({
+  id,
+  initial = {},
+  motions = [],
+  dialogue = [],
+  facialMotion = {}
+} = {}) {
   if (typeof id !== "string" || !id.trim()) throw new TypeError("Character id is required");
   if (!Array.isArray(motions)) throw new TypeError("Character motions must be an array");
   if (!Array.isArray(dialogue)) throw new TypeError("Character dialogue must be an array");
+  if (!facialMotion || typeof facialMotion !== "object" || Array.isArray(facialMotion)) {
+    throw new TypeError("Character facialMotion must be an options object");
+  }
+
+  const facial = Object.freeze({
+    enabled: facialMotion.enabled !== false,
+    reducedMotion: facialMotion.reducedMotion === true,
+    motionScale: Number.isFinite(facialMotion.motionScale) ? clamp(facialMotion.motionScale) : 1
+  });
 
   const base = Object.freeze({
     x: Number.isFinite(initial.x) ? initial.x : 0,
@@ -77,6 +92,19 @@ export function createCharacterController({ id, initial = {}, motions = [], dial
     }
   }
 
+  function sampleFacialMotion(timeMs, speaking) {
+    if (!facial.enabled || facial.reducedMotion || facial.motionScale === 0) {
+      return { breathOffsetY: 0, headRotation: 0, eyeFrame: 0 };
+    }
+    const scale = facial.motionScale;
+    const breathOffsetY = Math.sin((timeMs / 3600) * Math.PI * 2) * 1.25 * scale;
+    const headRotation = Math.sin((timeMs / (speaking ? 520 : 2400)) * Math.PI * 2)
+      * (speaking ? 0.65 : 0.2) * scale;
+    const blinkPhase = timeMs % 4200;
+    const eyeFrame = blinkPhase >= 0 && blinkPhase < 140 ? 1 : 0;
+    return { breathOffsetY, headRotation, eyeFrame };
+  }
+
   function update(timeMs) {
     if (!Number.isFinite(timeMs) || timeMs < 0) throw new TypeError("Character timeMs must be non-negative and finite");
     let state = { ...base };
@@ -104,19 +132,24 @@ export function createCharacterController({ id, initial = {}, motions = [], dial
         break;
       }
     }
+    const speaking = dialogueCue?.speaking === true;
     const dialogueState = dialogueCue
       ? {
           expression: dialogueCue.expression ?? state.expression,
-          speaking: dialogueCue.speaking,
-          mouthFrame: dialogueCue.speaking
-            ? Math.floor((timeMs - dialogueCue.startMs) / 120) % 2
-            : 0,
+          speaking,
+          mouthFrame: speaking ? Math.floor((timeMs - dialogueCue.startMs) / 120) % 2 : 0,
           expressionTransition: dialogueCue.transitionMs > 0
             ? clamp((timeMs - dialogueCue.startMs) / dialogueCue.transitionMs)
             : 1
         }
       : { speaking: false, mouthFrame: 0, expressionTransition: 1 };
-    return Object.freeze({ id, timeMs, ...state, ...dialogueState });
+    return Object.freeze({
+      id,
+      timeMs,
+      ...state,
+      ...dialogueState,
+      ...sampleFacialMotion(timeMs, speaking)
+    });
   }
 
   return Object.freeze({ id, update });
