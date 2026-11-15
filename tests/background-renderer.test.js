@@ -93,7 +93,7 @@ test("renderer waits for every image decode before replacing the current scene",
   const renderer = new BackgroundRenderer({ root, resolveAsset: key => `/${key}.png` });
   await renderer.render(scene, profile);
   const previous = root.children;
-  let release;
+  const releases = [];
   const pendingRenderer = new BackgroundRenderer({
     root,
     resolveAsset: key => `/next-${key}.png`
@@ -101,13 +101,14 @@ test("renderer waits for every image decode before replacing the current scene",
   const originalCreate = root.ownerDocument.createElement.bind(root.ownerDocument);
   root.ownerDocument.createElement = tag => {
     const element = originalCreate(tag);
-    if (tag === "img") element.decode = () => new Promise(resolve => { release = resolve; });
+    if (tag === "img") element.decode = () => new Promise(resolve => { releases.push(resolve); });
     return element;
   };
   const pending = pendingRenderer.render(scene, profile);
-  await Promise.resolve();
+  await new Promise(resolve => setImmediate(resolve));
   assert.equal(root.children, previous);
-  release();
+  assert.equal(releases.length, 3);
+  releases.forEach(resolve => resolve());
   assert.equal(await pending, true);
   assert.notEqual(root.children, previous);
 });
