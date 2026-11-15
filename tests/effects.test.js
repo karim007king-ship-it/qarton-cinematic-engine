@@ -19,12 +19,13 @@ test("camera shake is deterministic and decays to zero", () => {
 });
 
 test("particle field is deterministic and respects adaptive particle budgets", () => {
-  const options = { count: 20, seed: 7, width: 320, height: 180, lifetimeMs: 2000, profile: { maxParticles: 6 } };
+  const options = { count: 20, seed: 7, width: 320, height: 180, lifetimeMs: 2000, profile: { particleBudget: 6 } };
   const a = createParticleField(options);
   const b = createParticleField(options);
   assert.equal(a.count, 6);
   assert.deepEqual(a.sample(400), b.sample(400));
   assert.equal(a.sample(400).length, 6);
   assert.ok(a.sample(400).every(particle => particle.x >= 0 && particle.x < 320 && particle.opacity >= 0 && particle.opacity <= 1));
+  assert.equal(createParticleField({ ...options, profile: { maxParticles: 3 } }).count, 3);
   assert.throws(() => createParticleField({ count: -1, width: 100, height: 100 }), /invalid/);
 });
