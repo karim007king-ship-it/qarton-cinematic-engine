@@ -26,6 +26,7 @@ export function createAdaptivePerformanceMonitor({
   let profile = resolveQualityProfile(device);
   let frames = [];
   let stableCount = 0;
+  let stableDirection = null;
   let lastFps = null;
 
   function evaluate() {
@@ -37,13 +38,18 @@ export function createAdaptivePerformanceMonitor({
     const currentIndex = TIERS.indexOf(profile.tier);
     let nextIndex = currentIndex;
     if (lastFps < downgradeFps) {
+      if (stableDirection !== "down") stableCount = 0;
+      stableDirection = "down";
       stableCount += 1;
       if (stableCount >= stableWindows) nextIndex = Math.max(0, currentIndex - 1);
     } else if (lastFps >= upgradeFps) {
+      if (stableDirection !== "up") stableCount = 0;
+      stableDirection = "up";
       stableCount += 1;
       if (stableCount >= stableWindows) nextIndex = Math.min(TIERS.length - 1, currentIndex + 1);
     } else {
       stableCount = 0;
+      stableDirection = null;
     }
 
     if (nextIndex !== currentIndex) {
@@ -54,6 +60,7 @@ export function createAdaptivePerformanceMonitor({
         averageFps: lastFps
       });
       stableCount = 0;
+      stableDirection = null;
       onProfileChange(profile, previous);
     }
     return profile;
@@ -77,6 +84,7 @@ export function createAdaptivePerformanceMonitor({
     profile = resolveQualityProfile(device);
     frames = [];
     stableCount = 0;
+    stableDirection = null;
     lastFps = null;
     return profile;
   }
