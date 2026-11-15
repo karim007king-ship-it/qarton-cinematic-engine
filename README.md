@@ -49,7 +49,7 @@ npm test
 - `resolveLighting(...)` و`sampleFog(...)`: معلمات إضاءة وضباب تتكيف مع ملف الجودة.
 - `resolveVisualTreatment(...)`: إعدادات color grading وvignette وbloom وgrain بصيغة CSS جاهزة، مع تخفيض تلقائي للمؤثرات حسب ملف الأداء واحترام reduced motion.
 - `createDOMVisualTreatmentAdapter({ root })`: طبقات DOM اختيارية للـ vignette وbloom وfilm grain، شفافة ولا تعطل التفاعل، مع تحريك grain قابل للتعطيل والتنظيف عبر `clear()` و`destroy()`.
-- `createAudioCueController({ cues, play, stop, setVolume })`: جدولة أصوات المشهد حسب التوقيت، مع pause/resume والتحكم بالصوت عبر adapter يقدمه التطبيق.
+- `createAudioCueController({ cues, play, stop, setVolume })`: جدولة أصوات المشهد حسب التوقيت، مع pause/resume والتحكم بالصوت عبر adapter يقدمه التطبيق؛ يمرر `play` callback باسم `onEnded` لإزالة الصوت المنتهي من سجل الأصوات النشطة.
 - `createHTMLAudioAdapter({ resolveAsset, createAudio })`: adapter اختياري لـ HTMLAudio في المتصفح وAndroid WebView، مع حقن إنشاء الصوت وحجم عام لكل الأصوات.
 - `createAdaptivePerformanceMonitor(...)`: قياس أزمنة الإطارات المقدمة من المضيف، وخفض/رفع الجودة تدريجياً مع hysteresis.
 - `createRuntimeActivityGate({ onPause, onResume })`: بوابة صريحة لإيقاف واستئناف المؤثرات عندما تصبح اللعبة غير نشطة أو مخفية.
