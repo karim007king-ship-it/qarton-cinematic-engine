@@ -45,7 +45,15 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
 
     const version = ++record.assetVersion;
     record.pendingAssetKey = key;
-    const pending = Promise.resolve().then(() => resolveSprite(key)).then(url => {
+    let resolved;
+    try {
+      // Invoke the injected resolver immediately for predictable host behavior,
+      // while converting synchronous throws into the same promise path.
+      resolved = resolveSprite(key);
+    } catch (error) {
+      resolved = Promise.reject(error);
+    }
+    const pending = Promise.resolve(resolved).then(url => {
       if (destroyed || !records.has(record.element) || version !== record.assetVersion) return false;
       if (typeof url !== "string" || !url.trim()) {
         throw new TypeError(`resolveSprite() returned an invalid URL for "${key}"`);
