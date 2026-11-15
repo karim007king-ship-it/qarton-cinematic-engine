@@ -3,54 +3,80 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>QARTON Cinematic Engine — Browser Smoke Test</title>
+  <title>QARTON Cinematic Engine — Integrated Browser Showcase</title>
   <style>
-    :root { color-scheme: dark; font: 16px system-ui, sans-serif; background: #111; color: #f5f1e8; }
-    body { margin: 0; padding: 24px; }
-    main { max-width: 900px; margin: auto; }
-    #stage { position: relative; width: 100%; height: min(62vw, 480px); min-height: 260px; overflow: hidden; isolation: isolate; background: #181818; border: 1px solid #55452b; border-radius: 12px; }
-    .qarton-scene { background: #181818; }
-    .qarton-scene img { display: block; width: 100%; height: 100%; object-fit: cover; }
-    .controls { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
-    button { border: 1px solid #8e6b2f; border-radius: 8px; padding: 10px 14px; background: #292117; color: #fff; font: inherit; }
+    :root { color-scheme: dark; font: 16px system-ui, sans-serif; background: #101014; color: #f5f1e8; }
+    body { margin: 0; padding: 20px; }
+    main { max-width: 980px; margin: auto; }
+    #stage { position: relative; width: 100%; height: min(68vw, 560px); min-height: 300px; overflow: hidden; isolation: isolate; background: #181818; border: 1px solid #80622f; border-radius: 14px; }
+    .qarton-scene { position: absolute; inset: 0; overflow: hidden; background: #181818; }
+    .qarton-scene img { display: block; position: absolute; inset: -3%; width: 106%; height: 106%; object-fit: cover; }
+    #character-layer, #particles { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    #character-layer { z-index: 5; }
+    #particles { z-index: 6; }
+    .qarton-character { width: clamp(84px, 16%, 150px); height: 48%; }
+    .controls { display: flex; flex-wrap: wrap; gap: 9px; margin: 14px 0; }
+    button { border: 1px solid #8e6b2f; border-radius: 8px; padding: 10px 13px; background: #292117; color: #fff; font: inherit; }
     button:disabled { opacity: .5; }
-    #status { color: #d7c39a; min-height: 1.5em; }
+    #status { color: #e0c68d; min-height: 1.5em; }
     code { color: #e7c77f; }
+    .note { color: #b9b2a6; font-size: .92rem; }
   </style>
 </head>
 <body>
 <main>
   <h1>QARTON Cinematic Engine</h1>
-  <p>Browser smoke test: real image decoding, scene mounting, Web Animations/CSS fallback, and runtime cleanup.</p>
-  <div id="stage" aria-label="Cinematic scene preview"></div>
+  <p>Integrated browser showcase: layered backgrounds, two animated characters, timeline events, parallax, camera shake, particles, scene transitions and gesture-started audio cues.</p>
+  <div id="stage" aria-label="Integrated cinematic scene preview">
+    <div id="character-layer"></div>
+    <canvas id="particles"></canvas>
+  </div>
   <div class="controls">
-    <button id="scene-one" type="button">Show scene 1</button>
-    <button id="scene-two" type="button">Show scene 2</button>
+    <button id="scene-one" type="button">Scene: Dawn</button>
+    <button id="scene-two" type="button">Scene: Dusk</button>
+    <button id="audio" type="button">Start audio cues</button>
     <button id="destroy" type="button">Destroy runtime</button>
   </div>
-  <p id="status" role="status">Preparing engine…</p>
-  <p>Run from a local HTTP server, for example <code>npx serve .</code>, then open <code>/examples/browser-smoke.html</code>.</p>
+  <p id="status" role="status">Preparing integrated showcase…</p>
+  <p class="note">Audio is generated locally (two short oscillator cues); it starts only after a user gesture. No external assets or copyrighted music are used.</p>
+  <p class="note">Run from the repository root with <code>npx serve .</code>, then open <code>/examples/browser-smoke.html</code>. This is a manual real-browser test, not an automated CI/browser test.</p>
 </main>
 <script type="module">
-  import { createCinematicRuntime, createSceneDefinition } from "../src/index.js";
+  import {
+    createCinematicRuntime, createSceneDefinition, createMotionPath,
+    createCharacterController, createCharacterStage, createTimeline,
+    createAudioCueController, sampleCameraShake, computeParallaxOffset,
+    createParticleField, resolveLighting
+  } from "../src/index.js";
 
   const stage = document.querySelector("#stage");
+  const characterRoot = document.querySelector("#character-layer");
+  const canvas = document.querySelector("#particles");
+  const context = canvas.getContext("2d");
   const status = document.querySelector("#status");
   const buttons = [...document.querySelectorAll("button")];
-  const svg = (sky, ground, sun) => `data:image/svg+xml,${encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700"><defs><linearGradient id="g" x2="0" y2="1"><stop stop-color="${sky}"/><stop offset="1" stop-color="${ground}"/></linearGradient></defs><rect width="1200" height="700" fill="url(#g)"/><circle cx="880" cy="170" r="72" fill="${sun}"/><path d="M0 520 250 310 470 520 720 260 1200 540V700H0Z" fill="#171a20" opacity=".78"/><path d="M0 610 300 470 540 620 850 420 1200 600V700H0Z" fill="#0c1117" opacity=".9"/></svg>`
+  const svg = (sky, ground, sun, foreground) => `data:image/svg+xml,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700"><defs><linearGradient id="g" x2="0" y2="1"><stop stop-color="${sky}"/><stop offset="1" stop-color="${ground}"/></linearGradient></defs><rect width="1200" height="700" fill="url(#g)"/><circle cx="900" cy="160" r="76" fill="${sun}"/><path d="M0 520 250 310 470 520 720 260 1200 540V700H0Z" fill="#252b36" opacity=".82"/><path d="M0 610 300 470 540 620 850 420 1200 600V700H0Z" fill="${foreground}" opacity=".94"/></svg>`
   )}`;
   const sources = {
-    dawn: svg("#9a5261", "#e0a46b", "#ffe5a3"),
-    dusk: svg("#263f68", "#9c5360", "#f7c47b")
+    dawnSky: svg("#8b465c", "#d58d65", "#ffe3a1", "#17151c"),
+    dawnHaze: svg("#000000", "#8b5360", "#ffffff", "#8d514b"),
+    duskSky: svg("#172b50", "#80475b", "#f5c27a", "#151b2a"),
+    duskHaze: svg("#000000", "#3d526e", "#ffffff", "#42536b")
   };
-
   const scenes = [
-    createSceneDefinition({ id: "dawn", layers: [{ id: "sky", role: "background", asset: "dawn" }] }),
-    createSceneDefinition({ id: "dusk", layers: [{ id: "sky", role: "background", asset: "dusk" }] })
+    createSceneDefinition({ id: "dawn", layers: [
+      { id: "sky", role: "background", asset: "dawnSky", depth: 0.12 },
+      { id: "haze", role: "midground", asset: "dawnHaze", depth: 0.55, opacity: 0.72 }
+    ] }),
+    createSceneDefinition({ id: "dusk", layers: [
+      { id: "sky", role: "background", asset: "duskSky", depth: 0.12 },
+      { id: "haze", role: "midground", asset: "duskHaze", depth: 0.55, opacity: 0.78 }
+    ] })
   ];
 
   function loadImage(key) {
+    if (!sources[key]) return Promise.reject(new Error(`Unknown image asset: ${key}`));
     return new Promise((resolve, reject) => {
       const image = new Image();
       image.onload = () => resolve(image.src);
@@ -61,32 +87,129 @@
 
   const runtime = createCinematicRuntime({
     root: stage,
-    device: { reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches },
+    device: {
+      reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches,
+      saveData: navigator.connection?.saveData === true
+    },
     loadAsset: loadImage,
     renderScene: async (scene, profile, { assets }) => {
-      const layerAssets = await Promise.all(scene.layers.map(layer => assets.load(layer.asset)));
       const content = document.createElement("div");
-      Object.assign(content.style, { position: "absolute", inset: "0" });
-      layerAssets.forEach(url => {
+      content.className = "qarton-scene";
+      const loaded = await Promise.all(scene.layers.map(async layer => ({
+        layer, url: await assets.load(layer.asset)
+      })));
+      loaded.forEach(({ layer, url }) => {
         const image = document.createElement("img");
         image.alt = "";
         image.src = url;
-        Object.assign(image.style, { position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "cover" });
+        image.dataset.depth = String(layer.depth);
+        image.dataset.layerId = layer.id;
+        image.style.opacity = String(layer.opacity);
         content.appendChild(image);
       });
       content.dataset.quality = profile.tier ?? "unknown";
       return content;
     },
-    onProfileChange: profile => { status.textContent = `Performance profile: ${profile.tier ?? "updated"}`; }
+    onProfileChange: profile => { status.textContent = `Adaptive quality: ${profile.tier}`; }
   });
+
+  const walkPath = createMotionPath([{ x: 0, y: 0 }, { x: 120, y: -12 }, { x: 250, y: 0 }]);
+  const enterPath = createMotionPath([{ x: 0, y: 0 }, { x: -90, y: -8 }, { x: -180, y: 0 }]);
+  const timeline = createTimeline([
+    { id: "impact", atMs: 1850, type: "camera-shake", payload: { durationMs: 650, amplitude: 7 } },
+    { id: "dust", atMs: 2600, type: "particle-burst", payload: { strength: 1 } }
+  ]);
+  const characterStage = createCharacterStage({
+    root: characterRoot,
+    resolveSprite: key => Promise.resolve(key),
+    timeline,
+    characters: [
+      { controller: createCharacterController({
+        id: "hero", initial: { x: 24, y: 120, scale: 1.08, expression: "neutral" },
+        motions: [{ id: "hero-walk", path: walkPath, startMs: 500, durationMs: 5200, expression: "determined" }]
+      }), sprites: { neutral: makeSprite("#e8c18a", "#20212b"), determined: makeSprite("#e8c18a", "#8b263d"), default: makeSprite("#e8c18a", "#20212b") } },
+      { controller: createCharacterController({
+        id: "companion", initial: { x: 650, y: 142, scale: .9, expression: "neutral", opacity: .92 },
+        motions: [{ id: "companion-enter", path: enterPath, startMs: 1100, durationMs: 4800, expression: "alert" }]
+      }), sprites: { neutral: makeSprite("#b8c7d8", "#253a55"), alert: makeSprite("#b8c7d8", "#a65b36"), default: makeSprite("#b8c7d8", "#253a55") } }
+    ],
+    onEvent: event => {
+      if (event.type === "camera-shake") shakeStart = event.atMs;
+      if (event.type === "particle-burst") burstBoost = 1;
+    }
+  });
+
+  function makeSprite(skin, clothes) {
+    return `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 260"><ellipse cx="80" cy="248" rx="42" ry="8" fill="#000" opacity=".35"/><circle cx="80" cy="48" r="31" fill="${skin}"/><path d="M48 42Q54 4 92 17Q116 25 111 57Q92 34 48 42" fill="#17151c"/><path d="M43 92Q80 72 117 92L137 218H23Z" fill="${clothes}"/><path d="M48 210 42 252H68L80 210 92 252H118L111 210Z" fill="#20212b"/><path d="M50 103 16 177 31 185 70 132M110 103 144 177 129 185 90 132" fill="${skin}"/></svg>`) }`;
+  }
+
+  let characterMounted = false;
+  let running = true;
+  let frameId = 0;
+  let startTime = performance.now();
+  let shakeStart = -Infinity;
+  let burstBoost = 0;
+  let audioContext = null;
+  let audioCues = null;
+  let audioStart = 0;
+  const particles = createParticleField({ count: 44, seed: 19, width: 1000, height: 560, speedMin: 5, speedMax: 18 });
+  const lighting = resolveLighting({ keyIntensity: .9, ambientIntensity: .5, warmth: .18 });
+
+  function resizeCanvas() {
+    const rect = stage.getBoundingClientRect();
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(rect.width * ratio);
+    canvas.height = Math.round(rect.height * ratio);
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  }
+  resizeCanvas();
+  window.addEventListener("resize", resizeCanvas);
+
+  function tick(now) {
+    if (!running) return;
+    const elapsed = now - startTime;
+    const profile = runtime.getProfile();
+    const rect = stage.getBoundingClientRect();
+    const camera = now - shakeStart < 650
+      ? sampleCameraShake({ timeMs: now - shakeStart, durationMs: 650, amplitude: 7, frequencyHz: 9, seed: 13 })
+      : { x: 0, y: 0, rotation: 0 };
+    const scene = stage.querySelector(".qarton-scene");
+    if (scene) {
+      scene.style.transform = `translate3d(${camera.x}px,${camera.y}px,0) rotate(${camera.rotation}deg)`;
+      for (const layer of scene.querySelectorAll("img")) {
+        const offset = computeParallaxOffset({ cameraX: Math.sin(elapsed / 2400) * 12, cameraY: Math.cos(elapsed / 3100) * 5, depth: Number(layer.dataset.depth), intensity: profile.tier === "low" ? .35 : .8, maxOffset: 24 });
+        layer.style.transform = `translate3d(${offset.x}px,${offset.y}px,0)`;
+      }
+    }
+    const width = rect.width, height = rect.height;
+    context.clearRect(0, 0, width, height);
+    const sampleTime = elapsed * (profile.tier === "low" ? .45 : 1);
+    for (const particle of particles.sample(sampleTime)) {
+      const x = particle.x / 1000 * width;
+      const y = particle.y / 560 * height;
+      context.beginPath();
+      context.fillStyle = `rgba(255, ${Math.round(205 + lighting.warmth * 30)}, 145, ${particle.opacity * (burstBoost ? 1 : .55) * lighting.ambientIntensity})`;
+      context.arc(x, y, particle.radius, 0, Math.PI * 2);
+      context.fill();
+    }
+    burstBoost = Math.max(0, burstBoost - .012);
+    if (characterMounted) characterStage.update(elapsed).catch(error => { status.textContent = `Character stage error: ${error.message}`; });
+    if (audioCues && audioContext?.state === "running") audioCues.update(Math.max(0, now - audioStart));
+    runtime.recordFrame(Math.max(1, 1000 / 60));
+    frameId = requestAnimationFrame(tick);
+  }
 
   async function show(index) {
     buttons.forEach(button => { button.disabled = true; });
     try {
       await runtime.transitionTo(scenes[index]);
-      status.textContent = `Displayed scene: ${scenes[index].id}`;
+      if (!characterMounted) {
+        characterMounted = await characterStage.mount();
+        characterMounted = characterMounted || true;
+      }
+      status.textContent = `Scene ${scenes[index].id} active · two characters · parallax · particles · timeline`;
     } catch (error) {
-      status.textContent = `Scene error: ${error.message}`;
+      status.textContent = `Showcase error: ${error.message}`;
     } finally {
       buttons.forEach(button => { button.disabled = false; });
     }
@@ -94,13 +217,52 @@
 
   document.querySelector("#scene-one").addEventListener("click", () => show(0));
   document.querySelector("#scene-two").addEventListener("click", () => show(1));
+  document.querySelector("#audio").addEventListener("click", async () => {
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) throw new Error("Web Audio is unavailable in this browser");
+      audioContext ??= new AudioContextClass();
+      await audioContext.resume();
+      audioCues?.destroy();
+      audioCues = createAudioCueController({
+        cues: [
+          { id: "intro-tone", atMs: 0, asset: "tone-a", volume: .16 },
+          { id: "impact-tone", atMs: 1800, asset: "tone-b", volume: .22 }
+        ],
+        play: (asset, options) => {
+          const oscillator = audioContext.createOscillator();
+          const gain = audioContext.createGain();
+          oscillator.type = "sine";
+          oscillator.frequency.value = asset === "tone-a" ? 440 : 660;
+          gain.gain.value = options.volume;
+          oscillator.connect(gain).connect(audioContext.destination);
+          oscillator.start();
+          const voice = { oscillator, gain };
+          return voice;
+        },
+        stop: voice => { try { voice.oscillator.stop(); } catch {} },
+        setVolume: (voice, volume) => { voice.gain.gain.value = volume; }
+      });
+      audioStart = performance.now();
+      status.textContent = "Audio cues started from user gesture.";
+    } catch (error) {
+      status.textContent = `Audio unavailable: ${error.message}`;
+    }
+  });
   document.querySelector("#destroy").addEventListener("click", async () => {
     buttons.forEach(button => { button.disabled = true; });
+    running = false;
+    cancelAnimationFrame(frameId);
+    window.removeEventListener("resize", resizeCanvas);
+    characterStage.destroy();
+    audioCues?.destroy();
+    if (audioContext) await audioContext.close();
     await runtime.destroy();
-    status.textContent = "Runtime destroyed; scene nodes and cached assets released.";
+    status.textContent = "Destroyed: animation loop, characters, audio, scene and cached assets released.";
   });
 
   await show(0);
+  frameId = requestAnimationFrame(tick);
 </script>
 </body>
 </html>
