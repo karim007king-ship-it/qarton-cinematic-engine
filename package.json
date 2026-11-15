@@ -13,7 +13,8 @@
     "./character/dom": "./src/character/dom-character-renderer.js",
     "./scene": "./src/scene/scene-definition.js",
     "./runtime": "./src/runtime/index.js",
-    "./assets": "./src/assets/asset-manager.js"
+    "./assets": "./src/assets/asset-manager.js",
+    "./effects": "./src/effects/index.js"
   },
   "scripts": {
     "test": "node --test",
