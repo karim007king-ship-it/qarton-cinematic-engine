@@ -14,7 +14,8 @@
     "./scene": "./src/scene/scene-definition.js",
     "./runtime": "./src/runtime/index.js",
     "./assets": "./src/assets/asset-manager.js",
-    "./effects": "./src/effects/index.js"
+    "./effects": "./src/effects/index.js",
+    "./audio": "./src/audio/audio-cue-controller.js"
   },
   "scripts": {
     "test": "node --test",
