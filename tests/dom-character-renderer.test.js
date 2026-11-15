@@ -240,3 +240,60 @@ test("DOM renderer exposes facial animation hooks for host CSS and sprite sheets
   assert.equal(handle.style["--qarton-head-rotation"], "0.4deg");
   renderer.destroy();
 });
+
+
+test("DOM character renderer mounts independently animated body, head, eyes, and mouth layers", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const resolved = [];
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: (key, context) => {
+      resolved.push({ key, context });
+      return `https://assets.test/${key}.png`;
+    }
+  });
+  const handle = await renderer.mount({
+    id: "layered-hero",
+    layers: [
+      { id: "body", role: "body", sprites: { default: "body" } },
+      { id: "head", role: "head", sprites: { neutral: "head-neutral", default: "head-neutral" } },
+      { id: "eyes", role: "eyes", sprites: { open: "eyes-open", blink: "eyes-blink", default: "eyes-open" } },
+      { id: "mouth", role: "mouth", sprites: { neutral: "mouth-neutral", speakingClosed: "mouth-closed", speakingOpen: "mouth-open", default: "mouth-neutral" } }
+    ],
+    initialState: { expression: "neutral", breathOffsetY: -1.2, headRotation: 2 }
+  });
+
+  assert.equal(handle.children.length, 4);
+  assert.deepEqual(handle.children.map(layer => layer.dataset.layerRole), ["body", "head", "eyes", "mouth"]);
+  assert.equal(handle.children[1].src, "https://assets.test/head-neutral.png");
+  assert.equal(handle.children[2].src, "https://assets.test/eyes-open.png");
+  assert.equal(handle.children[3].src, "https://assets.test/mouth-neutral.png");
+  assert.equal(handle.children[1].style.transform, "translateY(-1.2px) rotate(2deg)");
+  assert.ok(resolved.every(item => item.context.characterId === "layered-hero"));
+
+  await renderer.update(handle, {
+    id: "layered-hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0,
+    expression: "neutral", state: "talking", speaking: true, mouthFrame: 1,
+    eyeFrame: 1, breathOffsetY: 0.5, headRotation: -1
+  });
+  assert.equal(handle.children[2].src, "https://assets.test/eyes-blink.png");
+  assert.equal(handle.children[3].src, "https://assets.test/mouth-open.png");
+  assert.equal(handle.children[1].style.transform, "translateY(0.5px) rotate(-1deg)");
+  renderer.destroy();
+});
+
+test("DOM character renderer rejects malformed layered sprite definitions", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({ root, resolveSprite: key => key });
+  await assert.rejects(renderer.mount({
+    id: "bad",
+    layers: [{ id: "eyes", role: "eyes", sprites: {} }, { id: "eyes", role: "mouth", sprites: {} }]
+  }), /unique/);
+  await assert.rejects(renderer.mount({
+    id: "bad",
+    layers: [{ id: "eyes", role: "eyes", sprites: {} }]
+  }), /No sprite asset configured/);
+  assert.equal(root.children.length, 0);
+});
