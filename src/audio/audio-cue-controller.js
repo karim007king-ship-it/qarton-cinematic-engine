@@ -45,6 +45,7 @@ export function createAudioCueController({
   let destroyed = false;
   let volume = masterVolume;
   const voices = new Map();
+  const firedIds = new Set();
 
   function assertAlive() {
     if (destroyed) throw new Error("Audio cue controller has been destroyed");
@@ -58,14 +59,15 @@ export function createAudioCueController({
     if (paused) return Object.freeze([]);
     const fired = [];
     for (const cue of normalized) {
-      if (cue.atMs <= cursor || cue.atMs > timeMs) continue;
+      if (firedIds.has(cue.id) || cue.atMs > timeMs) continue;
       const voice = play(cue.asset, {
         id: cue.id,
         channel: cue.channel,
         loop: cue.loop,
         volume: cue.volume * volume
       });
-      voices.set(cue.id, voice ?? null);
+      if (voice != null) voices.set(cue.id, voice);
+      firedIds.add(cue.id);
       fired.push(cue.id);
     }
     cursor = timeMs;
@@ -109,7 +111,10 @@ export function createAudioCueController({
     for (const voice of voices.values()) if (voice != null) stop(voice);
     voices.clear();
     paused = false;
-    if (reset) cursor = -1;
+    if (reset) {
+      cursor = -1;
+      firedIds.clear();
+    }
   }
 
   function destroy() {
