@@ -44,7 +44,7 @@
 <script type="module">
   import {
     createCinematicRuntime, createSceneDefinition, createMotionPath,
-    createCharacterController, createCharacterStage, createTimeline,
+    createCharacterController, createCharacterStage, createTimeline, createCinematicDirector,
     createAudioCueController, sampleCameraShake, computeParallaxOffset,
     createParticleField, resolveLighting
   } from "../src/index.js";
@@ -122,7 +122,6 @@
   const characterStage = createCharacterStage({
     root: characterRoot,
     resolveSprite: key => Promise.resolve(key),
-    timeline,
     characters: [
       { controller: createCharacterController({
         id: "hero", initial: { x: 24, y: 120, scale: 1.08, expression: "neutral" },
@@ -132,25 +131,37 @@
         id: "companion", initial: { x: 650, y: 142, scale: .9, expression: "neutral", opacity: .92 },
         motions: [{ id: "companion-enter", path: enterPath, startMs: 1100, durationMs: 4800, expression: "alert" }]
       }), sprites: { neutral: makeSprite("#b8c7d8", "#253a55"), alert: makeSprite("#b8c7d8", "#a65b36"), default: makeSprite("#b8c7d8", "#253a55") } }
-    ],
-    onEvent: event => {
-      if (event.type === "camera-shake") shakeStart = event.atMs;
-      if (event.type === "particle-burst") burstBoost = 1;
-    }
+    ]
   });
 
   function makeSprite(skin, clothes) {
     return `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 260"><ellipse cx="80" cy="248" rx="42" ry="8" fill="#000" opacity=".35"/><circle cx="80" cy="48" r="31" fill="${skin}"/><path d="M48 42Q54 4 92 17Q116 25 111 57Q92 34 48 42" fill="#17151c"/><path d="M43 92Q80 72 117 92L137 218H23Z" fill="${clothes}"/><path d="M48 210 42 252H68L80 210 92 252H118L111 210Z" fill="#20212b"/><path d="M50 103 16 177 31 185 70 132M110 103 144 177 129 185 90 132" fill="${skin}"/></svg>`) }`;
   }
 
-  let characterMounted = false;
+  let audioCues = null;
+  const audioProxy = {
+    update: timeMs => audioCues?.update(timeMs),
+    pause: timeMs => audioCues?.pause(timeMs),
+    resume: timeMs => audioCues?.resume(timeMs),
+    stopAll: options => audioCues?.stopAll(options),
+    destroy: () => audioCues?.destroy()
+  };
+  const director = createCinematicDirector({
+    characterStage,
+    audio: audioProxy,
+    timeline,
+    onEvent: event => {
+      if (event.type === "camera-shake") shakeStart = event.atMs;
+      if (event.type === "particle-burst") burstBoost = 1;
+    }
+  });
+
   let running = true;
   let frameId = 0;
   let startTime = performance.now();
   let shakeStart = -Infinity;
   let burstBoost = 0;
   let audioContext = null;
-  let audioCues = null;
   let audioStart = 0;
   let previousFrameTime = performance.now();
   const particles = createParticleField({ count: 44, seed: 19, width: 1000, height: 560, speedMin: 5, speedMax: 18 });
@@ -166,7 +177,7 @@
   resizeCanvas();
   window.addEventListener("resize", resizeCanvas);
 
-  function tick(now) {
+  async function tick(now) {
     if (!running) return;
     const elapsed = now - startTime;
     const profile = runtime.getProfile();
@@ -194,21 +205,25 @@
       context.fill();
     }
     burstBoost = Math.max(0, burstBoost - .012);
-    if (characterMounted) characterStage.update(elapsed).catch(error => { status.textContent = `Character stage error: ${error.message}`; });
-    if (audioCues && audioContext?.state === "running") audioCues.update(Math.max(0, now - audioStart));
+    try {
+      await director.update(elapsed);
+    } catch (error) {
+      running = false;
+      status.textContent = `Director error: ${error.message}`;
+      return;
+    }
     runtime.recordFrame(Math.max(1, now - previousFrameTime));
     previousFrameTime = now;
-    frameId = requestAnimationFrame(tick);
+    if (running) frameId = requestAnimationFrame(tick);
   }
 
   async function show(index) {
     buttons.forEach(button => { button.disabled = true; });
     try {
       await runtime.transitionTo(scenes[index]);
-      if (!characterMounted) {
-        const mounted = await characterStage.mount();
-        if (!mounted) throw new Error("Character stage did not mount");
-        characterMounted = true;
+      if (!director.getState().mounted) {
+        const mounted = await director.mount();
+        if (!mounted) throw new Error("Cinematic director did not mount");
       }
       status.textContent = `Scene ${scenes[index].id} active · two characters · parallax · particles · timeline`;
     } catch (error) {
@@ -227,10 +242,11 @@
       audioContext ??= new AudioContextClass();
       await audioContext.resume();
       audioCues?.destroy();
+      const audioCueStart = performance.now() - startTime;
       audioCues = createAudioCueController({
         cues: [
-          { id: "intro-tone", atMs: 0, asset: "tone-a", volume: .16 },
-          { id: "impact-tone", atMs: 1800, asset: "tone-b", volume: .22 }
+          { id: "intro-tone", atMs: audioCueStart, asset: "tone-a", volume: .16 },
+          { id: "impact-tone", atMs: audioCueStart + 1800, asset: "tone-b", volume: .22 }
         ],
         play: (asset, options) => {
           const oscillator = audioContext.createOscillator();
@@ -247,8 +263,8 @@
         stop: voice => { try { voice.oscillator.stop(); } catch {} },
         setVolume: (voice, volume) => { voice.gain.gain.value = volume; }
       });
-      audioStart = performance.now();
-      status.textContent = "Audio cues started from user gesture.";
+      audioStart = audioCueStart;
+      status.textContent = "Audio cues started from user gesture and synchronized to the director clock.";
     } catch (error) {
       status.textContent = `Audio unavailable: ${error.message}`;
     }
@@ -258,8 +274,7 @@
     running = false;
     cancelAnimationFrame(frameId);
     window.removeEventListener("resize", resizeCanvas);
-    characterStage.destroy();
-    audioCues?.destroy();
+    director.destroy();
     if (audioContext) await audioContext.close();
     await runtime.destroy();
     status.textContent = "Destroyed: animation loop, characters, audio, scene and cached assets released.";
