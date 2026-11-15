@@ -81,8 +81,17 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       assetVersion: 0
     };
     const expression = typeof initialState.expression === "string" ? initialState.expression : "neutral";
-    await resolveAsset(record, expression);
-    if (destroyed) throw new Error("DOM character renderer has been destroyed");
+    records.set(element, record);
+    try {
+      await resolveAsset(record, expression);
+    } catch (error) {
+      records.delete(element);
+      throw error;
+    }
+    if (destroyed) {
+      records.delete(element);
+      throw new Error("DOM character renderer has been destroyed");
+    }
     applyState(record, {
       x: Number.isFinite(initialState.x) ? initialState.x : 0,
       y: Number.isFinite(initialState.y) ? initialState.y : 0,
@@ -93,7 +102,6 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       state: initialState.state ?? "idle"
     });
     root.appendChild(element);
-    records.set(element, record);
     return element;
   }
 
