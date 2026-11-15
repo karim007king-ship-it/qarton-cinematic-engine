@@ -162,7 +162,6 @@
   let shakeStart = -Infinity;
   let burstBoost = 0;
   let audioContext = null;
-  let audioStart = 0;
   let previousFrameTime = performance.now();
   const particles = createParticleField({ count: 44, seed: 19, width: 1000, height: 560, speedMin: 5, speedMax: 18 });
   const lighting = resolveLighting({ keyIntensity: .9, ambientIntensity: .5, warmth: .18 });
@@ -182,8 +181,8 @@
     const elapsed = now - startTime;
     const profile = runtime.getProfile();
     const rect = stage.getBoundingClientRect();
-    const camera = now - shakeStart < 650
-      ? sampleCameraShake({ timeMs: now - shakeStart, durationMs: 650, amplitude: 7, frequencyHz: 9, seed: 13 })
+    const camera = elapsed - shakeStart >= 0 && elapsed - shakeStart < 650
+      ? sampleCameraShake({ timeMs: elapsed - shakeStart, durationMs: 650, amplitude: 7, frequencyHz: 9, seed: 13 })
       : { x: 0, y: 0, rotation: 0 };
     const scene = stage.querySelector(".qarton-scene");
     if (scene) {
@@ -263,7 +262,6 @@
         stop: voice => { try { voice.oscillator.stop(); } catch {} },
         setVolume: (voice, volume) => { voice.gain.gain.value = volume; }
       });
-      audioStart = audioCueStart;
       status.textContent = "Audio cues started from user gesture and synchronized to the director clock.";
     } catch (error) {
       status.textContent = `Audio unavailable: ${error.message}`;
