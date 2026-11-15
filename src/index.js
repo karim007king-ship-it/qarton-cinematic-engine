@@ -8,3 +8,7 @@ export { createSceneDefinition } from "./scene/scene-definition.js";
 export { buildLayerPlan } from "./scene/layer-plan.js";
 export { BackgroundRenderer, SceneTransitionManager, createDOMTransitionAdapter } from "./runtime/index.js";
 export { AssetManager } from "./assets/asset-manager.js";
+
+export { computeParallaxOffset } from "./effects/parallax.js";
+export { sampleCameraShake } from "./effects/camera-shake.js";
+export { createParticleField } from "./effects/particle-field.js";
