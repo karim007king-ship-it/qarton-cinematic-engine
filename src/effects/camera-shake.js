@@ -13,6 +13,7 @@ export function sampleCameraShake({
     throw new TypeError("Camera shake time, duration, amplitude, or frequency is invalid");
   }
   const progress = Math.min(1, timeMs / durationMs);
+  if (progress >= 1 || amplitude === 0) return Object.freeze({ x: 0, y: 0, rotation: 0 });
   const envelope = 1 - progress;
   const phase = (timeMs / 1000) * frequencyHz * Math.PI * 2;
   return Object.freeze({
