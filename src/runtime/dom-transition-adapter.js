@@ -30,6 +30,15 @@ export function createDOMTransitionAdapter({
 
   let destroyed = false;
   const mounted = new Set();
+  let activeTransition = null;
+
+  function cancelActiveTransition() {
+    if (!activeTransition) return;
+    const active = activeTransition;
+    activeTransition = null;
+    active.animations.forEach(animation => animation?.cancel?.());
+    active.cancel();
+  }
 
   async function mount(scene, profile) {
     if (destroyed) throw new Error("DOM transition adapter has been destroyed");
@@ -64,6 +73,7 @@ export function createDOMTransitionAdapter({
       throw new TypeError("Transition duration must be a non-negative finite number");
     }
 
+    cancelActiveTransition();
     const instant = Boolean(typeof reducedMotion === "function" ? reducedMotion() : reducedMotion)
       || requestedDuration === 0 || !from;
     if (instant) {
@@ -75,6 +85,10 @@ export function createDOMTransitionAdapter({
     }
 
     const ms = requestedDuration;
+    let cancel;
+    const cancelled = new Promise(resolve => { cancel = resolve; });
+    const transition = { cancel, animations: [] };
+    activeTransition = transition;
     const fromAnimation = from ? animate(from, [
       { opacity: 1, filter: "blur(0px)" },
       { opacity: 0, filter: "blur(8px)" }
@@ -84,12 +98,19 @@ export function createDOMTransitionAdapter({
       { opacity: 1, filter: "blur(0px)" }
     ], { duration: ms, easing: "ease-in-out", fill: "forwards" });
 
+    transition.animations = [fromAnimation, toAnimation].filter(Boolean);
     if (fromAnimation && toAnimation) {
       try {
-        await Promise.all([fromAnimation.finished, toAnimation.finished]);
+        const outcome = await Promise.race([
+          Promise.all([fromAnimation.finished, toAnimation.finished]).then(() => "finished"),
+          cancelled.then(() => "cancelled")
+        ]);
+        if (outcome === "cancelled" || activeTransition !== transition) return false;
       } catch (error) {
         fromAnimation.cancel?.();
         toAnimation.cancel?.();
+        if (activeTransition !== transition) return false;
+        activeTransition = null;
         throw error;
       }
     } else {
@@ -99,9 +120,15 @@ export function createDOMTransitionAdapter({
       toAnimation?.cancel?.();
       if (from) Object.assign(from.style, { transition: `opacity ${ms}ms ease-in-out, filter ${ms}ms ease-in-out`, opacity: "0", filter: "blur(8px)" });
       Object.assign(to.style, { transition: `opacity ${ms}ms ease-in-out, filter ${ms}ms ease-in-out`, opacity: "1", filter: "blur(0px)" });
-      await wait(ms);
+      const outcome = await Promise.race([
+        Promise.resolve().then(() => wait(ms)).then(() => "finished"),
+        cancelled.then(() => "cancelled")
+      ]);
+      if (outcome === "cancelled" || activeTransition !== transition) return false;
     }
 
+    if (activeTransition !== transition) return false;
+    activeTransition = null;
     to.style.opacity = "1";
     to.style.filter = "none";
     to.classList?.remove("qarton-scene--entering");
@@ -113,6 +140,9 @@ export function createDOMTransitionAdapter({
 
   function unmount(handle) {
     if (!handle || !mounted.has(handle)) return;
+    if (activeTransition && (activeTransition.animations.some(animation => animation?.effect?.target === handle))) {
+      cancelActiveTransition();
+    }
     mounted.delete(handle);
     handle.remove?.();
     if (handle.parentNode === root) root.removeChild(handle);
@@ -121,6 +151,7 @@ export function createDOMTransitionAdapter({
   function destroy() {
     if (destroyed) return;
     destroyed = true;
+    cancelActiveTransition();
     for (const handle of mounted) {
       handle.remove?.();
       if (handle.parentNode === root) root.removeChild(handle);
