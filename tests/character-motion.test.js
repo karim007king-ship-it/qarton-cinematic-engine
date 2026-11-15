@@ -154,3 +154,81 @@ test("facial motion follows speaking state and validates its configuration", () 
     facialMotion: null
   }), /facialMotion/);
 });
+
+test("pose clips interpolate arm and leg layer transforms deterministically", () => {
+  const character = createCharacterController({
+    id: "hero",
+    poseClips: [{
+      id: "walk-cycle",
+      pose: "walk",
+      startMs: 100,
+      durationMs: 1000,
+      loop: true,
+      layers: {
+        "left-arm": [
+          { at: 0, rotation: -30, translateY: 0 },
+          { at: 0.5, rotation: 30, translateY: 4 },
+          { at: 1, rotation: -30, translateY: 0 }
+        ],
+        "right-leg": [
+          { at: 0, translateX: -8 },
+          { at: 0.5, translateX: 8 },
+          { at: 1, translateX: -8 }
+        ]
+      }
+    }]
+  });
+  assert.equal(character.update(99).pose, "idle");
+  const quarter = character.update(350);
+  assert.equal(quarter.pose, "walk");
+  assert.equal(quarter.poseProgress, 0.25);
+  assert.equal(quarter.layerTransforms["left-arm"].rotation, 0);
+  assert.equal(quarter.layerTransforms["left-arm"].translateY, 2);
+  assert.equal(quarter.layerTransforms["right-leg"].translateX, 0);
+  assert.deepEqual(character.update(350).layerTransforms, quarter.layerTransforms);
+  assert.equal(character.update(600).layerTransforms["left-arm"].rotation, 30);
+  assert.equal(character.update(1350).poseProgress, 0.25);
+});
+
+test("pose motion scale and reduced-motion settings limit animated transforms", () => {
+  const poseClips = [{
+    id: "hit",
+    startMs: 0,
+    durationMs: 1000,
+    layers: {
+      torso: [
+        { at: 0, rotation: 0, translateY: 0 },
+        { at: 1, rotation: 40, translateY: 20 }
+      ]
+    }
+  }];
+  const scaled = createCharacterController({
+    id: "hero", poseClips, poseMotion: { motionScale: 0.5 }
+  }).update(1000);
+  assert.equal(scaled.layerTransforms.torso.rotation, 20);
+  assert.equal(scaled.layerTransforms.torso.translateY, 10);
+
+  const reduced = createCharacterController({
+    id: "hero", poseClips, poseMotion: { reducedMotion: true }
+  }).update(800);
+  assert.equal(reduced.poseProgress, 0);
+  assert.equal(reduced.layerTransforms.torso.rotation, 0);
+  assert.equal(reduced.layerTransforms.torso.translateY, 0);
+});
+
+test("pose clips reject malformed keyframes and overlapping clips", () => {
+  assert.throws(() => createCharacterController({
+    id: "hero",
+    poseClips: [{
+      id: "bad", startMs: 0, durationMs: 100,
+      layers: { arm: [{ at: 0.2, rotation: 0 }, { at: 1, rotation: 10 }] }
+    }]
+  }), /cover 0..1/);
+  assert.throws(() => createCharacterController({
+    id: "hero",
+    poseClips: [
+      { id: "a", startMs: 0, durationMs: 200, layers: { arm: [{ at: 0 }, { at: 1 }] } },
+      { id: "b", startMs: 100, durationMs: 200, layers: { arm: [{ at: 0 }, { at: 1 }] } }
+    ]
+  }), /cannot overlap/);
+});
