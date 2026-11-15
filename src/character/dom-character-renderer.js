@@ -26,20 +26,20 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     const ids = new Set();
     return layers.map((layer, index) => {
       if (!layer || typeof layer !== "object" || Array.isArray(layer)) {
-        throw new TypeError(\`Character layer \${index} must be an object\`);
+        throw new TypeError(`Character layer ${index} must be an object`);
       }
-      const layerId = layer.id ?? \`layer-\${index + 1}\`;
+      const layerId = layer.id ?? `layer-${index + 1}`;
       if (typeof layerId !== "string" || !layerId.trim() || ids.has(layerId)) {
         throw new TypeError("Character layer ids must be non-empty and unique");
       }
       if (typeof layer.role !== "string" || !layer.role.trim()) {
-        throw new TypeError(\`Character layer "\${layerId}" requires a role\`);
+        throw new TypeError(`Character layer "${layerId}" requires a role`);
       }
       if (!layer.sprites || typeof layer.sprites !== "object" || Array.isArray(layer.sprites)) {
-        throw new TypeError(\`Character layer "\${layerId}" requires a sprite map\`);
+        throw new TypeError(`Character layer "${layerId}" requires a sprite map`);
       }
       if (layer.style !== undefined && (!layer.style || typeof layer.style !== "object" || Array.isArray(layer.style))) {
-        throw new TypeError(\`Character layer "\${layerId}" style must be an object\`);
+        throw new TypeError(`Character layer "${layerId}" style must be an object`);
       }
       ids.add(layerId);
       return { id: layerId, role: layer.role, sprites: { ...layer.sprites }, style: { ...(layer.style ?? {}) } };
@@ -64,14 +64,14 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
 
   function applyState(record, state) {
     for (const key of ["x", "y", "opacity", "scale", "rotation"]) {
-      if (!Number.isFinite(state[key])) throw new TypeError(\`Character state \${key} must be finite\`);
+      if (!Number.isFinite(state[key])) throw new TypeError(`Character state ${key} must be finite`);
     }
     if (state.scale < 0) throw new TypeError("Character scale cannot be negative");
     const element = record.element;
     const breath = Number.isFinite(state.breathOffsetY) ? state.breathOffsetY : 0;
     const headRotation = Number.isFinite(state.headRotation) ? state.headRotation : 0;
     element.style.transform =
-      \`translate3d(\${state.x}px, \${state.y}px, 0) rotate(\${state.rotation}deg) scale(\${state.scale})\`;
+      `translate3d(${state.x}px, ${state.y}px, 0) rotate(${state.rotation}deg) scale(${state.scale})`;
     element.style.opacity = String(Math.min(1, Math.max(0, state.opacity)));
     element.dataset.expression = String(state.expression ?? "neutral");
     element.dataset.state = String(state.state ?? "idle");
@@ -83,17 +83,17 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
         : 1
     );
     element.dataset.eyeFrame = String(state.eyeFrame === 1 ? 1 : 0);
-    element.style["--qarton-breath-y"] = \`\${breath}px\`;
-    element.style["--qarton-head-rotation"] = \`\${headRotation}deg\`;
+    element.style["--qarton-breath-y"] = `${breath}px`;
+    element.style["--qarton-head-rotation"] = `${headRotation}deg`;
 
     return Promise.all(record.layers.map(layerRecord => {
       const { layer, image } = layerRecord;
       image.dataset.layerId = layer.id;
       image.dataset.layerRole = layer.role;
       if (layer.role === "head") {
-        image.style.transform = \`translateY(\${breath}px) rotate(\${headRotation}deg)\`;
+        image.style.transform = `translateY(${breath}px) rotate(${headRotation}deg)`;
       } else if (layer.role === "body" || layer.role === "torso") {
-        image.style.transform = \`translateY(\${breath}px)\`;
+        image.style.transform = `translateY(${breath}px)`;
       } else {
         image.style.transform = "none";
       }
@@ -105,7 +105,7 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     const { layer, image } = layerRecord;
     const key = selectSpriteKey(layer, state);
     if (typeof key !== "string" || !key.trim()) {
-      throw new TypeError(\`No sprite asset configured for character layer "\${layer.id}"\`);
+      throw new TypeError(`No sprite asset configured for character layer "${layer.id}"`);
     }
     if (layerRecord.assetKey === key) {
       layerRecord.assetVersion += 1;
@@ -128,10 +128,10 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     const pending = Promise.resolve(resolved).then(url => {
       if (destroyed || !records.has(record.element) || version !== layerRecord.assetVersion) return false;
       if (typeof url !== "string" || !url.trim()) {
-        throw new TypeError(\`resolveSprite() returned an invalid URL for "\${key}"\`);
+        throw new TypeError(`resolveSprite() returned an invalid URL for "${key}"`);
       }
       image.src = url;
-      image.alt = \`\${record.id} — \${layer.id} — \${state.expression ?? "neutral"}\`;
+      image.alt = `${record.id} — ${layer.id} — ${state.expression ?? "neutral"}`;
       layerRecord.assetKey = key;
       return true;
     }).finally(() => {
@@ -162,7 +162,7 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
 
     const layerRecords = normalizedLayers.map(layer => {
       const image = root.ownerDocument.createElement("img");
-      image.className = \`qarton-character-layer qarton-character-layer--\${layer.role}\`;
+      image.className = `qarton-character-layer qarton-character-layer--${layer.role}`;
       image.dataset.layerId = layer.id;
       image.dataset.layerRole = layer.role;
       Object.assign(image.style, {
