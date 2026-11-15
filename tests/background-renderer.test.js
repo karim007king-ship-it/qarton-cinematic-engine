@@ -11,6 +11,10 @@ class FakeElement {
     this.style = {};
   }
   appendChild(child) { this.children.push(child); return child; }
+  decode() {
+    if (this.decodeFailure) return Promise.reject(new Error("image decode failed"));
+    return Promise.resolve();
+  }
   replaceChildren(...children) {
     this.children = children.flatMap(child => child.isFragment ? child.children : [child]);
   }
@@ -81,4 +85,48 @@ test("renderer validates injected dependencies", () => {
   assert.throws(() => new BackgroundRenderer({ root: {}, resolveAsset: () => "/x" }), /DOM root/);
   const { root } = fixture();
   assert.throws(() => new BackgroundRenderer({ root, resolveAsset: null }), /asset resolver/);
+});
+
+
+test("renderer waits for every image decode before replacing the current scene", async () => {
+  const { root, scene, profile } = fixture();
+  const renderer = new BackgroundRenderer({ root, resolveAsset: key => `/${key}.png` });
+  await renderer.render(scene, profile);
+  const previous = root.children;
+  let release;
+  const pendingRenderer = new BackgroundRenderer({
+    root,
+    resolveAsset: key => `/next-${key}.png`
+  });
+  const originalCreate = root.ownerDocument.createElement.bind(root.ownerDocument);
+  root.ownerDocument.createElement = tag => {
+    const element = originalCreate(tag);
+    if (tag === "img") element.decode = () => new Promise(resolve => { release = resolve; });
+    return element;
+  };
+  const pending = pendingRenderer.render(scene, profile);
+  await Promise.resolve();
+  assert.equal(root.children, previous);
+  release();
+  assert.equal(await pending, true);
+  assert.notEqual(root.children, previous);
+});
+
+test("image decode failure preserves the previously visible scene", async () => {
+  const { root, scene, profile } = fixture();
+  const renderer = new BackgroundRenderer({ root, resolveAsset: key => `/${key}.png` });
+  await renderer.render(scene, profile);
+  const previous = root.children;
+  const broken = new BackgroundRenderer({
+    root,
+    resolveAsset: key => `/broken-${key}.png`
+  });
+  const originalCreate = root.ownerDocument.createElement.bind(root.ownerDocument);
+  root.ownerDocument.createElement = tag => {
+    const element = originalCreate(tag);
+    if (tag === "img") element.decode = () => Promise.reject(new Error("decode failed"));
+    return element;
+  };
+  await assert.rejects(broken.render(scene, profile), /decode failed/);
+  assert.equal(root.children, previous);
 });
