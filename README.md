@@ -37,7 +37,7 @@ npm test
 - `clamp(value, min, max)`, `lerp(from, to, progress)`, `easeInOutCubic(progress)`.
 - `createMotionPath(points)` و`sampleMotionPath(path, progress, easing)`: مسارات 2D محايدة للمنصة مع أخذ عينات للحركة.
 - `createTimeline(events)` و`getTimelineEvents(timeline, range)`: ترتيب أحداث الصوت/التعبير/الكاميرا وإرجاع الأحداث ضمن نافذة زمنية ثابتة.
-- `createCharacterController({ id, initial, motions })`: حساب موضع الشخصية وحالتها وتعبيرها وخصائصها عبر الزمن دون ربطها بـ DOM أو محرك رسم.
+- `createCharacterController({ id, initial, motions, dialogue })`: حساب موضع الشخصية وحالتها وتعبيرها عبر الزمن؛ `dialogue` cues محددة بـ `startMs` و`endMs` تضيف `speaking` و`mouthFrame` متزامنين و`expressionTransition` تدريجياً، دون ربط المتحكم بـ DOM أو محرك رسم. يعرّض DOM renderer هذه القيم كـ `data-*` hooks ليختار التطبيق sprite الفم/التعبير أو CSS المناسب؛ لا يتم توليد رسومات الفم تلقائياً.
 - `createDOMCharacterRenderer({ root, resolveSprite })`: محول اختياري لعرض sprites عبر DOM، مع حقن تحميل الأصول وحماية من نتائج التحميل القديمة.
 - `computeParallaxOffset(...)`: حساب حركة طبقات العمق مع حد أقصى للإزاحة.
 - `sampleCameraShake(...)`: اهتزاز كاميرا deterministic يتلاشى زمنياً.
