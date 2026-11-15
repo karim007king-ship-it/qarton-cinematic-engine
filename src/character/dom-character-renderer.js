@@ -1,3 +1,5 @@
+import { createCharacterRig } from "./rig-hierarchy.js";
+
 /**
  * Optional DOM sprite adapter for single-image or independently animated
  * character layers. Asset loading is injected by the host application.
@@ -42,7 +44,11 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
         throw new TypeError(`Character layer "${layerId}" style must be an object`);
       }
       ids.add(layerId);
-      return { id: layerId, role: layer.role, sprites: { ...layer.sprites }, style: { ...(layer.style ?? {}) } };
+      return {
+        id: layerId, role: layer.role, parent: layer.parent ?? null,
+        transform: layer.transform, sprites: { ...layer.sprites },
+        style: { ...(layer.style ?? {}) }
+      };
     });
   }
 
@@ -100,7 +106,22 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       const rotation = Number.isFinite(poseTransform.rotation) ? poseTransform.rotation : 0;
       const scaleX = Number.isFinite(poseTransform.scaleX) ? poseTransform.scaleX : 1;
       const scaleY = Number.isFinite(poseTransform.scaleY) ? poseTransform.scaleY : 1;
-      if (layer.role === "head" || layer.role === "eyes" || layer.role === "mouth") {
+      if (record.rigMode) {
+        const base = layer.transform ?? {};
+        const roles = record.ancestorRoles.get(layer.id);
+        const addBreath = ["body", "torso"].includes(layer.role)
+          || (layer.role === "head" && !roles.has("body") && !roles.has("torso"));
+        const addHeadRotation = layer.role === "head"
+          || (["eyes", "mouth"].includes(layer.role) && !roles.has("head"));
+        const localX = (base.translateX ?? 0) + translateX;
+        const localY = (base.translateY ?? 0) + translateY + (addBreath ? breath : 0);
+        const localRotation = (base.rotation ?? 0) + rotation + (addHeadRotation ? headRotation : 0);
+        const localScaleX = (base.scaleX ?? 1) * scaleX;
+        const localScaleY = (base.scaleY ?? 1) * scaleY;
+        layerRecord.container.style.transform =
+          `translate(${localX}px, ${localY}px) rotate(${localRotation}deg) scale(${localScaleX}, ${localScaleY})`;
+        image.style.transform = "none";
+      } else if (layer.role === "head" || layer.role === "eyes" || layer.role === "mouth") {
         image.style.transform =
           `translate(${translateX}px, ${translateY + breath}px) rotate(${rotation + headRotation}deg) scale(${scaleX}, ${scaleY})`;
       } else if (layer.role === "body" || layer.role === "torso") {
@@ -161,6 +182,20 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     if (destroyed) throw new Error("DOM character renderer has been destroyed");
     if (typeof id !== "string" || !id.trim()) throw new TypeError("Character renderer requires an id");
     const normalizedLayers = normalizeLayers({ sprites, layers });
+    const rigMode = normalizedLayers.some(layer => layer.parent !== null);
+    const rig = rigMode ? createCharacterRig(normalizedLayers) : null;
+    const parentById = new Map(normalizedLayers.map(layer => [layer.id, layer.parent]));
+    const roleById = new Map(normalizedLayers.map(layer => [layer.id, layer.role]));
+    const ancestorRoles = new Map();
+    for (const layer of normalizedLayers) {
+      const roles = new Set();
+      let parentId = layer.parent;
+      while (parentId) {
+        roles.add(roleById.get(parentId));
+        parentId = parentById.get(parentId);
+      }
+      ancestorRoles.set(layer.id, roles);
+    }
     const element = root.ownerDocument.createElement("div");
     element.className = "qarton-character";
     element.dataset.characterId = id;
@@ -175,6 +210,14 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
 
     const layerRecords = normalizedLayers.map(layer => {
       const image = root.ownerDocument.createElement("img");
+      const container = rigMode ? root.ownerDocument.createElement("div") : image;
+      if (rigMode) {
+        container.className = `qarton-character-rig-node qarton-character-rig-node--${layer.role}`;
+        Object.assign(container.style, {
+          position: "absolute", inset: "0", transformOrigin: ["head", "eyes", "mouth"].includes(layer.role) ? "50% 85%" : "center center",
+          pointerEvents: "none", willChange: "transform"
+        });
+      }
       image.className = `qarton-character-layer qarton-character-layer--${layer.role}`;
       image.dataset.layerId = layer.id;
       image.dataset.layerRole = layer.role;
@@ -189,14 +232,23 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
         transformOrigin: ["head", "eyes", "mouth"].includes(layer.role) ? "50% 85%" : "center center"
       }, layer.style);
       image.draggable = false;
-      element.appendChild(image);
+      if (rigMode) container.appendChild(image);
       return {
-        layer, image, assetKey: null, pendingAssetKey: null,
+        layer, image, container, assetKey: null, pendingAssetKey: null,
         pendingAssetPromise: null, assetVersion: 0
       };
     });
 
-    const record = { id, element, layers: layerRecords };
+    if (rigMode) {
+      const recordsById = new Map(layerRecords.map(item => [item.layer.id, item]));
+      for (const item of layerRecords) {
+        const parent = item.layer.parent ? recordsById.get(item.layer.parent).container : element;
+        parent.appendChild(item.container);
+      }
+    } else {
+      for (const item of layerRecords) element.appendChild(item.image);
+    }
+    const record = { id, element, layers: layerRecords, rig, rigMode, ancestorRoles };
     const normalizedState = {
       x: Number.isFinite(initialState.x) ? initialState.x : 0,
       y: Number.isFinite(initialState.y) ? initialState.y : 0,
