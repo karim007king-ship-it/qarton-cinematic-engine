@@ -225,3 +225,25 @@ test("a rejected Web Animation is reported and does not block later transitions"
   assert.deepEqual(cancelled.sort(), ["source", "target"]);
   assert.equal(await adapter.crossfade({ from: null, to: from, duration: 0 }), true);
 });
+
+test("cancels completed Web Animations after committing final inline styles", async () => {
+  const cancelled = [];
+  const { adapter } = setup({
+    animate: (element, _frames, _options) => ({
+      finished: Promise.resolve(),
+      cancel() { cancelled.push(element); }
+    })
+  });
+  const from = await adapter.mount({ id: "from" }, {});
+  const to = await adapter.mount({ id: "to" }, {});
+  await adapter.crossfade({ from: null, to: from, duration: 0 });
+
+  assert.equal(await adapter.crossfade({ from, to, duration: 60 }), true);
+  assert.equal(cancelled.length, 2);
+  assert.equal(from.style.opacity, "0");
+  assert.equal(from.style.filter, "none");
+  assert.equal(to.style.opacity, "1");
+  assert.equal(to.style.filter, "none");
+  assert.equal(await adapter.crossfade({ from: null, to: from, duration: 0 }), true);
+  assert.equal(from.style.opacity, "1");
+});
