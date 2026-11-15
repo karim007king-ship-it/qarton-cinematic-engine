@@ -44,6 +44,7 @@ export function createDOMTransitionAdapter({
     active.animations.forEach(animation => {
       try { animation?.cancel?.(); } catch { /* best-effort cancellation */ }
     });
+    try { active.cleanup?.(); } catch { /* best-effort visual rollback */ }
     active.cancel();
   }
 
@@ -93,7 +94,7 @@ export function createDOMTransitionAdapter({
 
     let cancel;
     const cancelled = new Promise(resolve => { cancel = resolve; });
-    const transition = { cancel, animations: [], from, to };
+    const transition = { cancel, animations: [], cleanup: null, from, to };
     activeTransition = transition;
     const isCurrent = () => activeTransition === transition && !destroyed;
     const finish = () => {
@@ -161,6 +162,10 @@ export function createDOMTransitionAdapter({
     to.style.transition = "none";
     to.style.opacity = "0";
     to.style.filter = "blur(8px)";
+    transition.cleanup = () => {
+      if (from) Object.assign(from.style, { transition: "", opacity: "1", filter: "none" });
+      Object.assign(to.style, { transition: "", opacity: "0", filter: "blur(8px)" });
+    };
 
     try {
       // Establish the initial styles in a distinct rendering frame before
