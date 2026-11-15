@@ -197,5 +197,7 @@ test("immediate remount after cancelling a pending mount starts a fresh operatio
   assert.equal(await staleMount, false);
   assert.equal(calls, 2);
   assert.equal(root.children.length, 1);
+  await stage.update(25);
+  assert.equal(root.children.length, 1);
   stage.destroy();
 });
