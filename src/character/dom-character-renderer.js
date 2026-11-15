@@ -31,17 +31,30 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     if (typeof key !== "string" || !key.trim()) {
       throw new TypeError(`No sprite asset configured for expression "${expression}"`);
     }
-    if (record.assetKey === key) return true;
-    const version = ++record.assetVersion;
-    const url = await resolveSprite(key);
-    if (destroyed || !records.has(record.element) || version !== record.assetVersion) return false;
-    if (typeof url !== "string" || !url.trim()) {
-      throw new TypeError(`resolveSprite() returned an invalid URL for "${key}"`);
+    if (record.assetKey === key) {
+      // Returning to the already-visible sprite must invalidate any slower
+      // request for a different expression that is still in flight.
+      record.assetVersion += 1;
+      record.pendingAssetKey = null;
+      return true;
     }
-    record.image.src = url;
-    record.image.alt = `${record.id} — ${expression}`;
-    record.assetKey = key;
-    return true;
+    const version = ++record.assetVersion;
+    record.pendingAssetKey = key;
+    try {
+      const url = await resolveSprite(key);
+      if (destroyed || !records.has(record.element) || version !== record.assetVersion) return false;
+      if (typeof url !== "string" || !url.trim()) {
+        throw new TypeError(`resolveSprite() returned an invalid URL for "${key}"`);
+      }
+      record.image.src = url;
+      record.image.alt = `${record.id} — ${expression}`;
+      record.assetKey = key;
+      record.pendingAssetKey = null;
+      return true;
+    } catch (error) {
+      if (version === record.assetVersion) record.pendingAssetKey = null;
+      throw error;
+    }
   }
 
   async function mount({ id, sprites, initialState = {} } = {}) {
@@ -78,6 +91,7 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       image,
       sprites: { ...sprites },
       assetKey: null,
+      pendingAssetKey: null,
       assetVersion: 0
     };
     const expression = typeof initialState.expression === "string" ? initialState.expression : "neutral";
