@@ -38,7 +38,7 @@ npm test
 - `createMotionPath(points)` و`sampleMotionPath(path, progress, easing)`: مسارات 2D محايدة للمنصة مع أخذ عينات للحركة.
 - `createTimeline(events)` و`getTimelineEvents(timeline, range)`: ترتيب أحداث الصوت/التعبير/الكاميرا وإرجاع الأحداث ضمن نافذة زمنية ثابتة.
 - `createCharacterController({ id, initial, motions, dialogue, facialMotion })`: حساب موضع الشخصية وحالتها وتعبيرها عبر الزمن؛ `dialogue` cues محددة بـ `startMs` و`endMs` تضيف `speaking` و`mouthFrame` متزامنين و`expressionTransition` تدريجياً. الحركة الوجهية deterministic وتنتج `breathOffsetY` و`headRotation` و`eyeFrame` (رمش)؛ يمكن ضبطها عبر `facialMotion: { enabled, reducedMotion, motionScale }`. يعرّض DOM renderer القيم كـ `data-*` وCSS custom properties، بينما يوفّر التطبيق المضيف رسومات الفم والعين والتعبيرات الفعلية؛ المحرك لا يولّد sprites تلقائياً.
-- `createDOMCharacterRenderer({ root, resolveSprite })`: محول اختياري لعرض sprites عبر DOM، مع حقن تحميل الأصول وحماية من نتائج التحميل القديمة.
+- `createDOMCharacterRenderer({ root, resolveSprite })`: محول DOM اختياري يدعم خريطة sprites التقليدية أو طبقات مستقلة عبر `layers: [{ id, role, sprites, style? }]`. الأدوار `body` و`torso` تتلقى حركة التنفس، و`head` يتلقى دوران الرأس، و`eyes` يبدل `open`/`blink`، و`mouth` يبدل `neutral`/`speakingClosed`/`speakingOpen`. تمرر `resolveSprite(key, context)` هوية الشخصية والطبقة، مع حماية من نتائج التحميل القديمة.
 - `computeParallaxOffset(...)`: حساب حركة طبقات العمق مع حد أقصى للإزاحة.
 - `sampleCameraShake(...)`: اهتزاز كاميرا deterministic يتلاشى زمنياً.
 - `createCameraTrack(keyframes)`: مسار كاميرا مستقل يدعم pan وzoom وrotation عبر keyframes مرتبة زمنياً مع easing حتمي.
