@@ -93,6 +93,10 @@ export function createDOMTransitionAdapter({
         throw error;
       }
     } else {
+      // Avoid leaving a partially-created Web Animation running when only one
+      // side supports the injected animation implementation.
+      fromAnimation?.cancel?.();
+      toAnimation?.cancel?.();
       if (from) Object.assign(from.style, { transition: `opacity ${ms}ms ease-in-out, filter ${ms}ms ease-in-out`, opacity: "0", filter: "blur(8px)" });
       Object.assign(to.style, { transition: `opacity ${ms}ms ease-in-out, filter ${ms}ms ease-in-out`, opacity: "1", filter: "blur(0px)" });
       await wait(ms);
