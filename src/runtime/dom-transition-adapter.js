@@ -87,7 +87,7 @@ export function createDOMTransitionAdapter({
     const ms = requestedDuration;
     let cancel;
     const cancelled = new Promise(resolve => { cancel = resolve; });
-    const transition = { cancel, animations: [] };
+    const transition = { cancel, animations: [], from, to };
     activeTransition = transition;
     const fromAnimation = from ? animate(from, [
       { opacity: 1, filter: "blur(0px)" },
@@ -140,7 +140,7 @@ export function createDOMTransitionAdapter({
 
   function unmount(handle) {
     if (!handle || !mounted.has(handle)) return;
-    if (activeTransition && (activeTransition.animations.some(animation => animation?.effect?.target === handle))) {
+    if (activeTransition && (activeTransition.from === handle || activeTransition.to === handle)) {
       cancelActiveTransition();
     }
     mounted.delete(handle);
