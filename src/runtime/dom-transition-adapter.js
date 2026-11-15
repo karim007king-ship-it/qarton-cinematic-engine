@@ -190,7 +190,10 @@ export function createDOMTransitionAdapter({
       if (outcome === "cancelled" || !isCurrent()) return false;
       return finish();
     } catch (error) {
-      if (isCurrent()) activeTransition = null;
+      if (isCurrent()) {
+        transition.cleanup?.();
+        activeTransition = null;
+      }
       throw error;
     }
   }
