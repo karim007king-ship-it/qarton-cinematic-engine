@@ -149,14 +149,14 @@
           }]
         }),
         layers: [
-          { id: "left-leg", role: "leg", style: { transformOrigin: "35% 82%" }, sprites: { default: makeLayerSprite("leg", "#20212b", "", "left") } },
-          { id: "right-leg", role: "leg", style: { transformOrigin: "65% 82%" }, sprites: { default: makeLayerSprite("leg", "#20212b", "", "right") } },
+          { id: "left-leg", role: "leg", parent: "body", style: { transformOrigin: "35% 82%" }, sprites: { default: makeLayerSprite("leg", "#20212b", "", "left") } },
+          { id: "right-leg", role: "leg", parent: "body", style: { transformOrigin: "65% 82%" }, sprites: { default: makeLayerSprite("leg", "#20212b", "", "right") } },
           { id: "body", role: "body", sprites: { default: makeLayerSprite("body", "#e8c18a", "#8b263d") } },
-          { id: "left-arm", role: "arm", style: { transformOrigin: "31% 48%" }, sprites: { default: makeLayerSprite("arm", "#e8c18a", "", "left") } },
-          { id: "right-arm", role: "arm", style: { transformOrigin: "69% 48%" }, sprites: { default: makeLayerSprite("arm", "#e8c18a", "", "right") } },
-          { id: "head", role: "head", sprites: { neutral: makeLayerSprite("head", "#e8c18a", "#17151c"), determined: makeLayerSprite("head", "#e8c18a", "#17151c", "determined"), default: makeLayerSprite("head", "#e8c18a", "#17151c") } },
-          { id: "eyes", role: "eyes", sprites: { open: makeLayerSprite("eyes", "#e8c18a"), blink: makeLayerSprite("eyes", "#e8c18a", "", "blink"), default: makeLayerSprite("eyes", "#e8c18a") } },
-          { id: "mouth", role: "mouth", sprites: { neutral: makeLayerSprite("mouth", "#e8c18a"), speakingClosed: makeLayerSprite("mouth", "#e8c18a", "", "closed"), speakingOpen: makeLayerSprite("mouth", "#e8c18a", "", "open"), default: makeLayerSprite("mouth", "#e8c18a") } }
+          { id: "left-arm", role: "arm", parent: "body", style: { transformOrigin: "31% 48%" }, sprites: { default: makeLayerSprite("arm", "#e8c18a", "", "left") } },
+          { id: "right-arm", role: "arm", parent: "body", style: { transformOrigin: "69% 48%" }, sprites: { default: makeLayerSprite("arm", "#e8c18a", "", "right") } },
+          { id: "head", role: "head", parent: "body", sprites: { neutral: makeLayerSprite("head", "#e8c18a", "#17151c"), determined: makeLayerSprite("head", "#e8c18a", "#17151c", "determined"), default: makeLayerSprite("head", "#e8c18a", "#17151c") } },
+          { id: "eyes", role: "eyes", parent: "head", sprites: { open: makeLayerSprite("eyes", "#e8c18a"), blink: makeLayerSprite("eyes", "#e8c18a", "", "blink"), default: makeLayerSprite("eyes", "#e8c18a") } },
+          { id: "mouth", role: "mouth", parent: "head", sprites: { neutral: makeLayerSprite("mouth", "#e8c18a"), speakingClosed: makeLayerSprite("mouth", "#e8c18a", "", "closed"), speakingOpen: makeLayerSprite("mouth", "#e8c18a", "", "open"), default: makeLayerSprite("mouth", "#e8c18a") } }
         ]
       },
       {
