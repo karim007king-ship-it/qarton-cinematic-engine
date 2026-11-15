@@ -18,7 +18,8 @@
     "./assets": "./src/assets/asset-manager.js",
     "./effects": "./src/effects/index.js",
     "./audio": "./src/audio/audio-cue-controller.js",
-    "./audio/html": "./src/audio/html-audio-adapter.js"
+    "./audio/html": "./src/audio/html-audio-adapter.js",
+    "./character/stage": "./src/character/character-stage.js"
   },
   "scripts": {
     "test": "node --test",
