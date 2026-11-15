@@ -60,3 +60,53 @@ test("character controller rejects overlapping or malformed motions", () => {
   }), /overlap/);
   assert.throws(() => createCharacterController({ id: "hero", motions: [{ id: "bad" }] }), /valid path/);
 });
+
+test("character dialogue cues deterministically animate speech and expression transitions", () => {
+  const character = createCharacterController({
+    id: "speaker",
+    initial: { expression: "neutral" },
+    dialogue: [{
+      startMs: 100,
+      endMs: 700,
+      expression: "happy",
+      transitionMs: 240
+    }]
+  });
+  const before = character.update(99);
+  assert.equal(before.speaking, false);
+  assert.equal(before.expression, "neutral");
+
+  const start = character.update(100);
+  assert.equal(start.speaking, true);
+  assert.equal(start.expression, "happy");
+  assert.equal(start.mouthFrame, 0);
+  assert.equal(start.expressionTransition, 0);
+
+  const mid = character.update(220);
+  assert.equal(mid.speaking, true);
+  assert.equal(mid.mouthFrame, 1);
+  assert.equal(mid.expressionTransition, 0.5);
+
+  const later = character.update(340);
+  assert.equal(later.mouthFrame, 0);
+  assert.equal(later.expressionTransition, 1);
+
+  const after = character.update(700);
+  assert.equal(after.speaking, false);
+  assert.equal(after.mouthFrame, 0);
+  assert.equal(after.expression, "neutral");
+});
+
+test("character dialogue cues reject invalid and overlapping intervals", () => {
+  assert.throws(() => createCharacterController({
+    id: "speaker",
+    dialogue: [{ startMs: 100, endMs: 100 }]
+  }), /valid startMs and endMs/);
+  assert.throws(() => createCharacterController({
+    id: "speaker",
+    dialogue: [
+      { startMs: 100, endMs: 300 },
+      { startMs: 250, endMs: 400 }
+    ]
+  }), /cannot overlap/);
+});
