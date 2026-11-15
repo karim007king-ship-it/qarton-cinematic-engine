@@ -5,9 +5,10 @@ import { sampleMotionPath } from "../motion/path.js";
  * Platform-neutral character sampler. It returns render state only; a host
  * renderer decides how sprites, rigs, or DOM elements consume that state.
  */
-export function createCharacterController({ id, initial = {}, motions = [] } = {}) {
+export function createCharacterController({ id, initial = {}, motions = [], dialogue = [] } = {}) {
   if (typeof id !== "string" || !id.trim()) throw new TypeError("Character id is required");
   if (!Array.isArray(motions)) throw new TypeError("Character motions must be an array");
+  if (!Array.isArray(dialogue)) throw new TypeError("Character dialogue must be an array");
 
   const base = Object.freeze({
     x: Number.isFinite(initial.x) ? initial.x : 0,
@@ -52,6 +53,30 @@ export function createCharacterController({ id, initial = {}, motions = [] } = {
     }
   }
 
+  const dialogueCues = dialogue.map((cue, index) => {
+    if (!cue || typeof cue !== "object"
+      || !Number.isFinite(cue.startMs) || cue.startMs < 0
+      || !Number.isFinite(cue.endMs) || cue.endMs <= cue.startMs) {
+      throw new TypeError(`Dialogue cue ${index} needs a valid startMs and endMs`);
+    }
+    if (cue.expression !== undefined && (typeof cue.expression !== "string" || !cue.expression.trim())) {
+      throw new TypeError(`Dialogue cue ${index} expression must be a non-empty string`);
+    }
+    return Object.freeze({
+      startMs: cue.startMs,
+      endMs: cue.endMs,
+      expression: cue.expression ?? null,
+      speaking: cue.speaking !== false,
+      transitionMs: Number.isFinite(cue.transitionMs) ? Math.max(0, cue.transitionMs) : 120
+    });
+  }).sort((a, b) => a.startMs - b.startMs);
+
+  for (let i = 1; i < dialogueCues.length; i += 1) {
+    if (dialogueCues[i].startMs < dialogueCues[i - 1].endMs) {
+      throw new TypeError("Character dialogue cues cannot overlap");
+    }
+  }
+
   function update(timeMs) {
     if (!Number.isFinite(timeMs) || timeMs < 0) throw new TypeError("Character timeMs must be non-negative and finite");
     let state = { ...base };
@@ -71,7 +96,27 @@ export function createCharacterController({ id, initial = {}, motions = [] } = {
       };
       if (progress < 1) break;
     }
-    return Object.freeze({ id, timeMs, ...state });
+    let dialogueCue = null;
+    for (const cue of dialogueCues) {
+      if (timeMs < cue.startMs) break;
+      if (timeMs < cue.endMs) {
+        dialogueCue = cue;
+        break;
+      }
+    }
+    const dialogueState = dialogueCue
+      ? {
+          expression: dialogueCue.expression ?? state.expression,
+          speaking: dialogueCue.speaking,
+          mouthFrame: dialogueCue.speaking
+            ? Math.floor((timeMs - dialogueCue.startMs) / 120) % 2
+            : 0,
+          expressionTransition: dialogueCue.transitionMs > 0
+            ? clamp((timeMs - dialogueCue.startMs) / dialogueCue.transitionMs)
+            : 1
+        }
+      : { speaking: false, mouthFrame: 0, expressionTransition: 1 };
+    return Object.freeze({ id, timeMs, ...state, ...dialogueState });
   }
 
   return Object.freeze({ id, update });
