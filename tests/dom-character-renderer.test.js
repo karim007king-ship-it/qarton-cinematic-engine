@@ -394,3 +394,23 @@ test("DOM renderer rejects broken rig relationships before resolving assets", as
   assert.equal(root.children.length, 0);
   renderer.destroy();
 });
+
+test("DOM renderer applies validated static rig transforms even without a parent", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`
+  });
+  const handle = await renderer.mount({
+    id: "offset-head",
+    layers: [{
+      id: "head", role: "head",
+      transform: { translateX: 7, translateY: -3, rotation: 12, scaleX: 1.1, scaleY: 0.9 },
+      sprites: { default: "head" }
+    }]
+  });
+  assert.equal(handle.children.length, 1);
+  assert.match(handle.children[0].style.transform, /translate\\(7px, -3px\\).*rotate\\(12deg\\).*scale\\(1.1, 0.9\\)/);
+  renderer.destroy();
+});
