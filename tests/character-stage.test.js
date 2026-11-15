@@ -173,3 +173,29 @@ test("character stage passes layered sprite definitions to its DOM renderer", as
   assert.equal(root.children[0].children[1].src, "https://assets.test/eyes-open.png");
   stage.destroy();
 });
+
+test("immediate remount after cancelling a pending mount starts a fresh operation", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let releaseFirst;
+  let calls = 0;
+  const stage = createCharacterStage({
+    root,
+    resolveSprite: () => {
+      calls += 1;
+      return calls === 1
+        ? new Promise(resolve => { releaseFirst = resolve; })
+        : "https://assets.test/fresh.png";
+    },
+    characters: [{ controller: createCharacterController({ id: "hero" }), sprites: { default: "hero" } }]
+  });
+  const staleMount = stage.mount();
+  stage.unmount();
+  const freshMount = stage.mount();
+  assert.equal(await freshMount, true);
+  releaseFirst("https://assets.test/stale.png");
+  assert.equal(await staleMount, false);
+  assert.equal(calls, 2);
+  assert.equal(root.children.length, 1);
+  stage.destroy();
+});
