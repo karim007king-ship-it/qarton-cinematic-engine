@@ -111,18 +111,7 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       assetVersion: 0
     };
     const expression = typeof initialState.expression === "string" ? initialState.expression : "neutral";
-    records.set(element, record);
-    try {
-      await resolveAsset(record, expression);
-    } catch (error) {
-      records.delete(element);
-      throw error;
-    }
-    if (destroyed) {
-      records.delete(element);
-      throw new Error("DOM character renderer has been destroyed");
-    }
-    applyState(record, {
+    const normalizedState = {
       x: Number.isFinite(initialState.x) ? initialState.x : 0,
       y: Number.isFinite(initialState.y) ? initialState.y : 0,
       opacity: Number.isFinite(initialState.opacity) ? initialState.opacity : 1,
@@ -130,9 +119,30 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       rotation: Number.isFinite(initialState.rotation) ? initialState.rotation : 0,
       expression,
       state: initialState.state ?? "idle"
-    });
-    root.appendChild(element);
-    return element;
+    };
+    // Validate before starting asynchronous asset work so malformed initial
+    // poses cannot leave half-mounted records behind.
+    for (const key of ["x", "y", "opacity", "scale", "rotation"]) {
+      if (!Number.isFinite(normalizedState[key])) throw new TypeError(`Character state ${key} must be finite`);
+    }
+    if (normalizedState.scale < 0) throw new TypeError("Character scale cannot be negative");
+
+    records.set(element, record);
+    try {
+      await resolveAsset(record, expression);
+      if (destroyed) throw new Error("DOM character renderer has been destroyed");
+      applyState(record, normalizedState);
+      root.appendChild(element);
+      return element;
+    } catch (error) {
+      record.assetVersion += 1;
+      record.pendingAssetKey = null;
+      record.pendingAssetPromise = null;
+      records.delete(element);
+      element.remove?.();
+      if (element.parentNode === root) root.removeChild(element);
+      throw error;
+    }
   }
 
   async function update(handle, state) {
