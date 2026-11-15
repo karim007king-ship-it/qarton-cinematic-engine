@@ -37,6 +37,7 @@ test("child transforms inherit parent translation, rotation, and scale", () => {
   assert.ok(Math.abs(world.eyes.translateX - 20) < 1e-9);
   assert.ok(Math.abs(world.eyes.translateY - 24) < 1e-9);
   assert.equal(world.eyes.scaleX, 2);
+  assert.equal(world.eyes.matrix.length, 6);
 });
 
 test("animated local transforms compose deterministically without mutating the rig", () => {
@@ -59,4 +60,20 @@ test("animated rig transforms reject malformed values", () => {
   const rig = createCharacterRig([{ id: "body" }]);
   assert.throws(() => composeRigTransforms(rig, { body: { rotation: NaN } }), /invalid rotation/);
   assert.throws(() => composeRigTransforms(rig, null), /object/);
+});
+
+test("world matrices preserve nested non-uniform scale and rotation without lossy decomposition", () => {
+  const rig = createCharacterRig([
+    { id: "root", transform: { scaleX: 2, scaleY: 1 } },
+    { id: "child", parent: "root", transform: { rotation: 45 } }
+  ]);
+  const world = composeRigTransforms(rig);
+  assert.equal(world.child.matrix.length, 6);
+  assert.ok(Math.abs(world.child.matrix[1] - Math.SQRT1_2) < 1e-9);
+  assert.ok(Math.abs(world.child.matrix[2] + 2 * Math.SQRT1_2) < 1e-9);
+});
+
+test("animated transforms cannot target unknown rig layers", () => {
+  const rig = createCharacterRig([{ id: "body" }]);
+  assert.throws(() => composeRigTransforms(rig, { typo: { rotation: 10 } }), /unknown layer/);
 });
