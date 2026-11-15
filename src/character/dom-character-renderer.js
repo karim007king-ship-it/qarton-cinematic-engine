@@ -1,7 +1,6 @@
 /**
- * Optional DOM sprite adapter for character-controller snapshots.
- * Sprite asset resolution is injected so the engine stays independent of
- * asset URLs, bundlers, and application-specific loading systems.
+ * Optional DOM sprite adapter for single-image or independently animated
+ * character layers. Asset loading is injected by the host application.
  */
 export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
   if (!root || typeof root.appendChild !== "function" || !root.ownerDocument) {
@@ -14,83 +13,142 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
   let destroyed = false;
   const records = new Map();
 
+  function normalizeLayers({ sprites, layers }) {
+    if (layers === undefined) {
+      if (!sprites || typeof sprites !== "object" || Array.isArray(sprites)) {
+        throw new TypeError("Character sprites must be an expression-to-asset map");
+      }
+      return [{ id: "body", role: "body", sprites: { ...sprites }, style: {} }];
+    }
+    if (!Array.isArray(layers) || layers.length === 0) {
+      throw new TypeError("Character layers must be a non-empty array");
+    }
+    const ids = new Set();
+    return layers.map((layer, index) => {
+      if (!layer || typeof layer !== "object" || Array.isArray(layer)) {
+        throw new TypeError(\`Character layer \${index} must be an object\`);
+      }
+      const layerId = layer.id ?? \`layer-\${index + 1}\`;
+      if (typeof layerId !== "string" || !layerId.trim() || ids.has(layerId)) {
+        throw new TypeError("Character layer ids must be non-empty and unique");
+      }
+      if (typeof layer.role !== "string" || !layer.role.trim()) {
+        throw new TypeError(\`Character layer "\${layerId}" requires a role\`);
+      }
+      if (!layer.sprites || typeof layer.sprites !== "object" || Array.isArray(layer.sprites)) {
+        throw new TypeError(\`Character layer "\${layerId}" requires a sprite map\`);
+      }
+      if (layer.style !== undefined && (!layer.style || typeof layer.style !== "object" || Array.isArray(layer.style))) {
+        throw new TypeError(\`Character layer "\${layerId}" style must be an object\`);
+      }
+      ids.add(layerId);
+      return { id: layerId, role: layer.role, sprites: { ...layer.sprites }, style: { ...(layer.style ?? {}) } };
+    });
+  }
+
+  function selectSpriteKey(layer, state) {
+    const sprites = layer.sprites;
+    if (layer.role === "eyes") {
+      return (state.eyeFrame === 1 ? sprites.blink ?? sprites.closed : sprites.open)
+        ?? sprites[state.expression] ?? sprites.default;
+    }
+    if (layer.role === "mouth") {
+      if (state.speaking === true) {
+        return (state.mouthFrame === 1 ? sprites.speakingOpen : sprites.speakingClosed)
+          ?? sprites.speaking ?? sprites[state.expression] ?? sprites.default;
+      }
+      return sprites.neutral ?? sprites[state.expression] ?? sprites.default;
+    }
+    return sprites[state.expression] ?? sprites.default;
+  }
+
   function applyState(record, state) {
     for (const key of ["x", "y", "opacity", "scale", "rotation"]) {
-      if (!Number.isFinite(state[key])) throw new TypeError(`Character state ${key} must be finite`);
+      if (!Number.isFinite(state[key])) throw new TypeError(\`Character state \${key} must be finite\`);
     }
     if (state.scale < 0) throw new TypeError("Character scale cannot be negative");
-    record.element.style.transform =
-      `translate3d(${state.x}px, ${state.y}px, 0) rotate(${state.rotation}deg) scale(${state.scale})`;
-    record.element.style.opacity = String(Math.min(1, Math.max(0, state.opacity)));
-    record.element.dataset.expression = String(state.expression ?? "neutral");
-    record.element.dataset.state = String(state.state ?? "idle");
-    record.element.dataset.speaking = String(state.speaking === true);
-    record.element.dataset.mouthFrame = String(state.speaking === true && state.mouthFrame === 1 ? 1 : 0);
-    record.element.dataset.expressionTransition = String(
+    const element = record.element;
+    const breath = Number.isFinite(state.breathOffsetY) ? state.breathOffsetY : 0;
+    const headRotation = Number.isFinite(state.headRotation) ? state.headRotation : 0;
+    element.style.transform =
+      \`translate3d(\${state.x}px, \${state.y}px, 0) rotate(\${state.rotation}deg) scale(\${state.scale})\`;
+    element.style.opacity = String(Math.min(1, Math.max(0, state.opacity)));
+    element.dataset.expression = String(state.expression ?? "neutral");
+    element.dataset.state = String(state.state ?? "idle");
+    element.dataset.speaking = String(state.speaking === true);
+    element.dataset.mouthFrame = String(state.speaking === true && state.mouthFrame === 1 ? 1 : 0);
+    element.dataset.expressionTransition = String(
       Number.isFinite(state.expressionTransition)
         ? Math.min(1, Math.max(0, state.expressionTransition))
         : 1
     );
-    record.element.dataset.eyeFrame = String(state.eyeFrame === 1 ? 1 : 0);
-    record.element.style["--qarton-breath-y"] = `${Number.isFinite(state.breathOffsetY) ? state.breathOffsetY : 0}px`;
-    record.element.style["--qarton-head-rotation"] = `${Number.isFinite(state.headRotation) ? state.headRotation : 0}deg`;
+    element.dataset.eyeFrame = String(state.eyeFrame === 1 ? 1 : 0);
+    element.style["--qarton-breath-y"] = \`\${breath}px\`;
+    element.style["--qarton-head-rotation"] = \`\${headRotation}deg\`;
+
+    return Promise.all(record.layers.map(layerRecord => {
+      const { layer, image } = layerRecord;
+      image.dataset.layerId = layer.id;
+      image.dataset.layerRole = layer.role;
+      if (layer.role === "head") {
+        image.style.transform = \`translateY(\${breath}px) rotate(\${headRotation}deg)\`;
+      } else if (layer.role === "body" || layer.role === "torso") {
+        image.style.transform = \`translateY(\${breath}px)\`;
+      } else {
+        image.style.transform = "none";
+      }
+      return resolveLayerAsset(record, layerRecord, state);
+    }));
   }
 
-  async function resolveAsset(record, expression) {
-    const key = record.sprites[expression] ?? record.sprites.default;
+  async function resolveLayerAsset(record, layerRecord, state) {
+    const { layer, image } = layerRecord;
+    const key = selectSpriteKey(layer, state);
     if (typeof key !== "string" || !key.trim()) {
-      throw new TypeError(`No sprite asset configured for expression "${expression}"`);
+      throw new TypeError(\`No sprite asset configured for character layer "\${layer.id}"\`);
     }
-    if (record.assetKey === key) {
-      // Returning to the already-visible sprite must invalidate any slower
-      // request for a different expression that is still in flight.
-      record.assetVersion += 1;
-      record.pendingAssetKey = null;
-      record.pendingAssetPromise = null;
+    if (layerRecord.assetKey === key) {
+      layerRecord.assetVersion += 1;
+      layerRecord.pendingAssetKey = null;
+      layerRecord.pendingAssetPromise = null;
       return true;
     }
-    if (record.pendingAssetKey === key && record.pendingAssetPromise) {
-      return record.pendingAssetPromise;
+    if (layerRecord.pendingAssetKey === key && layerRecord.pendingAssetPromise) {
+      return layerRecord.pendingAssetPromise;
     }
 
-    const version = ++record.assetVersion;
-    record.pendingAssetKey = key;
+    const version = ++layerRecord.assetVersion;
+    layerRecord.pendingAssetKey = key;
     let resolved;
     try {
-      // Invoke the injected resolver immediately for predictable host behavior,
-      // while converting synchronous throws into the same promise path.
-      resolved = resolveSprite(key);
+      resolved = resolveSprite(key, { characterId: record.id, layerId: layer.id, role: layer.role });
     } catch (error) {
       resolved = Promise.reject(error);
     }
     const pending = Promise.resolve(resolved).then(url => {
-      if (destroyed || !records.has(record.element) || version !== record.assetVersion) return false;
+      if (destroyed || !records.has(record.element) || version !== layerRecord.assetVersion) return false;
       if (typeof url !== "string" || !url.trim()) {
-        throw new TypeError(`resolveSprite() returned an invalid URL for "${key}"`);
+        throw new TypeError(\`resolveSprite() returned an invalid URL for "\${key}"\`);
       }
-      record.image.src = url;
-      record.image.alt = `${record.id} — ${expression}`;
-      record.assetKey = key;
+      image.src = url;
+      image.alt = \`\${record.id} — \${layer.id} — \${state.expression ?? "neutral"}\`;
+      layerRecord.assetKey = key;
       return true;
     }).finally(() => {
-      if (version === record.assetVersion) {
-        record.pendingAssetKey = null;
-        record.pendingAssetPromise = null;
+      if (version === layerRecord.assetVersion) {
+        layerRecord.pendingAssetKey = null;
+        layerRecord.pendingAssetPromise = null;
       }
     });
-    record.pendingAssetPromise = pending;
+    layerRecord.pendingAssetPromise = pending;
     return pending;
   }
 
-  async function mount({ id, sprites, initialState = {} } = {}) {
+  async function mount({ id, sprites, layers, initialState = {} } = {}) {
     if (destroyed) throw new Error("DOM character renderer has been destroyed");
     if (typeof id !== "string" || !id.trim()) throw new TypeError("Character renderer requires an id");
-    if (!sprites || typeof sprites !== "object" || Array.isArray(sprites)) {
-      throw new TypeError("Character sprites must be an expression-to-asset map");
-    }
-
+    const normalizedLayers = normalizeLayers({ sprites, layers });
     const element = root.ownerDocument.createElement("div");
-    const image = root.ownerDocument.createElement("img");
     element.className = "qarton-character";
     element.dataset.characterId = id;
     Object.assign(element.style, {
@@ -101,53 +159,56 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       willChange: "transform, opacity",
       pointerEvents: "none"
     });
-    Object.assign(image.style, {
-      display: "block",
-      width: "100%",
-      height: "100%",
-      objectFit: "contain"
-    });
-    image.draggable = false;
-    element.appendChild(image);
 
-    const record = {
-      id,
-      element,
-      image,
-      sprites: { ...sprites },
-      assetKey: null,
-      pendingAssetKey: null,
-      pendingAssetPromise: null,
-      assetVersion: 0
-    };
-    const expression = typeof initialState.expression === "string" ? initialState.expression : "neutral";
+    const layerRecords = normalizedLayers.map(layer => {
+      const image = root.ownerDocument.createElement("img");
+      image.className = \`qarton-character-layer qarton-character-layer--\${layer.role}\`;
+      image.dataset.layerId = layer.id;
+      image.dataset.layerRole = layer.role;
+      Object.assign(image.style, {
+        display: "block",
+        position: "absolute",
+        inset: "0",
+        width: "100%",
+        height: "100%",
+        objectFit: "contain",
+        pointerEvents: "none",
+        transformOrigin: layer.role === "head" ? "50% 85%" : "center center"
+      }, layer.style);
+      image.draggable = false;
+      element.appendChild(image);
+      return {
+        layer, image, assetKey: null, pendingAssetKey: null,
+        pendingAssetPromise: null, assetVersion: 0
+      };
+    });
+
+    const record = { id, element, layers: layerRecords };
     const normalizedState = {
       x: Number.isFinite(initialState.x) ? initialState.x : 0,
       y: Number.isFinite(initialState.y) ? initialState.y : 0,
       opacity: Number.isFinite(initialState.opacity) ? initialState.opacity : 1,
       scale: Number.isFinite(initialState.scale) ? initialState.scale : 1,
       rotation: Number.isFinite(initialState.rotation) ? initialState.rotation : 0,
-      expression,
-      state: initialState.state ?? "idle"
+      expression: typeof initialState.expression === "string" ? initialState.expression : "neutral",
+      state: initialState.state ?? "idle",
+      speaking: initialState.speaking === true,
+      mouthFrame: initialState.mouthFrame === 1 ? 1 : 0,
+      eyeFrame: initialState.eyeFrame === 1 ? 1 : 0,
+      expressionTransition: Number.isFinite(initialState.expressionTransition) ? initialState.expressionTransition : 1,
+      breathOffsetY: Number.isFinite(initialState.breathOffsetY) ? initialState.breathOffsetY : 0,
+      headRotation: Number.isFinite(initialState.headRotation) ? initialState.headRotation : 0
     };
-    // Validate before starting asynchronous asset work so malformed initial
-    // poses cannot leave half-mounted records behind.
-    for (const key of ["x", "y", "opacity", "scale", "rotation"]) {
-      if (!Number.isFinite(normalizedState[key])) throw new TypeError(`Character state ${key} must be finite`);
-    }
     if (normalizedState.scale < 0) throw new TypeError("Character scale cannot be negative");
 
     records.set(element, record);
     try {
-      await resolveAsset(record, expression);
+      await applyState(record, normalizedState);
       if (destroyed) throw new Error("DOM character renderer has been destroyed");
-      applyState(record, normalizedState);
       root.appendChild(element);
       return element;
     } catch (error) {
-      record.assetVersion += 1;
-      record.pendingAssetKey = null;
-      record.pendingAssetPromise = null;
+      for (const layerRecord of layerRecords) layerRecord.assetVersion += 1;
       records.delete(element);
       element.remove?.();
       if (element.parentNode === root) root.removeChild(element);
@@ -160,16 +221,14 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     const record = records.get(handle);
     if (!record) return false;
     if (!state || state.id !== record.id) throw new TypeError("Character state id does not match mounted character");
-    applyState(record, state);
-    return resolveAsset(record, String(state.expression ?? "neutral"));
+    await applyState(record, state);
+    return true;
   }
 
   function unmount(handle) {
     const record = records.get(handle);
     if (!record) return;
-    record.assetVersion += 1;
-    record.pendingAssetKey = null;
-    record.pendingAssetPromise = null;
+    for (const layerRecord of record.layers) layerRecord.assetVersion += 1;
     records.delete(handle);
     handle.remove?.();
     if (handle.parentNode === root) root.removeChild(handle);
@@ -178,14 +237,10 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
   function destroy() {
     if (destroyed) return;
     destroyed = true;
-    for (const handle of records.keys()) {
+    for (const [handle, record] of records) {
+      for (const layerRecord of record.layers) layerRecord.assetVersion += 1;
       handle.remove?.();
       if (handle.parentNode === root) root.removeChild(handle);
-    }
-    for (const record of records.values()) {
-      record.assetVersion += 1;
-      record.pendingAssetKey = null;
-      record.pendingAssetPromise = null;
     }
     records.clear();
   }
