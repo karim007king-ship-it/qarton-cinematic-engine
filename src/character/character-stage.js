@@ -21,6 +21,8 @@ export function createCharacterStage({
   const renderer = createDOMCharacterRenderer({ root, resolveSprite });
   const records = new Map();
   let mounted = false;
+  let mountingPromise = null;
+  let lifecycleVersion = 0;
   let destroyed = false;
   let lastTimeMs = -1;
 
@@ -38,23 +40,49 @@ export function createCharacterStage({
     records.set(id, { controller: entry.controller, sprites: entry.sprites, handle: null });
   }
 
-  async function mount() {
-    if (destroyed) throw new Error("Character stage has been destroyed");
-    if (mounted) return false;
+  async function performMount(version) {
     const completed = [];
     try {
       for (const [id, record] of records) {
         const initialState = record.controller.update(0);
-        record.handle = await renderer.mount({ id, sprites: record.sprites, initialState });
+        const handle = await renderer.mount({ id, sprites: record.sprites, initialState });
+        if (destroyed || version !== lifecycleVersion) {
+          renderer.unmount(handle);
+          for (const item of completed.reverse()) renderer.unmount(item.handle);
+          for (const item of records.values()) item.handle = null;
+          return false;
+        }
+        record.handle = handle;
         completed.push(record);
+      }
+      if (destroyed || version !== lifecycleVersion) {
+        for (const item of completed.reverse()) renderer.unmount(item.handle);
+        for (const item of records.values()) item.handle = null;
+        return false;
       }
       mounted = true;
       return true;
     } catch (error) {
-      for (const record of completed.reverse()) renderer.unmount(record.handle);
-      for (const record of records.values()) record.handle = null;
+      for (const item of completed.reverse()) renderer.unmount(item.handle);
+      for (const item of records.values()) item.handle = null;
+      mounted = false;
+      if (destroyed || version !== lifecycleVersion) return false;
       throw error;
     }
+  }
+
+  function mount() {
+    if (destroyed) return Promise.reject(new Error("Character stage has been destroyed"));
+    if (mounted) return Promise.resolve(false);
+    if (mountingPromise) return mountingPromise;
+
+    const version = ++lifecycleVersion;
+    const operation = performMount(version);
+    const tracked = operation.finally(() => {
+      if (mountingPromise === tracked) mountingPromise = null;
+    });
+    mountingPromise = tracked;
+    return tracked;
   }
 
   async function update(timeMs) {
@@ -77,6 +105,7 @@ export function createCharacterStage({
   }
 
   function unmount() {
+    lifecycleVersion += 1;
     for (const record of records.values()) {
       if (record.handle) renderer.unmount(record.handle);
       record.handle = null;
@@ -87,6 +116,7 @@ export function createCharacterStage({
 
   function destroy() {
     if (destroyed) return;
+    lifecycleVersion += 1;
     destroyed = true;
     renderer.destroy();
     for (const record of records.values()) record.handle = null;
