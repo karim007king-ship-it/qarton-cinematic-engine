@@ -51,6 +51,7 @@ export function createHTMLAudioAdapter({
     const endedHandler = () => {
       if (!active.has(audio)) return;
       active.delete(audio);
+      audio.removeEventListener?.("ended", endedHandler);
       options.onEnded?.(audio);
     };
     active.set(audio, { baseVolume, endedHandler });
