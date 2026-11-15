@@ -31,6 +31,9 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
         ? Math.min(1, Math.max(0, state.expressionTransition))
         : 1
     );
+    record.element.dataset.eyeFrame = String(state.eyeFrame === 1 ? 1 : 0);
+    record.element.style["--qarton-breath-y"] = `${Number.isFinite(state.breathOffsetY) ? state.breathOffsetY : 0}px`;
+    record.element.style["--qarton-head-rotation"] = `${Number.isFinite(state.headRotation) ? state.headRotation : 0}deg`;
   }
 
   async function resolveAsset(record, expression) {
