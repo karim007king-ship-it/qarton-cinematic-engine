@@ -182,10 +182,11 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     if (destroyed) throw new Error("DOM character renderer has been destroyed");
     if (typeof id !== "string" || !id.trim()) throw new TypeError("Character renderer requires an id");
     const normalizedLayers = normalizeLayers({ sprites, layers });
-    const rigMode = normalizedLayers.some(layer => layer.parent !== null);
+    const rigMode = normalizedLayers.some(layer => layer.parent !== null || layer.transform !== undefined);
     const rig = rigMode ? createCharacterRig(normalizedLayers) : null;
-    const parentById = new Map(normalizedLayers.map(layer => [layer.id, layer.parent]));
-    const roleById = new Map(normalizedLayers.map(layer => [layer.id, layer.role]));
+    const layerDefinitions = rig ? rig.layers : normalizedLayers;
+    const parentById = new Map(layerDefinitions.map(layer => [layer.id, layer.parent]));
+    const roleById = new Map(layerDefinitions.map(layer => [layer.id, layer.role]));
     const ancestorRoles = new Map();
     for (const layer of normalizedLayers) {
       const roles = new Set();
@@ -208,7 +209,7 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       pointerEvents: "none"
     });
 
-    const layerRecords = normalizedLayers.map(layer => {
+    const layerRecords = layerDefinitions.map(layer => {
       const image = root.ownerDocument.createElement("img");
       const container = rigMode ? root.ownerDocument.createElement("div") : image;
       if (rigMode) {
