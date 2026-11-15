@@ -46,7 +46,7 @@ test("cinematic runtime composes scene transitions, asset loading and adaptive p
   assert.equal(root.children.length, 1);
   assert.equal(rendered.length, 2);
   assert.equal(await runtime.loadAsset("bg-two"), "https://assets.test/bg-two.png");
-  runtime.destroy();
+  await runtime.destroy();
   assert.equal(root.children.length, 0);
   await assert.rejects(runtime.loadAsset("late"), /destroyed/);
 });
