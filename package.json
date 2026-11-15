@@ -14,6 +14,7 @@
     "./scene": "./src/scene/scene-definition.js",
     "./runtime": "./src/runtime/index.js",
     "./runtime/adaptive": "./src/runtime/adaptive-performance.js",
+    "./engine": "./src/runtime/cinematic-runtime.js",
     "./assets": "./src/assets/asset-manager.js",
     "./effects": "./src/effects/index.js",
     "./audio": "./src/audio/audio-cue-controller.js"
