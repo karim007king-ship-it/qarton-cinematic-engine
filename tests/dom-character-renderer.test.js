@@ -299,3 +299,32 @@ test("DOM character renderer rejects malformed layered sprite definitions", asyn
   }), /No sprite asset configured/);
   assert.equal(root.children.length, 0);
 });
+
+test("DOM character renderer applies interpolated pose transforms by layer id", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`
+  });
+  const handle = await renderer.mount({
+    id: "hero",
+    layers: [
+      { id: "body", role: "body", sprites: { default: "body" } },
+      { id: "left-arm", role: "arm", sprites: { default: "arm" } }
+    ],
+    initialState: { pose: "walk" }
+  });
+  await renderer.update(handle, {
+    id: "hero",
+    x: 0, y: 0, opacity: 1, scale: 1, rotation: 0,
+    expression: "neutral", state: "moving", pose: "walk", poseProgress: 0.5,
+    layerTransforms: {
+      "left-arm": { translateX: 3, translateY: 4, rotation: 25, scaleX: 1, scaleY: 1 }
+    }
+  });
+  assert.equal(handle.dataset.pose, "walk");
+  assert.equal(handle.dataset.poseProgress, "0.5");
+  assert.equal(handle.children[1].style.transform, "translate(3px, 4px) rotate(25deg) scale(1, 1)");
+  renderer.destroy();
+});
