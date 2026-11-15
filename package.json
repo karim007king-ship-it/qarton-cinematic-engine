@@ -8,7 +8,7 @@
     "./core/performance": "./src/core/performance-profile.js",
     "./motion": "./src/motion/easing.js",
     "./scene": "./src/scene/scene-definition.js",
-    "./runtime": "./src/runtime/background-renderer.js",
+    "./runtime": "./src/runtime/index.js",
     "./assets": "./src/assets/asset-manager.js"
   },
   "scripts": {
