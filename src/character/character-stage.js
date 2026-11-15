@@ -45,31 +45,36 @@ export function createCharacterStage({
 
   async function performMount(version) {
     const completed = [];
+    const cleanupCompleted = () => {
+      for (const item of completed.reverse()) {
+        renderer.unmount(item.handle);
+        if (item.record.handle === item.handle) item.record.handle = null;
+      }
+    };
+
     try {
       for (const [id, record] of records) {
         const initialState = record.controller.update(0);
         const handle = await renderer.mount({ id, sprites: record.sprites, layers: record.layers, initialState });
         if (destroyed || version !== lifecycleVersion) {
           renderer.unmount(handle);
-          for (const item of completed.reverse()) renderer.unmount(item.handle);
-          for (const item of records.values()) item.handle = null;
+          if (record.handle === handle) record.handle = null;
+          cleanupCompleted();
           return false;
         }
         record.handle = handle;
-        completed.push(record);
+        completed.push({ record, handle });
       }
       if (destroyed || version !== lifecycleVersion) {
-        for (const item of completed.reverse()) renderer.unmount(item.handle);
-        for (const item of records.values()) item.handle = null;
+        cleanupCompleted();
         return false;
       }
       mounted = true;
       return true;
     } catch (error) {
-      for (const item of completed.reverse()) renderer.unmount(item.handle);
-      for (const item of records.values()) item.handle = null;
-      mounted = false;
+      cleanupCompleted();
       if (destroyed || version !== lifecycleVersion) return false;
+      mounted = false;
       throw error;
     }
   }
