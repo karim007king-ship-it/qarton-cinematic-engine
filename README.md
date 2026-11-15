@@ -34,7 +34,7 @@ npm test
 - `buildLayerPlan(scene, profile)`: ترتيب الطبقات وتطبيق ميزانية الخلفيات.
 - `AssetManager({ loader })`: تحميل أصول عبر محمّل يوفّره التطبيق، مع دمج الطلبات المتزامنة، وذاكرة مؤقتة، و`preload()` و`release()` و`clear()`.
 - `BackgroundRenderer({ root, resolveAsset })`: عارض DOM مستقل؛ يمكن تمرير `key => assetManager.load(key)` كدالة حلّ الأصول. `render()` غير متزامنة، و`clear()` و`destroy()` لتنظيف دورة الحياة.
-- `SceneTransitionManager({ mount, crossfade, unmount, duration })`: منسّق انتقالات مستقل عن المنصة؛ يجهّز المشهد الجديد قبل الانتقال، ويحافظ على الحالي عند الفشل، ويلغي نتائج الانتقالات التي تم تجاوزها. يوفّر التطبيق دوال التركيب والـ crossfade والإزالة حسب DOM أو Canvas أو Android.
+- `SceneTransitionManager({ mount, crossfade, unmount, duration })`: منسّق انتقالات مستقل عن المنصة؛ يجهّز المشهد الجديد قبل الانتقال، ويحافظ على الحالي عند الفشل، ويلغي نتائج الانتقالات التي تم تجاوزها.\n- `createDOMTransitionAdapter({ root, renderScene, duration, reducedMotion, wait, animate })`: محول DOM فعلي يوفر mount / crossfade / unmount / destroy ويمكن تمرير دواله مباشرة إلى `SceneTransitionManager`. يستخدم Web Animations API عند توفره، ويرجع إلى CSS transitions مع wait قابل للحقن. تأثير dissolve الحالي هو تلاشي opacity مع blur، وليس shader أو انتقال pixel dissolve.
 
 كل وحدات المرحلة الأولى JavaScript ES Modules ولا تتطلب مكتبات خارجية.
 
@@ -49,7 +49,7 @@ npm test
 
 ## خارطة الطريق
 - **P0 — Foundation:** مكتمل؛ ملفات الأداء والحركة والمشهد واختبارات CI.
-- **P1 — Scene & Background Runtime:** مخطط الطبقات وعارض DOM وإدارة الأصول (cache / dedup / preload) منفذة ومغطاة باختبارات؛ منسّق دورة حياة الانتقالات منفّذ ومغطى بالاختبارات؛ ما زال ينقص موصل crossfade بصري فعلي وتحميل الصور الحقيقي واختبار المتصفح.
+- **P1 — Scene & Background Runtime:** مخطط الطبقات وعارض DOM وإدارة الأصول (cache / dedup / preload) منفذة ومغطاة باختبارات؛ منسّق دورة حياة الانتقالات ومحول DOM للـ crossfade منفذان ومغطّيان باختبارات Fake DOM؛ ما زال ينقص اختبار متصفح حقيقي، وتحميل الصور الفعلي، وتحسين إلغاء الحركة المتزامنة.
 - **P2 — Character Motion:** مسارات حركة، تعبيرات، توقيت متزامن، وواجهات sprites.
 - **P3 — Cinematic Effects:** إضاءة، ضباب، جسيمات، اهتزاز كاميرا مضبوط، وعمق parallax.
 - **P4 — Audio:** طبقات صوتية ومزامنة مع أحداث المشهد.
@@ -57,4 +57,4 @@ npm test
 - **P6 — Integration:** محول مستقل لقرطاج، ثم اختبار Android فعلي قبل اعتماد الدمج.
 
 ## الحالة
-P0 مكتملة. في P1 أصبح لدينا عارض DOM للطبقات ومدير أصول مستقل مع دمج الطلبات المتزامنة وذاكرة مؤقتة وتحميل مسبق والتحقق من عناوين الأصول. الاختبارات تستخدم بيئة Node ومحاكاة DOM؛ منسّق الانتقالات لا يفرض مؤثر crossfade بعينه، بل يستدعي adapter يوفّره التطبيق. لم يتم بعد ربط المحرك بلعبة قرطاج أو اختبار Android، ولا ندّعي جاهزية APK.
+P0 مكتملة. في P1 أصبح لدينا عارض DOM للطبقات ومدير أصول مستقل مع دمج الطلبات المتزامنة وذاكرة مؤقتة وتحميل مسبق والتحقق من عناوين الأصول. الاختبارات تستخدم بيئة Node ومحاكاة DOM؛ محول DOM يوفر fade وdissolve بصرياً (opacity + blur) عبر Web Animations API أو CSS fallback؛ لا يتضمن حالياً shader dissolve. لم يتم بعد ربط المحرك بلعبة قرطاج أو اختبار Android، ولا ندّعي جاهزية APK.
