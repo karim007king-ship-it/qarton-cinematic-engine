@@ -28,6 +28,9 @@ tests/
 npm test
 ```
 
+### اختبار المتصفح الحقيقي
+شغّل خادماً محلياً من جذر المستودع (مثلاً `npx serve .`) ثم افتح `examples/browser-smoke.html`. تختبر الصفحة تحميل صور SVG وفك ترميزها فعلياً، وتركيب المشاهد داخل DOM، والانتقال عبر Web Animations API أو CSS fallback، ثم تنظيف runtime والأصول. هذا اختبار يدوي في متصفح حقيقي وليس جزءاً من CI حالياً؛ نجاح اختبارات Node وحده لا يثبت سلامة العرض على Android WebView.
+
 ## واجهة API الحالية
 - `resolveQualityProfile(device)`: اختيار ملف أداء low / medium / high.
 - `clamp(value, min, max)`, `lerp(from, to, progress)`, `easeInOutCubic(progress)`.
