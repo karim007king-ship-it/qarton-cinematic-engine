@@ -64,14 +64,14 @@ test("failed asset resolution keeps the previously rendered scene", async () => 
 
 test("clear removes rendered nodes and invalidates in-flight renders", async () => {
   const { root, scene, profile } = fixture();
-  let release;
+  const releases = [];
   const renderer = new BackgroundRenderer({
     root,
-    resolveAsset: () => new Promise(resolve => { release = resolve; })
+    resolveAsset: () => new Promise(resolve => { releases.push(resolve); })
   });
   const pending = renderer.render(scene, profile);
   renderer.clear();
-  release("/late.png");
+  releases.forEach((resolve, index) => resolve(`/late-${index}.png`));
   assert.equal(await pending, false);
   assert.equal(root.children.length, 0);
   assert.equal(root.dataset.qartonSceneId, undefined);
