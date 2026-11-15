@@ -23,6 +23,7 @@ class FakeElement {
   setAttribute(name, value) { this.attributes[name] = value; }
 }
 class FakeDocument {
+  constructor() { this.head = new FakeElement(this); }
   createElement() { return new FakeElement(this); }
 }
 function setup() {
