@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QARTON Cinematic Engine — Browser Smoke Test</title>
+  <style>
+    :root { color-scheme: dark; font: 16px system-ui, sans-serif; background: #111; color: #f5f1e8; }
+    body { margin: 0; padding: 24px; }
+    main { max-width: 900px; margin: auto; }
+    #stage { position: relative; width: 100%; height: min(62vw, 480px); min-height: 260px; overflow: hidden; isolation: isolate; background: #181818; border: 1px solid #55452b; border-radius: 12px; }
+    .qarton-scene { background: #181818; }
+    .qarton-scene img { display: block; width: 100%; height: 100%; object-fit: cover; }
+    .controls { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
+    button { border: 1px solid #8e6b2f; border-radius: 8px; padding: 10px 14px; background: #292117; color: #fff; font: inherit; }
+    button:disabled { opacity: .5; }
+    #status { color: #d7c39a; min-height: 1.5em; }
+    code { color: #e7c77f; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>QARTON Cinematic Engine</h1>
+  <p>Browser smoke test: real image decoding, scene mounting, Web Animations/CSS fallback, and runtime cleanup.</p>
+  <div id="stage" aria-label="Cinematic scene preview"></div>
+  <div class="controls">
+    <button id="scene-one" type="button">Show scene 1</button>
+    <button id="scene-two" type="button">Show scene 2</button>
+    <button id="destroy" type="button">Destroy runtime</button>
+  </div>
+  <p id="status" role="status">Preparing engine…</p>
+  <p>Run from a local HTTP server, for example <code>npx serve .</code>, then open <code>/examples/browser-smoke.html</code>.</p>
+</main>
+<script type="module">
+  import { createCinematicRuntime, createSceneDefinition } from "../src/index.js";
+
+  const stage = document.querySelector("#stage");
+  const status = document.querySelector("#status");
+  const buttons = [...document.querySelectorAll("button")];
+  const svg = (sky, ground, sun) => `data:image/svg+xml,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700"><defs><linearGradient id="g" x2="0" y2="1"><stop stop-color="${sky}"/><stop offset="1" stop-color="${ground}"/></linearGradient></defs><rect width="1200" height="700" fill="url(#g)"/><circle cx="880" cy="170" r="72" fill="${sun}"/><path d="M0 520 250 310 470 520 720 260 1200 540V700H0Z" fill="#171a20" opacity=".78"/><path d="M0 610 300 470 540 620 850 420 1200 600V700H0Z" fill="#0c1117" opacity=".9"/></svg>`
+  )}`;
+  const sources = {
+    dawn: svg("#9a5261", "#e0a46b", "#ffe5a3"),
+    dusk: svg("#263f68", "#9c5360", "#f7c47b")
+  };
+
+  const scenes = [
+    createSceneDefinition({ id: "dawn", layers: [{ id: "sky", role: "background", asset: "dawn" }] }),
+    createSceneDefinition({ id: "dusk", layers: [{ id: "sky", role: "background", asset: "dusk" }] })
+  ];
+
+  function loadImage(key) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error(`Image failed to load: ${key}`));
+      image.src = sources[key];
+    });
+  }
+
+  const runtime = createCinematicRuntime({
+    root: stage,
+    device: { reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches },
+    loadAsset: loadImage,
+    renderScene: async (scene, profile, { assets }) => {
+      const layerAssets = await Promise.all(scene.layers.map(layer => assets.load(layer.asset)));
+      const content = document.createElement("div");
+      Object.assign(content.style, { position: "absolute", inset: "0" });
+      layerAssets.forEach(image => {
+        image.alt = "";
+        content.appendChild(image.cloneNode(false));
+        content.lastElementChild.src = image.src;
+      });
+      content.dataset.quality = profile.level ?? "unknown";
+      return content;
+    },
+    onProfileChange: profile => { status.textContent = `Performance profile: ${profile.level ?? "updated"}`; }
+  });
+
+  async function show(index) {
+    buttons.forEach(button => { button.disabled = true; });
+    try {
+      await runtime.transitionTo(scenes[index]);
+      status.textContent = `Displayed scene: ${scenes[index].id}`;
+    } catch (error) {
+      status.textContent = `Scene error: ${error.message}`;
+    } finally {
+      buttons.forEach(button => { button.disabled = false; });
+    }
+  }
+
+  document.querySelector("#scene-one").addEventListener("click", () => show(0));
+  document.querySelector("#scene-two").addEventListener("click", () => show(1));
+  document.querySelector("#destroy").addEventListener("click", async () => {
+    buttons.forEach(button => { button.disabled = true; });
+    await runtime.destroy();
+    status.textContent = "Runtime destroyed; scene nodes and cached assets released.";
+  });
+
+  await show(0);
+</script>
+</body>
+</html>
