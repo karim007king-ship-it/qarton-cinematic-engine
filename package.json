@@ -19,7 +19,8 @@
     "./effects": "./src/effects/index.js",
     "./audio": "./src/audio/audio-cue-controller.js",
     "./audio/html": "./src/audio/html-audio-adapter.js",
-    "./character/stage": "./src/character/character-stage.js"
+    "./character/stage": "./src/character/character-stage.js",
+    "./runtime/director": "./src/runtime/cinematic-director.js"
   },
   "scripts": {
     "test": "node --test",
