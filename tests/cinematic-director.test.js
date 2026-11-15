@@ -103,7 +103,7 @@ test("unmount invalidates an asynchronous director mount", async () => {
   resolveMount(true);
   assert.equal(await mounting, false);
   assert.equal(director.getState().mounted, false);
-  assert.deepEqual(calls, ["unmount", "unmount"]);
+  assert.deepEqual(calls, ["unmount"]);
   director.destroy();
 });
 
@@ -122,20 +122,26 @@ test("destroy invalidates an asynchronous director mount", async () => {
   resolveMount(true);
   assert.equal(await mounting, false);
   assert.equal(director.getState().mounted, false);
-  assert.deepEqual(calls, ["destroy", "unmount"]);
+  assert.deepEqual(calls, ["destroy"]);
 });
 
-test("immediate remount after cancelling a pending mount starts a fresh operation", async () => {
+test("stale director mount completion cannot unmount a newer stage mount", async () => {
   let releaseFirst;
   let calls = 0;
+  let unmountCalls = 0;
+  let stageMounted = false;
   const stage = {
     mount: () => {
       calls += 1;
-      return calls === 1 ? new Promise(resolve => { releaseFirst = resolve; }) : Promise.resolve(true);
+      if (calls === 1) return new Promise(resolve => { releaseFirst = resolve; });
+      stageMounted = true;
+      return Promise.resolve(true);
     },
-    update: async () => {},
-    unmount() {},
-    destroy() {}
+    update: async () => {
+      if (!stageMounted) throw new Error("stage is not mounted");
+    },
+    unmount: () => { unmountCalls += 1; stageMounted = false; },
+    destroy: () => { stageMounted = false; }
   };
   const director = createCinematicDirector({ characterStage: stage });
   const staleMount = director.mount();
@@ -145,6 +151,7 @@ test("immediate remount after cancelling a pending mount starts a fresh operatio
   releaseFirst(true);
   assert.equal(await staleMount, false);
   assert.equal(calls, 2);
-  assert.equal(director.getState().mounted, true);
+  assert.equal(unmountCalls, 1);
+  await director.update(0);
   director.destroy();
 });
