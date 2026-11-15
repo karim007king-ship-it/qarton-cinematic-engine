@@ -66,7 +66,9 @@ export class BackgroundRenderer {
       image.alt = "";
       image.draggable = false;
       image.decoding = "async";
-      image.loading = layer.role === "background" && index === 0 ? "eager" : "lazy";
+      // Decode every layer before replacing the visible scene. Lazy loading here
+      // could leave off-screen layers unresolved while the scene is committed.
+      image.loading = "eager";
       Object.assign(image.style, {
         display: "block",
         width: "100%",
@@ -77,6 +79,24 @@ export class BackgroundRenderer {
       wrapper.appendChild(image);
       fragment.appendChild(wrapper);
     });
+
+    try {
+      await Promise.all(Array.from(fragment.children, wrapper => {
+        const image = wrapper.children[0];
+        if (typeof image.decode === "function") return image.decode();
+        if (image.complete) {
+          if (image.naturalWidth > 0) return Promise.resolve();
+          return Promise.reject(new Error(`Image failed to load: ${image.src}`));
+        }
+        return new Promise((resolve, reject) => {
+          image.onload = () => resolve();
+          image.onerror = () => reject(new Error(`Image failed to load: ${image.src}`));
+        });
+      }));
+    } catch (error) {
+      if (token !== this.#renderToken) return false;
+      throw error;
+    }
 
     if (token !== this.#renderToken) return false;
     this.#root.replaceChildren(fragment);
