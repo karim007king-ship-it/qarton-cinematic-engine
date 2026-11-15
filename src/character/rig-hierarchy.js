@@ -105,6 +105,10 @@ export function composeRigTransforms(rig, animatedTransforms = {}) {
   }
 
   const world = {};
+  const layerMap = new Map(rig.layers.map(layer => [layer.id, layer]));
+  for (const id of Object.keys(animatedTransforms)) {
+    if (!layerMap.has(id)) throw new TypeError(`Animated rig transform references unknown layer "${id}"`);
+  }
   const identity = [1, 0, 0, 1, 0, 0];
   const multiply = (a, b) => [
     a[0] * b[0] + a[2] * b[1],
@@ -128,7 +132,7 @@ export function composeRigTransforms(rig, animatedTransforms = {}) {
     ];
   };
   const visit = (id, parentMatrix) => {
-    const layer = rig.layers.find(item => item.id === id);
+    const layer = layerMap.get(id);
     const animated = animatedTransforms[id] ?? {};
     if (!animated || typeof animated !== "object" || Array.isArray(animated)) {
       throw new TypeError(`Animated transform for "${id}" must be an object`);
@@ -146,6 +150,7 @@ export function composeRigTransforms(rig, animatedTransforms = {}) {
     }
     const matrix = multiply(parentMatrix, matrixFor(local));
     world[id] = Object.freeze({
+      matrix: Object.freeze(matrix),
       translateX: matrix[4],
       translateY: matrix[5],
       rotation: Math.atan2(matrix[1], matrix[0]) * 180 / Math.PI,
