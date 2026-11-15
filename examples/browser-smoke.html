@@ -137,10 +137,23 @@
         controller: createCharacterController({
           id: "hero", initial: { x: 24, y: 120, scale: 1.08, expression: "neutral" },
           motions: [{ id: "hero-walk", path: walkPath, startMs: 500, durationMs: 5200, expression: "determined" }],
-          dialogue: [{ startMs: 2100, endMs: 3900, expression: "determined" }]
+          dialogue: [{ startMs: 2100, endMs: 3900, expression: "determined" }],
+          poseClips: [{
+            id: "hero-walk-cycle", pose: "walk", startMs: 500, durationMs: 700, loop: true,
+            layers: {
+              "left-arm": [{ at: 0, rotation: -22 }, { at: 0.5, rotation: 22 }, { at: 1, rotation: -22 }],
+              "right-arm": [{ at: 0, rotation: 22 }, { at: 0.5, rotation: -22 }, { at: 1, rotation: 22 }],
+              "left-leg": [{ at: 0, rotation: 14 }, { at: 0.5, rotation: -14 }, { at: 1, rotation: 14 }],
+              "right-leg": [{ at: 0, rotation: -14 }, { at: 0.5, rotation: 14 }, { at: 1, rotation: -14 }]
+            }
+          }]
         }),
         layers: [
+          { id: "left-leg", role: "leg", style: { transformOrigin: "35% 82%" }, sprites: { default: makeLayerSprite("leg", "#20212b", "", "left") } },
+          { id: "right-leg", role: "leg", style: { transformOrigin: "65% 82%" }, sprites: { default: makeLayerSprite("leg", "#20212b", "", "right") } },
           { id: "body", role: "body", sprites: { default: makeLayerSprite("body", "#e8c18a", "#8b263d") } },
+          { id: "left-arm", role: "arm", style: { transformOrigin: "31% 48%" }, sprites: { default: makeLayerSprite("arm", "#e8c18a", "", "left") } },
+          { id: "right-arm", role: "arm", style: { transformOrigin: "69% 48%" }, sprites: { default: makeLayerSprite("arm", "#e8c18a", "", "right") } },
           { id: "head", role: "head", sprites: { neutral: makeLayerSprite("head", "#e8c18a", "#17151c"), determined: makeLayerSprite("head", "#e8c18a", "#17151c", "determined"), default: makeLayerSprite("head", "#e8c18a", "#17151c") } },
           { id: "eyes", role: "eyes", sprites: { open: makeLayerSprite("eyes", "#e8c18a"), blink: makeLayerSprite("eyes", "#e8c18a", "", "blink"), default: makeLayerSprite("eyes", "#e8c18a") } },
           { id: "mouth", role: "mouth", sprites: { neutral: makeLayerSprite("mouth", "#e8c18a"), speakingClosed: makeLayerSprite("mouth", "#e8c18a", "", "closed"), speakingOpen: makeLayerSprite("mouth", "#e8c18a", "", "open"), default: makeLayerSprite("mouth", "#e8c18a") } }
@@ -150,10 +163,23 @@
         controller: createCharacterController({
           id: "companion", initial: { x: 650, y: 142, scale: .9, expression: "neutral", opacity: .92 },
           motions: [{ id: "companion-enter", path: enterPath, startMs: 1100, durationMs: 4800, expression: "alert" }],
-          dialogue: [{ startMs: 3300, endMs: 4700, expression: "alert" }]
+          dialogue: [{ startMs: 3300, endMs: 4700, expression: "alert" }],
+          poseClips: [{
+            id: "companion-walk-cycle", pose: "walk", startMs: 1100, durationMs: 760, loop: true,
+            layers: {
+              "left-arm": [{ at: 0, rotation: -18 }, { at: 0.5, rotation: 18 }, { at: 1, rotation: -18 }],
+              "right-arm": [{ at: 0, rotation: 18 }, { at: 0.5, rotation: -18 }, { at: 1, rotation: 18 }],
+              "left-leg": [{ at: 0, rotation: 12 }, { at: 0.5, rotation: -12 }, { at: 1, rotation: 12 }],
+              "right-leg": [{ at: 0, rotation: -12 }, { at: 0.5, rotation: 12 }, { at: 1, rotation: -12 }]
+            }
+          }]
         }),
         layers: [
+          { id: "left-leg", role: "leg", style: { transformOrigin: "35% 82%" }, sprites: { default: makeLayerSprite("leg", "#20212b", "", "left") } },
+          { id: "right-leg", role: "leg", style: { transformOrigin: "65% 82%" }, sprites: { default: makeLayerSprite("leg", "#20212b", "", "right") } },
           { id: "body", role: "body", sprites: { default: makeLayerSprite("body", "#b8c7d8", "#253a55") } },
+          { id: "left-arm", role: "arm", style: { transformOrigin: "31% 48%" }, sprites: { default: makeLayerSprite("arm", "#b8c7d8", "", "left") } },
+          { id: "right-arm", role: "arm", style: { transformOrigin: "69% 48%" }, sprites: { default: makeLayerSprite("arm", "#b8c7d8", "", "right") } },
           { id: "head", role: "head", sprites: { neutral: makeLayerSprite("head", "#b8c7d8", "#253a55"), alert: makeLayerSprite("head", "#b8c7d8", "#253a55", "alert"), default: makeLayerSprite("head", "#b8c7d8", "#253a55") } },
           { id: "eyes", role: "eyes", sprites: { open: makeLayerSprite("eyes", "#b8c7d8"), blink: makeLayerSprite("eyes", "#b8c7d8", "", "blink"), default: makeLayerSprite("eyes", "#b8c7d8") } },
           { id: "mouth", role: "mouth", sprites: { neutral: makeLayerSprite("mouth", "#b8c7d8"), speakingClosed: makeLayerSprite("mouth", "#b8c7d8", "", "closed"), speakingOpen: makeLayerSprite("mouth", "#b8c7d8", "", "open"), default: makeLayerSprite("mouth", "#b8c7d8") } }
@@ -165,7 +191,15 @@
   function makeLayerSprite(role, skin, clothing = "", variant = "") {
     let drawing = "";
     if (role === "body") {
-      drawing = `<ellipse cx="80" cy="248" rx="42" ry="8" fill="#000" opacity=".35"/><path d="M43 92Q80 72 117 92L137 218H23Z" fill="${clothing}"/><path d="M48 210 42 252H68L80 210 92 252H118L111 210Z" fill="#20212b"/><path d="M50 103 16 177 31 185 70 132M110 103 144 177 129 185 90 132" fill="${skin}"/>`;
+      drawing = `<ellipse cx="80" cy="248" rx="42" ry="8" fill="#000" opacity=".35"/><path d="M43 92Q80 72 117 92L137 218H23Z" fill="${clothing}"/>`;
+    } else if (role === "arm") {
+      drawing = variant === "left"
+        ? `<path d="M48 103Q37 112 31 148L18 176 31 185 48 157 70 132Z" fill="${skin}"/>`
+        : `<path d="M112 103Q123 112 129 148L142 176 129 185 112 157 90 132Z" fill="${skin}"/>`;
+    } else if (role === "leg") {
+      drawing = variant === "left"
+        ? '<path d="M48 205 42 250 68 252 78 210Z" fill="#20212b"/>'
+        : '<path d="M82 210 92 252 118 250 112 205Z" fill="#20212b"/>';
     } else if (role === "head") {
       drawing = `<circle cx="80" cy="48" r="31" fill="${skin}"/><path d="M48 42Q54 4 92 17Q116 25 111 57Q92 34 48 42" fill="${clothing}"/>${variant === "determined" ? '<path d="M53 39l19 5m16-5 19-5" stroke="#17151c" stroke-width="4" stroke-linecap="round"/>' : variant === "alert" ? '<path d="M54 30l18-3m16 3 18 3" stroke="#17151c" stroke-width="3" stroke-linecap="round"/>' : ""}`;
     } else if (role === "eyes") {
