@@ -269,7 +269,7 @@ test("DOM character renderer mounts independently animated body, head, eyes, and
   assert.equal(handle.children[1].src, "https://assets.test/head-neutral.png");
   assert.equal(handle.children[2].src, "https://assets.test/eyes-open.png");
   assert.equal(handle.children[3].src, "https://assets.test/mouth-neutral.png");
-  assert.equal(handle.children[1].style.transform, "translateY(-1.2px) rotate(2deg)");
+  assert.equal(handle.children[1].style.transform, "translate(0px, -1.2px) rotate(2deg) scale(1, 1)");
   assert.ok(resolved.every(item => item.context.characterId === "layered-hero"));
 
   await renderer.update(handle, {
@@ -279,9 +279,9 @@ test("DOM character renderer mounts independently animated body, head, eyes, and
   });
   assert.equal(handle.children[2].src, "https://assets.test/eyes-blink.png");
   assert.equal(handle.children[3].src, "https://assets.test/mouth-open.png");
-  assert.equal(handle.children[1].style.transform, "translateY(0.5px) rotate(-1deg)");
-  assert.equal(handle.children[2].style.transform, "translateY(0.5px) rotate(-1deg)");
-  assert.equal(handle.children[3].style.transform, "translateY(0.5px) rotate(-1deg)");
+  assert.equal(handle.children[1].style.transform, "translate(0px, 0.5px) rotate(-1deg) scale(1, 1)");
+  assert.equal(handle.children[2].style.transform, "translate(0px, 0.5px) rotate(-1deg) scale(1, 1)");
+  assert.equal(handle.children[3].style.transform, "translate(0px, 0.5px) rotate(-1deg) scale(1, 1)");
   renderer.destroy();
 });
 
