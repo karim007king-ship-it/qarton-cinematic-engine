@@ -280,6 +280,8 @@ test("DOM character renderer mounts independently animated body, head, eyes, and
   assert.equal(handle.children[2].src, "https://assets.test/eyes-blink.png");
   assert.equal(handle.children[3].src, "https://assets.test/mouth-open.png");
   assert.equal(handle.children[1].style.transform, "translateY(0.5px) rotate(-1deg)");
+  assert.equal(handle.children[2].style.transform, "translateY(0.5px) rotate(-1deg)");
+  assert.equal(handle.children[3].style.transform, "translateY(0.5px) rotate(-1deg)");
   renderer.destroy();
 });
 
