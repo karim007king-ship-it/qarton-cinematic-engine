@@ -132,7 +132,7 @@ test("unmounting a scene involved in a transition cancels that transition", asyn
   release?.();
   assert.equal(nextScene.parentNode, null);
 });
-\n
+
 
 
 test("waits for a rendering frame before starting CSS transitions", async () => {
