@@ -39,7 +39,7 @@ test("HTMLAudio adapter applies master volume and cleans up on destroy", () => {
   const adapter = createHTMLAudioAdapter({ resolveAsset: () => "/theme.mp3", createAudio: () => audio });
   adapter.play("theme", { volume: 0.8 });
   adapter.setMasterVolume(0.25);
-  assert.equal(audio.volume, 0.25);
+  assert.equal(audio.volume, 0.2);
   adapter.destroy();
   assert.equal(audio.paused, true);
   assert.equal(audio.src, "");
