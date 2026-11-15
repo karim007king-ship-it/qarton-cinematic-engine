@@ -2,7 +2,8 @@
  * Platform-injected DOM transition adapter.
  *
  * renderScene(scene, profile) must resolve to a DOM Element containing the
- * rendered scene. No document/window access occurs during module import.
+ * rendered scene. Browser globals are only consulted when an adapter method
+ * runs, never while importing this module.
  */
 export function createDOMTransitionAdapter({
   root,
@@ -10,6 +11,10 @@ export function createDOMTransitionAdapter({
   duration = 350,
   reducedMotion = false,
   wait = ms => new Promise(resolve => setTimeout(resolve, ms)),
+  nextFrame = () => new Promise(resolve => {
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => resolve());
+    else Promise.resolve().then(resolve);
+  }),
   animate = (element, keyframes, options) => {
     if (typeof element.animate !== "function") return null;
     return element.animate(keyframes, options);
@@ -24,8 +29,8 @@ export function createDOMTransitionAdapter({
   if (!Number.isFinite(duration) || duration < 0) {
     throw new TypeError("Transition duration must be a non-negative finite number");
   }
-  if (typeof wait !== "function" || typeof animate !== "function") {
-    throw new TypeError("wait and animate must be functions");
+  if (typeof wait !== "function" || typeof nextFrame !== "function" || typeof animate !== "function") {
+    throw new TypeError("wait, nextFrame and animate must be functions");
   }
 
   let destroyed = false;
@@ -36,7 +41,9 @@ export function createDOMTransitionAdapter({
     if (!activeTransition) return;
     const active = activeTransition;
     activeTransition = null;
-    active.animations.forEach(animation => animation?.cancel?.());
+    active.animations.forEach(animation => {
+      try { animation?.cancel?.(); } catch { /* best-effort cancellation */ }
+    });
     active.cancel();
   }
 
@@ -81,60 +88,105 @@ export function createDOMTransitionAdapter({
       to.style.filter = "none";
       to.classList?.remove("qarton-scene--entering");
       if (from && from !== to) from.style.opacity = "0";
-      return;
+      return true;
     }
 
-    const ms = requestedDuration;
     let cancel;
     const cancelled = new Promise(resolve => { cancel = resolve; });
     const transition = { cancel, animations: [], from, to };
     activeTransition = transition;
-    const fromAnimation = from ? animate(from, [
-      { opacity: 1, filter: "blur(0px)" },
-      { opacity: 0, filter: "blur(8px)" }
-    ], { duration: ms, easing: "ease-in-out", fill: "forwards" }) : null;
-    const toAnimation = animate(to, [
-      { opacity: 0, filter: "blur(8px)" },
-      { opacity: 1, filter: "blur(0px)" }
-    ], { duration: ms, easing: "ease-in-out", fill: "forwards" });
+    const isCurrent = () => activeTransition === transition && !destroyed;
+    const finish = () => {
+      if (!isCurrent()) return false;
+      activeTransition = null;
+      to.style.opacity = "1";
+      to.style.filter = "none";
+      to.style.transition = "";
+      to.classList?.remove("qarton-scene--entering");
+      if (from) {
+        from.style.opacity = "0";
+        from.style.filter = "none";
+        from.style.transition = "";
+      }
+      return true;
+    };
 
-    transition.animations = [fromAnimation, toAnimation].filter(Boolean);
+    // Web Animations are all-or-nothing: if either side cannot animate, use
+    // the CSS path for both sides. A synchronous animate() failure is treated
+    // as an unavailable animation implementation rather than a stuck scene.
+    let fromAnimation = null;
+    let toAnimation = null;
+    try {
+      if (from) fromAnimation = animate(from, [
+        { opacity: 1, filter: "blur(0px)" },
+        { opacity: 0, filter: "blur(8px)" }
+      ], { duration: requestedDuration, easing: "ease-in-out", fill: "forwards" });
+      toAnimation = animate(to, [
+        { opacity: 0, filter: "blur(8px)" },
+        { opacity: 1, filter: "blur(0px)" }
+      ], { duration: requestedDuration, easing: "ease-in-out", fill: "forwards" });
+    } catch {
+      fromAnimation?.cancel?.();
+      toAnimation?.cancel?.();
+      fromAnimation = null;
+      toAnimation = null;
+    }
+
     if (fromAnimation && toAnimation) {
+      transition.animations = [fromAnimation, toAnimation];
       try {
         const outcome = await Promise.race([
           Promise.all([fromAnimation.finished, toAnimation.finished]).then(() => "finished"),
           cancelled.then(() => "cancelled")
         ]);
-        if (outcome === "cancelled" || activeTransition !== transition) return false;
+        if (outcome === "cancelled" || !isCurrent()) return false;
+        return finish();
       } catch (error) {
+        if (!isCurrent()) return false;
         fromAnimation.cancel?.();
         toAnimation.cancel?.();
-        if (activeTransition !== transition) return false;
         activeTransition = null;
         throw error;
       }
-    } else {
-      // Avoid leaving a partially-created Web Animation running when only one
-      // side supports the injected animation implementation.
-      fromAnimation?.cancel?.();
-      toAnimation?.cancel?.();
-      if (from) Object.assign(from.style, { transition: `opacity ${ms}ms ease-in-out, filter ${ms}ms ease-in-out`, opacity: "0", filter: "blur(8px)" });
-      Object.assign(to.style, { transition: `opacity ${ms}ms ease-in-out, filter ${ms}ms ease-in-out`, opacity: "1", filter: "blur(0px)" });
+    }
+
+    // Cancel a partial WAAPI setup before switching both elements to CSS.
+    fromAnimation?.cancel?.();
+    toAnimation?.cancel?.();
+    if (from) {
+      from.style.transition = "none";
+      from.style.opacity = "1";
+      from.style.filter = "blur(0px)";
+    }
+    to.style.transition = "none";
+    to.style.opacity = "0";
+    to.style.filter = "blur(8px)";
+
+    try {
+      // Establish the initial styles in a distinct rendering frame before
+      // enabling transitions and applying their target values.
+      await nextFrame();
+      if (!isCurrent()) return false;
+      const ms = requestedDuration;
+      const transitionStyle = `opacity ${ms}ms ease-in-out, filter ${ms}ms ease-in-out`;
+      if (from) from.style.transition = transitionStyle;
+      to.style.transition = transitionStyle;
+      if (from) {
+        from.style.opacity = "0";
+        from.style.filter = "blur(8px)";
+      }
+      to.style.opacity = "1";
+      to.style.filter = "blur(0px)";
+
       const outcome = await Promise.race([
         Promise.resolve().then(() => wait(ms)).then(() => "finished"),
         cancelled.then(() => "cancelled")
       ]);
-      if (outcome === "cancelled" || activeTransition !== transition) return false;
-    }
-
-    if (activeTransition !== transition) return false;
-    activeTransition = null;
-    to.style.opacity = "1";
-    to.style.filter = "none";
-    to.classList?.remove("qarton-scene--entering");
-    if (from) {
-      from.style.opacity = "0";
-      from.style.filter = "none";
+      if (outcome === "cancelled" || !isCurrent()) return false;
+      return finish();
+    } catch (error) {
+      if (isCurrent()) activeTransition = null;
+      throw error;
     }
   }
 
