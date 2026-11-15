@@ -62,12 +62,12 @@ test("reset recalculates reduced-motion and save-data quality locks", () => {
     sampleWindow: 2,
     stableWindows: 1
   });
-  monitor.reset({ quality: "high", reducedMotion: true });
+  monitor.reset({ reducedMotion: true });
   for (let i = 0; i < 4; i += 1) monitor.recordFrame(5);
   assert.equal(monitor.getProfile().tier, "low");
   assert.equal(monitor.getProfile().reason, "reduced-motion");
 
-  monitor.reset({ quality: "high", saveData: true });
+  monitor.reset({ saveData: true });
   for (let i = 0; i < 4; i += 1) monitor.recordFrame(5);
   assert.equal(monitor.getProfile().tier, "low");
 });
