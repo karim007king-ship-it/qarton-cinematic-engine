@@ -12,7 +12,8 @@
 ```text
 src/
   core/          # إعدادات الأداء والقدرات
-  motion/        # منحنيات الحركة والمسارات والخطوط الزمنية\n  character/     # متحكمات حركة الشخصيات
+  motion/        # منحنيات الحركة والمسارات والخطوط الزمنية
+  character/     # متحكمات حركة الشخصيات
   scene/         # تعريف المشاهد والخلفيات والطبقات
   effects/       # parallax والكاميرا والجسيمات
   audio/         # جدولة الصوت ومزامنة الـ cues
@@ -27,7 +28,7 @@ tests/
 npm test
 ```
 
-## واجهة المرحلة الأولى
+## واجهة API الحالية
 - `resolveQualityProfile(device)`: اختيار ملف أداء low / medium / high.
 - `clamp(value, min, max)`, `lerp(from, to, progress)`, `easeInOutCubic(progress)`.
 - `createMotionPath(points)` و`sampleMotionPath(path, progress, easing)`: مسارات 2D محايدة للمنصة مع أخذ عينات للحركة.
@@ -57,7 +58,7 @@ npm test
 3. فصل بيانات المشهد عن طريقة عرضه.
 4. استخدام تحريك خصائص compositor-friendly قدر الإمكان، وتجنب تحديثات التخطيط المتكررة.
 5. احترام `prefers-reduced-motion` وتوفير تعطيل/تقليل الحركة.
-6. إيقاف أو تخفيف العمل عندما تكون الصفحة مخفية، ضمن runtime لاحقاً.
+6. تمرير حالة نشاط الصفحة أو التطبيق إلى `createRuntimeActivityGate` لإيقاف واستئناف العمل.
 7. عدم تحميل الصور/الصوت قبل الحاجة، مع إدارة واضحة للذاكرة.
 
 ## خارطة الطريق
@@ -66,7 +67,6 @@ npm test
 - **P2 — Character Motion:** المسارات 2D والخطوط الزمنية ومتحكم الشخصية ومحول DOM للـ sprites منفذة ومغطاة باختبارات محاكاة؛ ما زال ينقص اختبار المتصفح الفعلي ومزامنة الحركة مع الصوت.
 - **P3 — Cinematic Effects:** parallax وcamera shake وparticle field وlighting/fog samplers منفذة؛ ما زالت مؤثرات shader والاختبار البصري الفعلي لاحقاً.
 - **P4 — Audio:** جدولة cues والتحكم في pause/resume والـ volume عبر adapter محايد للمنصة منفذة؛ يبقى توفير adapter فعلي لـ Web Audio/Android واختبار الصوت على جهاز.
-- **P4 — Audio:** طبقات صوتية ومزامنة مع أحداث المشهد.
 - **P5 — Adaptive Runtime:** مراقبة frame-time وتغيير الجودة مع hysteresis وبوابة إيقاف/استئناف منفذة؛ يبقى ربط Page Visibility أو lifecycle Android من المضيف واختبار الأجهزة.
 - **P6 — Integration:** runtime تجميعي مستقل للمضيف منفذ؛ يبقى إنشاء adapter خاص بقرطاج وربطه واختباره على Android خطوة منفصلة بعد اكتمال التحقق.
 
