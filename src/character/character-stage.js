@@ -109,6 +109,9 @@ export function createCharacterStage({
 
   function unmount() {
     lifecycleVersion += 1;
+    // Release the stale in-flight promise so an immediate remount can start
+    // a fresh transaction instead of inheriting the cancelled operation.
+    mountingPromise = null;
     for (const record of records.values()) {
       if (record.handle) renderer.unmount(record.handle);
       record.handle = null;
