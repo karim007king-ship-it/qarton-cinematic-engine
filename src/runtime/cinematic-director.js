@@ -55,7 +55,8 @@ export function createCinematicDirector({
         if (!result) return false;
       }
       if (destroyed || version !== lifecycleVersion) {
-        characterStage?.unmount();
+        // unmount()/destroy() already invalidated the stage operation. A late
+        // stale completion must never tear down a newer stage mount.
         return false;
       }
       mounted = true;
