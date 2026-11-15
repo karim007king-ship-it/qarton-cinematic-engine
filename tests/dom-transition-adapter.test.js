@@ -176,3 +176,51 @@ test("cleans transition state when the injected frame scheduler rejects", async 
   // leave an active cancellation token blocking future work.
   assert.equal(await adapter.crossfade({ from: null, to: nextScene, duration: 0 }), true);
 });
+
+
+test("destroy cancels an in-flight CSS transition and removes mounted scenes", async () => {
+  let releaseWait;
+  const { root, adapter } = setup({
+    wait: () => new Promise(resolve => { releaseWait = resolve; })
+  });
+  const from = await adapter.mount({ id: "from" }, {});
+  const to = await adapter.mount({ id: "to" }, {});
+  await adapter.crossfade({ from: null, to: from, duration: 0 });
+
+  const pending = adapter.crossfade({ from, to, duration: 120 });
+  for (let i = 0; i < 12 && !releaseWait; i += 1) await Promise.resolve();
+  assert.equal(typeof releaseWait, "function");
+
+  adapter.destroy();
+  assert.equal(await pending, false);
+  releaseWait();
+  assert.equal(root.children.length, 0);
+});
+
+test("a rejected Web Animation is reported and does not block later transitions", async () => {
+  let rejectTarget;
+  const cancelled = [];
+  const { adapter } = setup({
+    animate: (_element, _frames, options) => {
+      const isTarget = options.duration === 75;
+      const finished = isTarget
+        ? new Promise((_resolve, reject) => { rejectTarget = reject; })
+        : Promise.resolve();
+      return {
+        finished,
+        cancel() { cancelled.push(isTarget ? "target" : "source"); }
+      };
+    }
+  });
+  const from = await adapter.mount({ id: "from" }, {});
+  const to = await adapter.mount({ id: "to" }, {});
+  await adapter.crossfade({ from: null, to: from, duration: 0 });
+
+  const pending = adapter.crossfade({ from, to, duration: 75 });
+  for (let i = 0; i < 8 && !rejectTarget; i += 1) await Promise.resolve();
+  assert.equal(typeof rejectTarget, "function");
+  rejectTarget(new Error("animation cancelled externally"));
+  await assert.rejects(pending, /animation cancelled externally/);
+  assert.deepEqual(cancelled.sort(), ["source", "target"]);
+  assert.equal(await adapter.crossfade({ from: null, to: from, duration: 0 }), true);
+});
