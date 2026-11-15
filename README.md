@@ -41,6 +41,7 @@ npm test
 - `createAudioCueController({ cues, play, stop, setVolume })`: جدولة أصوات المشهد حسب التوقيت، مع pause/resume والتحكم بالصوت عبر adapter يقدمه التطبيق.
 - `createAdaptivePerformanceMonitor(...)`: قياس أزمنة الإطارات المقدمة من المضيف، وخفض/رفع الجودة تدريجياً مع hysteresis.
 - `createRuntimeActivityGate({ onPause, onResume })`: بوابة صريحة لإيقاف واستئناف المؤثرات عندما تصبح اللعبة غير نشطة أو مخفية.
+- `createCinematicRuntime({ root, loadAsset, renderScene, ... })`: واجهة تجميع للمضيف تربط إدارة الأصول والمشاهد والانتقالات وملف الأداء في runtime واحد، دون الاعتماد على مشروع لعبة محدد.
 - `createSceneDefinition(config)`: التحقق من تعريف مشهد وطبقاته دون الوصول إلى DOM.
 - `buildLayerPlan(scene, profile)`: ترتيب الطبقات وتطبيق ميزانية الخلفيات.
 - `AssetManager({ loader })`: تحميل أصول عبر محمّل يوفّره التطبيق، مع دمج الطلبات المتزامنة، وذاكرة مؤقتة، و`preload()` و`release()` و`clear()`.
@@ -67,7 +68,7 @@ npm test
 - **P4 — Audio:** جدولة cues والتحكم في pause/resume والـ volume عبر adapter محايد للمنصة منفذة؛ يبقى توفير adapter فعلي لـ Web Audio/Android واختبار الصوت على جهاز.
 - **P4 — Audio:** طبقات صوتية ومزامنة مع أحداث المشهد.
 - **P5 — Adaptive Runtime:** مراقبة frame-time وتغيير الجودة مع hysteresis وبوابة إيقاف/استئناف منفذة؛ يبقى ربط Page Visibility أو lifecycle Android من المضيف واختبار الأجهزة.
-- **P6 — Integration:** محول مستقل لقرطاج، ثم اختبار Android فعلي قبل اعتماد الدمج.
+- **P6 — Integration:** runtime تجميعي مستقل للمضيف منفذ؛ يبقى إنشاء adapter خاص بقرطاج وربطه واختباره على Android خطوة منفصلة بعد اكتمال التحقق.
 
 ## الحالة
-P0 مكتملة. في P2 أضيفت مسارات 2D وخط زمني للأحداث ومتحكم شخصية محايد للمنصة ومحول DOM اختياري للـ sprites. وفي P3 أضيفت حسابات parallax وcamera shake وحقل جسيمات تكيفي deterministic ومعلمات الإضاءة والضباب. وفي P4 أضيف متحكم جدولة audio cues يعتمد على adapter خارجي ولا ينشئ AudioContext تلقائياً. وفي P5 أضيف مراقب أداء تكيفي يقيس frame-time عبر المضيف ويبدل الجودة تدريجياً، وبوابة activity gate لإيقاف واستئناف العمل. لا توجد بعد طبقة Web Audio أو Android Audio مدمجة. اختبارات DOM محاكاة ولا تثبت العرض الفعلي في المتصفح أو Android. في P1 أصبح لدينا عارض DOM للطبقات ومدير أصول مستقل مع دمج الطلبات المتزامنة وذاكرة مؤقتة وتحميل مسبق والتحقق من عناوين الأصول. الاختبارات تستخدم بيئة Node ومحاكاة DOM؛ محول DOM يوفر fade وdissolve بصرياً (opacity + blur) عبر Web Animations API أو CSS fallback؛ لا يتضمن حالياً shader dissolve. لم يتم بعد ربط المحرك بلعبة قرطاج أو اختبار Android، ولا ندّعي جاهزية APK.
+P0 مكتملة. في P2 أضيفت مسارات 2D وخط زمني للأحداث ومتحكم شخصية محايد للمنصة ومحول DOM اختياري للـ sprites. وفي P3 أضيفت حسابات parallax وcamera shake وحقل جسيمات تكيفي deterministic ومعلمات الإضاءة والضباب. وفي P4 أضيف متحكم جدولة audio cues يعتمد على adapter خارجي ولا ينشئ AudioContext تلقائياً. وفي P5 أضيف مراقب أداء تكيفي يقيس frame-time عبر المضيف ويبدل الجودة تدريجياً، وبوابة activity gate لإيقاف واستئناف العمل. لا توجد بعد طبقة Web Audio أو Android Audio مدمجة. وفي P6 أضيفت واجهة `createCinematicRuntime` لتجميع المشاهد والانتقالات والأصول والأداء عبر callbacks يحددها المضيف؛ لم يتم ربطها بعد بلعبة قرطاج. اختبارات DOM محاكاة ولا تثبت العرض الفعلي في المتصفح أو Android. في P1 أصبح لدينا عارض DOM للطبقات ومدير أصول مستقل مع دمج الطلبات المتزامنة وذاكرة مؤقتة وتحميل مسبق والتحقق من عناوين الأصول. الاختبارات تستخدم بيئة Node ومحاكاة DOM؛ محول DOM يوفر fade وdissolve بصرياً (opacity + blur) عبر Web Animations API أو CSS fallback؛ لا يتضمن حالياً shader dissolve. لم يتم بعد ربط المحرك بلعبة قرطاج أو اختبار Android، ولا ندّعي جاهزية APK.
