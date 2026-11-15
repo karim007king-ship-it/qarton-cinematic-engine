@@ -13,13 +13,15 @@ const POSE_TRANSFORM_KEYS = Object.keys(POSE_TRANSFORM_DEFAULTS);
 
 function normalizePoseClips(poseClips) {
   if (!Array.isArray(poseClips)) throw new TypeError("Character poseClips must be an array");
+  const ids = new Set();
   const clips = poseClips.map((clip, index) => {
     if (!clip || typeof clip !== "object" || Array.isArray(clip)) {
       throw new TypeError(`Pose clip ${index} must be an object`);
     }
-    if (typeof clip.id !== "string" || !clip.id.trim()) {
-      throw new TypeError(`Pose clip ${index} needs an id`);
+    if (typeof clip.id !== "string" || !clip.id.trim() || ids.has(clip.id)) {
+      throw new TypeError(`Pose clip ${index} needs a unique id`);
     }
+    ids.add(clip.id);
     if (!Number.isFinite(clip.startMs) || clip.startMs < 0
       || !Number.isFinite(clip.durationMs) || clip.durationMs <= 0) {
       throw new TypeError(`Pose clip "${clip.id}" needs valid startMs and positive durationMs`);
@@ -110,7 +112,7 @@ export function createCharacterController({
   });
   const poseOptions = Object.freeze({
     enabled: poseMotion.enabled !== false,
-    reducedMotion: poseMotion.reducedMotion === true,
+    reducedMotion: poseMotion.reducedMotion === true || facialMotion.reducedMotion === true,
     motionScale: Number.isFinite(poseMotion.motionScale) ? clamp(poseMotion.motionScale) : 1
   });
 
