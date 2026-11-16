@@ -42,12 +42,21 @@ export class SceneTransitionManager {
     const generation = ++this.#generation;
     const previous = this.#current;
     let next;
+    let committed = false;
+    let nextReleaseAttempted = false;
+
+    const releaseCandidate = async () => {
+      if (next == null || next === this.#current || nextReleaseAttempted) return;
+      // Mark before awaiting so a failed unmount is never attempted twice.
+      nextReleaseAttempted = true;
+      await this.#unmount(next);
+    };
 
     try {
       next = await this.#mount(scene, profile);
       if (next == null) throw new TypeError("mount() must return a scene handle");
       if (generation !== this.#generation || this.#destroyed) {
-        await this.#unmount(next);
+        await releaseCandidate();
         return false;
       }
 
@@ -56,18 +65,25 @@ export class SceneTransitionManager {
       // throwing. Treat that as an aborted transition: retain the previous
       // scene and release the candidate rather than committing it.
       if (completed === false || generation !== this.#generation || this.#destroyed) {
-        await this.#unmount(next);
+        await releaseCandidate();
         return false;
       }
 
       this.#current = next;
+      committed = true;
+      // Once the new scene is committed, a cleanup failure for the old scene
+      // must not roll the current handle back to an already-released scene.
       if (previous != null && previous !== next) await this.#unmount(previous);
       return true;
     } catch (error) {
-      if (next != null && next !== this.#current) {
-        try { await this.#unmount(next); } catch { /* preserve the original failure */ }
+      try {
+        await releaseCandidate();
+      } catch {
+        // Preserve the transition/cleanup error that first caused the failure.
       }
-      if (generation === this.#generation && !this.#destroyed) this.#current = previous;
+      if (!committed && generation === this.#generation && !this.#destroyed) {
+        this.#current = previous;
+      }
       throw error;
     }
   }
