@@ -35,13 +35,21 @@ export class BackgroundRenderer {
   async render(scene, profile) {
     const token = ++this.#renderToken;
     const plan = buildLayerPlan(scene, profile);
-    const assets = await Promise.all(plan.map(async layer => {
-      const url = await this.#resolveAsset(layer.asset, layer);
-      if (typeof url !== "string" || !url.trim()) {
-        throw new TypeError(`Asset resolver returned no URL for "${layer.asset}"`);
-      }
-      return url;
-    }));
+    let assets;
+    try {
+      assets = await Promise.all(plan.map(async layer => {
+        const url = await this.#resolveAsset(layer.asset, layer);
+        if (typeof url !== "string" || !url.trim()) {
+          throw new TypeError(`Asset resolver returned no URL for "${layer.asset}"`);
+        }
+        return url;
+      }));
+    } catch (error) {
+      // A superseded render is no longer responsible for reporting its load
+      // failure; the newer render owns the visible scene and its outcome.
+      if (token !== this.#renderToken) return false;
+      throw error;
+    }
 
     if (token !== this.#renderToken) return false;
 
