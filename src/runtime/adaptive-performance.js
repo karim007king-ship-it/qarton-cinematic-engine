@@ -107,9 +107,10 @@ export function createRuntimeActivityGate({ onPause = () => {}, onResume = () =>
   }
   function destroy() {
     if (destroyed) return;
-    if (active) onPause();
+    const shouldPause = active;
     active = false;
     destroyed = true;
+    if (shouldPause) onPause();
   }
   return Object.freeze({
     setActive,
