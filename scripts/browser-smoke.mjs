@@ -53,6 +53,37 @@ try {
   assert.equal(initial.backgroundLayers, 2, "dawn scene should mount both background layers");
   assert.equal(initial.characters, 2, "both character rigs should mount");
 
+  await page.waitForFunction(() => window.__qartonSmoke?.getTimelineEvents().includes("dust"), null, { timeout: 10000 });
+  const effects = await page.evaluate(() => {
+    const scene = document.querySelector(".qarton-scene");
+    const layers = [...document.querySelectorAll(".qarton-scene img")];
+    const overlays = [...document.querySelectorAll(".qarton-visual-treatment")];
+    const canvas = document.querySelector("#particles");
+    const pixels = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+    return {
+      timelineEvents: window.__qartonSmoke.getTimelineEvents(),
+      cameraTransform: scene?.style.transform ?? "",
+      parallaxTransforms: layers.map(layer => layer.style.transform),
+      visualOverlays: overlays.length,
+      activeOverlay: overlays.some(layer => Number(layer.style.opacity) > 0),
+      particlePixels: pixels.some((value, index) => index % 4 === 3 && value > 0)
+    };
+  });
+  assert.ok(effects.timelineEvents.includes("impact") && effects.timelineEvents.includes("dust"), "director should dispatch both timeline events");
+  assert.ok(effects.cameraTransform && effects.cameraTransform !== "none", "camera track should update the scene transform");
+  assert.ok(effects.parallaxTransforms.every(value => value && value !== "none"), "parallax should update every background layer");
+  assert.equal(effects.visualOverlays, 3, "vignette, bloom and grain overlays should mount");
+  assert.equal(effects.activeOverlay, true, "at least one visual treatment overlay should be active");
+  assert.equal(effects.particlePixels, true, "particle renderer should draw visible canvas pixels");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(100);
+  const mobileCanvas = await page.locator("#particles").evaluate(canvas => ({
+    width: canvas.width, height: canvas.height,
+    stageWidth: document.querySelector("#stage").getBoundingClientRect().width
+  }));
+  assert.ok(mobileCanvas.width > 0 && mobileCanvas.height > 0 && mobileCanvas.stageWidth < 500, "responsive mobile viewport should resize the particle canvas");
+
   await page.locator("#scene-two").click();
   await page.waitForFunction(() => document.querySelector("#status")?.textContent.includes("Scene dusk active"), null, { timeout: 15000 });
   assert.equal(await page.locator(".qarton-scene img").count(), 2, "dusk scene should mount both background layers");
@@ -64,7 +95,7 @@ try {
   await page.waitForFunction(() => document.querySelector("#status")?.textContent.startsWith("Destroyed:"), null, { timeout: 10000 });
   assert.deepEqual(pageErrors, [], "showcase should not throw uncaught browser errors");
 
-  process.stdout.write("Browser showcase passed: initial scene, layered backgrounds, two character rigs, scene transition, gesture-started audio, teardown; 0 page errors.\n");
+  process.stdout.write("Browser showcase passed: initial scene, layered backgrounds, character rigs, timeline events, camera, parallax, particles, visual overlays, mobile resize, scene transition, gesture-started audio, teardown; 0 page errors.\n");
 } finally {
   if (browser) await browser.close();
   await new Promise(resolveClose => server.close(resolveClose));
