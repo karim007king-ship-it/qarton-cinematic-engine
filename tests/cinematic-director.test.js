@@ -338,11 +338,11 @@ test("queued update is cancelled when pause and resume happen before it starts",
   assert.equal(director.pause(100), true);
   assert.equal(director.resume(100), true);
   releaseFirst();
-  await first;
-  const result = await queued;
+  const [firstResult, result] = await Promise.all([first, queued]);
+  assert.equal(firstResult.cancelled, true);
   assert.equal(result.cancelled, true);
   assert.deepEqual(stageUpdates, [100]);
-  assert.deepEqual(events, ["first"]);
+  assert.deepEqual(events, []);
   director.destroy();
 });
 
@@ -369,8 +369,8 @@ test("queued update from an old mount cannot run after unmount and remount", asy
   director.unmount();
   await director.mount();
   releaseFirst();
-  await first;
-  const result = await staleQueued;
+  const [firstResult, result] = await Promise.all([first, staleQueued]);
+  assert.equal(firstResult.cancelled, true);
   assert.equal(result.cancelled, true);
   assert.deepEqual(stageUpdates, [100]);
   await director.update(0);
