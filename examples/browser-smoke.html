@@ -45,7 +45,8 @@
   import {
     createCinematicRuntime, createSceneDefinition, createMotionPath,
     createCharacterController, createCharacterStage, createTimeline, createCinematicDirector,
-    createAudioCueController, sampleCameraShake, createCameraTrack, sampleCameraTrack,\n    composeCameraPose, toCameraCSS, computeParallaxOffset,
+    createAudioCueController, sampleCameraShake, createCameraTrack, sampleCameraTrack,
+    composeCameraPose, toCameraCSS, computeParallaxOffset,
     createParticleField, resolveLighting
   } from "../src/index.js";
 
@@ -138,7 +139,14 @@
     return `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 260"><ellipse cx="80" cy="248" rx="42" ry="8" fill="#000" opacity=".35"/><circle cx="80" cy="48" r="31" fill="${skin}"/><path d="M48 42Q54 4 92 17Q116 25 111 57Q92 34 48 42" fill="#17151c"/><path d="M43 92Q80 72 117 92L137 218H23Z" fill="${clothes}"/><path d="M48 210 42 252H68L80 210 92 252H118L111 210Z" fill="#20212b"/><path d="M50 103 16 177 31 185 70 132M110 103 144 177 129 185 90 132" fill="${skin}"/></svg>`) }`;
   }
 
-  const cameraTrack = createCameraTrack([\n    { atMs: 0, x: 0, y: 0, zoom: 1, rotation: 0 },\n    { atMs: 3000, x: -12, y: 5, zoom: 1.06, rotation: 0.15 },\n    { atMs: 6500, x: 14, y: -4, zoom: 1.1, rotation: -0.12 },\n    { atMs: 9000, x: 0, y: 0, zoom: 1, rotation: 0 }\n  ]);\n\n  let audioCues = null;
+  const cameraTrack = createCameraTrack([
+    { atMs: 0, x: 0, y: 0, zoom: 1, rotation: 0 },
+    { atMs: 3000, x: -12, y: 5, zoom: 1.06, rotation: 0.15 },
+    { atMs: 6500, x: 14, y: -4, zoom: 1.1, rotation: -0.12 },
+    { atMs: 9000, x: 0, y: 0, zoom: 1, rotation: 0 }
+  ]);
+
+  let audioCues = null;
   const audioProxy = {
     update: timeMs => audioCues?.update(timeMs),
     pause: timeMs => audioCues?.pause(timeMs),
@@ -186,7 +194,11 @@
       : { x: 0, y: 0, rotation: 0 };
     const scene = stage.querySelector(".qarton-scene");
     if (scene) {
-      const cameraPose = composeCameraPose(sampleCameraTrack(cameraTrack, elapsed), camera);\n      const cameraTransform = toCameraCSS(cameraPose);\n      scene.style.transform = cameraTransform;\n      characterRoot.style.transform = cameraTransform;\n      canvas.style.transform = cameraTransform;
+      const cameraPose = composeCameraPose(sampleCameraTrack(cameraTrack, elapsed), camera);
+      const cameraTransform = toCameraCSS(cameraPose);
+      scene.style.transform = cameraTransform;
+      characterRoot.style.transform = cameraTransform;
+      canvas.style.transform = cameraTransform;
       for (const layer of scene.querySelectorAll("img")) {
         const offset = computeParallaxOffset({ cameraX: Math.sin(elapsed / 2400) * 12, cameraY: Math.cos(elapsed / 3100) * 5, depth: Number(layer.dataset.depth), intensity: profile.tier === "low" ? .35 : .8, maxOffset: 24 });
         layer.style.transform = `translate3d(${offset.x}px,${offset.y}px,0)`;
