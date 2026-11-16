@@ -236,3 +236,34 @@ test("stale partial mount cannot clear handles created by a newer multi-characte
   assert.equal(root.children.length, 0);
   stage.destroy();
 });
+
+
+test("unmount attempts every character release and resets stage state when a DOM cleanup throws", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const first = createCharacterController({ id: "first" });
+  const second = createCharacterController({ id: "second" });
+  const failure = new Error("first character removal failed");
+  const stage = createCharacterStage({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`,
+    characters: [
+      { controller: first, sprites: { default: "first" } },
+      { controller: second, sprites: { default: "second" } }
+    ]
+  });
+
+  await stage.mount();
+  assert.equal(root.children.length, 2);
+  const firstElement = root.children[0];
+  firstElement.remove = () => { throw failure; };
+
+  assert.throws(() => stage.unmount(), error => error === failure);
+  // The renderer removes its record before invoking the element's host remove
+  // callback; the stage must still release the second character and reset.
+  assert.equal(root.children.length, 1);
+  assert.equal(root.children[0].dataset.characterId, "first");
+  assert.equal(await stage.mount(), true);
+  assert.equal(root.children.length, 3);
+  stage.destroy();
+});
