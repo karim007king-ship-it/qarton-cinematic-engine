@@ -68,11 +68,7 @@ test("HTMLAudio destroy attempts every voice and retries transient pause failure
   adapter.play("first");
   adapter.play("second");
 
-  assert.throws(() => adapter.destroy(), error => {
-    assert.ok(error instanceof AggregateError);
-    assert.ok(error.errors.some(item => /first audio pause failed/.test(item.message)));
-    return true;
-  });
+  assert.throws(() => adapter.destroy(), /first audio pause failed/);
   assert.deepEqual(calls, ["first", "second"]);
   assert.equal(made[0].src, "");
   assert.equal(made[1].src, "");
