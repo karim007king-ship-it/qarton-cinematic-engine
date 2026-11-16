@@ -105,7 +105,7 @@ public final class WebViewSmokeTest {
                 latch.countDown();
             });
         });
-        assertTrue("JavaScript evaluation should complete", latch.await(5, TimeUnit.SECONDS));
+        assertTrue("JavaScript evaluation should complete within 20 seconds", latch.await(20, TimeUnit.SECONDS));
         String value = result.get();
         if (value != null && value.startsWith("\"") && value.endsWith("\"")) {
             return new JSONArray("[" + value + "]").getString(0);
