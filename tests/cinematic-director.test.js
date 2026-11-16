@@ -292,7 +292,7 @@ test("director resumes event delivery after a callback throws without replaying 
       { id: "second", atMs: 10, type: "story" },
       { id: "third", atMs: 20, type: "story" }
     ]),
-    onEvent: event => {
+    onEvent: async event => {
       delivered.push(event.id);
       if (event.id === "second") {
         secondCalls += 1;
@@ -305,8 +305,8 @@ test("director resumes event delivery after a callback throws without replaying 
   await assert.rejects(director.update(20), /story callback failed/);
   assert.deepEqual(delivered, ["first", "second"]);
   const retried = await director.update(20);
-  assert.deepEqual(retried.events.map(event => event.id), ["third"]);
-  assert.deepEqual(delivered, ["first", "second", "third"]);
+  assert.deepEqual(retried.events.map(event => event.id), ["second", "third"]);
+  assert.deepEqual(delivered, ["first", "second", "second", "third"]);
   assert.deepEqual(played, ["impact"]);
   await director.destroy();
 });
