@@ -247,3 +247,31 @@ test("cancels completed Web Animations after committing final inline styles", as
   assert.equal(await adapter.crossfade({ from: null, to: from, duration: 0 }), true);
   assert.equal(from.style.opacity, "1");
 });
+
+
+test("a throwing partial animation cancellation does not block CSS fallback", async () => {
+  let animateCalls = 0;
+  let frames = 0;
+  const { adapter } = setup({
+    animate: () => {
+      animateCalls += 1;
+      if (animateCalls === 1) {
+        return {
+          finished: new Promise(() => {}),
+          cancel() { throw new Error("cancel failed"); }
+        };
+      }
+      return null;
+    },
+    nextFrame: async () => { frames += 1; }
+  });
+  const from = await adapter.mount({ id: "from" }, {});
+  const to = await adapter.mount({ id: "to" }, {});
+  await adapter.crossfade({ from: null, to: from, duration: 0 });
+
+  assert.equal(await adapter.crossfade({ from, to, duration: 70 }), true);
+  assert.equal(animateCalls, 2);
+  assert.equal(frames, 1);
+  assert.equal(from.style.opacity, "0");
+  assert.equal(to.style.opacity, "1");
+});
