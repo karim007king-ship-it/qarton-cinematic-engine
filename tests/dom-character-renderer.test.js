@@ -422,7 +422,7 @@ test("DOM character renderer rejects unsafe resolved sprite URLs and rolls back 
     "VbScRiPt:alert(1)",
     "file:///etc/passwd",
     "//remote.example/hero.png",
-    "https://assets.test/hero.png\n"
+    "https://assets.test/hero\n.png"
   ];
 
   for (const url of invalidUrls) {
