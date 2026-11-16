@@ -214,3 +214,68 @@ test("director unmount resets lifecycle and stops audio even when stage unmount 
   });
   director.destroy();
 });
+
+
+test("concurrent director updates are serialized in shared-clock order", async () => {
+  let releaseFirst;
+  const stageUpdates = [];
+  const events = [];
+  const stage = {
+    mount: async () => true,
+    update: time => {
+      stageUpdates.push(time);
+      if (time === 100) return new Promise(resolve => { releaseFirst = resolve; });
+      return Promise.resolve();
+    },
+    unmount: () => {},
+    destroy: () => {}
+  };
+  const director = createCinematicDirector({
+    characterStage: stage,
+    timeline: createTimeline([
+      { id: "first", atMs: 100, type: "cue" },
+      { id: "second", atMs: 200, type: "cue" }
+    ]),
+    onEvent: event => events.push(event.id)
+  });
+
+  await director.mount();
+  const first = director.update(100);
+  const second = director.update(200);
+  for (let i = 0; i < 8 && !releaseFirst; i += 1) await Promise.resolve();
+  assert.equal(typeof releaseFirst, "function");
+  assert.deepEqual(stageUpdates, [100]);
+  releaseFirst();
+  await Promise.all([first, second]);
+  assert.deepEqual(stageUpdates, [100, 200]);
+  assert.deepEqual(events, ["first", "second"]);
+  director.destroy();
+});
+
+test("unmount cancels pending director events after an asynchronous stage update", async () => {
+  let releaseUpdate;
+  const events = [];
+  const stage = {
+    mount: async () => true,
+    update: () => new Promise(resolve => { releaseUpdate = resolve; }),
+    unmount: () => {},
+    destroy: () => {}
+  };
+  const director = createCinematicDirector({
+    characterStage: stage,
+    timeline: createTimeline([{ id: "late", atMs: 100, type: "cue" }]),
+    onEvent: event => events.push(event.id)
+  });
+
+  await director.mount();
+  const pending = director.update(100);
+  for (let i = 0; i < 8 && !releaseUpdate; i += 1) await Promise.resolve();
+  assert.equal(typeof releaseUpdate, "function");
+  director.unmount();
+  releaseUpdate();
+  const result = await pending;
+  assert.equal(result.cancelled, true);
+  assert.deepEqual(events, []);
+  assert.equal(director.getState().timeMs, -1);
+  director.destroy();
+});
