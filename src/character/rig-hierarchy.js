@@ -42,7 +42,7 @@ export function createCharacterRig(layers) {
     if (typeof id !== "string" || !id.trim() || byId.has(id)) {
       throw new TypeError("Rig layer ids must be non-empty and unique");
     }
-    if (layer.parent !== undefined && (typeof layer.parent !== "string" || !layer.parent.trim())) {
+    if (layer.parent != null && (typeof layer.parent !== "string" || !layer.parent.trim())) {
       throw new TypeError(`Rig layer "${id}" parent must be a non-empty id`);
     }
     const item = Object.freeze({
