@@ -116,9 +116,15 @@ test("destroy during an asynchronous mount still releases the late scene handle"
   await Promise.resolve();
   assert.equal(typeof releaseMount, "function");
 
-  await manager.destroy();
+  const destroying = manager.destroy();
+  let destroySettled = false;
+  destroying.then(() => { destroySettled = true; });
+  await Promise.resolve();
+  assert.equal(destroySettled, false);
+
   releaseMount();
   assert.equal(await pending, false);
+  await destroying;
   assert.deepEqual(events, ["unmount:late"]);
   assert.equal(manager.current, null);
 });
