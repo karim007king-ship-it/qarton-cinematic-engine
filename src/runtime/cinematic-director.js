@@ -35,6 +35,7 @@ export function createCinematicDirector({
 
   let mounted = false;
   let mountingPromise = null;
+  const pendingMounts = new Set();
   let lifecycleVersion = 0;
   let paused = false;
   let destroyed = false;
@@ -64,8 +65,10 @@ export function createCinematicDirector({
     })();
     const tracked = operation.finally(() => {
       if (mountingPromise === tracked) mountingPromise = null;
+      pendingMounts.delete(tracked);
     });
     mountingPromise = tracked;
+    pendingMounts.add(tracked);
     return tracked;
   }
 
@@ -122,6 +125,8 @@ export function createCinematicDirector({
   function unmount() {
     assertAlive();
     lifecycleVersion += 1;
+    // Allow a new mount while the invalidated operation settles in the background.
+    mountingPromise = null;
     // Reset shared state before host cleanup so failures cannot leave the
     // director reporting a mounted scene with a partially released stage.
     mounted = false;
@@ -170,12 +175,10 @@ export function createCinematicDirector({
 
       // Wait for a mount that was already in flight. CharacterStage invalidates
       // it during destroy and performs its own late-mount rollback.
-      if (mountingPromise) {
-        try {
-          await mountingPromise;
-        } catch (error) {
-          errors.push(error);
-        }
+      const pending = [...pendingMounts];
+      const settled = await Promise.allSettled(pending);
+      for (const result of settled) {
+        if (result.status === "rejected") errors.push(result.reason);
       }
 
       if (errors.length === 1) throw errors[0];
