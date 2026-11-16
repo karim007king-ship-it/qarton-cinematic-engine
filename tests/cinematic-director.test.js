@@ -408,3 +408,74 @@ test("director drives real character stage and audio cues from the same timeline
   assert.equal(root.children.length, 0);
   await director.destroy();
 });
+
+
+test("concurrent director updates serialize frame sampling and timeline event delivery", async () => {
+  const audio = audioSpy();
+  const characterTimes = [];
+  const delivered = [];
+  let releaseFirstEvent;
+  const firstEvent = new Promise(resolve => { releaseFirstEvent = resolve; });
+  const director = createCinematicDirector({
+    characterStage: {
+      mount: async () => true,
+      update: async time => { characterTimes.push(time); },
+      unmount: () => {},
+      destroy: () => {}
+    },
+    audio,
+    timeline: createTimeline([
+      { id: "opening", atMs: 0, type: "story" },
+      { id: "later", atMs: 150, type: "story" }
+    ]),
+    onEvent: async event => {
+      delivered.push(event.id);
+      if (event.id === "opening") await firstEvent;
+    }
+  });
+
+  await director.mount();
+  const first = director.update(100);
+  const second = director.update(200);
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(characterTimes, [100]);
+  assert.deepEqual(delivered, ["opening"]);
+  assert.deepEqual(audio.calls, [["update", 100]]);
+
+  releaseFirstEvent();
+  const firstResult = await first;
+  const secondResult = await second;
+  assert.deepEqual(firstResult.events.map(event => event.id), ["opening"]);
+  assert.deepEqual(secondResult.events.map(event => event.id), ["later"]);
+  assert.deepEqual(characterTimes, [100, 200]);
+  assert.deepEqual(delivered, ["opening", "later"]);
+  assert.deepEqual(audio.calls, [["update", 100], ["update", 200]]);
+  await director.destroy();
+});
+
+test("unmount invalidates an in-flight director frame before it dispatches timeline events", async () => {
+  let resolveCharacterUpdate;
+  const delivered = [];
+  const director = createCinematicDirector({
+    characterStage: {
+      mount: async () => true,
+      update: () => new Promise(resolve => { resolveCharacterUpdate = resolve; }),
+      unmount: () => {},
+      destroy: () => {}
+    },
+    timeline: createTimeline([{ id: "must-not-fire", atMs: 0, type: "story" }]),
+    onEvent: event => delivered.push(event.id)
+  });
+
+  await director.mount();
+  const updating = director.update(0);
+  await Promise.resolve();
+  director.unmount();
+  resolveCharacterUpdate();
+  const result = await updating;
+  assert.deepEqual(result.events, []);
+  assert.deepEqual(delivered, []);
+  assert.equal(director.getState().timeMs, -1);
+  await director.destroy();
+});
