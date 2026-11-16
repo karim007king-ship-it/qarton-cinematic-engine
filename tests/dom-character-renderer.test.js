@@ -138,7 +138,7 @@ test("DOM character renderer rejects unsafe sprite URLs without mounting the ele
     "vbscript:msgbox(1)",
     "file:///etc/passwd",
     "//attacker.test/sprite.png",
-    "https://assets.test/hero.png\\nmalicious"
+    "https://assets.test/hero.png\nmalicious"
   ];
   for (const url of unsafeUrls) {
     const document = new Document();
