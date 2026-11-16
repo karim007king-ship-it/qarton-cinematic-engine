@@ -131,3 +131,30 @@ test("duplicate in-flight requests for the same sprite share one asset resolutio
   assert.deepEqual(await Promise.all([first, second]), [true, true]);
   assert.equal(handle.children[0].src, "https://assets.test/focused.png");
 });
+
+test("DOM character renderer rejects unsafe sprite URLs without mounting the element", async () => {
+  const unsafeUrls = [
+    "javascript:alert(1)",
+    "vbscript:msgbox(1)",
+    "file:///etc/passwd",
+    "//attacker.test/sprite.png",
+    "https://assets.test/hero.png\nmalicious"
+  ];
+  for (const url of unsafeUrls) {
+    const document = new Document();
+    const root = new Element("main", document);
+    const renderer = createDOMCharacterRenderer({ root, resolveSprite: () => url });
+    await assert.rejects(renderer.mount({ id: "hero", sprites: { default: "hero" } }), /unsafe URL/);
+    assert.equal(root.children.length, 0);
+    renderer.destroy();
+  }
+});
+
+test("DOM character renderer preserves safe relative sprite URLs", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({ root, resolveSprite: () => "/assets/hero.webp" });
+  const handle = await renderer.mount({ id: "hero", sprites: { default: "hero" } });
+  assert.equal(handle.children[0].src, "/assets/hero.webp");
+  renderer.destroy();
+});
