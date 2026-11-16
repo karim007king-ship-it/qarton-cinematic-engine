@@ -10,6 +10,7 @@ export class BackgroundRenderer {
   #document;
   #resolveAsset;
   #renderToken = 0;
+  #destroyed = false;
 
   constructor({ root, resolveAsset }) {
     if (!root || typeof root.replaceChildren !== "function") {
@@ -33,6 +34,7 @@ export class BackgroundRenderer {
    * the previous scene remains visible. Returns false when superseded/cleared.
    */
   async render(scene, profile) {
+    if (this.#destroyed) throw new Error("BackgroundRenderer has been destroyed");
     const token = ++this.#renderToken;
     const plan = buildLayerPlan(scene, profile);
     const assets = await Promise.all(plan.map(async layer => {
@@ -105,13 +107,16 @@ export class BackgroundRenderer {
   }
 
   clear() {
+    if (this.#destroyed) return;
     this.#renderToken += 1;
     this.#root.replaceChildren();
     delete this.#root.dataset.qartonSceneId;
   }
 
   destroy() {
+    if (this.#destroyed) return;
     this.clear();
+    this.#destroyed = true;
     this.#root = null;
     this.#document = null;
     this.#resolveAsset = null;
