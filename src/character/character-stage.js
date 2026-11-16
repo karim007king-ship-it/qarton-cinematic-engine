@@ -40,6 +40,13 @@ export function createCharacterStage({
     records.set(id, { controller: entry.controller, sprites: entry.sprites, handle: null });
   }
 
+  function releaseCompleted(completed) {
+    for (const item of completed.reverse()) {
+      renderer.unmount(item.handle);
+      if (item.record.handle === item.handle) item.record.handle = null;
+    }
+  }
+
   async function performMount(version) {
     const completed = [];
     try {
@@ -48,25 +55,22 @@ export function createCharacterStage({
         const handle = await renderer.mount({ id, sprites: record.sprites, initialState });
         if (destroyed || version !== lifecycleVersion) {
           renderer.unmount(handle);
-          for (const item of completed.reverse()) renderer.unmount(item.handle);
-          for (const item of records.values()) item.handle = null;
+          releaseCompleted(completed);
           return false;
         }
         record.handle = handle;
         completed.push(record);
       }
       if (destroyed || version !== lifecycleVersion) {
-        for (const item of completed.reverse()) renderer.unmount(item.handle);
-        for (const item of records.values()) item.handle = null;
+        releaseCompleted(completed);
         return false;
       }
       mounted = true;
       return true;
     } catch (error) {
-      for (const item of completed.reverse()) renderer.unmount(item.handle);
-      for (const item of records.values()) item.handle = null;
-      mounted = false;
+      releaseCompleted(completed);
       if (destroyed || version !== lifecycleVersion) return false;
+      mounted = false;
       throw error;
     }
   }
