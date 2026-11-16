@@ -114,6 +114,8 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       const { layer, image } = layerRecord;
       image.dataset.layerId = layer.id;
       image.dataset.layerRole = layer.role;
+      // Keep accessible text synchronized even when expressions share one sprite.
+      image.alt = `${record.id} — ${layer.id} — ${state.expression ?? "neutral"}`;
       const poseTransform = state.layerTransforms?.[layer.id]
         ?? state.layerTransforms?.[layer.role]
         ?? {};
@@ -194,7 +196,6 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
           version !== layerRecord.assetVersion) return false;
       const safeUrl = assertSafeSpriteUrl(url, key);
       image.src = safeUrl;
-      image.alt = `${record.id} — ${layer.id} — ${state.expression ?? "neutral"}`;
       layerRecord.assetKey = key;
       return true;
     }).finally(() => {
