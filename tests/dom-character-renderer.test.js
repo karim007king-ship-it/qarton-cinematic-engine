@@ -510,3 +510,27 @@ test("an update invalidated by unmount reports that it did not complete", async 
   assert.equal(await pendingUpdate, false);
   assert.equal(root.children.length, 0);
 });
+
+test("destroy aborts sprite resolution while a character is mounting", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let resolveSprite;
+  let signal;
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: (key, context) => {
+      signal = context.signal;
+      return new Promise(resolve => { resolveSprite = resolve; });
+    }
+  });
+
+  const mounting = renderer.mount({
+    id: "late-hero",
+    sprites: { default: "hero" }
+  });
+  renderer.destroy();
+  assert.equal(signal.aborted, true);
+  resolveSprite("https://assets.test/hero.png");
+  await assert.rejects(mounting, /destroyed/);
+  assert.equal(root.children.length, 0);
+});
