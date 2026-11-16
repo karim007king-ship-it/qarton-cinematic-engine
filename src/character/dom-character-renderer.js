@@ -175,8 +175,9 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     record.assetVersion += 1;
     record.pendingAssetKey = null;
     record.pendingAssetPromise = null;
-    records.delete(handle);
+    // Keep ownership until DOM removal succeeds so destroy() can retry cleanup.
     removeElement(handle);
+    records.delete(handle);
   }
 
   function destroy() {
