@@ -9,8 +9,22 @@ export function buildLayerPlan(scene, profile) {
   const budget = profile?.maxBackgroundLayers;
   if (!Number.isInteger(budget) || budget < 0) throw new TypeError("profile.maxBackgroundLayers must be a non-negative integer");
 
-  const ordered = scene.layers.map((layer, index) => ({ ...layer, sourceIndex: index }))
-    .sort((a, b) => (ROLE_ORDER[a.role] - ROLE_ORDER[b.role]) || (a.depth - b.depth) || (a.sourceIndex - b.sourceIndex));
+  const ordered = scene.layers.map((layer, index) => {
+    if (!layer || typeof layer !== "object" || Array.isArray(layer)) {
+      throw new TypeError(`Layer at index ${index} must be an object`);
+    }
+    if (!Object.hasOwn(ROLE_ORDER, layer.role)) {
+      throw new TypeError(`Layer at index ${index} has an unsupported role`);
+    }
+    if (!Number.isFinite(layer.depth)) {
+      throw new TypeError(`Layer at index ${index} must have a finite depth`);
+    }
+    return { ...layer, sourceIndex: index };
+  }).sort((a, b) =>
+    (ROLE_ORDER[a.role] - ROLE_ORDER[b.role]) ||
+    (a.depth - b.depth) ||
+    (a.sourceIndex - b.sourceIndex)
+  );
 
   let backgroundCount = 0;
   const planned = [];
