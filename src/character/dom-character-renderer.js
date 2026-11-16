@@ -105,6 +105,9 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
   } = {}) {
     if (destroyed) throw new Error("DOM character renderer has been destroyed");
     if (typeof id !== "string" || !id.trim()) throw new TypeError("Character renderer requires an id");
+    if ([...records.values()].some(record => record.id === id)) {
+      throw new TypeError(`Character renderer already has a mounted or mounting character with id "${id}"`);
+    }
     if (!sprites || typeof sprites !== "object" || Array.isArray(sprites)) {
       throw new TypeError("Character sprites must be an expression-to-asset map");
     }
