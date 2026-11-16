@@ -162,3 +162,30 @@ test("destroy invalidates a render while assets are still resolving", async () =
   assert.equal(await pending, false);
   assert.equal(root.children.length, 0);
 });
+
+test("superseded asset resolution failures are ignored without disturbing the newer scene", async () => {
+  const { root, scene, profile } = fixture();
+  const staleRejectors = [];
+  const renderer = new BackgroundRenderer({
+    root,
+    resolveAsset: key => {
+      if (staleRejectors.length < 3) {
+        return new Promise((resolve, reject) => staleRejectors.push(reject));
+      }
+      return Promise.resolve(`/current-${key}.png`);
+    }
+  });
+
+  const staleRender = renderer.render(scene, profile);
+  const currentRender = renderer.render(scene, profile);
+  assert.equal(await currentRender, true);
+
+  staleRejectors.forEach(reject => reject(new Error("stale asset failure")));
+  assert.equal(await staleRender, false);
+  assert.equal(root.dataset.qartonSceneId, "intro");
+  assert.deepEqual(root.children.map(node => node.children[0].src), [
+    "/current-images/sky.png",
+    "/current-images/hero.png",
+    "/current-images/title.png"
+  ]);
+});
