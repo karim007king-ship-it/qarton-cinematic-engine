@@ -305,3 +305,19 @@ test("partial mount rollback attempts every completed character cleanup", async 
   stage.destroy();
   assert.equal(root.children.length, 0);
 });
+
+
+test("character stage destroy can retry a transient DOM cleanup failure", async () => {
+  const { root, stage } = fixture();
+  await stage.mount();
+  const originalRemoveChild = root.removeChild.bind(root);
+  const failure = new Error("temporary stage cleanup failure");
+  root.removeChild = () => { throw failure; };
+
+  assert.throws(() => stage.destroy(), error => error === failure);
+  assert.equal(root.children.length, 1);
+  root.removeChild = originalRemoveChild;
+  assert.doesNotThrow(() => stage.destroy());
+  assert.equal(root.children.length, 0);
+  await assert.rejects(stage.mount(), /destroyed/);
+});
