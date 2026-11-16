@@ -85,3 +85,53 @@ test("concurrent destroy calls share the same completion and failure", async () 
   await assert.rejects(secondDestroy, error => error === failure);
   await assert.rejects(runtime.loadAsset("late"), /destroyed/);
 });
+
+test("destroy cancels an in-flight scene crossfade before releasing DOM", async () => {
+  let releaseWait;
+  const document = new Document();
+  const root = new Element("main", document);
+  const runtime = createCinematicRuntime({
+    root,
+    loadAsset: key => key,
+    renderScene: scene => {
+      const content = document.createElement("section");
+      content.dataset.scene = scene.id;
+      return content;
+    },
+    wait: () => new Promise(resolve => { releaseWait = resolve; })
+  });
+
+  assert.equal(await runtime.transitionTo({ id: "current" }), true);
+  const pending = runtime.transitionTo({ id: "next" });
+  for (let i = 0; i < 12 && !releaseWait; i += 1) await Promise.resolve();
+  assert.equal(typeof releaseWait, "function");
+
+  await runtime.destroy();
+  assert.equal(await pending, false);
+  assert.equal(root.children.length, 0);
+  releaseWait();
+  assert.equal(root.children.length, 0);
+});
+
+test("destroy during asynchronous scene rendering prevents a late DOM mount", async () => {
+  let finishRender;
+  const document = new Document();
+  const root = new Element("main", document);
+  const runtime = createCinematicRuntime({
+    root,
+    loadAsset: key => key,
+    renderScene: () => new Promise(resolve => {
+      finishRender = () => resolve(document.createElement("section"));
+    })
+  });
+
+  const pending = runtime.transitionTo({ id: "late" });
+  for (let i = 0; i < 12 && !finishRender; i += 1) await Promise.resolve();
+  assert.equal(typeof finishRender, "function");
+
+  await runtime.destroy();
+  finishRender();
+  await assert.rejects(pending, /DOM transition adapter has been destroyed/);
+  assert.equal(root.children.length, 0);
+  assert.equal(runtime.currentScene, null);
+});
