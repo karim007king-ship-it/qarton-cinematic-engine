@@ -175,9 +175,15 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     record.assetVersion += 1;
     record.pendingAssetKey = null;
     record.pendingAssetPromise = null;
-    // Keep ownership until DOM removal succeeds so destroy() can retry cleanup.
-    removeElement(handle);
-    records.delete(handle);
+    // A fallback root removal may succeed even when Element.remove() throws.
+    // Drop ownership once detached, but preserve the original adapter error.
+    try {
+      removeElement(handle);
+      records.delete(handle);
+    } catch (error) {
+      if (handle.parentNode !== root) records.delete(handle);
+      throw error;
+    }
   }
 
   function destroy() {
@@ -197,6 +203,8 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
         removeElement(handle);
         records.delete(handle);
       } catch (error) {
+        // If the fallback detached the element, no resource remains to retry.
+        if (handle.parentNode !== root) records.delete(handle);
         if (!failed) firstError = error;
         failed = true;
       }
