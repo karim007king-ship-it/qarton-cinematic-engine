@@ -226,6 +226,19 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     if (handle.parentNode === root) root.removeChild(handle);
   }
 
+  function cancelMount(id) {
+    const entry = [...records.entries()].find(([, record]) => record.id === id);
+    if (!entry) return false;
+    const [handle, record] = entry;
+    record.assetVersion += 1;
+    record.pendingAssetKey = null;
+    record.pendingAssetPromise = null;
+    records.delete(handle);
+    handle.remove?.();
+    if (handle.parentNode === root) root.removeChild(handle);
+    return true;
+  }
+
   function destroy() {
     if (destroyed) return;
     destroyed = true;
@@ -239,5 +252,5 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     records.clear();
   }
 
-  return Object.freeze({ mount, update, unmount, destroy });
+  return Object.freeze({ mount, update, unmount, cancelMount, destroy });
 }
