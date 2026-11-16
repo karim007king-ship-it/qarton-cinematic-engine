@@ -25,6 +25,7 @@ export function createCinematicRuntime({
   if (typeof loadAsset !== "function") throw new TypeError("Cinematic runtime requires loadAsset()");
   if (typeof renderScene !== "function") throw new TypeError("Cinematic runtime requires renderScene()");
   let destroyed = false;
+  let destroyPromise = null;
 
   const assets = new AssetManager({ loader: loadAsset });
   const adaptive = createAdaptivePerformanceMonitor({ device, onProfileChange });
@@ -50,16 +51,28 @@ export function createCinematicRuntime({
     return scenes.transitionTo(scene, profile, options);
   }
 
-  async function destroy() {
-    if (destroyed) return;
+  function destroy() {
+    if (destroyPromise) return destroyPromise;
     destroyed = true;
-    try {
-      await scenes.destroy();
-    } finally {
-      dom.destroy();
-      assets.destroy();
-      activity.destroy();
-    }
+    destroyPromise = (async () => {
+      const errors = [];
+      const cleanup = async operation => {
+        try {
+          await operation();
+        } catch (error) {
+          errors.push(error);
+        }
+      };
+
+      await cleanup(() => scenes.destroy());
+      await cleanup(() => dom.destroy());
+      await cleanup(() => assets.destroy());
+      await cleanup(() => activity.destroy());
+
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) throw new AggregateError(errors, "Cinematic runtime cleanup failed");
+    })();
+    return destroyPromise;
   }
 
   return Object.freeze({
