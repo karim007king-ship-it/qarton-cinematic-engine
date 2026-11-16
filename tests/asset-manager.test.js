@@ -47,6 +47,36 @@ test("clear prevents late requests from repopulating the cache", async () => {
   assert.equal(manager.pendingCount, 0);
 });
 
+
+test("release invalidates an in-flight cache write and allows a fresh load", async () => {
+  const completions = [];
+  let calls = 0;
+  const manager = new AssetManager({
+    loader: key => new Promise(resolve => {
+      calls += 1;
+      const requestNumber = calls;
+      completions.push(() => resolve("/" + key + "-" + requestNumber + ".png"));
+    })
+  });
+
+  const oldRequest = manager.load("background");
+  await Promise.resolve();
+  assert.equal(manager.pendingCount, 1);
+  assert.equal(manager.release("background"), true);
+  assert.equal(manager.pendingCount, 0);
+
+  const newRequest = manager.load("background");
+  await Promise.resolve();
+  assert.equal(calls, 2);
+  completions[1]();
+  assert.equal(await newRequest, "/background-2.png");
+  completions[0]();
+  assert.equal(await oldRequest, "/background-1.png");
+  assert.equal(await manager.load("background"), "/background-2.png");
+  assert.equal(manager.size, 1);
+  assert.equal(calls, 2);
+});
+
 test("release removes one cached key without disturbing others", async () => {
   const manager = new AssetManager({ loader: key => `/${key}.png` });
   await manager.preload(["one", "two"]);
