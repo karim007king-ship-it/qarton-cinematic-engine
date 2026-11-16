@@ -363,10 +363,10 @@ test("DOM renderer nests rig nodes and applies local transforms through parent i
   assert.equal(torso.children[0].tagName, "img");
   assert.equal(head.children[0].tagName, "img");
   assert.equal(eyes.children[0].tagName, "img");
-  assert.match(torso.style.transform, /translate\\(0px, 2px\\).*rotate\\(10deg\\)/);
-  assert.match(head.style.transform, /translate\\(0px, -4px\\).*rotate\\(15deg\\)/);
-  assert.match(eyes.style.transform, /translate\\(1px, 0px\\).*rotate\\(0deg\\)/);
-  assert.match(arm.style.transform, /rotate\\(-20deg\\)/);
+  assert.match(torso.style.transform, /translate\(0px, 2px\).*rotate\(10deg\)/);
+  assert.match(head.style.transform, /translate\(0px, -4px\).*rotate\(15deg\)/);
+  assert.match(eyes.style.transform, /translate\(1px, 0px\).*rotate\(0deg\)/);
+  assert.match(arm.style.transform, /rotate\(-20deg\)/);
   assert.equal(eyes.children[0].style.transform, "none");
   renderer.destroy();
   assert.equal(root.children.length, 0);
@@ -411,6 +411,6 @@ test("DOM renderer applies validated static rig transforms even without a parent
     }]
   });
   assert.equal(handle.children.length, 1);
-  assert.match(handle.children[0].style.transform, /translate\\(7px, -3px\\).*rotate\\(12deg\\).*scale\\(1.1, 0.9\\)/);
+  assert.match(handle.children[0].style.transform, /translate\(7px, -3px\).*rotate\(12deg\).*scale\(1.1, 0.9\)/);
   renderer.destroy();
 });
