@@ -133,3 +133,22 @@ test("runtime destroy cancels an active visual transition before awaiting scene 
   await destroying;
   assert.equal(root.children.length, 0);
 });
+
+
+test("runtime pauses the host before releasing scene and asset resources", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let childrenAtPause = null;
+  const runtime = createCinematicRuntime({
+    root,
+    loadAsset: key => key,
+    renderScene: () => document.createElement("div"),
+    onPause: () => { childrenAtPause = root.children.length; }
+  });
+
+  await runtime.transitionTo({ id: "visible" });
+  assert.equal(root.children.length, 1);
+  await runtime.destroy();
+  assert.equal(childrenAtPause, 1);
+  assert.equal(root.children.length, 0);
+});
