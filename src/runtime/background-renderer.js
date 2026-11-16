@@ -1,5 +1,21 @@
 import { buildLayerPlan } from "../scene/layer-plan.js";
 
+function assertSafeBackgroundUrl(value, key) {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new TypeError(`Asset resolver returned no URL for "${key}"`);
+  }
+  const url = value.trim();
+  const hasControlCharacter = [...url].some(character => {
+    const code = character.charCodeAt(0);
+    return code <= 31 || code === 127;
+  });
+  if (hasControlCharacter || url.startsWith("//") ||
+      /^(?:javascript|vbscript|file):/i.test(url)) {
+    throw new TypeError(`Asset resolver returned an unsafe URL for "${key}"`);
+  }
+  return url;
+}
+
 /**
  * DOM renderer for scene layers.
  * The host supplies both the mount element and asset resolver; importing this
@@ -39,10 +55,7 @@ export class BackgroundRenderer {
     try {
       assets = await Promise.all(plan.map(async layer => {
         const url = await this.#resolveAsset(layer.asset, layer);
-        if (typeof url !== "string" || !url.trim()) {
-          throw new TypeError(`Asset resolver returned no URL for "${layer.asset}"`);
-        }
-        return url;
+        return assertSafeBackgroundUrl(url, layer.asset);
       }));
     } catch (error) {
       // A superseded render is no longer responsible for reporting its load
