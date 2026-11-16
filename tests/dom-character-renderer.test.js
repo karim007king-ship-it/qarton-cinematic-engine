@@ -414,3 +414,36 @@ test("DOM renderer applies validated static rig transforms even without a parent
   assert.match(handle.children[0].style.transform, /translate\(7px, -3px\).*rotate\(12deg\).*scale\(1.1, 0.9\)/);
   renderer.destroy();
 });
+
+
+test("DOM character renderer rejects unsafe resolved sprite URLs and rolls back mounts", async () => {
+  const invalidUrls = [
+    "javascript:alert(1)",
+    "VbScRiPt:alert(1)",
+    "file:///etc/passwd",
+    "//remote.example/hero.png",
+    "https://assets.test/hero.png\n"
+  ];
+
+  for (const url of invalidUrls) {
+    const document = new Document();
+    const root = new Element("main", document);
+    const renderer = createDOMCharacterRenderer({ root, resolveSprite: () => url });
+    await assert.rejects(
+      renderer.mount({ id: "unsafe-hero", sprites: { default: "hero" } }),
+      /unsafe URL/
+    );
+    assert.equal(root.children.length, 0);
+    renderer.destroy();
+  }
+
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({ root, resolveSprite: () => "  " });
+  await assert.rejects(
+    renderer.mount({ id: "empty-hero", sprites: { default: "hero" } }),
+    /invalid URL/
+  );
+  assert.equal(root.children.length, 0);
+  renderer.destroy();
+});
