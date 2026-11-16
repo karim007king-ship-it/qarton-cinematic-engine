@@ -76,9 +76,24 @@ export function createCharacterStage({
       mounted = true;
       return true;
     } catch (error) {
-      releaseCompleted(completed);
-      if (destroyed || version !== lifecycleVersion) return false;
+      let cleanupError;
+      try {
+        releaseCompleted(completed);
+      } catch (failure) {
+        cleanupError = failure;
+      }
+      if (destroyed || version !== lifecycleVersion) {
+        if (cleanupError) throw cleanupError;
+        return false;
+      }
       mounted = false;
+      if (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          "Character mount failed and rollback cleanup also failed",
+          { cause: error }
+        );
+      }
       throw error;
     }
   }
