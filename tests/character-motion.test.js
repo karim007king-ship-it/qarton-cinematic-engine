@@ -266,6 +266,6 @@ test("pose clips reject negative local scale values", () => {
           ]
         }
       }]
-    }), /invalid ${key}/);
+    }), new RegExp(`invalid ${key}`));
   }
 });
