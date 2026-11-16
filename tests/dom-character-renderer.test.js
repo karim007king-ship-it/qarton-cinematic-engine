@@ -47,20 +47,21 @@ test("stale asynchronous sprite loads cannot overwrite a newer expression", asyn
   const pending = new Map();
   const renderer = createDOMCharacterRenderer({
     root,
-    resolveSprite: key => new Promise(resolve => pending.set(key, resolve))
+    resolveSprite: (key, context) => new Promise(resolve => pending.set(key, { resolve, signal: context.signal }))
   });
   const mounting = renderer.mount({
     id: "hero",
     sprites: { neutral: "neutral", focused: "focused", angry: "angry" },
     initialState: { expression: "neutral" }
   });
-  pending.get("neutral")("https://assets.test/neutral.png");
+  pending.get("neutral").resolve("https://assets.test/neutral.png");
   const handle = await mounting;
   const first = renderer.update(handle, { id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, expression: "focused" });
   const second = renderer.update(handle, { id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, expression: "angry" });
-  pending.get("angry")("https://assets.test/angry.png");
+  assert.equal(pending.get("focused").signal.aborted, true);
+  pending.get("angry").resolve("https://assets.test/angry.png");
   await second;
-  pending.get("focused")("https://assets.test/focused.png");
+  pending.get("focused").resolve("https://assets.test/focused.png");
   await first;
   assert.equal(handle.children[0].src, "https://assets.test/angry.png");
 });
@@ -487,10 +488,11 @@ test("an update invalidated by unmount reports that it did not complete", async 
   const document = new Document();
   const root = new Element("main", document);
   let resolveFocused;
+  let focusedSignal;
   const renderer = createDOMCharacterRenderer({
     root,
-    resolveSprite: key => key === "focused"
-      ? new Promise(resolve => { resolveFocused = resolve; })
+    resolveSprite: (key, context) => key === "focused"
+      ? (focusedSignal = context.signal, new Promise(resolve => { resolveFocused = resolve; }))
       : `https://assets.test/${key}.png`
   });
   const handle = await renderer.mount({
@@ -502,6 +504,7 @@ test("an update invalidated by unmount reports that it did not complete", async 
     id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, expression: "focused"
   });
   renderer.unmount(handle);
+  assert.equal(focusedSignal.aborted, true);
   resolveFocused("https://assets.test/focused.png");
 
   assert.equal(await pendingUpdate, false);
