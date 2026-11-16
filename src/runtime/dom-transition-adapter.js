@@ -209,25 +209,37 @@ export function createDOMTransitionAdapter({
     }
   }
 
+  function removeMountedHandle(handle) {
+    try {
+      handle.remove?.();
+    } catch {
+      // Fall back to the injected root when a host element's remove() fails.
+    }
+    if (handle.parentNode === root) {
+      try {
+        root.removeChild(handle);
+      } catch {
+        // Teardown remains best-effort for host-managed DOM implementations.
+      }
+    }
+  }
+
   function unmount(handle) {
     if (!handle || !mounted.has(handle)) return;
     if (activeTransition && (activeTransition.from === handle || activeTransition.to === handle)) {
       cancelActiveTransition();
     }
     mounted.delete(handle);
-    handle.remove?.();
-    if (handle.parentNode === root) root.removeChild(handle);
+    removeMountedHandle(handle);
   }
 
   function destroy() {
     if (destroyed) return;
     destroyed = true;
     cancelActiveTransition();
-    for (const handle of mounted) {
-      handle.remove?.();
-      if (handle.parentNode === root) root.removeChild(handle);
-    }
+    const handles = [...mounted];
     mounted.clear();
+    for (const handle of handles) removeMountedHandle(handle);
   }
 
   return Object.freeze({ mount, crossfade, unmount, destroy });
