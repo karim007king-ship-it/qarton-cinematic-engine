@@ -61,7 +61,7 @@ public final class WebViewSmokeTest {
             org.json.JSONObject effectState = new JSONArray("[" + effects + "]").getJSONObject(0);
             assertFalse("Camera should update the scene transform", effectState.getString("camera").isEmpty());
             assertTrue("Parallax should update every background layer", effectState.getBoolean("parallax"));
-            assertTrue("Timeline should dispatch the impact event", effectState.getJSONArray("timeline").toList().contains("impact"));
+            assertTrue("Timeline should dispatch the impact event", containsString(effectState.getJSONArray("timeline"), "impact"));
             assertTrue("Canvas should have a non-zero backing size", effectState.getInt("canvasWidth") > 0
                     && effectState.getInt("canvasHeight") > 0);
 
@@ -70,6 +70,13 @@ public final class WebViewSmokeTest {
             assertTrue("WebView should not report JavaScript console errors: " + MainActivity.getConsoleErrors(),
                     MainActivity.getConsoleErrors().isEmpty());
         }
+    }
+
+    private static boolean containsString(JSONArray values, String expected) throws Exception {
+        for (int index = 0; index < values.length(); index++) {
+            if (expected.equals(values.getString(index))) return true;
+        }
+        return false;
     }
 
     private static void waitFor(MainActivity activity, String expression, long timeoutMs) throws Exception {
