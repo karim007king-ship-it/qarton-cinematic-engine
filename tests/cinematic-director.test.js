@@ -129,12 +129,13 @@ test("destroy invalidates an asynchronous director mount", async () => {
 test("director destroys audio even when character stage cleanup throws", async () => {
   const calls = [];
   const failure = new Error("character stage cleanup failed");
+  let stageDestroyAttempts = 0;
   const director = createCinematicDirector({
     characterStage: {
       mount: async () => true,
       update: async () => {},
       unmount: () => {},
-      destroy: () => { calls.push("stage"); throw failure; }
+      destroy: () => { calls.push("stage"); stageDestroyAttempts += 1; if (stageDestroyAttempts === 1) throw failure; }
     },
     audio: {
       update: () => {},
@@ -149,6 +150,7 @@ test("director destroys audio even when character stage cleanup throws", async (
   assert.deepEqual(calls, ["stage", "audio"]);
   assert.equal(director.getState().destroyed, true);
   await assert.doesNotReject(director.destroy());
+  assert.deepEqual(calls, ["stage", "audio", "stage", "audio"]);
 });
 
 test("director unmount attempts audio reset and resets state when stage cleanup throws", async () => {
@@ -175,7 +177,8 @@ test("director unmount attempts audio reset and resets state when stage cleanup 
   assert.deepEqual(director.getState(), {
     mounted: false, paused: false, destroyed: false, timeMs: -1
   });
-  assert.doesNotThrow(() => director.mount());
+  await director.mount();
+  await director.destroy();
 });
 
 
