@@ -88,3 +88,45 @@ test("HTMLAudio adapter releases voice references when playback is rejected", as
   assert.deepEqual(errors, ["autoplay blocked"]);
   adapter.destroy();
 });
+
+
+test("stop releases adapter references even when the host pause method throws", () => {
+  const audio = {
+    play() { return Promise.resolve(); },
+    pause() { throw new Error("media teardown failed"); }
+  };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/fragile.mp3",
+    createAudio: () => audio
+  });
+  adapter.play("fragile");
+  assert.throws(() => adapter.stop(audio), /media teardown failed/);
+  assert.equal(adapter.setVolume(audio, 0.5), false);
+  adapter.destroy();
+});
+
+test("destroy cleans every voice when one host pause method throws", () => {
+  const first = {
+    src: "",
+    play() { return Promise.resolve(); },
+    pause() { throw new Error("first voice failed"); }
+  };
+  const second = {
+    src: "",
+    play() { return Promise.resolve(); },
+    pause() { this.paused = true; }
+  };
+  const voices = [first, second];
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: key => `/${key}.mp3`,
+    createAudio: () => voices.shift()
+  });
+  adapter.play("first");
+  adapter.play("second");
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.equal(first.src, "");
+  assert.equal(second.src, "");
+  assert.equal(second.paused, true);
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.throws(() => adapter.play("late"), /destroyed/);
+});
