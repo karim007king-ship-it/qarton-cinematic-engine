@@ -121,11 +121,26 @@ export function createCinematicDirector({
   function unmount() {
     assertAlive();
     lifecycleVersion += 1;
-    if (characterStage) characterStage.unmount();
-    audio?.stopAll({ reset: true });
+    // Reset shared state before host cleanup so failures cannot leave the
+    // director reporting a mounted scene with a partially released stage.
     mounted = false;
     paused = false;
     lastTimeMs = -1;
+
+    let firstError;
+    let failed = false;
+    for (const cleanup of [
+      () => characterStage?.unmount(),
+      () => audio?.stopAll({ reset: true })
+    ]) {
+      try {
+        cleanup();
+      } catch (error) {
+        if (!failed) firstError = error;
+        failed = true;
+      }
+    }
+    if (failed) throw firstError;
   }
 
   function destroy() {
