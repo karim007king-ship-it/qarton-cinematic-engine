@@ -9,7 +9,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 test("browser showcase inline module has valid JavaScript syntax", async () => {
   const html = await readFile(resolve(root, "examples/browser-smoke.html"), "utf8");
-  const match = html.match(/<script\\s+type=["']module["']\\s*>([\\s\\S]*?)<\\/script>/i);
+  const match = html.match(/<script\s+type=["']module["']\s*>([\s\S]*?)<\/script>/i);
   assert.ok(match, "browser showcase must contain an inline module script");
 
   const checked = spawnSync(process.execPath, ["--check", "--input-type=module"], {
@@ -20,6 +20,6 @@ test("browser showcase inline module has valid JavaScript syntax", async () => {
   assert.equal(
     checked.status,
     0,
-    [checked.stdout, checked.stderr].filter(Boolean).join("\\n") || "module syntax check failed"
+    [checked.stdout, checked.stderr].filter(Boolean).join("\n") || "module syntax check failed"
   );
 });
