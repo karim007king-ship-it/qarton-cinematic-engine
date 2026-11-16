@@ -99,15 +99,16 @@ export function createCinematicDirector({
     if (characterStage) await characterStage.update(timeMs);
     lastTimeMs = timeMs;
 
-    // Track event delivery independently from the clock. If a callback throws,
-    // a later update at the same time can continue with remaining events without
-    // replaying callbacks that were already entered.
+    // Track event delivery independently from the clock. Commit an event only
+    // after its callback resolves; a thrown/rejected callback remains pending and
+    // is retried on the next update. Callbacks should be idempotent if they can
+    // perform partial side effects before rejecting.
     const dispatchedEvents = [];
     for (const event of events) {
       if (deliveredEventIds.has(event.id)) continue;
+      await onEvent(event, timeMs);
       deliveredEventIds.add(event.id);
       dispatchedEvents.push(event);
-      onEvent(event, timeMs);
     }
     eventCursorMs = timeMs;
     return Object.freeze({ timeMs, events: Object.freeze(dispatchedEvents), paused: false });
