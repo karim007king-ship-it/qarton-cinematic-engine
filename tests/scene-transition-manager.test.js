@@ -183,6 +183,7 @@ test("a failed candidate cleanup is attempted only once after supersession", asy
 });
 
 
+
 test("destroy during an asynchronous crossfade releases both scenes without committing the candidate", async () => {
   let finishCrossfade;
   const events = [];
@@ -193,6 +194,7 @@ test("destroy during an asynchronous crossfade releases both scenes without comm
     },
     crossfade: ({ to }) => {
       events.push(`crossfade:${to.id}`);
+      if (to.id === "active") return Promise.resolve(true);
       return new Promise(resolve => { finishCrossfade = resolve; });
     },
     unmount: async handle => { events.push(`unmount:${handle.id}`); }
