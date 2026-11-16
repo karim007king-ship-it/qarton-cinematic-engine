@@ -101,7 +101,7 @@ export function createCinematicDirector({
     return Object.freeze({ timeMs, events, paused: false });
   }
 
-  function update(timeMs) {
+  async function update(timeMs) {
     assertAlive();
     const operation = updateQueue.then(() => performUpdate(timeMs));
     // Keep the queue usable after a rejected update while preserving the
