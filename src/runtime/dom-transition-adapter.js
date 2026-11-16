@@ -213,20 +213,29 @@ export function createDOMTransitionAdapter({
     if (activeTransition && (activeTransition.from === handle || activeTransition.to === handle)) {
       cancelActiveTransition();
     }
-    mounted.delete(handle);
-    handle.remove?.();
+
+    // Retain the handle in the ownership set until detachment succeeds. This
+    // makes transient DOM failures recoverable through a later destroy().
     if (handle.parentNode === root) root.removeChild(handle);
+    else if (handle.parentNode && typeof handle.remove === "function") handle.remove();
+    mounted.delete(handle);
   }
 
   function destroy() {
-    if (destroyed) return;
     destroyed = true;
     cancelActiveTransition();
-    for (const handle of mounted) {
-      handle.remove?.();
-      if (handle.parentNode === root) root.removeChild(handle);
+    const errors = [];
+    for (const handle of [...mounted]) {
+      try {
+        unmount(handle);
+      } catch (error) {
+        errors.push(error);
+      }
     }
-    mounted.clear();
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1) {
+      throw new AggregateError(errors, "One or more mounted scenes could not be removed");
+    }
   }
 
   return Object.freeze({ mount, crossfade, unmount, destroy });
