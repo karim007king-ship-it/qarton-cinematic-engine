@@ -14,6 +14,7 @@ export class SceneTransitionManager {
   #ownedHandles = new Set();
   #releaseInFlight = new Map();
   #destroyPromise = null;
+  #pendingTransitions = new Set();
 
   constructor({ mount, crossfade, unmount, duration = 350 } = {}) {
     if (typeof mount !== "function") throw new TypeError("SceneTransitionManager requires mount()");
@@ -57,11 +58,19 @@ export class SceneTransitionManager {
    * Mount the next scene before fading, so the current scene remains visible
    * while assets are prepared. Failed mounts/transitions preserve the current.
    */
-  async transitionTo(scene, profile, { duration = this.#duration } = {}) {
-    if (this.#destroyed) throw new Error("SceneTransitionManager has been destroyed");
+  transitionTo(scene, profile, { duration = this.#duration } = {}) {
+    if (this.#destroyed) return Promise.reject(new Error("SceneTransitionManager has been destroyed"));
     if (!Number.isFinite(duration) || duration < 0) {
-      throw new TypeError("Transition duration must be a non-negative finite number");
+      return Promise.reject(new TypeError("Transition duration must be a non-negative finite number"));
     }
+
+    const operation = this.#performTransition(scene, profile, duration);
+    const tracked = operation.finally(() => this.#pendingTransitions.delete(tracked));
+    this.#pendingTransitions.add(tracked);
+    return tracked;
+  }
+
+  async #performTransition(scene, profile, duration) {
 
     const generation = ++this.#generation;
     const previous = this.#current;
@@ -112,15 +121,25 @@ export class SceneTransitionManager {
   async clear() {
     this.#generation += 1;
     this.#current = null;
-    const results = await Promise.allSettled(
-      [...this.#ownedHandles].map(handle => this.#release(handle))
-    );
-    const errors = results
+
+    // Let invalidated transitions finish their rollback first. destroy() calls
+    // the adapter's destroy() before this method so active visual transitions
+    // are cancelled and these promises can settle.
+    const transitions = await Promise.allSettled([...this.#pendingTransitions]);
+    const errors = transitions
       .filter(result => result.status === "rejected")
       .map(result => result.reason);
+
+    const releases = await Promise.allSettled(
+      [...this.#ownedHandles].map(handle => this.#release(handle))
+    );
+    errors.push(...releases
+      .filter(result => result.status === "rejected")
+      .map(result => result.reason));
+
     if (errors.length === 1) throw errors[0];
     if (errors.length > 1) {
-      throw new AggregateError(errors, "One or more scene handles could not be released");
+      throw new AggregateError(errors, "One or more scene transitions or handles could not be cleaned up");
     }
   }
 
