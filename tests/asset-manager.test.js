@@ -115,3 +115,30 @@ test("destroy is terminal and rejects new loads without invoking the loader", as
   assert.equal(manager.size, 0);
   assert.equal(manager.pendingCount, 0);
 });
+
+test("destroy invalidates an in-flight cache write while preserving its existing caller", async () => {
+  let finish;
+  let calls = 0;
+  const manager = new AssetManager({
+    loader: key => {
+      calls += 1;
+      return new Promise(resolve => { finish = () => resolve(`/${key}.png`); });
+    }
+  });
+
+  const pending = manager.load("scene-background");
+  await Promise.resolve();
+  assert.equal(manager.pendingCount, 1);
+
+  manager.destroy();
+  assert.equal(manager.size, 0);
+  assert.equal(manager.pendingCount, 0);
+  await assert.rejects(manager.load("late-request"), /has been destroyed/);
+
+  finish();
+  assert.equal(await pending, "/scene-background.png");
+  assert.equal(manager.size, 0);
+  assert.equal(manager.pendingCount, 0);
+  assert.equal(calls, 1);
+});
+
