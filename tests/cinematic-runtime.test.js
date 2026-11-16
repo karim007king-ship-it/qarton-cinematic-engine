@@ -84,3 +84,25 @@ test("concurrent destroy calls share the same teardown promise", async () => {
   await Promise.all([firstDestroy, secondDestroy]);
   assert.equal(root.children.length, 0);
 });
+
+
+test("cinematic runtime destroy retries when scene DOM cleanup fails", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const runtime = createCinematicRuntime({
+    root,
+    loadAsset: key => key,
+    renderScene: () => document.createElement("div")
+  });
+  await runtime.transitionTo({ id: "retry-runtime-destroy" });
+
+  const originalRemoveChild = root.removeChild.bind(root);
+  root.removeChild = () => { throw new Error("persistent DOM cleanup failure"); };
+  await assert.rejects(runtime.destroy(), /persistent DOM cleanup failure/);
+  assert.equal(root.children.length, 1);
+
+  root.removeChild = originalRemoveChild;
+  await runtime.destroy();
+  assert.equal(root.children.length, 0);
+  await assert.rejects(runtime.transitionTo({ id: "after-destroy" }), /destroyed/);
+});
