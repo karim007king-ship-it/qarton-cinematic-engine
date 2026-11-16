@@ -29,6 +29,22 @@ export function createAdaptivePerformanceMonitor({
   let stableCount = 0;
   let stableDirection = null;
   let lastFps = null;
+  const pendingNotifications = [];
+  let notifying = false;
+
+  function flushNotifications() {
+    if (notifying) return;
+    notifying = true;
+    try {
+      while (pendingNotifications.length > 0) {
+        const notification = pendingNotifications[0];
+        onProfileChange(notification.next, notification.previous);
+        pendingNotifications.shift();
+      }
+    } finally {
+      notifying = false;
+    }
+  }
 
   function evaluate() {
     const averageFrameMs = frames.reduce((sum, value) => sum + value, 0) / frames.length;
@@ -67,12 +83,16 @@ export function createAdaptivePerformanceMonitor({
       });
       stableCount = 0;
       stableDirection = null;
-      onProfileChange(profile, previous);
+      pendingNotifications.push({ next: profile, previous });
+      flushNotifications();
     }
     return profile;
   }
 
   function recordFrame(frameDurationMs) {
+    // Deliver any previously failed profile-change notifications before
+    // accepting more samples, so host quality settings cannot silently lag.
+    flushNotifications();
     if (!Number.isFinite(frameDurationMs) || frameDurationMs <= 0) {
       throw new TypeError("Frame duration must be a positive finite number");
     }
