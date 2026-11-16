@@ -111,22 +111,37 @@ export function createAudioCueController({
     return volume;
   }
 
+  function stopVoices() {
+    const active = [...voices.values()];
+    voices.clear();
+    let firstError;
+    for (const voice of active) {
+      if (voice == null) continue;
+      try {
+        stop(voice);
+      } catch (error) {
+        firstError ??= error;
+      }
+    }
+    if (firstError) throw firstError;
+  }
+
   function stopAll({ reset = false } = {}) {
     assertAlive();
-    for (const voice of voices.values()) if (voice != null) stop(voice);
-    voices.clear();
     paused = false;
     if (reset) {
       cursor = -1;
       firedIds.clear();
     }
+    stopVoices();
   }
 
   function destroy() {
     if (destroyed) return;
-    for (const voice of voices.values()) if (voice != null) stop(voice);
-    voices.clear();
+    // Mark the controller closed before invoking host code so a throwing
+    // adapter cannot leave it partially alive or make destroy non-idempotent.
     destroyed = true;
+    stopVoices();
   }
 
   return Object.freeze({
