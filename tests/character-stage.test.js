@@ -300,5 +300,8 @@ test("partial mount rollback attempts every completed character cleanup", async 
     return true;
   });
   assert.deepEqual(root.children.map(child => child.dataset.characterId), ["second"]);
+  // A transient DOM cleanup failure must remain recoverable by final teardown.
+  root.removeChild = originalRemoveChild;
   stage.destroy();
+  assert.equal(root.children.length, 0);
 });
