@@ -77,3 +77,13 @@ test("animated transforms cannot target unknown rig layers", () => {
   const rig = createCharacterRig([{ id: "body" }]);
   assert.throws(() => composeRigTransforms(rig, { typo: { rotation: 10 } }), /unknown layer/);
 });
+
+test("explicit null parent is accepted as a root layer", () => {
+  const rig = createCharacterRig([
+    { id: "body", parent: null },
+    { id: "head", parent: "body" }
+  ]);
+  assert.deepEqual(rig.roots, ["body"]);
+  assert.equal(rig.layers[0].parent, null);
+  assert.equal(composeRigTransforms(rig).head.translateX, 0);
+});
