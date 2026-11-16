@@ -20,6 +20,10 @@ class Element {
 }
 class Document { createElement(tag) { return new Element(tag, this); } }
 
+async function flushMicrotasks() {
+  for (let index = 0; index < 32; index += 1) await Promise.resolve();
+}
+
 function fixture(options = {}) {
   const document = new Document();
   const root = new Element("main", document);
@@ -202,20 +206,19 @@ test("stale partial mount cannot clear handles created by a newer multi-characte
   });
 
   const staleMount = stage.mount();
-  await Promise.resolve();
+  await flushMicrotasks();
+  assert.equal(resolvers.length, 1);
   resolvers[0].resolve("https://assets.test/old-first.png");
-  await Promise.resolve();
-  await Promise.resolve();
+  await flushMicrotasks();
   assert.equal(resolvers.length, 2);
 
   stage.unmount();
   const freshMount = stage.mount();
-  await Promise.resolve();
+  await flushMicrotasks();
   assert.equal(resolvers.length, 3);
 
   resolvers[2].resolve("https://assets.test/new-first.png");
-  await Promise.resolve();
-  await Promise.resolve();
+  await flushMicrotasks();
   assert.equal(resolvers.length, 4);
 
   resolvers[3].resolve("https://assets.test/new-second.png");
