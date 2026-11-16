@@ -26,6 +26,26 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     record.element.dataset.state = String(state.state ?? "idle");
   }
 
+  function removeElement(handle) {
+    let firstError;
+    let failed = false;
+    try {
+      handle.remove?.();
+    } catch (error) {
+      firstError = error;
+      failed = true;
+    }
+    if (handle.parentNode === root) {
+      try {
+        root.removeChild(handle);
+      } catch (error) {
+        if (!failed) firstError = error;
+        failed = true;
+      }
+    }
+    if (failed) throw firstError;
+  }
+
   async function resolveAsset(record, expression) {
     const key = record.sprites[expression] ?? record.sprites.default;
     if (typeof key !== "string" || !key.trim()) {
@@ -156,23 +176,31 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     record.pendingAssetKey = null;
     record.pendingAssetPromise = null;
     records.delete(handle);
-    handle.remove?.();
-    if (handle.parentNode === root) root.removeChild(handle);
+    removeElement(handle);
   }
 
   function destroy() {
     if (destroyed) return;
     destroyed = true;
-    for (const handle of records.keys()) {
-      handle.remove?.();
-      if (handle.parentNode === root) root.removeChild(handle);
-    }
-    for (const record of records.values()) {
+    const active = [...records.entries()];
+    records.clear();
+    for (const [, record] of active) {
       record.assetVersion += 1;
       record.pendingAssetKey = null;
       record.pendingAssetPromise = null;
     }
-    records.clear();
+
+    let firstError;
+    let failed = false;
+    for (const [handle] of active) {
+      try {
+        removeElement(handle);
+      } catch (error) {
+        if (!failed) firstError = error;
+        failed = true;
+      }
+    }
+    if (failed) throw firstError;
   }
 
   return Object.freeze({ mount, update, unmount, destroy });
