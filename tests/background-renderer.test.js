@@ -185,3 +185,16 @@ test("renderer rejects unsafe asset URLs without replacing the visible scene", a
     assert.equal(root.children, previous);
   }
 });
+
+
+test("destroy is idempotent, clears once, and rejects later renders", async () => {
+  const { root, scene, profile } = fixture();
+  const renderer = new BackgroundRenderer({ root, resolveAsset: key => `/${key}.png` });
+  await renderer.render(scene, profile);
+  renderer.destroy();
+  renderer.destroy();
+  assert.equal(renderer.clear(), false);
+  await assert.rejects(renderer.render(scene, profile), /has been destroyed/);
+  assert.equal(root.children.length, 0);
+  assert.equal(root.dataset.qartonSceneId, undefined);
+});
