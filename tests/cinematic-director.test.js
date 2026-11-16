@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createCinematicDirector } from "../src/runtime/cinematic-director.js";
 import { createTimeline } from "../src/motion/timeline.js";
+import { createAudioCueController } from "../src/audio/audio-cue-controller.js";
 
 function audioSpy() {
   const calls = [];
@@ -54,6 +55,7 @@ test("director pauses, resumes and replays timeline deterministically after rewi
     audio,
     timeline: createTimeline([
       { id: "first", atMs: 100, type: "cue" },
+      { id: "during-pause", atMs: 225, type: "cue" },
       { id: "later", atMs: 300, type: "cue" }
     ]),
     onEvent: event => events.push(event.id)
@@ -264,5 +266,77 @@ test("director allows a fresh mount while an invalidated mount is still pending"
   resolvers[0](true);
   assert.equal(await stale, false);
   assert.equal(director.getState().mounted, true);
+  await director.destroy();
+});
+
+
+test("director resumes event delivery after a callback throws without replaying prior events or audio", async () => {
+  const delivered = [];
+  const played = [];
+  const audio = createAudioCueController({
+    cues: [{ id: "impact", atMs: 0, asset: "impact" }],
+    play: asset => { played.push(asset); return asset; },
+    stop: () => {}
+  });
+  let secondCalls = 0;
+  const director = createCinematicDirector({
+    audio,
+    timeline: createTimeline([
+      { id: "first", atMs: 0, type: "story" },
+      { id: "second", atMs: 10, type: "story" },
+      { id: "third", atMs: 20, type: "story" }
+    ]),
+    onEvent: event => {
+      delivered.push(event.id);
+      if (event.id === "second") {
+        secondCalls += 1;
+        if (secondCalls === 1) throw new Error("story callback failed");
+      }
+    }
+  });
+
+  await director.mount();
+  await assert.rejects(director.update(20), /story callback failed/);
+  assert.deepEqual(delivered, ["first", "second"]);
+  await director.update(20);
+  assert.deepEqual(delivered, ["first", "second", "third"]);
+  assert.deepEqual(played, ["impact"]);
+  await director.destroy();
+});
+
+test("director keeps timeline events pending when character sampling fails", async () => {
+  const delivered = [];
+  const played = [];
+  let fail = true;
+  const stage = {
+    mount: async () => true,
+    update: async () => {
+      if (fail) throw new Error("character sampling failed");
+    },
+    unmount: () => {},
+    destroy: () => {}
+  };
+  const audio = createAudioCueController({
+    cues: [{ id: "ambience", atMs: 0, asset: "ambience" }],
+    play: asset => { played.push(asset); return asset; },
+    stop: () => {}
+  });
+  const director = createCinematicDirector({
+    characterStage: stage,
+    audio,
+    timeline: createTimeline([
+      { id: "line-one", atMs: 10, type: "dialogue" },
+      { id: "line-two", atMs: 20, type: "dialogue" }
+    ]),
+    onEvent: event => delivered.push(event.id)
+  });
+
+  await director.mount();
+  await assert.rejects(director.update(20), /character sampling failed/);
+  assert.deepEqual(delivered, []);
+  fail = false;
+  await director.update(20);
+  assert.deepEqual(delivered, ["line-one", "line-two"]);
+  assert.deepEqual(played, ["ambience"]);
   await director.destroy();
 });
