@@ -41,6 +41,27 @@ test("DOM character renderer mounts, updates pose, and switches expression sprit
   assert.equal(root.children.length, 0);
 });
 
+test("DOM renderer rejects duplicate ids while the first mount is pending", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let resolveBase;
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: () => new Promise(resolve => { resolveBase = resolve; })
+  });
+  const firstMount = renderer.mount({ id: "hero", sprites: { default: "hero" } });
+  await Promise.resolve();
+  await assert.rejects(
+    renderer.mount({ id: "hero", sprites: { default: "another-hero" } }),
+    /already has a mounted or mounting character/
+  );
+  resolveBase("https://assets.test/hero.png");
+  const handle = await firstMount;
+  assert.equal(root.children.length, 1);
+  renderer.unmount(handle);
+  assert.equal(root.children.length, 0);
+});
+
 test("stale asynchronous sprite loads cannot overwrite a newer expression", async () => {
   const document = new Document();
   const root = new Element("main", document);
