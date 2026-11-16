@@ -334,9 +334,9 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     const record = records.get(handle);
     if (!record) return false;
     if (!state || state.id !== record.id) throw new TypeError("Character state id does not match mounted character");
-    await applyState(record, state);
+    const assetResults = await applyState(record, state);
     if (destroyed || !records.has(handle)) return false;
-    return true;
+    return assetResults.every(Boolean);
   }
 
   function unmount(handle) {
