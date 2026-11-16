@@ -225,6 +225,37 @@ test("DOM renderer applies layered pose transforms and facial animation frames",
   assert.equal(root.children.length, 0);
 });
 
+test("invalid rig updates do not partially mutate the rendered character", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`
+  });
+  const handle = await renderer.mount({
+    id: "hero",
+    sprites: { default: "base" },
+    layerSprites: { arm: "arm" }
+  });
+  await renderer.update(handle, {
+    id: "hero", x: 5, y: 6, opacity: 0.7, scale: 1, rotation: 2,
+    layerTransforms: { arm: { translateX: 3, rotation: 10 } }
+  });
+  const before = {
+    transform: handle.style.transform,
+    opacity: handle.style.opacity,
+    armTransform: handle.children.find(child => child.dataset.layerId === "arm").style.transform
+  };
+  await assert.rejects(renderer.update(handle, {
+    id: "hero", x: 90, y: 80, opacity: 0.1, scale: 1, rotation: 0,
+    layerTransforms: { arm: { scaleX: -1 } }
+  }), /scale cannot be negative/);
+  assert.equal(handle.style.transform, before.transform);
+  assert.equal(handle.style.opacity, before.opacity);
+  assert.equal(handle.children.find(child => child.dataset.layerId === "arm").style.transform, before.armTransform);
+  renderer.destroy();
+});
+
 test("DOM renderer rejects negative rig scale and cleans up failed rig mounts", async () => {
   const document = new Document();
   const root = new Element("main", document);
