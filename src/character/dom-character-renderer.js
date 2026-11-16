@@ -198,6 +198,11 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       image.src = safeUrl;
       layerRecord.assetKey = key;
       return true;
+    }, error => {
+      // Aborted or superseded loads are normal cancellation, not renderer failures.
+      if (destroyed || controller?.signal.aborted || !records.has(record.element) ||
+          version !== layerRecord.assetVersion) return false;
+      throw error;
     }).finally(() => {
       if (version === layerRecord.assetVersion) {
         layerRecord.abortController = null;
