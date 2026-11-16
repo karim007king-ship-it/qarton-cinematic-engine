@@ -132,11 +132,24 @@ export function createCinematicDirector({
     if (destroyed) return;
     destroyed = true;
     lifecycleVersion += 1;
-    characterStage?.destroy();
-    audio?.destroy();
     mounted = false;
     paused = false;
     lastTimeMs = -1;
+
+    let firstError;
+    let failed = false;
+    for (const cleanup of [
+      () => characterStage?.destroy(),
+      () => audio?.destroy()
+    ]) {
+      try {
+        cleanup();
+      } catch (error) {
+        if (!failed) firstError = error;
+        failed = true;
+      }
+    }
+    if (failed) throw firstError;
   }
 
   return Object.freeze({
