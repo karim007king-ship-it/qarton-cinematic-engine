@@ -69,3 +69,19 @@ test("invalid dependencies and keys are rejected", async () => {
   await assert.rejects(manager.load(" "), /Asset key/);
   await assert.rejects(manager.preload("not-an-array"), /expects an array/);
 });
+
+
+test("destroy is terminal and rejects new loads without invoking the loader", async () => {
+  let calls = 0;
+  const manager = new AssetManager({
+    loader: async key => { calls += 1; return `/${key}.png`; }
+  });
+  await manager.load("before-destroy");
+  manager.destroy();
+  manager.destroy();
+  await assert.rejects(manager.load("after-destroy"), /has been destroyed/);
+  await assert.rejects(manager.preload(["another"]), /has been destroyed/);
+  assert.equal(calls, 1);
+  assert.equal(manager.size, 0);
+  assert.equal(manager.pendingCount, 0);
+});
