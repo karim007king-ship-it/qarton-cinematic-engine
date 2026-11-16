@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import { createCinematicDirector } from "../src/runtime/cinematic-director.js";
 import { createTimeline } from "../src/motion/timeline.js";
 import { createAudioCueController } from "../src/audio/audio-cue-controller.js";
+import { createCharacterStage } from "../src/character/character-stage.js";
+import { createCharacterController } from "../src/character/character-controller.js";
+import { createMotionPath } from "../src/motion/path.js";
 
 function audioSpy() {
   const calls = [];
@@ -342,5 +345,66 @@ test("director keeps timeline events pending when character sampling fails", asy
   await director.update(20);
   assert.deepEqual(delivered, ["line-one", "line-two"]);
   assert.deepEqual(played, ["ambience"]);
+  await director.destroy();
+});
+
+
+class TestElement {
+  constructor(tag, ownerDocument) {
+    this.tagName = tag;
+    this.ownerDocument = ownerDocument;
+    this.children = [];
+    this.style = {};
+    this.dataset = {};
+    this.parentNode = null;
+  }
+  appendChild(child) { child.parentNode = this; this.children.push(child); return child; }
+  removeChild(child) { this.children = this.children.filter(item => item !== child); child.parentNode = null; }
+  remove() { this.parentNode?.removeChild(this); }
+}
+class TestDocument {
+  createElement(tag) { return new TestElement(tag, this); }
+}
+
+test("director drives real character stage and audio cues from the same timeline clock", async () => {
+  const document = new TestDocument();
+  const root = new TestElement("main", document);
+  const path = createMotionPath([{ x: 0, y: 0 }, { x: 100, y: 0 }]);
+  const controller = createCharacterController({
+    id: "hero",
+    initial: { expression: "neutral" },
+    motions: [{ id: "walk", path, startMs: 0, durationMs: 1000, expression: "focused" }]
+  });
+  const stage = createCharacterStage({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`,
+    characters: [{
+      controller,
+      sprites: { neutral: "hero-neutral", focused: "hero-focused" }
+    }]
+  });
+  const played = [];
+  const audio = createAudioCueController({
+    cues: [{ id: "footstep", atMs: 500, asset: "footstep" }],
+    play: asset => { played.push(asset); return asset; },
+    stop: () => {}
+  });
+  const events = [];
+  const director = createCinematicDirector({
+    characterStage: stage,
+    audio,
+    timeline: createTimeline([{ id: "camera-cut", atMs: 500, type: "camera" }]),
+    onEvent: event => events.push(event.id)
+  });
+
+  await director.mount();
+  await director.update(500);
+  assert.match(root.children[0].style.transform, /translate3d\(50px, 0px, 0\)/);
+  assert.equal(root.children[0].children[0].src, "https://assets.test/hero-focused.png");
+  assert.deepEqual(played, ["footstep"]);
+  assert.deepEqual(events, ["camera-cut"]);
+
+  await director.unmount();
+  assert.equal(root.children.length, 0);
   await director.destroy();
 });
