@@ -115,15 +115,17 @@ export function createAudioCueController({
     const active = [...voices.values()];
     voices.clear();
     let firstError;
+    let failed = false;
     for (const voice of active) {
       if (voice == null) continue;
       try {
         stop(voice);
       } catch (error) {
-        firstError ??= error;
+        if (!failed) firstError = error;
+        failed = true;
       }
     }
-    if (firstError) throw firstError;
+    if (failed) throw firstError;
   }
 
   function stopAll({ reset = false } = {}) {
