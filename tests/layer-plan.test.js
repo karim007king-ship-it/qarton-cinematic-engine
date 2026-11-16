@@ -24,3 +24,28 @@ test("high quality retains all layers in deterministic depth order", () => {
 test("layer planner rejects invalid budgets", () => {
   assert.throws(() => buildLayerPlan(scene, { maxBackgroundLayers: -1 }), /non-negative integer/);
 });
+
+test("layer planner rejects malformed layer entries", () => {
+  assert.throws(() => buildLayerPlan({ layers: [null] }, { maxBackgroundLayers: 2 }), /must be an object/);
+  assert.throws(() => buildLayerPlan({ layers: [[]] }, { maxBackgroundLayers: 2 }), /must be an object/);
+});
+
+test("layer planner rejects unsupported roles instead of silently misordering them", () => {
+  assert.throws(() => buildLayerPlan({
+    layers: [{ id: "unknown", role: "parallax", asset: "x", depth: 0 }]
+  }, { maxBackgroundLayers: 2 }), /unsupported role/);
+});
+
+test("layer planner rejects non-finite depths instead of producing unstable ordering", () => {
+  for (const depth of [NaN, Infinity, -Infinity, undefined]) {
+    assert.throws(() => buildLayerPlan({
+      layers: [{ id: "invalid-depth", role: "background", asset: "x", depth }]
+    }, { maxBackgroundLayers: 2 }), /finite depth/);
+  }
+});
+
+test("layer planner returns immutable empty plans for empty scenes", () => {
+  const plan = buildLayerPlan({ layers: [] }, { maxBackgroundLayers: 0 });
+  assert.deepEqual(plan, []);
+  assert.equal(Object.isFrozen(plan), true);
+});
