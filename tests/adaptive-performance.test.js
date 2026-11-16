@@ -102,3 +102,23 @@ test("activity gate remains terminal when the host pause callback throws during 
   assert.doesNotThrow(() => gate.destroy());
   assert.equal(pauseCalls, 1);
 });
+
+
+test("accessibility and data-saving constraints override a manual high-quality hint", () => {
+  const reduced = createAdaptivePerformanceMonitor({
+    device: { quality: "high", reducedMotion: true },
+    sampleWindow: 1
+  });
+  const saveData = createAdaptivePerformanceMonitor({
+    device: { quality: "high", saveData: true },
+    sampleWindow: 1
+  });
+  assert.equal(reduced.getProfile().tier, "low");
+  assert.equal(reduced.getProfile().reason, "reduced-motion");
+  assert.equal(saveData.getProfile().tier, "low");
+  assert.equal(saveData.getProfile().reason, "save-data");
+  reduced.recordFrame(5);
+  saveData.recordFrame(5);
+  assert.equal(reduced.getProfile().tier, "low");
+  assert.equal(saveData.getProfile().tier, "low");
+});
