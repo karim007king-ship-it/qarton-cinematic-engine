@@ -160,3 +160,31 @@ test("failed stale sprite loads do not reject after a newer expression commits",
   assert.equal(await staleUpdate, false);
   assert.equal(handle.children[0].src, "https://assets.test/angry.png");
 });
+
+
+test("renderer unmount falls back to root removal when element removal throws", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({ root, resolveSprite: () => "https://assets.test/hero.png" });
+  const handle = await renderer.mount({ id: "hero", sprites: { default: "hero" } });
+  const failure = new Error("element remove failed");
+  handle.remove = () => { throw failure; };
+
+  assert.throws(() => renderer.unmount(handle), error => error === failure);
+  assert.equal(root.children.length, 0);
+  assert.doesNotThrow(() => renderer.destroy());
+});
+
+test("renderer destroy attempts every element cleanup after one removal fails", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({ root, resolveSprite: () => "https://assets.test/hero.png" });
+  const first = await renderer.mount({ id: "first", sprites: { default: "first" } });
+  await renderer.mount({ id: "second", sprites: { default: "second" } });
+  const failure = new Error("first element remove failed");
+  first.remove = () => { throw failure; };
+
+  assert.throws(() => renderer.destroy(), error => error === failure);
+  assert.equal(root.children.length, 0);
+  assert.doesNotThrow(() => renderer.destroy());
+});
