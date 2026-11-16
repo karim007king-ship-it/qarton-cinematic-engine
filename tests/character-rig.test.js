@@ -6,6 +6,7 @@ test("character rig validates unique ids and parent references", () => {
   assert.throws(() => createCharacterRig([{ id: "head" }, { id: "head" }]), /unique/);
   assert.throws(() => createCharacterRig([{ id: "eyes", parent: "head" }]), /missing parent/);
   assert.throws(() => createCharacterRig([{ id: "head", parent: "head" }]), /parent itself/);
+  assert.throws(() => createCharacterRig([{ id: "head", parent: "" }]), /parent must be a non-empty id/);
 });
 
 test("character rig rejects parent cycles, including indirect cycles", () => {
