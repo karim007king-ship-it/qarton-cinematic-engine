@@ -156,11 +156,13 @@ export function createCharacterStage({
   }
 
   function destroy() {
-    if (destroyed) return;
-    lifecycleVersion += 1;
-    destroyed = true;
-    mounted = false;
-    lastTimeMs = -1;
+    if (!destroyed) {
+      lifecycleVersion += 1;
+      destroyed = true;
+      mounted = false;
+      lastTimeMs = -1;
+    }
+    // The renderer retains handles whose DOM removal failed; allow teardown retry.
     renderer.destroy();
     for (const record of records.values()) record.handle = null;
   }
