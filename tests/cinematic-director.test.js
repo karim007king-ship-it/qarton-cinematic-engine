@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createCinematicDirector } from "../src/runtime/cinematic-director.js";
 import { createTimeline } from "../src/motion/timeline.js";
+import { createAudioCueController } from "../src/audio/audio-cue-controller.js";
 
 function audioSpy() {
   const calls = [];
@@ -421,17 +422,14 @@ test("stage failure can retry the same timestamp without replaying audio cues or
   let stageAttempts = 0;
   let playCalls = 0;
   const events = [];
-  const audio = {
-    update: time => {
-      // Model the real cue controller's idempotent same-time retry behavior.
-      if (time !== 100) throw new Error("unexpected audio time");
-      if (playCalls === 0) playCalls += 1;
+  const audio = createAudioCueController({
+    cues: [{ id: "impact", atMs: 100, asset: "impact-sound" }],
+    play: () => {
+      playCalls += 1;
+      return { id: "impact-voice" };
     },
-    pause: () => {},
-    resume: () => {},
-    stopAll: () => {},
-    destroy: () => {}
-  };
+    stop: () => {}
+  });
   const director = createCinematicDirector({
     audio,
     characterStage: {
