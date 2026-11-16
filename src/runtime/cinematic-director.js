@@ -77,7 +77,6 @@ export function createCinematicDirector({
         ticket.lifecycle !== lifecycleVersion || !mounted) {
       return Object.freeze({ timeMs, events: Object.freeze([]), paused: false, cancelled: true });
     }
-    if (!mounted) throw new Error("Cinematic director must be mounted before update");
     if (paused) return Object.freeze({ timeMs: lastTimeMs, events: Object.freeze([]), paused: true });
     if (!Number.isFinite(timeMs) || timeMs < 0) {
       throw new TypeError("Director timeMs must be non-negative and finite");
