@@ -41,10 +41,18 @@ export function createCharacterStage({
   }
 
   function releaseCompleted(completed) {
+    let firstError;
+    let failed = false;
     for (const item of completed.reverse()) {
-      renderer.unmount(item.handle);
       if (item.record.handle === item.handle) item.record.handle = null;
+      try {
+        renderer.unmount(item.handle);
+      } catch (error) {
+        if (!failed) firstError = error;
+        failed = true;
+      }
     }
+    if (failed) throw firstError;
   }
 
   async function performMount(version) {
