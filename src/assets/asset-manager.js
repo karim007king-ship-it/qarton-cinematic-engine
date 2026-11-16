@@ -23,6 +23,7 @@ export class AssetManager {
   #cache = new Map();
   #pending = new Map();
   #generation = 0;
+  #destroyed = false;
 
   constructor({ loader } = {}) {
     if (typeof loader !== "function") {
@@ -36,6 +37,9 @@ export class AssetManager {
    * Optional metadata is passed to the loader on the first request only.
    */
   load(key, metadata) {
+    if (this.#destroyed) {
+      return Promise.reject(new Error("AssetManager has been destroyed"));
+    }
     if (typeof key !== "string" || !key.trim()) {
       return Promise.reject(new TypeError("Asset key must be a non-empty string"));
     }
@@ -85,6 +89,11 @@ export class AssetManager {
   }
 
   destroy() {
+    if (this.#destroyed) return;
+    // Close the manager before invalidating pending work so no new request can
+    // enter while teardown is in progress. Existing callers may still receive
+    // their resolved value, but late completions cannot repopulate the cache.
+    this.#destroyed = true;
     this.clear();
     this.#loader = null;
   }
