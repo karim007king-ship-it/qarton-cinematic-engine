@@ -110,24 +110,36 @@ export function createCharacterStage({
 
   function unmount() {
     lifecycleVersion += 1;
-    // Allow an immediate remount to start a fresh operation while the stale
-    // asynchronous mount finishes and releases any late handles.
+    // Let a fresh mount begin while stale asynchronous work settles.
     mountingPromise = null;
-    for (const record of records.values()) {
-      if (record.handle) renderer.unmount(record.handle);
-      record.handle = null;
-    }
+    // Commit the released lifecycle state before calling DOM/host adapters.
     mounted = false;
     lastTimeMs = -1;
+
+    let firstError;
+    let failed = false;
+    for (const record of records.values()) {
+      const handle = record.handle;
+      record.handle = null;
+      if (!handle) continue;
+      try {
+        renderer.unmount(handle);
+      } catch (error) {
+        if (!failed) firstError = error;
+        failed = true;
+      }
+    }
+    if (failed) throw firstError;
   }
 
   function destroy() {
     if (destroyed) return;
     lifecycleVersion += 1;
     destroyed = true;
+    mounted = false;
+    lastTimeMs = -1;
     renderer.destroy();
     for (const record of records.values()) record.handle = null;
-    mounted = false;
   }
 
   return Object.freeze({ mount, update, unmount, destroy });
