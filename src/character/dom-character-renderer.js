@@ -114,6 +114,8 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       const { layer, image } = layerRecord;
       image.dataset.layerId = layer.id;
       image.dataset.layerRole = layer.role;
+      // Keep accessible text synchronized even when expressions share one sprite.
+      image.alt = `${record.id} — ${layer.id} — ${state.expression ?? "neutral"}`;
       const poseTransform = state.layerTransforms?.[layer.id]
         ?? state.layerTransforms?.[layer.role]
         ?? {};
@@ -194,9 +196,13 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
           version !== layerRecord.assetVersion) return false;
       const safeUrl = assertSafeSpriteUrl(url, key);
       image.src = safeUrl;
-      image.alt = `${record.id} — ${layer.id} — ${state.expression ?? "neutral"}`;
       layerRecord.assetKey = key;
       return true;
+    }, error => {
+      // Aborted or superseded loads are normal cancellation, not renderer failures.
+      if (destroyed || controller?.signal.aborted || !records.has(record.element) ||
+          version !== layerRecord.assetVersion) return false;
+      throw error;
     }).finally(() => {
       if (version === layerRecord.assetVersion) {
         layerRecord.abortController = null;
@@ -334,9 +340,9 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     const record = records.get(handle);
     if (!record) return false;
     if (!state || state.id !== record.id) throw new TypeError("Character state id does not match mounted character");
-    await applyState(record, state);
+    const assetResults = await applyState(record, state);
     if (destroyed || !records.has(handle)) return false;
-    return true;
+    return assetResults.every(Boolean);
   }
 
   function unmount(handle) {

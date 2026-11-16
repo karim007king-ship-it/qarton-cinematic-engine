@@ -155,3 +155,155 @@ test("stale director mount completion cannot unmount a newer stage mount", async
   await director.update(0);
   director.destroy();
 });
+
+
+test("director destroy attempts audio cleanup when character stage destruction fails", async () => {
+  const stageError = new Error("stage destroy failed");
+  let audioDestroyCalls = 0;
+  const director = createCinematicDirector({
+    characterStage: {
+      mount: async () => true,
+      update: async () => {},
+      unmount: () => {},
+      destroy: () => { throw stageError; }
+    },
+    audio: {
+      update: () => {},
+      pause: () => {},
+      resume: () => {},
+      stopAll: () => {},
+      destroy: () => { audioDestroyCalls += 1; }
+    }
+  });
+
+  await director.mount();
+  assert.throws(() => director.destroy(), error => error === stageError);
+  assert.equal(audioDestroyCalls, 1);
+  assert.deepEqual(director.getState(), {
+    mounted: false, paused: false, destroyed: true, timeMs: -1
+  });
+  assert.doesNotThrow(() => director.destroy());
+  assert.equal(audioDestroyCalls, 1);
+});
+
+test("director unmount resets lifecycle and stops audio even when stage unmount fails", async () => {
+  const stageError = new Error("stage unmount failed");
+  let audioStopCalls = 0;
+  const director = createCinematicDirector({
+    characterStage: {
+      mount: async () => true,
+      update: async () => {},
+      unmount: () => { throw stageError; },
+      destroy: () => {}
+    },
+    audio: {
+      update: () => {},
+      pause: () => {},
+      resume: () => {},
+      stopAll: () => { audioStopCalls += 1; },
+      destroy: () => {}
+    }
+  });
+
+  await director.mount();
+  await director.update(120);
+  assert.throws(() => director.unmount(), error => error === stageError);
+  assert.equal(audioStopCalls, 1);
+  assert.deepEqual(director.getState(), {
+    mounted: false, paused: false, destroyed: false, timeMs: -1
+  });
+  director.destroy();
+});
+
+
+test("concurrent director updates are serialized in shared-clock order", async () => {
+  let releaseFirst;
+  const stageUpdates = [];
+  const events = [];
+  const stage = {
+    mount: async () => true,
+    update: time => {
+      stageUpdates.push(time);
+      if (time === 100) return new Promise(resolve => { releaseFirst = resolve; });
+      return Promise.resolve();
+    },
+    unmount: () => {},
+    destroy: () => {}
+  };
+  const director = createCinematicDirector({
+    characterStage: stage,
+    timeline: createTimeline([
+      { id: "first", atMs: 100, type: "cue" },
+      { id: "second", atMs: 200, type: "cue" }
+    ]),
+    onEvent: event => events.push(event.id)
+  });
+
+  await director.mount();
+  const first = director.update(100);
+  const second = director.update(200);
+  for (let i = 0; i < 8 && !releaseFirst; i += 1) await Promise.resolve();
+  assert.equal(typeof releaseFirst, "function");
+  assert.deepEqual(stageUpdates, [100]);
+  releaseFirst();
+  await Promise.all([first, second]);
+  assert.deepEqual(stageUpdates, [100, 200]);
+  assert.deepEqual(events, ["first", "second"]);
+  director.destroy();
+});
+
+test("unmount cancels pending director events after an asynchronous stage update", async () => {
+  let releaseUpdate;
+  const events = [];
+  const stage = {
+    mount: async () => true,
+    update: () => new Promise(resolve => { releaseUpdate = resolve; }),
+    unmount: () => {},
+    destroy: () => {}
+  };
+  const director = createCinematicDirector({
+    characterStage: stage,
+    timeline: createTimeline([{ id: "late", atMs: 100, type: "cue" }]),
+    onEvent: event => events.push(event.id)
+  });
+
+  await director.mount();
+  const pending = director.update(100);
+  for (let i = 0; i < 8 && !releaseUpdate; i += 1) await Promise.resolve();
+  assert.equal(typeof releaseUpdate, "function");
+  director.unmount();
+  releaseUpdate();
+  const result = await pending;
+  assert.equal(result.cancelled, true);
+  assert.deepEqual(events, []);
+  assert.equal(director.getState().timeMs, -1);
+  director.destroy();
+});
+
+
+test("pause invalidates pending director events even if playback resumes before rendering completes", async () => {
+  let releaseUpdate;
+  const events = [];
+  const director = createCinematicDirector({
+    characterStage: {
+      mount: async () => true,
+      update: () => new Promise(resolve => { releaseUpdate = resolve; }),
+      unmount: () => {},
+      destroy: () => {}
+    },
+    timeline: createTimeline([{ id: "pending", atMs: 100, type: "cue" }]),
+    onEvent: event => events.push(event.id)
+  });
+
+  await director.mount();
+  const pending = director.update(100);
+  for (let i = 0; i < 8 && !releaseUpdate; i += 1) await Promise.resolve();
+  assert.equal(typeof releaseUpdate, "function");
+  assert.equal(director.pause(100), true);
+  assert.equal(director.resume(100), true);
+  releaseUpdate();
+  const result = await pending;
+  assert.equal(result.cancelled, true);
+  assert.deepEqual(events, []);
+  director.destroy();
+});

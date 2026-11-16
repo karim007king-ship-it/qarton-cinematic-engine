@@ -534,3 +534,94 @@ test("destroy aborts sprite resolution while a character is mounting", async () 
   await assert.rejects(mounting, /destroyed/);
   assert.equal(root.children.length, 0);
 });
+
+
+test("superseded expression updates report incomplete after a newer sprite wins", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let resolveFocused;
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => {
+      if (key === "focused") return new Promise(resolve => { resolveFocused = resolve; });
+      return `https://assets.test/${key}.png`;
+    }
+  });
+  const handle = await renderer.mount({
+    id: "hero",
+    sprites: { neutral: "neutral", focused: "focused", angry: "angry" },
+    initialState: { expression: "neutral" }
+  });
+  const staleUpdate = renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, expression: "focused"
+  });
+  const latestUpdate = renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, expression: "angry"
+  });
+  assert.equal(await latestUpdate, true);
+  resolveFocused("https://assets.test/focused.png");
+  assert.equal(await staleUpdate, false);
+  assert.equal(handle.children[0].src, "https://assets.test/angry.png");
+  renderer.destroy();
+});
+
+
+test("DOM character layer alt text tracks expression changes when sprites are shared", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`
+  });
+  const handle = await renderer.mount({
+    id: "hero",
+    sprites: { neutral: "shared-face", happy: "shared-face" },
+    initialState: { expression: "neutral" }
+  });
+
+  const image = handle.children[0];
+  assert.equal(image.alt, "hero — body — neutral");
+  await renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0,
+    expression: "happy"
+  });
+  assert.equal(image.alt, "hero — body — happy");
+  assert.equal(image.src, "https://assets.test/shared-face.png");
+  renderer.destroy();
+});
+
+
+test("aborted sprite resolver rejections are reported as cancelled stale updates", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: (key, { signal }) => {
+      if (key === "focused") {
+        return new Promise((resolve, reject) => {
+          signal.addEventListener("abort", () => {
+            reject(new DOMException("The operation was aborted", "AbortError"));
+          }, { once: true });
+        });
+      }
+      return `https://assets.test/${key}.png`;
+    }
+  });
+  const handle = await renderer.mount({
+    id: "hero",
+    sprites: { neutral: "neutral", focused: "focused", angry: "angry" },
+    initialState: { expression: "neutral" }
+  });
+
+  const staleUpdate = renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, expression: "focused"
+  });
+  const latestUpdate = renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, expression: "angry"
+  });
+
+  assert.equal(await latestUpdate, true);
+  assert.equal(await staleUpdate, false);
+  assert.equal(handle.children[0].src, "https://assets.test/angry.png");
+  renderer.destroy();
+});
