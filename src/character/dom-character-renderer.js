@@ -1,5 +1,21 @@
 import { createCharacterRig } from "./rig-hierarchy.js";
 
+function assertSafeSpriteUrl(value, key) {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new TypeError(`resolveSprite() returned an invalid URL for "${key}"`);
+  }
+  const url = value.trim();
+  const hasControlCharacter = [...url].some(character => {
+    const code = character.charCodeAt(0);
+    return code <= 31 || code === 127;
+  });
+  if (hasControlCharacter || url.startsWith("//") ||
+      /^(?:javascript|vbscript|file):/i.test(url)) {
+    throw new TypeError(`resolveSprite() returned an unsafe URL for "${key}"`);
+  }
+  return url;
+}
+
 /**
  * Optional DOM sprite adapter for single-image or independently animated
  * character layers. Asset loading is injected by the host application.
@@ -161,10 +177,8 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     }
     const pending = Promise.resolve(resolved).then(url => {
       if (destroyed || !records.has(record.element) || version !== layerRecord.assetVersion) return false;
-      if (typeof url !== "string" || !url.trim()) {
-        throw new TypeError(`resolveSprite() returned an invalid URL for "${key}"`);
-      }
-      image.src = url;
+      const safeUrl = assertSafeSpriteUrl(url, key);
+      image.src = safeUrl;
       image.alt = `${record.id} — ${layer.id} — ${state.expression ?? "neutral"}`;
       layerRecord.assetKey = key;
       return true;
