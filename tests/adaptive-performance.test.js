@@ -71,3 +71,28 @@ test("reset recalculates reduced-motion and save-data quality locks", () => {
   for (let i = 0; i < 4; i += 1) monitor.recordFrame(5);
   assert.equal(monitor.getProfile().tier, "low");
 });
+
+
+test("adaptive hysteresis requires consecutive windows in the same direction", () => {
+  const monitor = createAdaptivePerformanceMonitor({
+    device: { quality: "medium" },
+    sampleWindow: 1,
+    stableWindows: 2
+  });
+
+  monitor.recordFrame(40);
+  assert.equal(monitor.getProfile().tier, "medium");
+  assert.equal(monitor.getMetrics().stableWindows, 1);
+
+  monitor.recordFrame(10);
+  assert.equal(monitor.getProfile().tier, "medium");
+  assert.equal(monitor.getMetrics().stableWindows, 1);
+
+  monitor.recordFrame(40);
+  assert.equal(monitor.getProfile().tier, "medium");
+  assert.equal(monitor.getMetrics().stableWindows, 1);
+
+  monitor.recordFrame(40);
+  assert.equal(monitor.getProfile().tier, "low");
+  assert.equal(monitor.getMetrics().stableWindows, 0);
+});
