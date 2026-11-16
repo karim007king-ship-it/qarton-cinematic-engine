@@ -205,6 +205,9 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
         removeElement(handle);
         records.delete(handle);
       } catch (error) {
+        // A fallback removal may detach the node before reporting an error.
+        // Release ownership once it is no longer attached to this root.
+        if (handle.parentNode !== root) records.delete(handle);
         if (!failed) firstError = error;
         failed = true;
       }
