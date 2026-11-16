@@ -217,8 +217,7 @@ test("destroy during rig asset loading prevents later asset requests and DOM att
     layerSprites: { arm: "arm", torso: "torso" },
     mouthSprites: ["mouth"]
   });
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let index = 0; index < 8; index += 1) await Promise.resolve();
   assert.deepEqual(requested, ["base", "arm"]);
   renderer.destroy();
   resolveLayer("https://assets.test/arm.png");
