@@ -3,6 +3,22 @@
  * Sprite asset resolution is injected so the engine stays independent of
  * asset URLs, bundlers, and application-specific loading systems.
  */
+function assertSafeSpriteUrl(value, key) {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new TypeError(`resolveSprite() returned an invalid URL for "${key}"`);
+  }
+  const url = value.trim();
+  const hasControlCharacter = [...url].some(character => {
+    const code = character.charCodeAt(0);
+    return code <= 31 || code === 127;
+  });
+  if (hasControlCharacter || url.startsWith("//") ||
+      /^(?:javascript|vbscript|file):/i.test(url)) {
+    throw new TypeError(`resolveSprite() returned an unsafe URL for "${key}"`);
+  }
+  return url;
+}
+
 export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
   if (!root || typeof root.appendChild !== "function" || !root.ownerDocument) {
     throw new TypeError("DOM character renderer requires a root element");
@@ -55,10 +71,8 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     }
     const pending = Promise.resolve(resolved).then(url => {
       if (destroyed || !records.has(record.element) || version !== record.assetVersion) return false;
-      if (typeof url !== "string" || !url.trim()) {
-        throw new TypeError(`resolveSprite() returned an invalid URL for "${key}"`);
-      }
-      record.image.src = url;
+      const safeUrl = assertSafeSpriteUrl(url, key);
+      record.image.src = safeUrl;
       record.image.alt = `${record.id} — ${expression}`;
       record.assetKey = key;
       return true;
