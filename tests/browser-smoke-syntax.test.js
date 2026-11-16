@@ -8,7 +8,7 @@ const entryUrl = new URL("../src/index.js", import.meta.url);
 
 test("browser showcase module script has valid JavaScript syntax", () => {
   const html = readFileSync(showcaseUrl, "utf8");
-  const scripts = [...html.matchAll(/<script\\s+type=["']module["']\\s*>([\\s\\S]*?)<\\/script>/gi)];
+  const scripts = [...html.matchAll(/<script\s+type=["']module["']\s*>([\s\S]*?)<\/script>/gi)];
   assert.equal(scripts.length, 1, "expected exactly one module script in browser showcase");
 
   const result = spawnSync(process.execPath, ["--check", "--input-type=module"], {
@@ -21,25 +21,25 @@ test("browser showcase module script has valid JavaScript syntax", () => {
 test("browser showcase imports are exported and its required controls exist", () => {
   const html = readFileSync(showcaseUrl, "utf8");
   const entry = readFileSync(entryUrl, "utf8");
-  const importMatch = html.match(/import\\s*\\{([\\s\\S]*?)\\}\\s*from\\s*["']..\\/src\\/index\\.js["']/);
+  const importMatch = html.match(/import\s*\{([\s\S]*?)\}\s*from\s*["']..\/src\/index\.js["']/);
   assert.ok(importMatch, "expected a named import from the engine entry point");
 
   const importedNames = importMatch[1]
     .split(",")
-    .map(part => part.trim().match(/^([A-Za-z_$][\\w$]*)/)?.[1])
+    .map(part => part.trim().match(/^([A-Za-z_$][\w$]*)/)?.[1])
     .filter(Boolean);
   const exportedNames = new Set(
-    [...entry.matchAll(/export\\s*\\{([\\s\\S]*?)\\}/g)]
+    [...entry.matchAll(/export\s*\{([\s\S]*?)\}/g)]
       .flatMap(match => match[1].split(","))
-      .map(part => part.trim().match(/^([A-Za-z_$][\\w$]*)/)?.[1])
+      .map(part => part.trim().match(/^([A-Za-z_$][\w$]*)/)?.[1])
       .filter(Boolean)
   );
 
   for (const name of importedNames) {
-    assert.ok(exportedNames.has(name), `browser showcase imports "${name}" but src/index.js does not export it`);
+    assert.ok(exportedNames.has(name), "browser showcase imports " + name + " but src/index.js does not export it");
   }
 
   for (const id of ["stage", "character-layer", "particles", "scene-one", "scene-two", "audio", "destroy", "status"]) {
-    assert.match(html, new RegExp(`id=["']${id}["']`), `missing required showcase element #${id}`);
+    assert.match(html, new RegExp('id=["\\x27]' + id + '["\\x27]'), "missing required showcase element #" + id);
   }
 });
