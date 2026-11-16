@@ -25,6 +25,7 @@ export function createCharacterStage({
   let lifecycleVersion = 0;
   let destroyed = false;
   let lastTimeMs = -1;
+  let updateQueue = Promise.resolve();
   const deliveredEventIds = new Set();
 
   for (const entry of characters) {
@@ -113,11 +114,13 @@ export function createCharacterStage({
     return tracked;
   }
 
-  async function update(timeMs) {
+  async function performUpdate(timeMs, requestedVersion) {
+    if (requestedVersion !== lifecycleVersion) return false;
     if (destroyed) throw new Error("Character stage has been destroyed");
     if (!mounted) throw new Error("Character stage must be mounted before update");
     if (!Number.isFinite(timeMs) || timeMs < 0) throw new TypeError("Stage timeMs must be non-negative and finite");
 
+    const version = lifecycleVersion;
     const rewound = timeMs < lastTimeMs;
     if (rewound) deliveredEventIds.clear();
 
@@ -126,23 +129,36 @@ export function createCharacterStage({
       updates.push(renderer.update(record.handle, record.controller.update(timeMs)));
     }
 
-    // Do not dispatch story/timeline events until every character has sampled
-    // and resolved its sprite for this frame. This also ensures rejected sprite
-    // promises are observed instead of becoming unhandled rejections.
+    // Serialize frames so concurrent callers cannot dispatch the same event
+    // twice or race the renderer's per-character sprite state.
     await Promise.all(updates);
+    if (destroyed || !mounted || version !== lifecycleVersion) return false;
 
     if (timeline) {
       const previous = rewound ? -1 : lastTimeMs;
       for (const event of getTimelineEvents(timeline, { fromMs: previous, toMs: timeMs })) {
+        if (destroyed || !mounted || version !== lifecycleVersion) return false;
         if (deliveredEventIds.has(event.id)) continue;
         // Await async host callbacks and commit each event only after success,
         // so a later failed callback can be retried without replaying earlier ones.
         await onEvent(event, timeMs);
+        if (destroyed || !mounted || version !== lifecycleVersion) return false;
         deliveredEventIds.add(event.id);
       }
     }
+    if (destroyed || !mounted || version !== lifecycleVersion) return false;
     lastTimeMs = timeMs;
     return true;
+  }
+
+  function update(timeMs) {
+    const requestedVersion = lifecycleVersion;
+    const run = () => performUpdate(timeMs, requestedVersion);
+    const operation = updateQueue.then(run, run);
+    // Keep the queue usable after a rejected frame while preserving that
+    // rejection for the caller that submitted it.
+    updateQueue = operation.catch(() => {});
+    return operation;
   }
 
   function unmount() {
