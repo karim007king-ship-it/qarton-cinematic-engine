@@ -51,8 +51,11 @@ export class SceneTransitionManager {
         return false;
       }
 
-      await this.#crossfade({ from: previous, to: next, duration, generation });
-      if (generation !== this.#generation || this.#destroyed) {
+      const completed = await this.#crossfade({ from: previous, to: next, duration, generation });
+      // A transition adapter may explicitly report cancellation without
+      // throwing. Treat that as an aborted transition: retain the previous
+      // scene and release the candidate rather than committing it.
+      if (completed === false || generation !== this.#generation || this.#destroyed) {
         await this.#unmount(next);
         return false;
       }
