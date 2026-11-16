@@ -192,6 +192,21 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     return pending;
   }
 
+  function removeCharacterElement(element) {
+    try {
+      element.remove?.();
+    } catch {
+      // Fall back to the injected root if the host element's remove() fails.
+    }
+    if (element.parentNode === root) {
+      try {
+        root.removeChild(element);
+      } catch {
+        // Keep teardown best-effort for host-managed DOM implementations.
+      }
+    }
+  }
+
   async function mount({ id, sprites, layers, initialState = {} } = {}) {
     if (destroyed) throw new Error("DOM character renderer has been destroyed");
     if (typeof id !== "string" || !id.trim()) throw new TypeError("Character renderer requires an id");
@@ -293,8 +308,7 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     } catch (error) {
       for (const layerRecord of layerRecords) layerRecord.assetVersion += 1;
       records.delete(element);
-      element.remove?.();
-      if (element.parentNode === root) root.removeChild(element);
+      removeCharacterElement(element);
       throw error;
     }
   }
@@ -313,19 +327,18 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     if (!record) return;
     for (const layerRecord of record.layers) layerRecord.assetVersion += 1;
     records.delete(handle);
-    handle.remove?.();
-    if (handle.parentNode === root) root.removeChild(handle);
+    removeCharacterElement(handle);
   }
 
   function destroy() {
     if (destroyed) return;
     destroyed = true;
-    for (const [handle, record] of records) {
-      for (const layerRecord of record.layers) layerRecord.assetVersion += 1;
-      handle.remove?.();
-      if (handle.parentNode === root) root.removeChild(handle);
-    }
+    const activeRecords = [...records.entries()];
     records.clear();
+    for (const [handle, record] of activeRecords) {
+      for (const layerRecord of record.layers) layerRecord.assetVersion += 1;
+      removeCharacterElement(handle);
+    }
   }
 
   return Object.freeze({ mount, update, unmount, destroy });
