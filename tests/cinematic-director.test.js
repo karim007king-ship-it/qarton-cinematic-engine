@@ -155,3 +155,62 @@ test("stale director mount completion cannot unmount a newer stage mount", async
   await director.update(0);
   director.destroy();
 });
+
+
+test("director destroy attempts audio cleanup when character stage destruction fails", async () => {
+  const stageError = new Error("stage destroy failed");
+  let audioDestroyCalls = 0;
+  const director = createCinematicDirector({
+    characterStage: {
+      mount: async () => true,
+      update: async () => {},
+      unmount: () => {},
+      destroy: () => { throw stageError; }
+    },
+    audio: {
+      update: () => {},
+      pause: () => {},
+      resume: () => {},
+      stopAll: () => {},
+      destroy: () => { audioDestroyCalls += 1; }
+    }
+  });
+
+  await director.mount();
+  assert.throws(() => director.destroy(), error => error === stageError);
+  assert.equal(audioDestroyCalls, 1);
+  assert.deepEqual(director.getState(), {
+    mounted: false, paused: false, destroyed: true, timeMs: -1
+  });
+  assert.doesNotThrow(() => director.destroy());
+  assert.equal(audioDestroyCalls, 1);
+});
+
+test("director unmount resets lifecycle and stops audio even when stage unmount fails", async () => {
+  const stageError = new Error("stage unmount failed");
+  let audioStopCalls = 0;
+  const director = createCinematicDirector({
+    characterStage: {
+      mount: async () => true,
+      update: async () => {},
+      unmount: () => { throw stageError; },
+      destroy: () => {}
+    },
+    audio: {
+      update: () => {},
+      pause: () => {},
+      resume: () => {},
+      stopAll: () => { audioStopCalls += 1; },
+      destroy: () => {}
+    }
+  });
+
+  await director.mount();
+  await director.update(120);
+  assert.throws(() => director.unmount(), error => error === stageError);
+  assert.equal(audioStopCalls, 1);
+  assert.deepEqual(director.getState(), {
+    mounted: false, paused: false, destroyed: false, timeMs: -1
+  });
+  director.destroy();
+});
