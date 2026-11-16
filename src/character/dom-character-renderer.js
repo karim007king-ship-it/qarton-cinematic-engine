@@ -151,6 +151,14 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     }));
   }
 
+  function invalidatePendingAsset(layerRecord) {
+    layerRecord.assetVersion += 1;
+    layerRecord.abortController?.abort();
+    layerRecord.abortController = null;
+    layerRecord.pendingAssetKey = null;
+    layerRecord.pendingAssetPromise = null;
+  }
+
   async function resolveLayerAsset(record, layerRecord, state) {
     const { layer, image } = layerRecord;
     const key = selectSpriteKey(layer, state);
@@ -158,25 +166,32 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       throw new TypeError(`No sprite asset configured for character layer "${layer.id}"`);
     }
     if (layerRecord.assetKey === key) {
-      layerRecord.assetVersion += 1;
-      layerRecord.pendingAssetKey = null;
-      layerRecord.pendingAssetPromise = null;
+      invalidatePendingAsset(layerRecord);
       return true;
     }
     if (layerRecord.pendingAssetKey === key && layerRecord.pendingAssetPromise) {
       return layerRecord.pendingAssetPromise;
     }
 
+    layerRecord.abortController?.abort();
     const version = ++layerRecord.assetVersion;
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    layerRecord.abortController = controller;
     layerRecord.pendingAssetKey = key;
     let resolved;
     try {
-      resolved = resolveSprite(key, { characterId: record.id, layerId: layer.id, role: layer.role });
+      resolved = resolveSprite(key, {
+        characterId: record.id,
+        layerId: layer.id,
+        role: layer.role,
+        signal: controller?.signal
+      });
     } catch (error) {
       resolved = Promise.reject(error);
     }
     const pending = Promise.resolve(resolved).then(url => {
-      if (destroyed || !records.has(record.element) || version !== layerRecord.assetVersion) return false;
+      if (destroyed || controller?.signal.aborted || !records.has(record.element) ||
+          version !== layerRecord.assetVersion) return false;
       const safeUrl = assertSafeSpriteUrl(url, key);
       image.src = safeUrl;
       image.alt = `${record.id} — ${layer.id} — ${state.expression ?? "neutral"}`;
@@ -184,6 +199,7 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       return true;
     }).finally(() => {
       if (version === layerRecord.assetVersion) {
+        layerRecord.abortController = null;
         layerRecord.pendingAssetKey = null;
         layerRecord.pendingAssetPromise = null;
       }
@@ -306,7 +322,7 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       root.appendChild(element);
       return element;
     } catch (error) {
-      for (const layerRecord of layerRecords) layerRecord.assetVersion += 1;
+      for (const layerRecord of layerRecords) invalidatePendingAsset(layerRecord);
       records.delete(element);
       removeCharacterElement(element);
       throw error;
@@ -326,7 +342,7 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
   function unmount(handle) {
     const record = records.get(handle);
     if (!record) return;
-    for (const layerRecord of record.layers) layerRecord.assetVersion += 1;
+    for (const layerRecord of record.layers) invalidatePendingAsset(layerRecord);
     records.delete(handle);
     removeCharacterElement(handle);
   }
@@ -337,7 +353,7 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     const activeRecords = [...records.entries()];
     records.clear();
     for (const [handle, record] of activeRecords) {
-      for (const layerRecord of record.layers) layerRecord.assetVersion += 1;
+      for (const layerRecord of record.layers) invalidatePendingAsset(layerRecord);
       removeCharacterElement(handle);
     }
   }
