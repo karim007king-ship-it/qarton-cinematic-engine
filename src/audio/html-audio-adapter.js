@@ -27,6 +27,12 @@ export function createHTMLAudioAdapter({
     if (destroyed) throw new Error("HTMLAudio adapter has been destroyed");
     const url = resolveAsset(asset);
     if (typeof url !== "string" || !url.trim()) throw new TypeError("Audio asset resolver must return a URL");
+    const baseVolume = options.volume ?? 1;
+    if (!Number.isFinite(baseVolume) || baseVolume < 0 || baseVolume > 1) {
+      throw new TypeError("Audio voice volume must be between 0 and 1");
+    }
+    // Validate all caller-controlled options before allocating a native media
+    // element; invalid cue metadata must not leave an unreachable audio object.
     const audio = createAudio();
     if (!audio || typeof audio.play !== "function" || typeof audio.pause !== "function") {
       throw new TypeError("createAudio() must return an HTMLAudio-like object");
@@ -34,10 +40,6 @@ export function createHTMLAudioAdapter({
     audio.src = url;
     audio.loop = options.loop === true;
     audio.preload = "auto";
-    const baseVolume = options.volume ?? 1;
-    if (!Number.isFinite(baseVolume) || baseVolume < 0 || baseVolume > 1) {
-      throw new TypeError("Audio voice volume must be between 0 and 1");
-    }
     audio.volume = baseVolume * volume;
     active.set(audio, baseVolume);
     const result = audio.play();
