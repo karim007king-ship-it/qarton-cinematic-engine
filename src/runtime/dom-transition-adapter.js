@@ -136,8 +136,7 @@ export function createDOMTransitionAdapter({
         { opacity: 1, filter: "blur(0px)" }
       ], { duration: requestedDuration, easing: "ease-in-out", fill: "forwards" });
     } catch {
-      fromAnimation?.cancel?.();
-      toAnimation?.cancel?.();
+      cancelAnimations([fromAnimation, toAnimation]);
       fromAnimation = null;
       toAnimation = null;
     }
