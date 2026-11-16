@@ -1,5 +1,21 @@
 import { buildLayerPlan } from "../scene/layer-plan.js";
 
+function assertSafeAssetUrl(value, key) {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new TypeError(`Asset resolver returned no URL for "${key}"`);
+  }
+  const url = value.trim();
+  const hasControlCharacter = [...url].some(character => {
+    const code = character.charCodeAt(0);
+    return code <= 31 || code === 127;
+  });
+  if (hasControlCharacter || url.startsWith("//") ||
+      /^(?:javascript|vbscript|file):/i.test(url)) {
+    throw new TypeError(`Asset resolver returned an unsafe URL for "${key}"`);
+  }
+  return url;
+}
+
 /**
  * DOM renderer for scene layers.
  * The host supplies both the mount element and asset resolver; importing this
@@ -37,13 +53,16 @@ export class BackgroundRenderer {
     if (this.#destroyed) throw new Error("BackgroundRenderer has been destroyed");
     const token = ++this.#renderToken;
     const plan = buildLayerPlan(scene, profile);
-    const assets = await Promise.all(plan.map(async layer => {
-      const url = await this.#resolveAsset(layer.asset, layer);
-      if (typeof url !== "string" || !url.trim()) {
-        throw new TypeError(`Asset resolver returned no URL for "${layer.asset}"`);
-      }
-      return url;
-    }));
+    let assets;
+    try {
+      assets = await Promise.all(plan.map(async layer => {
+        const url = await this.#resolveAsset(layer.asset, layer);
+        return assertSafeAssetUrl(url, layer.asset);
+      }));
+    } catch (error) {
+      if (token !== this.#renderToken) return false;
+      throw error;
+    }
 
     if (token !== this.#renderToken) return false;
 
