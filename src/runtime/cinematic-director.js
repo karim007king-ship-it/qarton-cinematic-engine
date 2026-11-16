@@ -39,6 +39,7 @@ export function createCinematicDirector({
   let paused = false;
   let destroyed = false;
   let lastTimeMs = -1;
+  let updateGeneration = 0;
   let updateQueue = Promise.resolve();
 
   function assertAlive() {
@@ -88,12 +89,12 @@ export function createCinematicDirector({
     // Commit the clock before callbacks so a callback failure cannot cause
     // already-fired audio cues or timeline events to be dispatched twice.
     lastTimeMs = timeMs;
-    const version = lifecycleVersion;
+    const version = updateGeneration;
     audio?.update(timeMs);
     if (characterStage) await characterStage.update(timeMs);
     // A pause/unmount/destroy can invalidate an update while the stage is
     // asynchronously applying sprites. Never dispatch stale scene events.
-    if (destroyed || version !== lifecycleVersion || !mounted) {
+    if (destroyed || version !== updateGeneration || !mounted) {
       return Object.freeze({ timeMs, events: Object.freeze([]), paused: false, cancelled: true });
     }
     for (const event of events) onEvent(event, timeMs);
@@ -115,6 +116,7 @@ export function createCinematicDirector({
     if (!Number.isFinite(timeMs) || timeMs < lastTimeMs) {
       throw new TypeError("Pause time must be finite and not earlier than the director clock");
     }
+    updateGeneration += 1;
     audio?.pause(timeMs);
     lastTimeMs = timeMs;
     paused = true;
@@ -138,6 +140,7 @@ export function createCinematicDirector({
   function unmount() {
     assertAlive();
     lifecycleVersion += 1;
+    updateGeneration += 1;
     // Do not let an immediately requested remount reuse the invalidated promise.
     mountingPromise = null;
     const errors = [];
@@ -164,6 +167,7 @@ export function createCinematicDirector({
     // owned component even if an earlier cleanup operation fails.
     destroyed = true;
     lifecycleVersion += 1;
+    updateGeneration += 1;
     const errors = [];
     try {
       characterStage?.destroy();
