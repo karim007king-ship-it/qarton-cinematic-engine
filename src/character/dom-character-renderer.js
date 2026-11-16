@@ -142,13 +142,16 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     try {
       const expression = typeof initialState.expression === "string" ? initialState.expression : "neutral";
       await resolveExpression(record, expression);
+      if (destroyed || !records.has(element)) throw new Error("DOM character renderer has been destroyed");
       for (const [layerId, key] of Object.entries(layerSprites)) {
         const part = document.createElement("img");
         part.className = "qarton-character-layer";
         part.dataset.layerId = layerId;
         part.draggable = false;
         Object.assign(part.style, { position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain" });
-        part.src = await loadPart(key, `layer:${layerId}`);
+        const url = await loadPart(key, `layer:${layerId}`);
+        if (destroyed || !records.has(element)) throw new Error("DOM character renderer has been destroyed");
+        part.src = url;
         element.appendChild(part);
         record.layers.set(layerId, part);
       }
@@ -165,7 +168,9 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
             position: "absolute", inset: "0", width: "100%", height: "100%",
             objectFit: "contain", display: "none"
           });
-          part.src = await loadPart(keys[index], `${kind}:${index}`);
+          const url = await loadPart(keys[index], `${kind}:${index}`);
+          if (destroyed || !records.has(element)) throw new Error("DOM character renderer has been destroyed");
+          part.src = url;
           element.appendChild(part);
           target.push(part);
         }
