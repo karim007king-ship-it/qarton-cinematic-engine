@@ -66,3 +66,22 @@ test("cinematic runtime validates required host adapters and lifecycle", async (
   await runtime.destroy();
   await assert.rejects(runtime.transitionTo({ id: "late" }), /destroyed/);
 });
+
+test("concurrent destroy calls share the same completion and failure", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const failure = new Error("pause callback failed");
+  const runtime = createCinematicRuntime({
+    root,
+    loadAsset: key => key,
+    renderScene: () => document.createElement("div"),
+    onPause: () => { throw failure; }
+  });
+
+  const firstDestroy = runtime.destroy();
+  const secondDestroy = runtime.destroy();
+  assert.equal(firstDestroy, secondDestroy);
+  await assert.rejects(firstDestroy, error => error === failure);
+  await assert.rejects(secondDestroy, error => error === failure);
+  await assert.rejects(runtime.loadAsset("late"), /destroyed/);
+});
