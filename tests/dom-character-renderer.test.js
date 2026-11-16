@@ -188,3 +188,23 @@ test("renderer destroy attempts every element cleanup after one removal fails", 
   assert.equal(root.children.length, 0);
   assert.doesNotThrow(() => renderer.destroy());
 });
+
+
+test("renderer destroy retains failed elements and retries cleanup", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({ root, resolveSprite: () => "https://assets.test/hero.png" });
+  const handle = await renderer.mount({ id: "hero", sprites: { default: "hero" } });
+  const originalRemoveChild = root.removeChild.bind(root);
+  const failure = new Error("temporary root removal failure");
+  root.removeChild = () => { throw failure; };
+
+  assert.throws(() => renderer.destroy(), error => error === failure);
+  assert.equal(root.children.length, 1);
+  root.removeChild = originalRemoveChild;
+  assert.doesNotThrow(() => renderer.destroy());
+  assert.equal(root.children.length, 0);
+  await assert.rejects(renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0
+  }), /destroyed/);
+});
