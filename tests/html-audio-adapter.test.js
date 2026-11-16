@@ -45,3 +45,41 @@ test("HTMLAudio adapter applies master volume and cleans up on destroy", () => {
   assert.equal(audio.src, "");
   assert.throws(() => adapter.play("late"), /destroyed/);
 });
+
+
+test("HTMLAudio destroy attempts every voice and retries transient pause failures", () => {
+  const made = [];
+  const calls = [];
+  let failFirstPause = true;
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: key => `/${key}.mp3`,
+    createAudio: () => {
+      const audio = fakeAudio();
+      const id = made.length === 0 ? "first" : "second";
+      audio.pause = () => {
+        calls.push(id);
+        if (id === "first" && failFirstPause) throw new Error("first audio pause failed");
+        audio.paused = true;
+      };
+      made.push(audio);
+      return audio;
+    }
+  });
+  adapter.play("first");
+  adapter.play("second");
+
+  assert.throws(() => adapter.destroy(), error => {
+    assert.ok(error instanceof AggregateError);
+    assert.ok(error.errors.some(item => /first audio pause failed/.test(item.message)));
+    return true;
+  });
+  assert.deepEqual(calls, ["first", "second"]);
+  assert.equal(made[0].src, "");
+  assert.equal(made[1].src, "");
+
+  failFirstPause = false;
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.deepEqual(calls, ["first", "second", "first"]);
+  assert.throws(() => adapter.setVolume(made[0], 0.5), /destroyed/);
+  assert.throws(() => adapter.play("late"), /destroyed/);
+});
