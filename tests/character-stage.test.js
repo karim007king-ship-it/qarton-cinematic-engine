@@ -177,5 +177,10 @@ test("immediate remount starts a fresh operation while stale mount settles", asy
 
   assert.equal(root.children.length, 1);
   assert.equal(root.children[0].children[0].src, "https://assets.test/fresh.png");
+
+  // A late stale completion must not erase the newer mount's handle.
+  await stage.update(100);
+  stage.unmount();
+  assert.equal(root.children.length, 0);
   stage.destroy();
 });
