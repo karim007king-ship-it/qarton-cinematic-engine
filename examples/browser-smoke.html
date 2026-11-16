@@ -15,6 +15,12 @@
     #character-layer { z-index: 5; transform-origin: center center; }
     #particles { z-index: 6; transform-origin: center center; }
     .qarton-character { width: clamp(84px, 16%, 150px); height: 48%; }
+    .qarton-character-base, .qarton-character-layer, .qarton-character-mouth, .qarton-character-eyes {
+      position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
+    }
+    .qarton-character-layer[data-layer-id="left-arm"] { transform-origin: 34% 42%; }
+    .qarton-character-layer[data-layer-id="right-arm"] { transform-origin: 66% 42%; }
+    .qarton-character-mouth, .qarton-character-eyes { pointer-events: none; }
     .controls { display: flex; flex-wrap: wrap; gap: 9px; margin: 14px 0; }
     button { border: 1px solid #8e6b2f; border-radius: 8px; padding: 10px 13px; background: #292117; color: #fff; font: inherit; }
     button:disabled { opacity: .5; }
@@ -126,17 +132,45 @@
     characters: [
       { controller: createCharacterController({
         id: "hero", initial: { x: 24, y: 120, scale: 1.08, expression: "neutral" },
-        motions: [{ id: "hero-walk", path: walkPath, startMs: 500, durationMs: 5200, expression: "determined" }]
-      }), sprites: { neutral: makeSprite("#e8c18a", "#20212b"), determined: makeSprite("#e8c18a", "#8b263d"), default: makeSprite("#e8c18a", "#20212b") } },
+        motions: [{ id: "hero-walk", path: walkPath, startMs: 500, durationMs: 5200, expression: "determined" }],
+        dialogue: [{ startMs: 1400, endMs: 4100, expression: "determined" }],
+        poseClips: [{
+          id: "hero-gesture", pose: "speaking-gesture", startMs: 1500, durationMs: 1800, loop: true,
+          layers: {
+            "left-arm": [{ at: 0, rotation: -8 }, { at: .5, rotation: 24 }, { at: 1, rotation: -8 }],
+            "right-arm": [{ at: 0, rotation: 8 }, { at: .5, rotation: -18 }, { at: 1, rotation: 8 }]
+          }
+        }]
+      }), sprites: { neutral: makeSprite("#e8c18a", "#20212b"), determined: makeSprite("#e8c18a", "#8b263d"), default: makeSprite("#e8c18a", "#20212b") },
+        layerSprites: { "left-arm": makeRigPart("arm-left", "#e8c18a", "#8b263d"), "right-arm": makeRigPart("arm-right", "#e8c18a", "#8b263d") },
+        mouthSprites: [makeRigPart("mouth-closed"), makeRigPart("mouth-open")],
+        eyeSprites: [makeRigPart("eyes-open"), makeRigPart("eyes-blink")] },
       { controller: createCharacterController({
         id: "companion", initial: { x: 650, y: 142, scale: .9, expression: "neutral", opacity: .92 },
-        motions: [{ id: "companion-enter", path: enterPath, startMs: 1100, durationMs: 4800, expression: "alert" }]
-      }), sprites: { neutral: makeSprite("#b8c7d8", "#253a55"), alert: makeSprite("#b8c7d8", "#a65b36"), default: makeSprite("#b8c7d8", "#253a55") } }
+        motions: [{ id: "companion-enter", path: enterPath, startMs: 1100, durationMs: 4800, expression: "alert" }],
+        dialogue: [{ startMs: 4300, endMs: 5900, expression: "alert" }]
+      }), sprites: { neutral: makeSprite("#b8c7d8", "#253a55"), alert: makeSprite("#b8c7d8", "#a65b36"), default: makeSprite("#b8c7d8", "#253a55") },
+        mouthSprites: [makeRigPart("mouth-closed"), makeRigPart("mouth-open")],
+        eyeSprites: [makeRigPart("eyes-open"), makeRigPart("eyes-blink")] }
     ]
   });
 
   function makeSprite(skin, clothes) {
     return `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 260"><ellipse cx="80" cy="248" rx="42" ry="8" fill="#000" opacity=".35"/><circle cx="80" cy="48" r="31" fill="${skin}"/><path d="M48 42Q54 4 92 17Q116 25 111 57Q92 34 48 42" fill="#17151c"/><path d="M43 92Q80 72 117 92L137 218H23Z" fill="${clothes}"/><path d="M48 210 42 252H68L80 210 92 252H118L111 210Z" fill="#20212b"/><path d="M50 103 16 177 31 185 70 132M110 103 144 177 129 185 90 132" fill="${skin}"/></svg>`) }`;
+  }
+
+  function makeRigPart(kind, skin = "#e8c18a", clothes = "#8b263d") {
+    const drawings = {
+      "arm-left": '<path d="M55 102 Q35 111 23 148 L13 178 Q12 188 22 191 Q31 193 36 183 L61 139Z" fill="' + skin + '" stroke="#17151c" stroke-width="4"/><path d="M52 111 28 163" stroke="' + clothes + '" stroke-width="12" stroke-linecap="round"/>',
+      "arm-right": '<path d="M105 102 Q125 111 137 148 L147 178 Q148 188 138 191 Q129 193 124 183 L99 139Z" fill="' + skin + '" stroke="#17151c" stroke-width="4"/><path d="M108 111 132 163" stroke="' + clothes + '" stroke-width="12" stroke-linecap="round"/>',
+      "mouth-closed": '<path d="M70 67 Q80 72 90 67" fill="none" stroke="#51252a" stroke-width="3" stroke-linecap="round"/>',
+      "mouth-open": '<ellipse cx="80" cy="68" rx="7" ry="9" fill="#51252a" stroke="#27171b" stroke-width="2"/>',
+      "eyes-open": '<ellipse cx="69" cy="48" rx="4" ry="2.5" fill="#17151c"/><ellipse cx="91" cy="48" rx="4" ry="2.5" fill="#17151c"/>',
+      "eyes-blink": '<path d="M64 49 Q69 45 74 49 M86 49 Q91 45 96 49" fill="none" stroke="#17151c" stroke-width="3" stroke-linecap="round"/>'
+    };
+    const drawing = drawings[kind];
+    if (!drawing) throw new Error('Unknown rig part: ' + kind);
+    return 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 260">' + drawing + '</svg>');
   }
 
   const cameraTrack = createCameraTrack([
