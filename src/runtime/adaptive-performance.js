@@ -14,7 +14,8 @@ export function createAdaptivePerformanceMonitor({
   upgradeFps = 56,
   onProfileChange = () => {}
 } = {}) {
-  if (!Number.isInteger(sampleWindow) || sampleWindow < 1
+  if (!device || typeof device !== "object" || Array.isArray(device)
+    || !Number.isInteger(sampleWindow) || sampleWindow < 1
     || !Number.isInteger(stableWindows) || stableWindows < 1
     || !Number.isFinite(downgradeFps) || !Number.isFinite(upgradeFps)
     || downgradeFps <= 0 || upgradeFps <= downgradeFps
@@ -23,7 +24,7 @@ export function createAdaptivePerformanceMonitor({
   }
 
   let locked = device.reducedMotion === true || device.saveData === true;
-  let profile = resolveQualityProfile(device);
+  let profile = Object.freeze(resolveQualityProfile(device));
   let frames = [];
   let stableCount = 0;
   let stableDirection = null;
@@ -84,9 +85,12 @@ export function createAdaptivePerformanceMonitor({
   }
 
   function reset(nextDevice = device) {
+    if (!nextDevice || typeof nextDevice !== "object" || Array.isArray(nextDevice)) {
+      throw new TypeError("Adaptive performance device hints must be an object");
+    }
     device = nextDevice;
     locked = device.reducedMotion === true || device.saveData === true;
-    profile = resolveQualityProfile(device);
+    profile = Object.freeze(resolveQualityProfile(device));
     frames = [];
     stableCount = 0;
     stableDirection = null;
@@ -109,20 +113,32 @@ export function createRuntimeActivityGate({ onPause = () => {}, onResume = () =>
   }
   let active = true;
   let destroyed = false;
+  let destroyPausePending = false;
   function setActive(nextActive) {
     if (destroyed) throw new Error("Runtime activity gate has been destroyed");
     if (typeof nextActive !== "boolean") throw new TypeError("Activity state must be boolean");
     if (active === nextActive) return active;
-    active = nextActive;
-    if (active) onResume();
+    // Commit state only after the host callback succeeds, allowing callers to
+    // retry a failed pause/resume notification without desynchronizing the gate.
+    if (nextActive) onResume();
     else onPause();
+    active = nextActive;
     return active;
   }
   function destroy() {
-    if (destroyed) return;
-    if (active) onPause();
-    active = false;
+    if (destroyed && !destroyPausePending) return;
     destroyed = true;
+    if (active || destroyPausePending) {
+      try {
+        onPause();
+        active = false;
+        destroyPausePending = false;
+      } catch (error) {
+        // The gate stays closed to new work; a later destroy() retries pause.
+        destroyPausePending = true;
+        throw error;
+      }
+    }
   }
   return Object.freeze({
     setActive,
