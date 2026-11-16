@@ -279,3 +279,31 @@ test("unmount cancels pending director events after an asynchronous stage update
   assert.equal(director.getState().timeMs, -1);
   director.destroy();
 });
+
+
+test("pause invalidates pending director events even if playback resumes before rendering completes", async () => {
+  let releaseUpdate;
+  const events = [];
+  const director = createCinematicDirector({
+    characterStage: {
+      mount: async () => true,
+      update: () => new Promise(resolve => { releaseUpdate = resolve; }),
+      unmount: () => {},
+      destroy: () => {}
+    },
+    timeline: createTimeline([{ id: "pending", atMs: 100, type: "cue" }]),
+    onEvent: event => events.push(event.id)
+  });
+
+  await director.mount();
+  const pending = director.update(100);
+  for (let i = 0; i < 8 && !releaseUpdate; i += 1) await Promise.resolve();
+  assert.equal(typeof releaseUpdate, "function");
+  assert.equal(director.pause(100), true);
+  assert.equal(director.resume(100), true);
+  releaseUpdate();
+  const result = await pending;
+  assert.equal(result.cancelled, true);
+  assert.deepEqual(events, []);
+  director.destroy();
+});
