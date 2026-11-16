@@ -184,3 +184,51 @@ test("immediate remount starts a fresh operation while stale mount settles", asy
   assert.equal(root.children.length, 0);
   stage.destroy();
 });
+
+
+test("stale partial mount cannot clear handles created by a newer multi-character mount", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const resolvers = [];
+  const first = createCharacterController({ id: "first" });
+  const second = createCharacterController({ id: "second" });
+  const stage = createCharacterStage({
+    root,
+    resolveSprite: key => new Promise(resolve => resolvers.push({ key, resolve })),
+    characters: [
+      { controller: first, sprites: { default: "first" } },
+      { controller: second, sprites: { default: "second" } }
+    ]
+  });
+
+  const staleMount = stage.mount();
+  await Promise.resolve();
+  resolvers[0].resolve("https://assets.test/old-first.png");
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(resolvers.length, 2);
+
+  stage.unmount();
+  const freshMount = stage.mount();
+  await Promise.resolve();
+  assert.equal(resolvers.length, 3);
+
+  resolvers[2].resolve("https://assets.test/new-first.png");
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(resolvers.length, 4);
+
+  resolvers[3].resolve("https://assets.test/new-second.png");
+  assert.equal(await freshMount, true);
+  resolvers[1].resolve("https://assets.test/old-second.png");
+  assert.equal(await staleMount, false);
+
+  assert.equal(root.children.length, 2);
+  assert.equal(root.children[0].children[0].src, "https://assets.test/new-first.png");
+  assert.equal(root.children[1].children[0].src, "https://assets.test/new-second.png");
+
+  await stage.update(50);
+  stage.unmount();
+  assert.equal(root.children.length, 0);
+  stage.destroy();
+});
