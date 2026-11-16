@@ -293,7 +293,12 @@ test("partial mount rollback attempts every completed character cleanup", async 
     ]
   });
 
-  await assert.rejects(stage.mount(), error => error === mountFailure);
+  await assert.rejects(stage.mount(), error => {
+    assert.ok(error instanceof AggregateError);
+    assert.equal(error.cause, mountFailure);
+    assert.deepEqual(error.errors, [mountFailure, cleanupFailure]);
+    return true;
+  });
   assert.deepEqual(root.children.map(child => child.dataset.characterId), ["second"]);
   stage.destroy();
 });
