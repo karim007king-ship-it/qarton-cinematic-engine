@@ -85,3 +85,20 @@ test("adaptive monitor requires consecutive windows in the same direction", () =
   monitor.recordFrame(40); // second consecutive low window
   assert.equal(monitor.getProfile().tier, "low");
 });
+
+
+test("activity gate remains terminal when the host pause callback throws during destroy", () => {
+  let pauseCalls = 0;
+  const gate = createRuntimeActivityGate({
+    onPause: () => {
+      pauseCalls += 1;
+      throw new Error("host pause failed");
+    }
+  });
+
+  assert.throws(() => gate.destroy(), /host pause failed/);
+  assert.equal(gate.isActive(), false);
+  assert.throws(() => gate.setActive(true), /destroyed/);
+  assert.doesNotThrow(() => gate.destroy());
+  assert.equal(pauseCalls, 1);
+});
