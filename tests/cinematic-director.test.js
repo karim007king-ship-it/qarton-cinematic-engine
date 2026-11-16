@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createCinematicDirector } from "../src/runtime/cinematic-director.js";
 import { createTimeline } from "../src/motion/timeline.js";
+import { createAudioCueController } from "../src/audio/audio-cue-controller.js";
 
 function audioSpy() {
   const calls = [];
@@ -375,5 +376,116 @@ test("queued update from an old mount cannot run after unmount and remount", asy
   assert.deepEqual(stageUpdates, [100]);
   await director.update(0);
   assert.deepEqual(stageUpdates, [100, 0]);
+  director.destroy();
+});
+
+
+test("audio update failure leaves the director clock retryable", async () => {
+  let audioAttempts = 0;
+  const stageUpdates = [];
+  const events = [];
+  const audio = {
+    update: () => {
+      audioAttempts += 1;
+      if (audioAttempts === 1) throw new Error("audio adapter failed");
+    },
+    pause: () => {},
+    resume: () => {},
+    stopAll: () => {},
+    destroy: () => {}
+  };
+  const director = createCinematicDirector({
+    audio,
+    characterStage: {
+      mount: async () => true,
+      update: async time => { stageUpdates.push(time); },
+      unmount: () => {},
+      destroy: () => {}
+    },
+    timeline: createTimeline([{ id: "retry-audio", atMs: 100, type: "cue" }]),
+    onEvent: event => events.push(event.id)
+  });
+
+  await director.mount();
+  await assert.rejects(director.update(100), /audio adapter failed/);
+  assert.equal(director.getState().timeMs, -1);
+  assert.deepEqual(stageUpdates, []);
+  const result = await director.update(100);
+  assert.deepEqual(result.events.map(event => event.id), ["retry-audio"]);
+  assert.equal(director.getState().timeMs, 100);
+  assert.deepEqual(stageUpdates, [100]);
+  assert.deepEqual(events, ["retry-audio"]);
+  director.destroy();
+});
+
+test("stage failure can retry the same timestamp without replaying audio cues or events", async () => {
+  let stageAttempts = 0;
+  let playCalls = 0;
+  const events = [];
+  const audio = createAudioCueController({
+    cues: [{ id: "impact", atMs: 100, asset: "impact-sound" }],
+    play: () => {
+      playCalls += 1;
+      return { id: "impact-voice" };
+    },
+    stop: () => {}
+  });
+  const director = createCinematicDirector({
+    audio,
+    characterStage: {
+      mount: async () => true,
+      update: async () => {
+        stageAttempts += 1;
+        if (stageAttempts === 1) throw new Error("stage render failed");
+      },
+      unmount: () => {},
+      destroy: () => {}
+    },
+    timeline: createTimeline([{ id: "retry-stage", atMs: 100, type: "cue" }]),
+    onEvent: event => events.push(event.id)
+  });
+
+  await director.mount();
+  await assert.rejects(director.update(100), /stage render failed/);
+  assert.equal(director.getState().timeMs, -1);
+  await director.update(100);
+  assert.equal(director.getState().timeMs, 100);
+  assert.equal(stageAttempts, 2);
+  assert.equal(playCalls, 1);
+  assert.deepEqual(events, ["retry-stage"]);
+  director.destroy();
+});
+
+
+test("timeline callback failure does not replay completed events or audio cues", async () => {
+  let callbackAttempts = 0;
+  let playCalls = 0;
+  const delivered = [];
+  const audio = createAudioCueController({
+    cues: [{ id: "hit", atMs: 100, asset: "hit-sound" }],
+    play: () => {
+      playCalls += 1;
+      return { id: "hit-voice" };
+    },
+    stop: () => {}
+  });
+  const director = createCinematicDirector({
+    audio,
+    timeline: createTimeline([{ id: "impact-event", atMs: 100, type: "impact" }]),
+    onEvent: event => {
+      callbackAttempts += 1;
+      delivered.push(event.id);
+      if (callbackAttempts === 1) throw new Error("event consumer failed");
+    }
+  });
+
+  await director.mount();
+  await assert.rejects(director.update(100), /event consumer failed/);
+  assert.equal(director.getState().timeMs, 100);
+  const retry = await director.update(100);
+  assert.deepEqual(retry.events, []);
+  assert.equal(callbackAttempts, 1);
+  assert.equal(playCalls, 1);
+  assert.deepEqual(delivered, ["impact-event"]);
   director.destroy();
 });

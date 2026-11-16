@@ -90,17 +90,21 @@ export function createCinematicDirector({
       toMs: timeMs
     });
 
-    // Commit the clock before callbacks so a callback failure cannot cause
-    // already-fired audio cues or timeline events to be dispatched twice.
-    lastTimeMs = timeMs;
+    // Audio cues and character updates may fail. Keep the director clock at
+    // the last fully processed time so the caller can retry this timestamp.
+    // The audio controller deduplicates cues already started during a partial
+    // update; character-stage updates are safe to repeat at the same timestamp.
     audio?.update(timeMs);
     if (characterStage) await characterStage.update(timeMs);
     // A pause/unmount/destroy can invalidate an update while the stage is
-    // asynchronously applying sprites. Never dispatch stale scene events.
+    // asynchronously applying sprites. Never commit or dispatch stale work.
     if (destroyed || ticket.generation !== updateGeneration ||
         ticket.lifecycle !== lifecycleVersion || !mounted) {
       return Object.freeze({ timeMs, events: Object.freeze([]), paused: false, cancelled: true });
     }
+    // Commit before callbacks: a throwing callback must not replay completed
+    // audio/stage work or dispatch earlier timeline events a second time.
+    lastTimeMs = timeMs;
     for (const event of events) onEvent(event, timeMs);
     return Object.freeze({ timeMs, events, paused: false });
   }
