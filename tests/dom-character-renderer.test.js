@@ -131,3 +131,68 @@ test("duplicate in-flight requests for the same sprite share one asset resolutio
   assert.deepEqual(await Promise.all([first, second]), [true, true]);
   assert.equal(handle.children[0].src, "https://assets.test/focused.png");
 });
+
+
+test("DOM renderer applies layered pose transforms and facial animation frames", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`
+  });
+  const handle = await renderer.mount({
+    id: "hero",
+    sprites: { neutral: "hero-neutral" },
+    layerSprites: { "left-arm": "arm", torso: "torso" },
+    mouthSprites: ["mouth-closed", "mouth-open"],
+    eyeSprites: ["eyes-open", "eyes-blink"],
+    initialState: { expression: "neutral" }
+  });
+
+  const arm = handle.children.find(child => child.dataset.layerId === "left-arm");
+  const mouth = handle.children.filter(child => child.className === "qarton-character-mouth");
+  const eyes = handle.children.filter(child => child.className === "qarton-character-eyes");
+  assert.ok(arm);
+  await renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0,
+    expression: "neutral", state: "speaking", pose: "talk",
+    speaking: true, mouthFrame: 1, eyeFrame: 1,
+    breathOffsetY: 1.25, headRotation: 0.5,
+    layerTransforms: {
+      "left-arm": { translateX: 4, translateY: 2, rotation: 30, scaleX: 1, scaleY: 0.9 }
+    }
+  });
+
+  assert.match(arm.style.transform, /translate3d\(4px, 2px, 0\).*rotate\(30deg\)/);
+  assert.equal(handle.dataset.pose, "talk");
+  assert.equal(handle.dataset.speaking, "true");
+  assert.equal(handle.children[0].style.transform, "translate3d(0px, 1.25px, 0) rotate(0.5deg)");
+  assert.equal(mouth[0].style.display, "none");
+  assert.equal(mouth[1].style.display, "block");
+  assert.equal(eyes[0].style.display, "none");
+  assert.equal(eyes[1].style.display, "block");
+
+  renderer.unmount(handle);
+  assert.equal(root.children.length, 0);
+});
+
+test("DOM renderer rejects negative rig scale and cleans up failed rig mounts", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => key === "missing" ? null : `https://assets.test/${key}.png`
+  });
+  const handle = await renderer.mount({
+    id: "hero", sprites: { default: "base" }, layerSprites: { arm: "arm" }
+  });
+  await assert.rejects(renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0,
+    layerTransforms: { arm: { scaleX: -1 } }
+  }), /scale cannot be negative/);
+  renderer.unmount(handle);
+  await assert.rejects(renderer.mount({
+    id: "broken", sprites: { default: "base" }, layerSprites: { arm: "missing" }
+  }), /invalid URL/);
+  assert.equal(root.children.length, 0);
+});
