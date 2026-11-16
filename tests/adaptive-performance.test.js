@@ -71,3 +71,19 @@ test("reset recalculates reduced-motion and save-data quality locks", () => {
   for (let i = 0; i < 4; i += 1) monitor.recordFrame(5);
   assert.equal(monitor.getProfile().tier, "low");
 });
+
+
+test("activity gate becomes terminal even when its destroy pause callback throws", () => {
+  let pauses = 0;
+  const gate = createRuntimeActivityGate({
+    onPause: () => {
+      pauses += 1;
+      throw new Error("pause failed");
+    }
+  });
+  assert.throws(() => gate.destroy(), /pause failed/);
+  assert.equal(gate.isActive(), false);
+  assert.throws(() => gate.setActive(true), /destroyed/);
+  gate.destroy();
+  assert.equal(pauses, 1);
+});
