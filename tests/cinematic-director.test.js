@@ -74,6 +74,9 @@ test("director pauses, resumes and replays timeline deterministically after rewi
   await director.update(50);
   assert.deepEqual(events, ["first", "later"]);
   assert.deepEqual(audio.calls.slice(-2), [["stopAll", { reset: true }], ["update", 50]]);
+  const replay = await director.update(350);
+  assert.deepEqual(replay.events.map(event => event.id), ["first", "during-pause", "later"]);
+  assert.deepEqual(events, ["first", "later", "first", "during-pause", "later"]);
   director.unmount();
   assert.equal(director.getState().timeMs, -1);
   await director.destroy();
@@ -298,7 +301,8 @@ test("director resumes event delivery after a callback throws without replaying 
   await director.mount();
   await assert.rejects(director.update(20), /story callback failed/);
   assert.deepEqual(delivered, ["first", "second"]);
-  await director.update(20);
+  const retried = await director.update(20);
+  assert.deepEqual(retried.events.map(event => event.id), ["third"]);
   assert.deepEqual(delivered, ["first", "second", "third"]);
   assert.deepEqual(played, ["impact"]);
   await director.destroy();
