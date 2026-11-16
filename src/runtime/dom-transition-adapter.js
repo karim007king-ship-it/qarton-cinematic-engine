@@ -37,13 +37,19 @@ export function createDOMTransitionAdapter({
   const mounted = new Set();
   let activeTransition = null;
 
+  function cancelAnimation(animation) {
+    try {
+      animation?.cancel?.();
+    } catch {
+      // Animation cancellation is best-effort; visual state is restored separately.
+    }
+  }
+
   function cancelActiveTransition() {
     if (!activeTransition) return;
     const active = activeTransition;
     activeTransition = null;
-    active.animations.forEach(animation => {
-      try { animation?.cancel?.(); } catch { /* best-effort cancellation */ }
-    });
+    active.animations.forEach(cancelAnimation);
     try { active.cleanup?.(); } catch { /* best-effort visual rollback */ }
     active.cancel();
   }
@@ -112,9 +118,7 @@ export function createDOMTransitionAdapter({
       // Commit the final visual state to inline styles before cancelling WAAPI.
       // This releases fill: "forwards" effects so they cannot override later
       // scene transitions or retain compositor resources indefinitely.
-      for (const animation of transition.animations) {
-        try { animation?.cancel?.(); } catch { /* best-effort animation cleanup */ }
-      }
+      for (const animation of transition.animations) cancelAnimation(animation);
       transition.animations = [];
       return true;
     };
@@ -134,8 +138,8 @@ export function createDOMTransitionAdapter({
         { opacity: 1, filter: "blur(0px)" }
       ], { duration: requestedDuration, easing: "ease-in-out", fill: "forwards" });
     } catch {
-      fromAnimation?.cancel?.();
-      toAnimation?.cancel?.();
+      cancelAnimation(fromAnimation);
+      cancelAnimation(toAnimation);
       fromAnimation = null;
       toAnimation = null;
     }
@@ -151,16 +155,16 @@ export function createDOMTransitionAdapter({
         return finish();
       } catch (error) {
         if (!isCurrent()) return false;
-        fromAnimation.cancel?.();
-        toAnimation.cancel?.();
+        cancelAnimation(fromAnimation);
+        cancelAnimation(toAnimation);
         activeTransition = null;
         throw error;
       }
     }
 
     // Cancel a partial WAAPI setup before switching both elements to CSS.
-    fromAnimation?.cancel?.();
-    toAnimation?.cancel?.();
+    cancelAnimation(fromAnimation);
+    cancelAnimation(toAnimation);
     if (from) {
       from.style.transition = "none";
       from.style.opacity = "1";
