@@ -84,3 +84,21 @@ test("destroy is idempotent and rejects future loads and preloads", async () => 
   assert.equal(manager.size, 0);
   assert.equal(manager.pendingCount, 0);
 });
+
+
+test("destroy prevents a queued load from invoking the host loader", async () => {
+  let calls = 0;
+  const manager = new AssetManager({
+    loader: async () => {
+      calls += 1;
+      return "/should-not-start.png";
+    }
+  });
+  const pending = manager.load("queued");
+  manager.destroy();
+
+  await assert.rejects(pending, /has been destroyed/);
+  assert.equal(calls, 0);
+  assert.equal(manager.pendingCount, 0);
+  assert.equal(manager.size, 0);
+});
