@@ -447,3 +447,37 @@ test("DOM character renderer rejects unsafe resolved sprite URLs and rolls back 
   assert.equal(root.children.length, 0);
   renderer.destroy();
 });
+
+
+test("destroy removes every character when a host element remove method throws", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`
+  });
+  const first = await renderer.mount({ id: "first", sprites: { default: "first" } });
+  const second = await renderer.mount({ id: "second", sprites: { default: "second" } });
+  first.remove = () => { throw new Error("host remove failed"); };
+  second.remove = () => { throw new Error("host remove failed"); };
+
+  assert.doesNotThrow(() => renderer.destroy());
+  assert.equal(root.children.length, 0);
+  assert.doesNotThrow(() => renderer.destroy());
+  assert.equal(renderer.unmount(first), undefined);
+});
+
+test("unmount falls back to the root when a character element remove method throws", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`
+  });
+  const handle = await renderer.mount({ id: "hero", sprites: { default: "hero" } });
+  handle.remove = () => { throw new Error("host remove failed"); };
+
+  assert.doesNotThrow(() => renderer.unmount(handle));
+  assert.equal(root.children.length, 0);
+  assert.equal(renderer.unmount(handle), undefined);
+});
