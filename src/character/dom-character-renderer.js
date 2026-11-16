@@ -30,6 +30,13 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       if (!Number.isFinite(state[key])) throw new TypeError(`Character state ${key} must be finite`);
     }
     if (state.scale < 0) throw new TypeError("Character scale cannot be negative");
+    for (const [layerId, transform] of Object.entries(state.layerTransforms ?? {})) {
+      const scaleX = Number.isFinite(transform?.scaleX) ? transform.scaleX : 1;
+      const scaleY = Number.isFinite(transform?.scaleY) ? transform.scaleY : 1;
+      if (scaleX < 0 || scaleY < 0) {
+        throw new TypeError(`Character layer "${layerId}" scale cannot be negative`);
+      }
+    }
     const element = record.element;
     element.style.transform =
       `translate3d(${state.x}px, ${state.y}px, 0) rotate(${state.rotation}deg) scale(${state.scale})`;
@@ -52,7 +59,6 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       const rotation = Number.isFinite(transform.rotation) ? transform.rotation : 0;
       const scaleX = Number.isFinite(transform.scaleX) ? transform.scaleX : 1;
       const scaleY = Number.isFinite(transform.scaleY) ? transform.scaleY : 1;
-      if (scaleX < 0 || scaleY < 0) throw new TypeError(`Character layer "${layerId}" scale cannot be negative`);
       layer.style.transform = `translate3d(${x}px, ${y}px, 0) rotate(${rotation}deg) scale(${scaleX}, ${scaleY})`;
     }
 
