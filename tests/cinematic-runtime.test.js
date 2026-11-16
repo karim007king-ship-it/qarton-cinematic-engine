@@ -111,23 +111,21 @@ test("cinematic runtime destroy retries when scene DOM cleanup fails", async () 
 test("runtime destroy cancels an active visual transition before awaiting scene teardown", async () => {
   const document = new Document();
   const root = new Element("main", document);
-  let waitStarted;
-  const waiting = new Promise(resolve => { waitStarted = resolve; });
+  let signalFrame;
+  const frameStarted = new Promise(resolve => { signalFrame = resolve; });
   const runtime = createCinematicRuntime({
     root,
     loadAsset: key => key,
     renderScene: () => document.createElement("div"),
-    nextFrame: async () => {},
-    wait: () => waiting
+    nextFrame: () => { signalFrame(); return Promise.resolve(); },
+    wait: () => new Promise(() => {})
   });
 
   await runtime.transitionTo({ id: "current" });
   const pendingTransition = runtime.transitionTo({ id: "incoming" });
-  await Promise.resolve();
-  await Promise.resolve();
+  await frameStarted;
   const destroying = runtime.destroy();
   assert.equal(await pendingTransition, false);
   await destroying;
   assert.equal(root.children.length, 0);
-  waitStarted();
 });
