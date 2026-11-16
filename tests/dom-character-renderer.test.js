@@ -62,6 +62,34 @@ test("DOM renderer rejects duplicate ids while the first mount is pending", asyn
   assert.equal(root.children.length, 0);
 });
 
+test("cancelMount stops a pending rig mount before requesting later assets", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let resolveArm;
+  const requested = [];
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => {
+      requested.push(key);
+      if (key === "arm") return new Promise(resolve => { resolveArm = resolve; });
+      return `https://assets.test/${key}.png`;
+    }
+  });
+  const mounting = renderer.mount({
+    id: "hero",
+    sprites: { default: "base" },
+    layerSprites: { arm: "arm", torso: "torso" }
+  });
+  for (let index = 0; index < 8; index += 1) await Promise.resolve();
+  assert.deepEqual(requested, ["base", "arm"]);
+  assert.equal(renderer.cancelMount("hero"), true);
+  assert.equal(renderer.cancelMount("hero"), false);
+  resolveArm("https://assets.test/arm.png");
+  await assert.rejects(mounting, /destroyed/);
+  assert.deepEqual(requested, ["base", "arm"]);
+  assert.equal(root.children.length, 0);
+});
+
 test("stale asynchronous sprite loads cannot overwrite a newer expression", async () => {
   const document = new Document();
   const root = new Element("main", document);
