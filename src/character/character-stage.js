@@ -59,7 +59,7 @@ export function createCharacterStage({
           return false;
         }
         record.handle = handle;
-        completed.push(record);
+        completed.push({ record, handle });
       }
       if (destroyed || version !== lifecycleVersion) {
         releaseCompleted(completed);
