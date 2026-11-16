@@ -275,3 +275,25 @@ test("a throwing partial animation cancellation does not block CSS fallback", as
   assert.equal(from.style.opacity, "0");
   assert.equal(to.style.opacity, "1");
 });
+
+
+test("destroy removes every scene when an element remove method throws", async () => {
+  const { root, adapter } = setup();
+  const first = await adapter.mount({ id: "first" }, {});
+  const second = await adapter.mount({ id: "second" }, {});
+  first.remove = () => { throw new Error("host remove failed"); };
+  second.remove = () => { throw new Error("host remove failed"); };
+
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.equal(root.children.length, 0);
+  assert.doesNotThrow(() => adapter.destroy());
+});
+
+test("unmount falls back to the root when an element remove method throws", async () => {
+  const { root, adapter } = setup();
+  const scene = await adapter.mount({ id: "scene" }, {});
+  scene.remove = () => { throw new Error("host remove failed"); };
+
+  assert.doesNotThrow(() => adapter.unmount(scene));
+  assert.equal(root.children.length, 0);
+});
