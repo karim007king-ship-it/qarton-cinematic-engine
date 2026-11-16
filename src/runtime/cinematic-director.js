@@ -71,8 +71,12 @@ export function createCinematicDirector({
     return tracked;
   }
 
-  async function performUpdate(timeMs) {
-    assertAlive();
+  async function performUpdate(timeMs, ticket) {
+    // Reject work that was queued before pause, unmount, remount or destroy.
+    if (destroyed || ticket.generation !== updateGeneration ||
+        ticket.lifecycle !== lifecycleVersion) {
+      return Object.freeze({ timeMs, events: Object.freeze([]), paused: false, cancelled: true });
+    }
     if (!mounted) throw new Error("Cinematic director must be mounted before update");
     if (paused) return Object.freeze({ timeMs: lastTimeMs, events: Object.freeze([]), paused: true });
     if (!Number.isFinite(timeMs) || timeMs < 0) {
@@ -89,12 +93,12 @@ export function createCinematicDirector({
     // Commit the clock before callbacks so a callback failure cannot cause
     // already-fired audio cues or timeline events to be dispatched twice.
     lastTimeMs = timeMs;
-    const version = updateGeneration;
     audio?.update(timeMs);
     if (characterStage) await characterStage.update(timeMs);
     // A pause/unmount/destroy can invalidate an update while the stage is
     // asynchronously applying sprites. Never dispatch stale scene events.
-    if (destroyed || version !== updateGeneration || !mounted) {
+    if (destroyed || ticket.generation !== updateGeneration ||
+        ticket.lifecycle !== lifecycleVersion || !mounted) {
       return Object.freeze({ timeMs, events: Object.freeze([]), paused: false, cancelled: true });
     }
     for (const event of events) onEvent(event, timeMs);
@@ -103,7 +107,11 @@ export function createCinematicDirector({
 
   async function update(timeMs) {
     assertAlive();
-    const operation = updateQueue.then(() => performUpdate(timeMs));
+    const ticket = Object.freeze({
+      generation: updateGeneration,
+      lifecycle: lifecycleVersion
+    });
+    const operation = updateQueue.then(() => performUpdate(timeMs, ticket));
     // Keep the queue usable after a rejected update while preserving the
     // rejection for the caller that submitted that update.
     updateQueue = operation.catch(() => {});

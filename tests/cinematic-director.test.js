@@ -307,3 +307,73 @@ test("pause invalidates pending director events even if playback resumes before 
   assert.deepEqual(events, []);
   director.destroy();
 });
+
+
+test("queued update is cancelled when pause and resume happen before it starts", async () => {
+  let releaseFirst;
+  const stageUpdates = [];
+  const events = [];
+  const director = createCinematicDirector({
+    characterStage: {
+      mount: async () => true,
+      update: time => {
+        stageUpdates.push(time);
+        if (time === 100) return new Promise(resolve => { releaseFirst = resolve; });
+      },
+      unmount: () => {},
+      destroy: () => {}
+    },
+    timeline: createTimeline([
+      { id: "first", atMs: 100, type: "cue" },
+      { id: "queued", atMs: 200, type: "cue" }
+    ]),
+    onEvent: event => events.push(event.id)
+  });
+
+  await director.mount();
+  const first = director.update(100);
+  const queued = director.update(200);
+  for (let i = 0; i < 8 && !releaseFirst; i += 1) await Promise.resolve();
+  assert.equal(typeof releaseFirst, "function");
+  assert.equal(director.pause(100), true);
+  assert.equal(director.resume(100), true);
+  releaseFirst();
+  const [firstResult, result] = await Promise.all([first, queued]);
+  assert.equal(firstResult.cancelled, true);
+  assert.equal(result.cancelled, true);
+  assert.deepEqual(stageUpdates, [100]);
+  assert.deepEqual(events, []);
+  director.destroy();
+});
+
+test("queued update from an old mount cannot run after unmount and remount", async () => {
+  let releaseFirst;
+  const stageUpdates = [];
+  const director = createCinematicDirector({
+    characterStage: {
+      mount: async () => true,
+      update: time => {
+        stageUpdates.push(time);
+        if (time === 100) return new Promise(resolve => { releaseFirst = resolve; });
+      },
+      unmount: () => {},
+      destroy: () => {}
+    }
+  });
+
+  await director.mount();
+  const first = director.update(100);
+  const staleQueued = director.update(200);
+  for (let i = 0; i < 8 && !releaseFirst; i += 1) await Promise.resolve();
+  assert.equal(typeof releaseFirst, "function");
+  director.unmount();
+  await director.mount();
+  releaseFirst();
+  const [firstResult, result] = await Promise.all([first, staleQueued]);
+  assert.equal(firstResult.cancelled, true);
+  assert.equal(result.cancelled, true);
+  assert.deepEqual(stageUpdates, [100]);
+  await director.update(0);
+  assert.deepEqual(stageUpdates, [100, 0]);
+  director.destroy();
+});
