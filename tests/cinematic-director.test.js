@@ -74,7 +74,7 @@ test("director pauses, resumes and replays timeline deterministically after rewi
   assert.deepEqual(audio.calls.slice(-2), [["stopAll", { reset: true }], ["update", 50]]);
   director.unmount();
   assert.equal(director.getState().timeMs, -1);
-  director.destroy();
+  await director.destroy();
 });
 
 test("director validates clock order and lifecycle", async () => {
@@ -83,7 +83,7 @@ test("director validates clock order and lifecycle", async () => {
   await director.mount();
   await assert.rejects(director.update(-1), /non-negative/);
   assert.throws(() => director.pause(-2), /Pause time/);
-  director.destroy();
+  await director.destroy();
   await assert.rejects(director.update(0), /destroyed/);
 });
 
@@ -126,7 +126,7 @@ test("destroy invalidates an asynchronous director mount", async () => {
   assert.deepEqual(calls, ["destroy"]);
 });
 
-test("director destroys audio even when character stage cleanup throws", () => {
+test("director destroys audio even when character stage cleanup throws", async () => {
   const calls = [];
   const failure = new Error("character stage cleanup failed");
   const director = createCinematicDirector({
@@ -234,4 +234,32 @@ test("director destroy waits for pending mount rollback before resolving", async
   assert.equal(await mounting, false);
   await destroying;
   assert.deepEqual(calls, ["destroy"]);
+});
+
+
+test("director allows a fresh mount while an invalidated mount is still pending", async () => {
+  const resolvers = [];
+  let mountCount = 0;
+  const stage = {
+    mount: () => {
+      mountCount += 1;
+      return new Promise(resolve => resolvers.push(resolve));
+    },
+    update: async () => {},
+    unmount: () => {},
+    destroy: () => {}
+  };
+  const director = createCinematicDirector({ characterStage: stage });
+
+  const stale = director.mount();
+  director.unmount();
+  const fresh = director.mount();
+  assert.equal(mountCount, 2);
+
+  resolvers[1](true);
+  assert.equal(await fresh, true);
+  resolvers[0](true);
+  assert.equal(await stale, false);
+  assert.equal(director.getState().mounted, true);
+  await director.destroy();
 });
