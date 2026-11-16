@@ -40,6 +40,8 @@ export function createCinematicDirector({
   let paused = false;
   let destroyed = false;
   let lastTimeMs = -1;
+  let eventCursorMs = -1;
+  const deliveredEventIds = new Set();
   let destroyPromise = null;
 
   function assertAlive() {
@@ -81,18 +83,31 @@ export function createCinematicDirector({
     }
 
     const rewound = timeMs < lastTimeMs;
-    if (rewound) audio?.stopAll({ reset: true });
+    if (rewound) {
+      audio?.stopAll({ reset: true });
+      eventCursorMs = -1;
+      deliveredEventIds.clear();
+    }
     const events = getTimelineEvents(timeline, {
-      fromMs: rewound ? -1 : lastTimeMs,
+      fromMs: eventCursorMs,
       toMs: timeMs
     });
 
-    // Commit the clock before callbacks so a callback failure cannot cause
-    // already-fired audio cues or timeline events to be dispatched twice.
-    lastTimeMs = timeMs;
+    // Advance audio and character state before committing the shared clock.
+    // If either subsystem fails, the same sample can be retried safely.
     audio?.update(timeMs);
     if (characterStage) await characterStage.update(timeMs);
-    for (const event of events) onEvent(event, timeMs);
+    lastTimeMs = timeMs;
+
+    // Track event delivery independently from the clock. If a callback throws,
+    // a later update at the same time can continue with remaining events without
+    // replaying callbacks that were already entered.
+    for (const event of events) {
+      if (deliveredEventIds.has(event.id)) continue;
+      deliveredEventIds.add(event.id);
+      onEvent(event, timeMs);
+    }
+    eventCursorMs = timeMs;
     return Object.freeze({ timeMs, events, paused: false });
   }
 
@@ -104,6 +119,7 @@ export function createCinematicDirector({
     }
     audio?.pause(timeMs);
     lastTimeMs = timeMs;
+    eventCursorMs = timeMs;
     paused = true;
     onPause(timeMs);
     return true;
@@ -117,6 +133,7 @@ export function createCinematicDirector({
     }
     audio?.resume(timeMs);
     lastTimeMs = timeMs;
+    eventCursorMs = timeMs;
     paused = false;
     onResume(timeMs);
     return true;
@@ -132,6 +149,8 @@ export function createCinematicDirector({
     mounted = false;
     paused = false;
     lastTimeMs = -1;
+    eventCursorMs = -1;
+    deliveredEventIds.clear();
 
     let firstError;
     let failed = false;
@@ -157,6 +176,8 @@ export function createCinematicDirector({
       mounted = false;
       paused = false;
       lastTimeMs = -1;
+      eventCursorMs = -1;
+      deliveredEventIds.clear();
     }
 
     destroyPromise = (async () => {
