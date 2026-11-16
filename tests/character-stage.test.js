@@ -149,3 +149,33 @@ test("unmount during async mount prevents a late character from remaining mounte
   assert.equal(await stage.mount().then(() => true), true);
   stage.destroy();
 });
+
+
+test("immediate remount starts a fresh operation while stale mount settles", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const controller = createCharacterController({ id: "hero" });
+  const resolvers = [];
+  const stage = createCharacterStage({
+    root,
+    resolveSprite: () => new Promise(resolve => { resolvers.push(resolve); }),
+    characters: [{ controller, sprites: { default: "hero" } }]
+  });
+
+  const staleMount = stage.mount();
+  await Promise.resolve();
+  stage.unmount();
+
+  const freshMount = stage.mount();
+  await Promise.resolve();
+  assert.equal(resolvers.length, 2);
+
+  resolvers[1]("https://assets.test/fresh.png");
+  assert.equal(await freshMount, true);
+  resolvers[0]("https://assets.test/stale.png");
+  assert.equal(await staleMount, false);
+
+  assert.equal(root.children.length, 1);
+  assert.equal(root.children[0].children[0].src, "https://assets.test/fresh.png");
+  stage.destroy();
+});
