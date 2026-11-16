@@ -37,7 +37,14 @@ export function createCharacterStage({
     if (!entry.sprites || typeof entry.sprites !== "object" || Array.isArray(entry.sprites)) {
       throw new TypeError(`Character "${id}" requires a sprite map`);
     }
-    records.set(id, { controller: entry.controller, sprites: entry.sprites, handle: null });
+    records.set(id, {
+      controller: entry.controller,
+      sprites: entry.sprites,
+      layerSprites: entry.layerSprites ?? {},
+      mouthSprites: entry.mouthSprites ?? [],
+      eyeSprites: entry.eyeSprites ?? [],
+      handle: null
+    });
   }
 
   function releaseCompleted(completed) {
@@ -52,7 +59,14 @@ export function createCharacterStage({
     try {
       for (const [id, record] of records) {
         const initialState = record.controller.update(0);
-        const handle = await renderer.mount({ id, sprites: record.sprites, initialState });
+        const handle = await renderer.mount({
+          id,
+          sprites: record.sprites,
+          layerSprites: record.layerSprites,
+          mouthSprites: record.mouthSprites,
+          eyeSprites: record.eyeSprites,
+          initialState
+        });
         if (destroyed || version !== lifecycleVersion) {
           renderer.unmount(handle);
           releaseCompleted(completed);
