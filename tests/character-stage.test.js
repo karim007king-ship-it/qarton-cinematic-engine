@@ -155,6 +155,38 @@ test("unmount during async mount prevents a late character from remaining mounte
 });
 
 
+test("unmount cancels remaining rig asset requests during an in-flight character mount", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let resolveArm;
+  const requested = [];
+  const controller = createCharacterController({ id: "hero" });
+  const stage = createCharacterStage({
+    root,
+    resolveSprite: key => {
+      requested.push(key);
+      if (key === "arm") return new Promise(resolve => { resolveArm = resolve; });
+      return `https://assets.test/${key}.png`;
+    },
+    characters: [{
+      controller,
+      sprites: { default: "base" },
+      layerSprites: { arm: "arm", torso: "torso" },
+      mouthSprites: ["mouth"]
+    }]
+  });
+
+  const pending = stage.mount();
+  await flushMicrotasks();
+  assert.deepEqual(requested, ["base", "arm"]);
+  stage.unmount();
+  resolveArm("https://assets.test/arm.png");
+  assert.equal(await pending, false);
+  assert.deepEqual(requested, ["base", "arm"]);
+  assert.equal(root.children.length, 0);
+  stage.destroy();
+});
+
 test("immediate remount starts a fresh operation while stale mount settles", async () => {
   const document = new Document();
   const root = new Element("main", document);
