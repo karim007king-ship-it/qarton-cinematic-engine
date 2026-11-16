@@ -137,3 +137,47 @@ test("an explicitly cancelled crossfade does not commit the candidate scene", as
   assert.equal(manager.current.id, "safe");
   assert.deepEqual(events, ["unmount:cancelled"]);
 });
+
+
+test("previous-scene cleanup failure does not roll back a committed transition", async () => {
+  const cleanupError = new Error("old scene cleanup failed");
+  const { manager } = setup({
+    unmount: async handle => {
+      if (handle.id === "old") throw cleanupError;
+    }
+  });
+
+  await manager.transitionTo({ id: "old" }, {});
+  await assert.rejects(
+    manager.transitionTo({ id: "new" }, {}),
+    error => error === cleanupError
+  );
+  assert.equal(manager.current.id, "new");
+});
+
+test("a failed candidate cleanup is attempted only once after supersession", async () => {
+  let releaseFirst;
+  let firstCleanupCalls = 0;
+  const cleanupError = new Error("candidate cleanup failed");
+  const manager = new SceneTransitionManager({
+    mount: async scene => ({ id: scene.id }),
+    crossfade: ({ to }) => to.id === "first"
+      ? new Promise(resolve => { releaseFirst = resolve; })
+      : Promise.resolve(),
+    unmount: async handle => {
+      if (handle.id === "first") {
+        firstCleanupCalls += 1;
+        throw cleanupError;
+      }
+    }
+  });
+
+  const first = manager.transitionTo({ id: "first" }, {});
+  await Promise.resolve();
+  const second = manager.transitionTo({ id: "second" }, {});
+  assert.equal(await second, true);
+  releaseFirst();
+  await assert.rejects(first, error => error === cleanupError);
+  assert.equal(firstCleanupCalls, 1);
+  assert.equal(manager.current.id, "second");
+});
