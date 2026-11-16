@@ -62,6 +62,11 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       record.image.alt = `${record.id} — ${expression}`;
       record.assetKey = key;
       return true;
+    }).catch(error => {
+      // Ignore failures from obsolete sprite requests; a newer expression,
+      // unmount, or destroy has already superseded this work.
+      if (destroyed || !records.has(record.element) || version !== record.assetVersion) return false;
+      throw error;
     }).finally(() => {
       if (version === record.assetVersion) {
         record.pendingAssetKey = null;

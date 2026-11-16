@@ -131,3 +131,32 @@ test("duplicate in-flight requests for the same sprite share one asset resolutio
   assert.deepEqual(await Promise.all([first, second]), [true, true]);
   assert.equal(handle.children[0].src, "https://assets.test/focused.png");
 });
+
+test("failed stale sprite loads do not reject after a newer expression commits", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let rejectFocused;
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => {
+      if (key === "focused") return new Promise((resolve, reject) => { rejectFocused = reject; });
+      return `https://assets.test/${key}.png`;
+    }
+  });
+  const handle = await renderer.mount({
+    id: "hero",
+    sprites: { neutral: "neutral", focused: "focused", angry: "angry" },
+    initialState: { expression: "neutral" }
+  });
+
+  const staleUpdate = renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, expression: "focused"
+  });
+  await renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, expression: "angry"
+  });
+
+  rejectFocused(new Error("obsolete sprite request failed"));
+  assert.equal(await staleUpdate, false);
+  assert.equal(handle.children[0].src, "https://assets.test/angry.png");
+});
