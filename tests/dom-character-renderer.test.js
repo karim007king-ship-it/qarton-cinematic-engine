@@ -196,3 +196,33 @@ test("DOM renderer rejects negative rig scale and cleans up failed rig mounts", 
   }), /invalid URL/);
   assert.equal(root.children.length, 0);
 });
+
+
+test("destroy during rig asset loading prevents later asset requests and DOM attachment", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let resolveLayer;
+  const requested = [];
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => {
+      requested.push(key);
+      if (key === "arm") return new Promise(resolve => { resolveLayer = resolve; });
+      return `https://assets.test/${key}.png`;
+    }
+  });
+  const mounting = renderer.mount({
+    id: "hero",
+    sprites: { default: "base" },
+    layerSprites: { arm: "arm", torso: "torso" },
+    mouthSprites: ["mouth"]
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(requested, ["base", "arm"]);
+  renderer.destroy();
+  resolveLayer("https://assets.test/arm.png");
+  await assert.rejects(mounting, /destroyed/);
+  assert.deepEqual(requested, ["base", "arm"]);
+  assert.equal(root.children.length, 0);
+});
