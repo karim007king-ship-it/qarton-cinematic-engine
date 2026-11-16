@@ -280,7 +280,7 @@
       });
       status.textContent = "Audio cues started from user gesture and synchronized to the director clock.";
     } catch (error) {
-      status.textContent = `Audio unavailable: ${error.message}`;
+      if (!destroyed) status.textContent = `Audio unavailable: ${error.message}`;
     }
   });
   document.querySelector("#destroy").addEventListener("click", async () => {
