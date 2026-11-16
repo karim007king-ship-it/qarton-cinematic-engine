@@ -43,6 +43,7 @@ export function createCinematicDirector({
   let eventCursorMs = -1;
   const deliveredEventIds = new Set();
   let destroyPromise = null;
+  let updateQueue = Promise.resolve();
 
   function assertAlive() {
     if (destroyed) throw new Error("Cinematic director has been destroyed");
@@ -74,7 +75,10 @@ export function createCinematicDirector({
     return tracked;
   }
 
-  async function update(timeMs) {
+  async function performUpdate(timeMs, requestedVersion) {
+    if (requestedVersion !== lifecycleVersion) return Object.freeze({
+      timeMs: lastTimeMs, events: Object.freeze([]), paused
+    });
     assertAlive();
     if (!mounted) throw new Error("Cinematic director must be mounted before update");
     if (paused) return Object.freeze({ timeMs: lastTimeMs, events: Object.freeze([]), paused: true });
@@ -82,9 +86,13 @@ export function createCinematicDirector({
       throw new TypeError("Director timeMs must be non-negative and finite");
     }
 
+    const version = lifecycleVersion;
     const rewound = timeMs < lastTimeMs;
     if (rewound) {
       audio?.stopAll({ reset: true });
+      if (destroyed || !mounted || version !== lifecycleVersion) {
+        return Object.freeze({ timeMs: lastTimeMs, events: Object.freeze([]), paused });
+      }
       eventCursorMs = -1;
       deliveredEventIds.clear();
     }
@@ -94,24 +102,41 @@ export function createCinematicDirector({
     });
 
     // Advance audio and character state before committing the shared clock.
-    // If either subsystem fails, the same sample can be retried safely.
+    // Queued frames prevent overlapping updates from racing the same timeline.
     audio?.update(timeMs);
     if (characterStage) await characterStage.update(timeMs);
+    if (destroyed || !mounted || version !== lifecycleVersion) {
+      return Object.freeze({ timeMs: lastTimeMs, events: Object.freeze([]), paused });
+    }
     lastTimeMs = timeMs;
 
-    // Track event delivery independently from the clock. Commit an event only
-    // after its callback resolves; a thrown/rejected callback remains pending and
-    // is retried on the next update. Callbacks should be idempotent if they can
-    // perform partial side effects before rejecting.
+    // Commit an event only after its callback resolves. Failed callbacks remain
+    // pending, while already delivered events are not replayed on a retry.
     const dispatchedEvents = [];
     for (const event of events) {
+      if (destroyed || !mounted || version !== lifecycleVersion) break;
       if (deliveredEventIds.has(event.id)) continue;
       await onEvent(event, timeMs);
+      if (destroyed || !mounted || version !== lifecycleVersion) break;
       deliveredEventIds.add(event.id);
       dispatchedEvents.push(event);
     }
-    eventCursorMs = timeMs;
-    return Object.freeze({ timeMs, events: Object.freeze(dispatchedEvents), paused: false });
+    if (!destroyed && mounted && version === lifecycleVersion) eventCursorMs = timeMs;
+    return Object.freeze({
+      timeMs: lastTimeMs,
+      events: Object.freeze(dispatchedEvents),
+      paused
+    });
+  }
+
+  function update(timeMs) {
+    const requestedVersion = lifecycleVersion;
+    const run = () => performUpdate(timeMs, requestedVersion);
+    const operation = updateQueue.then(run, run);
+    // A rejected frame must not poison the queue; preserve its rejection for
+    // the submitting caller while allowing the next frame to retry.
+    updateQueue = operation.catch(() => {});
+    return operation;
   }
 
   function pause(timeMs = lastTimeMs) {
