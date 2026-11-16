@@ -377,3 +377,83 @@ test("queued update from an old mount cannot run after unmount and remount", asy
   assert.deepEqual(stageUpdates, [100, 0]);
   director.destroy();
 });
+
+
+test("audio update failure leaves the director clock retryable", async () => {
+  let audioAttempts = 0;
+  const stageUpdates = [];
+  const events = [];
+  const audio = {
+    update: () => {
+      audioAttempts += 1;
+      if (audioAttempts === 1) throw new Error("audio adapter failed");
+    },
+    pause: () => {},
+    resume: () => {},
+    stopAll: () => {},
+    destroy: () => {}
+  };
+  const director = createCinematicDirector({
+    audio,
+    characterStage: {
+      mount: async () => true,
+      update: async time => { stageUpdates.push(time); },
+      unmount: () => {},
+      destroy: () => {}
+    },
+    timeline: createTimeline([{ id: "retry-audio", atMs: 100, type: "cue" }]),
+    onEvent: event => events.push(event.id)
+  });
+
+  await director.mount();
+  await assert.rejects(director.update(100), /audio adapter failed/);
+  assert.equal(director.getState().timeMs, -1);
+  assert.deepEqual(stageUpdates, []);
+  const result = await director.update(100);
+  assert.deepEqual(result.events.map(event => event.id), ["retry-audio"]);
+  assert.equal(director.getState().timeMs, 100);
+  assert.deepEqual(stageUpdates, [100]);
+  assert.deepEqual(events, ["retry-audio"]);
+  director.destroy();
+});
+
+test("stage failure can retry the same timestamp without replaying audio cues or events", async () => {
+  let stageAttempts = 0;
+  let playCalls = 0;
+  const events = [];
+  const audio = {
+    update: time => {
+      // Model the real cue controller's idempotent same-time retry behavior.
+      if (time !== 100) throw new Error("unexpected audio time");
+      if (playCalls === 0) playCalls += 1;
+    },
+    pause: () => {},
+    resume: () => {},
+    stopAll: () => {},
+    destroy: () => {}
+  };
+  const director = createCinematicDirector({
+    audio,
+    characterStage: {
+      mount: async () => true,
+      update: async () => {
+        stageAttempts += 1;
+        if (stageAttempts === 1) throw new Error("stage render failed");
+      },
+      unmount: () => {},
+      destroy: () => {}
+    },
+    timeline: createTimeline([{ id: "retry-stage", atMs: 100, type: "cue" }]),
+    onEvent: event => events.push(event.id)
+  });
+
+  await director.mount();
+  await assert.rejects(director.update(100), /stage render failed/);
+  assert.equal(director.getState().timeMs, -1);
+  await director.update(100);
+  assert.equal(director.getState().timeMs, 100);
+  assert.equal(stageAttempts, 2);
+  assert.equal(playCalls, 1);
+  assert.deepEqual(events, ["retry-stage"]);
+  director.destroy();
+});
