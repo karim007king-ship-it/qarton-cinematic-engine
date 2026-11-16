@@ -39,6 +39,7 @@ export function createCinematicDirector({
   let paused = false;
   let destroyed = false;
   let lastTimeMs = -1;
+  let updateQueue = Promise.resolve();
 
   function assertAlive() {
     if (destroyed) throw new Error("Cinematic director has been destroyed");
@@ -69,7 +70,7 @@ export function createCinematicDirector({
     return tracked;
   }
 
-  async function update(timeMs) {
+  async function performUpdate(timeMs) {
     assertAlive();
     if (!mounted) throw new Error("Cinematic director must be mounted before update");
     if (paused) return Object.freeze({ timeMs: lastTimeMs, events: Object.freeze([]), paused: true });
@@ -87,10 +88,25 @@ export function createCinematicDirector({
     // Commit the clock before callbacks so a callback failure cannot cause
     // already-fired audio cues or timeline events to be dispatched twice.
     lastTimeMs = timeMs;
+    const version = lifecycleVersion;
     audio?.update(timeMs);
     if (characterStage) await characterStage.update(timeMs);
+    // A pause/unmount/destroy can invalidate an update while the stage is
+    // asynchronously applying sprites. Never dispatch stale scene events.
+    if (destroyed || version !== lifecycleVersion || !mounted) {
+      return Object.freeze({ timeMs, events: Object.freeze([]), paused: false, cancelled: true });
+    }
     for (const event of events) onEvent(event, timeMs);
     return Object.freeze({ timeMs, events, paused: false });
+  }
+
+  function update(timeMs) {
+    assertAlive();
+    const operation = updateQueue.then(() => performUpdate(timeMs));
+    // Keep the queue usable after a rejected update while preserving the
+    // rejection for the caller that submitted that update.
+    updateQueue = operation.catch(() => {});
+    return operation;
   }
 
   function pause(timeMs = lastTimeMs) {
