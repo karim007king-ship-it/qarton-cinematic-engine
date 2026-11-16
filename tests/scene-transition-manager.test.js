@@ -181,3 +181,42 @@ test("a failed candidate cleanup is attempted only once after supersession", asy
   assert.equal(firstCleanupCalls, 1);
   assert.equal(manager.current.id, "second");
 });
+
+
+
+test("destroy during an asynchronous crossfade releases both scenes without committing the candidate", async () => {
+  let finishCrossfade;
+  const events = [];
+  const manager = new SceneTransitionManager({
+    mount: async scene => {
+      events.push(`mount:${scene.id}`);
+      return { id: scene.id };
+    },
+    crossfade: ({ to }) => {
+      events.push(`crossfade:${to.id}`);
+      if (to.id === "active") return Promise.resolve(true);
+      return new Promise(resolve => { finishCrossfade = resolve; });
+    },
+    unmount: async handle => { events.push(`unmount:${handle.id}`); }
+  });
+
+  await manager.transitionTo({ id: "active" }, {});
+  const pending = manager.transitionTo({ id: "candidate" }, {});
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(typeof finishCrossfade, "function");
+
+  await manager.destroy();
+  finishCrossfade(true);
+
+  assert.equal(await pending, false);
+  assert.equal(manager.current, null);
+  assert.deepEqual(events, [
+    "mount:active",
+    "crossfade:active",
+    "mount:candidate",
+    "crossfade:candidate",
+    "unmount:active",
+    "unmount:candidate"
+  ]);
+});
