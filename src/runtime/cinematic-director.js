@@ -124,22 +124,46 @@ export function createCinematicDirector({
     lifecycleVersion += 1;
     // Do not let an immediately requested remount reuse the invalidated promise.
     mountingPromise = null;
-    if (characterStage) characterStage.unmount();
-    audio?.stopAll({ reset: true });
+    const errors = [];
+    try {
+      characterStage?.unmount();
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      audio?.stopAll({ reset: true });
+    } catch (error) {
+      errors.push(error);
+    }
     mounted = false;
     paused = false;
     lastTimeMs = -1;
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1) throw new AggregateError(errors, "Cinematic director unmount failed");
   }
 
   function destroy() {
     if (destroyed) return;
+    // Make teardown terminal before invoking host callbacks, then attempt every
+    // owned component even if an earlier cleanup operation fails.
     destroyed = true;
     lifecycleVersion += 1;
-    characterStage?.destroy();
-    audio?.destroy();
+    const errors = [];
+    try {
+      characterStage?.destroy();
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      audio?.destroy();
+    } catch (error) {
+      errors.push(error);
+    }
     mounted = false;
     paused = false;
     lastTimeMs = -1;
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1) throw new AggregateError(errors, "Cinematic director cleanup failed");
   }
 
   return Object.freeze({
