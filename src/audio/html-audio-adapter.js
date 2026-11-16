@@ -23,6 +23,15 @@ export function createHTMLAudioAdapter({
   let destroyed = false;
   const active = new Map();
 
+  function stop(audio) {
+    if (!audio) return;
+    const entry = active.get(audio);
+    if (entry?.endedHandler) audio.removeEventListener?.("ended", entry.endedHandler);
+    audio.pause();
+    try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
+    active.delete(audio);
+  }
+
   function play(asset, options = {}) {
     if (destroyed) throw new Error("HTMLAudio adapter has been destroyed");
     const url = resolveAsset(asset);
@@ -31,35 +40,49 @@ export function createHTMLAudioAdapter({
     if (!audio || typeof audio.play !== "function" || typeof audio.pause !== "function") {
       throw new TypeError("createAudio() must return an HTMLAudio-like object");
     }
-    audio.src = url;
-    audio.loop = options.loop === true;
-    audio.preload = "auto";
     const baseVolume = options.volume ?? 1;
     if (!Number.isFinite(baseVolume) || baseVolume < 0 || baseVolume > 1) {
       throw new TypeError("Audio voice volume must be between 0 and 1");
     }
+    audio.src = url;
+    audio.loop = options.loop === true;
+    audio.preload = "auto";
     audio.volume = baseVolume * volume;
-    active.set(audio, baseVolume);
-    const result = audio.play();
-    if (result && typeof result.catch === "function") {
-      result.catch(error => onPlaybackError(error, { asset, audio }));
+    const endedHandler = () => {
+      if (!active.has(audio)) return;
+      active.delete(audio);
+      audio.removeEventListener?.("ended", endedHandler);
+      options.onEnded?.(audio);
+    };
+    active.set(audio, { baseVolume, endedHandler });
+    audio.addEventListener?.("ended", endedHandler, { once: true });
+    try {
+      const result = audio.play();
+      if (result && typeof result.catch === "function") {
+        result.catch(error => {
+          if (active.has(audio)) {
+            stop(audio);
+            options.onEnded?.(audio);
+          }
+          onPlaybackError(error, { asset, audio });
+        });
+      }
+    } catch (error) {
+      stop(audio);
+      throw error;
     }
     return audio;
-  }
-
-  function stop(audio) {
-    if (!audio) return;
-    audio.pause();
-    try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
-    active.delete(audio);
   }
 
   function setVolume(audio, nextVolume) {
     if (!audio || !Number.isFinite(nextVolume) || nextVolume < 0 || nextVolume > 1) {
       throw new TypeError("Audio voice volume must be between 0 and 1");
     }
-    active.set(audio, nextVolume);
+    const entry = active.get(audio);
+    if (!entry) return false;
+    entry.baseVolume = nextVolume;
     audio.volume = nextVolume * volume;
+    return true;
   }
 
   function setMasterVolume(nextVolume) {
@@ -68,13 +91,15 @@ export function createHTMLAudioAdapter({
       throw new TypeError("Master volume must be between 0 and 1");
     }
     volume = nextVolume;
-    for (const [audio, baseVolume] of active) audio.volume = baseVolume * volume;
+    for (const [audio, entry] of active) audio.volume = entry.baseVolume * volume;
     return volume;
   }
 
   function destroy() {
     if (destroyed) return;
     for (const audio of active.keys()) {
+      const entry = active.get(audio);
+      if (entry?.endedHandler) audio.removeEventListener?.("ended", entry.endedHandler);
       audio.pause();
       try { audio.currentTime = 0; } catch { /* best-effort cleanup */ }
       audio.src = "";

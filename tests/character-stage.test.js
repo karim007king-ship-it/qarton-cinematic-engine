@@ -149,3 +149,55 @@ test("unmount during async mount prevents a late character from remaining mounte
   assert.equal(await stage.mount().then(() => true), true);
   stage.destroy();
 });
+
+
+test("character stage passes layered sprite definitions to its DOM renderer", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const controller = createCharacterController({ id: "layered", initial: { expression: "neutral" } });
+  const stage = createCharacterStage({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`,
+    characters: [{
+      controller,
+      layers: [
+        { id: "body", role: "body", sprites: { default: "body" } },
+        { id: "eyes", role: "eyes", sprites: { open: "eyes-open", blink: "eyes-blink", default: "eyes-open" } }
+      ]
+    }]
+  });
+  await stage.mount();
+  assert.equal(root.children.length, 1);
+  assert.equal(root.children[0].children.length, 2);
+  await stage.update(200);
+  assert.equal(root.children[0].children[1].src, "https://assets.test/eyes-open.png");
+  stage.destroy();
+});
+
+test("immediate remount after cancelling a pending mount starts a fresh operation", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let releaseFirst;
+  let calls = 0;
+  const stage = createCharacterStage({
+    root,
+    resolveSprite: () => {
+      calls += 1;
+      return calls === 1
+        ? new Promise(resolve => { releaseFirst = resolve; })
+        : "https://assets.test/fresh.png";
+    },
+    characters: [{ controller: createCharacterController({ id: "hero" }), sprites: { default: "hero" } }]
+  });
+  const staleMount = stage.mount();
+  stage.unmount();
+  const freshMount = stage.mount();
+  assert.equal(await freshMount, true);
+  releaseFirst("https://assets.test/stale.png");
+  assert.equal(await staleMount, false);
+  assert.equal(calls, 2);
+  assert.equal(root.children.length, 1);
+  await stage.update(25);
+  assert.equal(root.children.length, 1);
+  stage.destroy();
+});

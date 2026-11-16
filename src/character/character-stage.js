@@ -34,39 +34,47 @@ export function createCharacterStage({
     if (typeof id !== "string" || records.has(id)) {
       throw new TypeError("Character controllers need unique ids");
     }
-    if (!entry.sprites || typeof entry.sprites !== "object" || Array.isArray(entry.sprites)) {
-      throw new TypeError(`Character "${id}" requires a sprite map`);
+    if (entry.layers === undefined && (!entry.sprites || typeof entry.sprites !== "object" || Array.isArray(entry.sprites))) {
+      throw new TypeError(`Character "${id}" requires a sprite map or layered sprite definitions`);
     }
-    records.set(id, { controller: entry.controller, sprites: entry.sprites, handle: null });
+    if (entry.layers !== undefined && (!Array.isArray(entry.layers) || entry.layers.length === 0)) {
+      throw new TypeError(`Character "${id}" layers must be a non-empty array`);
+    }
+    records.set(id, { controller: entry.controller, sprites: entry.sprites, layers: entry.layers, handle: null });
   }
 
   async function performMount(version) {
     const completed = [];
+    const cleanupCompleted = () => {
+      for (const item of completed.reverse()) {
+        renderer.unmount(item.handle);
+        if (item.record.handle === item.handle) item.record.handle = null;
+      }
+    };
+
     try {
       for (const [id, record] of records) {
         const initialState = record.controller.update(0);
-        const handle = await renderer.mount({ id, sprites: record.sprites, initialState });
+        const handle = await renderer.mount({ id, sprites: record.sprites, layers: record.layers, initialState });
         if (destroyed || version !== lifecycleVersion) {
           renderer.unmount(handle);
-          for (const item of completed.reverse()) renderer.unmount(item.handle);
-          for (const item of records.values()) item.handle = null;
+          if (record.handle === handle) record.handle = null;
+          cleanupCompleted();
           return false;
         }
         record.handle = handle;
-        completed.push(record);
+        completed.push({ record, handle });
       }
       if (destroyed || version !== lifecycleVersion) {
-        for (const item of completed.reverse()) renderer.unmount(item.handle);
-        for (const item of records.values()) item.handle = null;
+        cleanupCompleted();
         return false;
       }
       mounted = true;
       return true;
     } catch (error) {
-      for (const item of completed.reverse()) renderer.unmount(item.handle);
-      for (const item of records.values()) item.handle = null;
-      mounted = false;
+      cleanupCompleted();
       if (destroyed || version !== lifecycleVersion) return false;
+      mounted = false;
       throw error;
     }
   }
@@ -106,6 +114,9 @@ export function createCharacterStage({
 
   function unmount() {
     lifecycleVersion += 1;
+    // Release the stale in-flight promise so an immediate remount can start
+    // a fresh transaction instead of inheriting the cancelled operation.
+    mountingPromise = null;
     for (const record of records.values()) {
       if (record.handle) renderer.unmount(record.handle);
       record.handle = null;

@@ -109,6 +109,13 @@ export function createDOMTransitionAdapter({
         from.style.filter = "none";
         from.style.transition = "";
       }
+      // Commit the final visual state to inline styles before cancelling WAAPI.
+      // This releases fill: "forwards" effects so they cannot override later
+      // scene transitions or retain compositor resources indefinitely.
+      for (const animation of transition.animations) {
+        try { animation?.cancel?.(); } catch { /* best-effort animation cleanup */ }
+      }
+      transition.animations = [];
       return true;
     };
 

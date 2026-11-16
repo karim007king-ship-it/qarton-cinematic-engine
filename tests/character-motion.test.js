@@ -60,3 +60,192 @@ test("character controller rejects overlapping or malformed motions", () => {
   }), /overlap/);
   assert.throws(() => createCharacterController({ id: "hero", motions: [{ id: "bad" }] }), /valid path/);
 });
+
+test("character dialogue cues deterministically animate speech and expression transitions", () => {
+  const character = createCharacterController({
+    id: "speaker",
+    initial: { expression: "neutral" },
+    dialogue: [{
+      startMs: 100,
+      endMs: 700,
+      expression: "happy",
+      transitionMs: 240
+    }]
+  });
+  const before = character.update(99);
+  assert.equal(before.speaking, false);
+  assert.equal(before.expression, "neutral");
+
+  const start = character.update(100);
+  assert.equal(start.speaking, true);
+  assert.equal(start.expression, "happy");
+  assert.equal(start.mouthFrame, 0);
+  assert.equal(start.expressionTransition, 0);
+
+  const mid = character.update(220);
+  assert.equal(mid.speaking, true);
+  assert.equal(mid.mouthFrame, 1);
+  assert.equal(mid.expressionTransition, 0.5);
+
+  const later = character.update(340);
+  assert.equal(later.mouthFrame, 0);
+  assert.equal(later.expressionTransition, 1);
+
+  const after = character.update(700);
+  assert.equal(after.speaking, false);
+  assert.equal(after.mouthFrame, 0);
+  assert.equal(after.expression, "neutral");
+});
+
+test("character dialogue cues reject invalid and overlapping intervals", () => {
+  assert.throws(() => createCharacterController({
+    id: "speaker",
+    dialogue: [{ startMs: 100, endMs: 100 }]
+  }), /valid startMs and endMs/);
+  assert.throws(() => createCharacterController({
+    id: "speaker",
+    dialogue: [
+      { startMs: 100, endMs: 300 },
+      { startMs: 250, endMs: 400 }
+    ]
+  }), /cannot overlap/);
+});
+
+
+test("facial motion is deterministic, subtle, and supports reduced-motion profiles", () => {
+  const character = createCharacterController({ id: "hero" });
+  const first = character.update(900);
+  const repeated = character.update(900);
+  assert.deepEqual(
+    { breathOffsetY: first.breathOffsetY, headRotation: first.headRotation, eyeFrame: first.eyeFrame },
+    { breathOffsetY: repeated.breathOffsetY, headRotation: repeated.headRotation, eyeFrame: repeated.eyeFrame }
+  );
+  assert.ok(Math.abs(first.breathOffsetY) <= 1.25);
+  assert.ok(Math.abs(first.headRotation) <= 0.2);
+  assert.equal(character.update(0).eyeFrame, 1);
+  assert.equal(character.update(200).eyeFrame, 0);
+
+  const reduced = createCharacterController({
+    id: "hero",
+    facialMotion: { reducedMotion: true }
+  }).update(0);
+  assert.deepEqual(
+    { breathOffsetY: reduced.breathOffsetY, headRotation: reduced.headRotation, eyeFrame: reduced.eyeFrame },
+    { breathOffsetY: 0, headRotation: 0, eyeFrame: 0 }
+  );
+
+  const lowPower = createCharacterController({
+    id: "hero",
+    facialMotion: { motionScale: 0 }
+  }).update(0);
+  assert.equal(lowPower.breathOffsetY, 0);
+  assert.equal(lowPower.headRotation, 0);
+  assert.equal(lowPower.eyeFrame, 0);
+});
+
+test("facial motion follows speaking state and validates its configuration", () => {
+  const character = createCharacterController({
+    id: "speaker",
+    dialogue: [{ startMs: 0, endMs: 1000 }]
+  });
+  assert.ok(Math.abs(character.update(300).headRotation) <= 0.65);
+  assert.throws(() => createCharacterController({
+    id: "hero",
+    facialMotion: null
+  }), /facialMotion/);
+});
+
+test("pose clips interpolate arm and leg layer transforms deterministically", () => {
+  const character = createCharacterController({
+    id: "hero",
+    poseClips: [{
+      id: "walk-cycle",
+      pose: "walk",
+      startMs: 100,
+      durationMs: 1000,
+      loop: true,
+      layers: {
+        "left-arm": [
+          { at: 0, rotation: -30, translateY: 0 },
+          { at: 0.5, rotation: 30, translateY: 4 },
+          { at: 1, rotation: -30, translateY: 0 }
+        ],
+        "right-leg": [
+          { at: 0, translateX: -8 },
+          { at: 0.5, translateX: 8 },
+          { at: 1, translateX: -8 }
+        ]
+      }
+    }]
+  });
+  assert.equal(character.update(99).pose, "idle");
+  const quarter = character.update(350);
+  assert.equal(quarter.pose, "walk");
+  assert.equal(quarter.poseProgress, 0.25);
+  assert.equal(quarter.layerTransforms["left-arm"].rotation, 0);
+  assert.equal(quarter.layerTransforms["left-arm"].translateY, 2);
+  assert.equal(quarter.layerTransforms["right-leg"].translateX, 0);
+  assert.deepEqual(character.update(350).layerTransforms, quarter.layerTransforms);
+  assert.equal(character.update(600).layerTransforms["left-arm"].rotation, 30);
+  assert.equal(character.update(1350).poseProgress, 0.25);
+});
+
+test("pose motion scale and reduced-motion settings limit animated transforms", () => {
+  const poseClips = [{
+    id: "hit",
+    startMs: 0,
+    durationMs: 1000,
+    layers: {
+      torso: [
+        { at: 0, rotation: 0, translateY: 0 },
+        { at: 1, rotation: 40, translateY: 20 }
+      ]
+    }
+  }];
+  const scaled = createCharacterController({
+    id: "hero", poseClips, poseMotion: { motionScale: 0.5 }
+  }).update(1000);
+  assert.equal(scaled.layerTransforms.torso.rotation, 20);
+  assert.equal(scaled.layerTransforms.torso.translateY, 10);
+
+  const reduced = createCharacterController({
+    id: "hero", poseClips, poseMotion: { reducedMotion: true }
+  }).update(800);
+  assert.equal(reduced.poseProgress, 0);
+  assert.equal(reduced.layerTransforms.torso.rotation, 0);
+  assert.equal(reduced.layerTransforms.torso.translateY, 0);
+});
+
+test("pose clips reject malformed keyframes and overlapping clips", () => {
+  assert.throws(() => createCharacterController({
+    id: "hero",
+    poseClips: [{
+      id: "bad", startMs: 0, durationMs: 100,
+      layers: { arm: [{ at: 0.2, rotation: 0 }, { at: 1, rotation: 10 }] }
+    }]
+  }), /cover 0..1/);
+  assert.throws(() => createCharacterController({
+    id: "hero",
+    poseClips: [
+      { id: "a", startMs: 0, durationMs: 200, layers: { arm: [{ at: 0 }, { at: 1 }] } },
+      { id: "b", startMs: 100, durationMs: 200, layers: { arm: [{ at: 0 }, { at: 1 }] } }
+    ]
+  }), /cannot overlap/);
+});
+
+test("facial reduced-motion preference also freezes body pose clips and ids must be unique", () => {
+  const poseClips = [{
+    id: "walk", startMs: 0, durationMs: 1000,
+    layers: { arm: [{ at: 0, rotation: 0 }, { at: 1, rotation: 40 }] }
+  }];
+  const character = createCharacterController({
+    id: "hero",
+    facialMotion: { reducedMotion: true },
+    poseClips
+  });
+  assert.equal(character.update(900).layerTransforms.arm.rotation, 0);
+  assert.throws(() => createCharacterController({
+    id: "hero",
+    poseClips: [...poseClips, { ...poseClips[0], startMs: 1000 }]
+  }), /unique id/);
+});

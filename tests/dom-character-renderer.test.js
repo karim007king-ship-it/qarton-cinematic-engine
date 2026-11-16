@@ -131,3 +131,319 @@ test("duplicate in-flight requests for the same sprite share one asset resolutio
   assert.deepEqual(await Promise.all([first, second]), [true, true]);
   assert.equal(handle.children[0].src, "https://assets.test/focused.png");
 });
+
+test("invalid initial poses fail before asset resolution or DOM insertion", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let resolutions = 0;
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => {
+      resolutions += 1;
+      return `https://assets.test/${key}.png`;
+    }
+  });
+  await assert.rejects(renderer.mount({
+    id: "broken",
+    sprites: { default: "broken" },
+    initialState: { scale: -1 }
+  }), /scale cannot be negative/);
+  assert.equal(resolutions, 0);
+  assert.equal(root.children.length, 0);
+
+  const handle = await renderer.mount({
+    id: "hero",
+    sprites: { default: "hero" },
+    initialState: { scale: 1 }
+  });
+  assert.equal(root.children.length, 1);
+  renderer.destroy();
+  assert.equal(handle.parentNode, null);
+});
+
+test("failed sprite resolution rolls back the pending mount and permits retry", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let attempts = 0;
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("temporary asset failure");
+      return `https://assets.test/${key}.png`;
+    }
+  });
+  await assert.rejects(renderer.mount({
+    id: "hero",
+    sprites: { default: "hero" }
+  }), /temporary asset failure/);
+  assert.equal(root.children.length, 0);
+
+  const handle = await renderer.mount({
+    id: "hero",
+    sprites: { default: "hero" }
+  });
+  assert.equal(root.children.length, 1);
+  assert.equal(handle.children[0].src, "https://assets.test/hero.png");
+  renderer.destroy();
+});
+
+test("DOM renderer exposes deterministic speech and expression transition metadata", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`
+  });
+  const handle = await renderer.mount({
+    id: "speaker",
+    sprites: { neutral: "neutral", happy: "happy" },
+    initialState: { expression: "neutral" }
+  });
+  await renderer.update(handle, {
+    id: "speaker", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0,
+    expression: "happy", speaking: true, mouthFrame: 1, expressionTransition: 0.5
+  });
+  assert.equal(handle.dataset.speaking, "true");
+  assert.equal(handle.dataset.mouthFrame, "1");
+  assert.equal(handle.dataset.expressionTransition, "0.5");
+  assert.equal(handle.dataset.expression, "happy");
+
+  await renderer.update(handle, {
+    id: "speaker", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0,
+    expression: "happy", speaking: false, mouthFrame: 0
+  });
+  assert.equal(handle.dataset.speaking, "false");
+  assert.equal(handle.dataset.mouthFrame, "0");
+  assert.equal(handle.dataset.expressionTransition, "1");
+  renderer.destroy();
+});
+
+
+test("DOM renderer exposes facial animation hooks for host CSS and sprite sheets", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`
+  });
+  const handle = await renderer.mount({
+    id: "hero",
+    sprites: { default: "hero" }
+  });
+  await renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0,
+    expression: "neutral", breathOffsetY: -1.25, headRotation: 0.4, eyeFrame: 1
+  });
+  assert.equal(handle.dataset.eyeFrame, "1");
+  assert.equal(handle.style["--qarton-breath-y"], "-1.25px");
+  assert.equal(handle.style["--qarton-head-rotation"], "0.4deg");
+  renderer.destroy();
+});
+
+
+test("DOM character renderer mounts independently animated body, head, eyes, and mouth layers", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const resolved = [];
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: (key, context) => {
+      resolved.push({ key, context });
+      return `https://assets.test/${key}.png`;
+    }
+  });
+  const handle = await renderer.mount({
+    id: "layered-hero",
+    layers: [
+      { id: "body", role: "body", sprites: { default: "body" } },
+      { id: "head", role: "head", sprites: { neutral: "head-neutral", default: "head-neutral" } },
+      { id: "eyes", role: "eyes", sprites: { open: "eyes-open", blink: "eyes-blink", default: "eyes-open" } },
+      { id: "mouth", role: "mouth", sprites: { neutral: "mouth-neutral", speakingClosed: "mouth-closed", speakingOpen: "mouth-open", default: "mouth-neutral" } }
+    ],
+    initialState: { expression: "neutral", breathOffsetY: -1.2, headRotation: 2 }
+  });
+
+  assert.equal(handle.children.length, 4);
+  assert.deepEqual(handle.children.map(layer => layer.dataset.layerRole), ["body", "head", "eyes", "mouth"]);
+  assert.equal(handle.children[1].src, "https://assets.test/head-neutral.png");
+  assert.equal(handle.children[2].src, "https://assets.test/eyes-open.png");
+  assert.equal(handle.children[3].src, "https://assets.test/mouth-neutral.png");
+  assert.equal(handle.children[1].style.transform, "translate(0px, -1.2px) rotate(2deg) scale(1, 1)");
+  assert.ok(resolved.every(item => item.context.characterId === "layered-hero"));
+
+  await renderer.update(handle, {
+    id: "layered-hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0,
+    expression: "neutral", state: "talking", speaking: true, mouthFrame: 1,
+    eyeFrame: 1, breathOffsetY: 0.5, headRotation: -1
+  });
+  assert.equal(handle.children[2].src, "https://assets.test/eyes-blink.png");
+  assert.equal(handle.children[3].src, "https://assets.test/mouth-open.png");
+  assert.equal(handle.children[1].style.transform, "translate(0px, 0.5px) rotate(-1deg) scale(1, 1)");
+  assert.equal(handle.children[2].style.transform, "translate(0px, 0.5px) rotate(-1deg) scale(1, 1)");
+  assert.equal(handle.children[3].style.transform, "translate(0px, 0.5px) rotate(-1deg) scale(1, 1)");
+  renderer.destroy();
+});
+
+test("DOM character renderer rejects malformed layered sprite definitions", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({ root, resolveSprite: key => key });
+  await assert.rejects(renderer.mount({
+    id: "bad",
+    layers: [{ id: "eyes", role: "eyes", sprites: {} }, { id: "eyes", role: "mouth", sprites: {} }]
+  }), /unique/);
+  await assert.rejects(renderer.mount({
+    id: "bad",
+    layers: [{ id: "eyes", role: "eyes", sprites: {} }]
+  }), /No sprite asset configured/);
+  assert.equal(root.children.length, 0);
+});
+
+test("DOM character renderer applies interpolated pose transforms by layer id", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`
+  });
+  const handle = await renderer.mount({
+    id: "hero",
+    layers: [
+      { id: "body", role: "body", sprites: { default: "body" } },
+      { id: "left-arm", role: "arm", sprites: { default: "arm" } }
+    ],
+    initialState: { pose: "walk" }
+  });
+  await renderer.update(handle, {
+    id: "hero",
+    x: 0, y: 0, opacity: 1, scale: 1, rotation: 0,
+    expression: "neutral", state: "moving", pose: "walk", poseProgress: 0.5,
+    layerTransforms: {
+      "left-arm": { translateX: 3, translateY: 4, rotation: 25, scaleX: 1, scaleY: 1 }
+    }
+  });
+  assert.equal(handle.dataset.pose, "walk");
+  assert.equal(handle.dataset.poseProgress, "0.5");
+  assert.equal(handle.children[1].style.transform, "translate(3px, 4px) rotate(25deg) scale(1, 1)");
+  renderer.destroy();
+});
+
+test("DOM renderer nests rig nodes and applies local transforms through parent inheritance", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`
+  });
+  const handle = await renderer.mount({
+    id: "rigged-hero",
+    layers: [
+      { id: "torso", role: "torso", sprites: { default: "torso" } },
+      { id: "head", role: "head", parent: "torso", sprites: { default: "head" } },
+      { id: "eyes", role: "eyes", parent: "head", sprites: { open: "eyes", default: "eyes" } },
+      { id: "left-arm", role: "arm", parent: "torso", sprites: { default: "arm" } }
+    ],
+    initialState: {
+      breathOffsetY: 2,
+      headRotation: 5,
+      layerTransforms: {
+        torso: { rotation: 10 },
+        head: { translateY: -4, rotation: 10 },
+        eyes: { translateX: 1 },
+        "left-arm": { rotation: -20 }
+      }
+    }
+  });
+
+  const torso = handle.children[0];
+  const head = torso.children[1];
+  const eyes = head.children[1];
+  const arm = torso.children[2];
+  assert.equal(torso.children[0].tagName, "img");
+  assert.equal(head.children[0].tagName, "img");
+  assert.equal(eyes.children[0].tagName, "img");
+  assert.match(torso.style.transform, /translate\(0px, 2px\).*rotate\(10deg\)/);
+  assert.match(head.style.transform, /translate\(0px, -4px\).*rotate\(15deg\)/);
+  assert.match(eyes.style.transform, /translate\(1px, 0px\).*rotate\(0deg\)/);
+  assert.match(arm.style.transform, /rotate\(-20deg\)/);
+  assert.equal(eyes.children[0].style.transform, "none");
+  renderer.destroy();
+  assert.equal(root.children.length, 0);
+});
+
+test("DOM renderer rejects broken rig relationships before resolving assets", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let resolutions = 0;
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => {
+      resolutions += 1;
+      return `https://assets.test/${key}.png`;
+    }
+  });
+  await assert.rejects(renderer.mount({
+    id: "broken-rig",
+    layers: [
+      { id: "head", role: "head", parent: "eyes", sprites: { default: "head" } },
+      { id: "eyes", role: "eyes", parent: "head", sprites: { default: "eyes" } }
+    ]
+  }), /cycle/);
+  assert.equal(resolutions, 0);
+  assert.equal(root.children.length, 0);
+  renderer.destroy();
+});
+
+test("DOM renderer applies validated static rig transforms even without a parent", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`
+  });
+  const handle = await renderer.mount({
+    id: "offset-head",
+    layers: [{
+      id: "head", role: "head",
+      transform: { translateX: 7, translateY: -3, rotation: 12, scaleX: 1.1, scaleY: 0.9 },
+      sprites: { default: "head" }
+    }]
+  });
+  assert.equal(handle.children.length, 1);
+  assert.match(handle.children[0].style.transform, /translate\(7px, -3px\).*rotate\(12deg\).*scale\(1.1, 0.9\)/);
+  renderer.destroy();
+});
+
+
+test("DOM character renderer rejects unsafe resolved sprite URLs and rolls back mounts", async () => {
+  const invalidUrls = [
+    "javascript:alert(1)",
+    "VbScRiPt:alert(1)",
+    "file:///etc/passwd",
+    "//remote.example/hero.png",
+    "https://assets.test/hero\n.png"
+  ];
+
+  for (const url of invalidUrls) {
+    const document = new Document();
+    const root = new Element("main", document);
+    const renderer = createDOMCharacterRenderer({ root, resolveSprite: () => url });
+    await assert.rejects(
+      renderer.mount({ id: "unsafe-hero", sprites: { default: "hero" } }),
+      /unsafe URL/
+    );
+    assert.equal(root.children.length, 0);
+    renderer.destroy();
+  }
+
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({ root, resolveSprite: () => "  " });
+  await assert.rejects(
+    renderer.mount({ id: "empty-hero", sprites: { default: "hero" } }),
+    /invalid URL/
+  );
+  assert.equal(root.children.length, 0);
+  renderer.destroy();
+});

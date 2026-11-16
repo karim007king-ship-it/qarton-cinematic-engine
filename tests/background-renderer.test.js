@@ -131,3 +131,57 @@ test("image decode failure preserves the previously visible scene", async () => 
   await assert.rejects(broken.render(scene, profile), /decode failed/);
   assert.equal(root.children, previous);
 });
+
+test("a superseded render ignores a late asset-resolution failure", async () => {
+  const { root, scene, profile } = fixture();
+  const pendingResolvers = [];
+  let failOldRender = false;
+  const renderer = new BackgroundRenderer({
+    root,
+    resolveAsset: (key) => {
+      if (key === "images/sky" && !failOldRender) {
+        return new Promise((resolve, reject) => pendingResolvers.push({ resolve, reject }));
+      }
+      return Promise.resolve(`/latest/${key}.png`);
+    }
+  });
+
+  const oldRender = renderer.render(scene, profile);
+  await Promise.resolve();
+  await Promise.resolve();
+
+  const latestScene = createSceneDefinition({
+    id: "latest",
+    layers: [{ id: "latest-bg", role: "background", asset: "images/latest" }]
+  });
+  assert.equal(await renderer.render(latestScene, profile), true);
+
+  failOldRender = true;
+  pendingResolvers.forEach(({ reject }) => reject(new Error("stale asset failed")));
+  assert.equal(await oldRender, false);
+  assert.equal(root.dataset.qartonSceneId, "latest");
+  assert.deepEqual(root.children.map(node => node.dataset.layerId), ["latest-bg"]);
+});
+
+test("renderer rejects unsafe asset URLs without replacing the visible scene", async () => {
+  const invalidUrls = [
+    "javascript:alert(1)",
+    "VbScRiPt:alert(1)",
+    "file:///etc/passwd",
+    "//remote.example/background.png",
+    "https://assets.test/background\n.png"
+  ];
+  const { root, scene, profile } = fixture();
+  const renderer = new BackgroundRenderer({
+    root,
+    resolveAsset: key => `/safe/${key}.png`
+  });
+  await renderer.render(scene, profile);
+  const previous = root.children;
+
+  for (const url of invalidUrls) {
+    const unsafeRenderer = new BackgroundRenderer({ root, resolveAsset: () => url });
+    await assert.rejects(unsafeRenderer.render(scene, profile), /unsafe URL/);
+    assert.equal(root.children, previous);
+  }
+});

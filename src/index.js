@@ -15,6 +15,8 @@ export { sampleCameraShake } from "./effects/camera-shake.js";
 export { createCameraTrack, sampleCameraTrack, composeCameraPose, toCameraCSS } from "./camera/camera-track.js";
 export { createParticleField } from "./effects/particle-field.js";
 export { resolveLighting, sampleFog } from "./effects/atmosphere.js";
+export { resolveVisualTreatment } from "./effects/visual-treatment.js";
+export { createDOMVisualTreatmentAdapter } from "./effects/dom-visual-treatment.js";
 export { createAudioCueController } from "./audio/audio-cue-controller.js";
 export { createAdaptivePerformanceMonitor, createRuntimeActivityGate } from "./runtime/adaptive-performance.js";
 export { createCinematicRuntime } from "./runtime/cinematic-runtime.js";

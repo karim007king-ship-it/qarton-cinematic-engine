@@ -45,3 +45,46 @@ test("HTMLAudio adapter applies master volume and cleans up on destroy", () => {
   assert.equal(audio.src, "");
   assert.throws(() => adapter.play("late"), /destroyed/);
 });
+
+test("HTMLAudio adapter releases naturally ended voices and notifies the cue controller", () => {
+  const listeners = new Map();
+  const audio = {
+    paused: true,
+    play() { this.paused = false; return Promise.resolve(); },
+    pause() { this.paused = true; },
+    addEventListener(type, callback) { listeners.set(type, callback); },
+    removeEventListener(type, callback) { if (listeners.get(type) === callback) listeners.delete(type); }
+  };
+  let endedVoice = null;
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/one-shot.mp3",
+    createAudio: () => audio
+  });
+  adapter.play("one-shot", { onEnded: voice => { endedVoice = voice; } });
+  listeners.get("ended")();
+  assert.equal(endedVoice, audio);
+  assert.equal(adapter.setVolume(audio, 0.5), false);
+  assert.equal(listeners.has("ended"), false);
+  adapter.destroy();
+});
+
+test("HTMLAudio adapter releases voice references when playback is rejected", async () => {
+  const audio = {
+    play: () => Promise.reject(new Error("autoplay blocked")),
+    pause() {}
+  };
+  let endedVoice = null;
+  const errors = [];
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/blocked.mp3",
+    createAudio: () => audio,
+    onPlaybackError: error => errors.push(error.message)
+  });
+  adapter.play("blocked", { onEnded: voice => { endedVoice = voice; } });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(endedVoice, audio);
+  assert.equal(adapter.setVolume(audio, 0.5), false);
+  assert.deepEqual(errors, ["autoplay blocked"]);
+  adapter.destroy();
+});

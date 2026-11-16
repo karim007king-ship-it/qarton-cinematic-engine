@@ -17,11 +17,13 @@
     "./engine": "./src/runtime/cinematic-runtime.js",
     "./assets": "./src/assets/asset-manager.js",
     "./effects": "./src/effects/index.js",
+    "./effects/dom": "./src/effects/dom-visual-treatment.js",
     "./audio": "./src/audio/audio-cue-controller.js",
     "./audio/html": "./src/audio/html-audio-adapter.js",
     "./character/stage": "./src/character/character-stage.js",
     "./runtime/director": "./src/runtime/cinematic-director.js",
-    "./camera": "./src/camera/camera-track.js"
+    "./camera": "./src/camera/camera-track.js",
+    "./character/rig": "./src/character/rig-hierarchy.js"
   },
   "scripts": {
     "test": "node --test",

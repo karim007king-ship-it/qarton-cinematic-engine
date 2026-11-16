@@ -3,3 +3,7 @@ coverage/
 dist/
 .DS_Store
 *.log
+
+.gradle/
+**/build/
+local.properties

@@ -60,3 +60,17 @@ test("audio cue controller validates cues, time and lifecycle", () => {
   controller.destroy();
   assert.throws(() => controller.update(0), /destroyed/);
 });
+
+test("ended voice references are removed from active voice tracking", () => {
+  let ended;
+  const voice = { id: "one-shot" };
+  const controller = createAudioCueController({
+    cues: [{ id: "impact", atMs: 0, asset: "impact" }],
+    play: (_asset, options) => { ended = options.onEnded; return voice; }
+  });
+  controller.update(0);
+  assert.equal(controller.getState().activeVoices, 1);
+  ended(voice);
+  assert.equal(controller.getState().activeVoices, 0);
+  controller.destroy();
+});

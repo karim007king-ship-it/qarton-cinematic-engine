@@ -1,0 +1,47 @@
+plugins {
+    id "com.android.application"
+}
+
+def engineRoot = rootProject.projectDir.parentFile.parentFile
+
+tasks.register("copyCinematicAssets", Copy) {
+    from(engineRoot) {
+        include "examples/**"
+        include "src/**"
+    }
+    into(layout.buildDirectory.dir("generated/cinematicAssets"))
+}
+
+android {
+    namespace "com.qarton.webviewsmoke"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.qarton.webviewsmoke"
+        minSdk 23
+        targetSdk 35
+        versionCode 1
+        versionName "1.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    sourceSets {
+        main.assets.srcDir(layout.buildDirectory.dir("generated/cinematicAssets"))
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn("copyCinematicAssets")
+}
+
+dependencies {
+    implementation "androidx.webkit:webkit:1.12.1"
+    androidTestImplementation "androidx.test:core:1.6.1"
+    androidTestImplementation "androidx.test:runner:1.6.2"
+    androidTestImplementation "androidx.test.ext:junit:1.2.1"
+}

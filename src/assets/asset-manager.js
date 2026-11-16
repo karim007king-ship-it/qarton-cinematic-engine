@@ -23,6 +23,7 @@ export class AssetManager {
   #cache = new Map();
   #pending = new Map();
   #generation = 0;
+  #destroyed = false;
 
   constructor({ loader } = {}) {
     if (typeof loader !== "function") {
@@ -36,6 +37,7 @@ export class AssetManager {
    * Optional metadata is passed to the loader on the first request only.
    */
   load(key, metadata) {
+    if (this.#destroyed) return Promise.reject(new Error("AssetManager has been destroyed"));
     if (typeof key !== "string" || !key.trim()) {
       return Promise.reject(new TypeError("Asset key must be a non-empty string"));
     }
@@ -60,6 +62,7 @@ export class AssetManager {
 
   /** Resolve a group of keys concurrently; duplicate keys are loaded once. */
   preload(keys) {
+    if (this.#destroyed) return Promise.reject(new Error("AssetManager has been destroyed"));
     if (!Array.isArray(keys)) return Promise.reject(new TypeError("preload expects an array of asset keys"));
     return Promise.all([...new Set(keys)].map(key => this.load(key)));
   }
@@ -85,6 +88,8 @@ export class AssetManager {
   }
 
   destroy() {
+    if (this.#destroyed) return;
+    this.#destroyed = true;
     this.clear();
     this.#loader = null;
   }
