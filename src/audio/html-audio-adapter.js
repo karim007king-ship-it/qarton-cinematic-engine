@@ -55,6 +55,7 @@ export function createHTMLAudioAdapter({
   }
 
   function setVolume(audio, nextVolume) {
+    if (destroyed) throw new Error("HTMLAudio adapter has been destroyed");
     if (!audio || !Number.isFinite(nextVolume) || nextVolume < 0 || nextVolume > 1) {
       throw new TypeError("Audio voice volume must be between 0 and 1");
     }
@@ -73,14 +74,31 @@ export function createHTMLAudioAdapter({
   }
 
   function destroy() {
-    if (destroyed) return;
-    for (const audio of active.keys()) {
-      audio.pause();
-      try { audio.currentTime = 0; } catch { /* best-effort cleanup */ }
-      audio.src = "";
-    }
-    active.clear();
+    // Prevent new playback immediately, but retain voices whose teardown fails
+    // so a later destroy() can retry them.
     destroyed = true;
+    const errors = [];
+    for (const audio of [...active.keys()]) {
+      let failed = false;
+      try {
+        audio.pause();
+      } catch (error) {
+        errors.push(error);
+        failed = true;
+      }
+      try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
+      try {
+        audio.src = "";
+      } catch (error) {
+        errors.push(error);
+        failed = true;
+      }
+      if (!failed) active.delete(audio);
+    }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1) {
+      throw new AggregateError(errors, "One or more HTMLAudio voices could not be destroyed");
+    }
   }
 
   return Object.freeze({ play, stop, setVolume, setMasterVolume, destroy });
