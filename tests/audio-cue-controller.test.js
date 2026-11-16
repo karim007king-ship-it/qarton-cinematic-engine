@@ -60,3 +60,51 @@ test("audio cue controller validates cues, time and lifecycle", () => {
   controller.destroy();
   assert.throws(() => controller.update(0), /destroyed/);
 });
+
+test("stopAll attempts every voice and clears state when a stop adapter throws", () => {
+  const stopped = [];
+  const failure = new Error("first voice failed to stop");
+  const controller = createAudioCueController({
+    cues: [
+      { id: "music", atMs: 0, asset: "music" },
+      { id: "impact", atMs: 0, asset: "impact" }
+    ],
+    play: (_asset, options) => options.id,
+    stop: voice => {
+      stopped.push(voice);
+      if (voice === "music") throw failure;
+    }
+  });
+
+  controller.update(0);
+  assert.throws(() => controller.stopAll({ reset: true }), error => error === failure);
+  assert.deepEqual(stopped, ["music", "impact"]);
+  assert.deepEqual(controller.getState(), {
+    cursor: -1, paused: false, destroyed: false, volume: 1, activeVoices: 0
+  });
+});
+
+test("destroy closes the controller and attempts every voice despite stop failures", () => {
+  const stopped = [];
+  const failure = new Error("music stop failed");
+  const controller = createAudioCueController({
+    cues: [
+      { id: "music", atMs: 0, asset: "music" },
+      { id: "effect", atMs: 0, asset: "effect" }
+    ],
+    play: (_asset, options) => options.id,
+    stop: voice => {
+      stopped.push(voice);
+      if (voice === "music") throw failure;
+    }
+  });
+
+  controller.update(0);
+  assert.throws(() => controller.destroy(), error => error === failure);
+  assert.deepEqual(stopped, ["music", "effect"]);
+  assert.deepEqual(controller.getState(), {
+    cursor: 0, paused: false, destroyed: true, volume: 1, activeVoices: 0
+  });
+  assert.doesNotThrow(() => controller.destroy());
+  assert.throws(() => controller.update(1), /destroyed/);
+});
