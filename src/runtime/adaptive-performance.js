@@ -90,12 +90,12 @@ export function createAdaptivePerformanceMonitor({
   }
 
   function recordFrame(frameDurationMs) {
-    // Deliver any previously failed profile-change notifications before
-    // accepting more samples, so host quality settings cannot silently lag.
-    flushNotifications();
     if (!Number.isFinite(frameDurationMs) || frameDurationMs <= 0) {
       throw new TypeError("Frame duration must be a positive finite number");
     }
+    // Deliver any previously failed profile-change notifications before
+    // accepting more samples, so host quality settings cannot silently lag.
+    flushNotifications();
     frames.push(frameDurationMs);
     if (frames.length < sampleWindow) {
       return Object.freeze({ profile, evaluated: false, averageFps: lastFps });
