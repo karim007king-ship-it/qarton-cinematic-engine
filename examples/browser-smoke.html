@@ -284,10 +284,22 @@
     running = false;
     cancelAnimationFrame(frameId);
     window.removeEventListener("resize", resizeCanvas);
-    director.destroy();
-    if (audioContext) await audioContext.close();
-    await runtime.destroy();
-    status.textContent = "Destroyed: animation loop, characters, audio, scene and cached assets released.";
+    status.textContent = "Cleaning up director, audio context and runtime…";
+    const cleanupErrors = [];
+    for (const cleanup of [
+      () => director.destroy(),
+      () => audioContext?.close(),
+      () => runtime.destroy()
+    ]) {
+      try {
+        await cleanup();
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+    }
+    status.textContent = cleanupErrors.length
+      ? `Cleanup completed with ${cleanupErrors.length} error(s): ${cleanupErrors.map(error => error.message).join("; ")}`
+      : "Destroyed: animation loop, characters, audio, scene and cached assets released.";
   });
 
   await show(0);
