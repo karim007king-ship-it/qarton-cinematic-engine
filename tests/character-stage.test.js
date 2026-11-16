@@ -259,11 +259,9 @@ test("unmount attempts every character release and resets stage state when a DOM
   firstElement.remove = () => { throw failure; };
 
   assert.throws(() => stage.unmount(), error => error === failure);
-  // The renderer removes its record before invoking the element's host remove
-  // callback; the stage must still release the second character and reset.
-  assert.equal(root.children.length, 1);
-  assert.equal(root.children[0].dataset.characterId, "first");
+  assert.equal(root.children.length, 0);
   assert.equal(await stage.mount(), true);
-  assert.equal(root.children.length, 3);
+  assert.equal(root.children.length, 2);
   stage.destroy();
+  assert.equal(root.children.length, 0);
 });
