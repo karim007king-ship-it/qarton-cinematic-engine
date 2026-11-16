@@ -209,7 +209,10 @@ test("a rejected Web Animation is reported and does not block later transitions"
         : Promise.resolve();
       return {
         finished,
-        cancel() { cancelled.push(isTarget ? "target" : "source"); }
+        cancel() {
+          cancelled.push(isTarget ? "target" : "source");
+          throw new Error("cancel cleanup failed");
+        }
       };
     }
   });
@@ -223,5 +226,51 @@ test("a rejected Web Animation is reported and does not block later transitions"
   rejectTarget(new Error("animation cancelled externally"));
   await assert.rejects(pending, /animation cancelled externally/);
   assert.deepEqual(cancelled.sort(), ["source", "target"]);
+  assert.equal(await adapter.crossfade({ from: null, to: from, duration: 0 }), true);
+});
+
+
+test("releases completed Web Animations after committing final inline styles", async () => {
+  let cancelCount = 0;
+  const { adapter } = setup({
+    animate: () => ({
+      finished: Promise.resolve(),
+      cancel() { cancelCount += 1; }
+    })
+  });
+  const from = await adapter.mount({ id: "from" }, {});
+  const to = await adapter.mount({ id: "to" }, {});
+  await adapter.crossfade({ from: null, to: from, duration: 0 });
+
+  assert.equal(await adapter.crossfade({ from, to, duration: 65 }), true);
+  assert.equal(cancelCount, 2);
+  assert.equal(from.style.opacity, "0");
+  assert.equal(to.style.opacity, "1");
+  assert.equal(to.style.filter, "none");
+});
+
+test("animation cancel failures do not mask the original Web Animation rejection", async () => {
+  let rejectAnimation;
+  let animationCount = 0;
+  const { adapter } = setup({
+    animate: () => ({
+      finished: animationCount++ === 1
+        ? new Promise((_resolve, reject) => { rejectAnimation = reject; })
+        : Promise.resolve(),
+      cancel() { throw new Error("cancel failed"); }
+    })
+  });
+  const from = await adapter.mount({ id: "from" }, {});
+  const to = await adapter.mount({ id: "to" }, {});
+  await adapter.crossfade({ from: null, to: from, duration: 0 });
+
+  const pending = adapter.crossfade({ from, to, duration: 70 });
+  for (let i = 0; i < 8 && !rejectAnimation; i += 1) await Promise.resolve();
+  assert.equal(typeof rejectAnimation, "function");
+  rejectAnimation(new Error("original animation failure"));
+  await assert.rejects(pending, /original animation failure/);
+
+  // The failed transition must release its active slot even if cancel()
+  // itself throws, so the adapter remains usable.
   assert.equal(await adapter.crossfade({ from: null, to: from, duration: 0 }), true);
 });
