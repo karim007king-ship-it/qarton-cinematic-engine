@@ -41,7 +41,7 @@ test("director synchronizes timeline, audio and character stage on one clock", a
   assert.deepEqual(events, ["opening", "impact"]);
   assert.deepEqual(calls, [["mount"], ["character", 0], ["character", 500]]);
   assert.deepEqual(audio.calls, [["update", 0], ["update", 500]]);
-  director.destroy();
+  await director.destroy();
   assert.equal(director.getState().destroyed, true);
   assert.equal(calls.at(-1)[0], "destroy");
   assert.equal(audio.calls.at(-1)[0], "destroy");
@@ -103,8 +103,8 @@ test("unmount invalidates an asynchronous director mount", async () => {
   resolveMount(true);
   assert.equal(await mounting, false);
   assert.equal(director.getState().mounted, false);
-  assert.deepEqual(calls, ["unmount", "unmount"]);
-  director.destroy();
+  assert.deepEqual(calls, ["unmount"]);
+  await director.destroy();
 });
 
 test("destroy invalidates an asynchronous director mount", async () => {
@@ -118,11 +118,12 @@ test("destroy invalidates an asynchronous director mount", async () => {
   };
   const director = createCinematicDirector({ characterStage: stage });
   const mounting = director.mount();
-  director.destroy();
+  const destroying = director.destroy();
   resolveMount(true);
   assert.equal(await mounting, false);
+  await destroying;
   assert.equal(director.getState().mounted, false);
-  assert.deepEqual(calls, ["destroy", "unmount"]);
+  assert.deepEqual(calls, ["destroy"]);
 });
 
 test("director destroys audio even when character stage cleanup throws", () => {
@@ -144,10 +145,10 @@ test("director destroys audio even when character stage cleanup throws", () => {
     }
   });
 
-  assert.throws(() => director.destroy(), error => error === failure);
+  await assert.rejects(director.destroy(), error => error === failure);
   assert.deepEqual(calls, ["stage", "audio"]);
   assert.equal(director.getState().destroyed, true);
-  assert.doesNotThrow(() => director.destroy());
+  await assert.doesNotReject(director.destroy());
 });
 
 test("director unmount attempts audio reset and resets state when stage cleanup throws", async () => {
@@ -175,4 +176,62 @@ test("director unmount attempts audio reset and resets state when stage cleanup 
     mounted: false, paused: false, destroyed: false, timeMs: -1
   });
   assert.doesNotThrow(() => director.mount());
+});
+
+
+test("director destroy retries asynchronous subsystem cleanup failures", async () => {
+  let fail = true;
+  let stageAttempts = 0;
+  const calls = [];
+  const director = createCinematicDirector({
+    characterStage: {
+      mount: async () => true,
+      update: async () => {},
+      unmount: () => {},
+      destroy: async () => {
+        stageAttempts += 1;
+        calls.push("stage");
+        if (fail) throw new Error("transient stage destroy failure");
+      }
+    },
+    audio: {
+      update: () => {},
+      pause: () => {},
+      resume: () => {},
+      stopAll: () => {},
+      destroy: async () => { calls.push("audio"); }
+    }
+  });
+
+  await assert.rejects(director.destroy(), /transient stage destroy failure/);
+  assert.equal(director.getState().destroyed, true);
+  fail = false;
+  await director.destroy();
+  assert.equal(stageAttempts, 2);
+  assert.deepEqual(calls, ["stage", "audio", "stage", "audio"]);
+  await assert.rejects(director.update(0), /destroyed/);
+});
+
+test("director destroy waits for pending mount rollback before resolving", async () => {
+  let resolveMount;
+  const calls = [];
+  const director = createCinematicDirector({
+    characterStage: {
+      mount: () => new Promise(resolve => { resolveMount = resolve; }),
+      update: async () => {},
+      unmount: () => calls.push("unmount"),
+      destroy: async () => { calls.push("destroy"); }
+    }
+  });
+
+  const mounting = director.mount();
+  const destroying = director.destroy();
+  let settled = false;
+  destroying.then(() => { settled = true; });
+  await Promise.resolve();
+  assert.equal(settled, false);
+  resolveMount(true);
+  assert.equal(await mounting, false);
+  await destroying;
+  assert.deepEqual(calls, ["destroy"]);
 });
