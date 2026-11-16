@@ -34,6 +34,9 @@ npm test
 ### اختبار المتصفح الحقيقي
 شغّل خادماً محلياً من جذر المستودع (مثلاً `npx serve .`) ثم افتح `examples/browser-smoke.html` للتجربة اليدوية. كما يشغّل GitHub Actions اختبار Chromium headless تلقائياً عبر `scripts/browser-smoke.mjs`. الاختبار الآلي يتحقق من تحميل صور SVG وفك ترميزها، وتركيب مشاهد متعددة الطبقات، وتحريك الشخصيات، وأحداث timeline، وتحويلات الكاميرا وparallax، ورسم الجسيمات وطبقات vignette/bloom/grain، وتغيير حجم العرض إلى قياس هاتف، وانتقالات المشاهد، والصوت بعد تفاعل المستخدم، وتنظيف runtime، وعدم وجود أخطاء JavaScript. نجاح Chromium لا يثبت التوافق الكامل مع Android System WebView؛ ما زال يلزم اختبار داخل WebView على محاكي أو جهاز Android فعلي. تم ضبط حساب اهتزاز الكاميرا على توقيت Director النسبي، وتُسلسل تحديثات المشهد عبر الساعة المشتركة.
 
+### اختبار Android System WebView
+يوجد تطبيق اختبار مستقل في `android/webview-smoke` يستخدم `WebViewAssetLoader` لتقديم ملفات المحرك على أصل HTTPS محلي، ثم يشغّل showcase نفسه داخل Android System WebView. مهمة `android-webview-smoke` في GitHub Actions تبني التطبيق وتشغّل اختبار instrumentation على محاكي Android API 35؛ تتحقق من طبقات الخلفية والشخصيات والمؤثرات وتحويلات الكاميرا وparallax وأحداث timeline والانتقال بين المشاهد والتنظيف وعدم وجود أخطاء JavaScript في console. هذا harness للاختبار فقط وليس تطبيقاً إنتاجياً أو جزءاً من حزمة المحرك. اختبار الصوت عبر تفاعل مستخدم حقيقي على جهاز مستهدف ما زال تحققاً منفصلاً.
+
 ## واجهة API الحالية
 - `resolveQualityProfile(device)`: اختيار ملف أداء low / medium / high.
 - `clamp(value, min, max)`, `lerp(from, to, progress)`, `easeInOutCubic(progress)`.
