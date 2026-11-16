@@ -23,6 +23,7 @@ export class AssetManager {
   #cache = new Map();
   #pending = new Map();
   #generation = 0;
+  #destroyed = false;
 
   constructor({ loader } = {}) {
     if (typeof loader !== "function") {
@@ -36,6 +37,7 @@ export class AssetManager {
    * Optional metadata is passed to the loader on the first request only.
    */
   load(key, metadata) {
+    if (this.#destroyed) return Promise.reject(new Error("AssetManager has been destroyed"));
     if (typeof key !== "string" || !key.trim()) {
       return Promise.reject(new TypeError("Asset key must be a non-empty string"));
     }
@@ -43,8 +45,9 @@ export class AssetManager {
     if (this.#pending.has(key)) return this.#pending.get(key);
 
     const generation = this.#generation;
+    const loader = this.#loader;
     const request = Promise.resolve()
-      .then(() => this.#loader(key, metadata))
+      .then(() => loader(key, metadata))
       .then(value => {
         const safeUrl = assertSafeAssetUrl(value, key);
         if (generation === this.#generation) this.#cache.set(key, safeUrl);
@@ -85,6 +88,8 @@ export class AssetManager {
   }
 
   destroy() {
+    if (this.#destroyed) return;
+    this.#destroyed = true;
     this.clear();
     this.#loader = null;
   }
