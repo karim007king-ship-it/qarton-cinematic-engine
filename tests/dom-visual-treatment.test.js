@@ -72,3 +72,17 @@ test("rejects invalid opacity and use after destroy", () => {
   adapter.destroy();
   assert.throws(() => adapter.apply({}), /destroyed/);
 });
+
+
+test("destroy removes every overlay when host remove methods throw", () => {
+  const { root, adapter } = setup();
+  const styleElement = root.ownerDocument.head.children[0];
+  root.children[0].remove = () => { throw new Error("overlay remove failed"); };
+  root.children[1].remove = () => { throw new Error("overlay remove failed"); };
+  styleElement.remove = () => { throw new Error("style remove failed"); };
+
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.equal(root.children.length, 0);
+  assert.equal(root.ownerDocument.head.children.length, 0);
+  assert.doesNotThrow(() => adapter.destroy());
+});
