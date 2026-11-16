@@ -455,3 +455,37 @@ test("stage failure can retry the same timestamp without replaying audio cues or
   assert.deepEqual(events, ["retry-stage"]);
   director.destroy();
 });
+
+
+test("timeline callback failure does not replay completed events or audio cues", async () => {
+  let callbackAttempts = 0;
+  let playCalls = 0;
+  const delivered = [];
+  const audio = createAudioCueController({
+    cues: [{ id: "hit", atMs: 100, asset: "hit-sound" }],
+    play: () => {
+      playCalls += 1;
+      return { id: "hit-voice" };
+    },
+    stop: () => {}
+  });
+  const director = createCinematicDirector({
+    audio,
+    timeline: createTimeline([{ id: "impact-event", atMs: 100, type: "impact" }]),
+    onEvent: event => {
+      callbackAttempts += 1;
+      delivered.push(event.id);
+      if (callbackAttempts === 1) throw new Error("event consumer failed");
+    }
+  });
+
+  await director.mount();
+  await assert.rejects(director.update(100), /event consumer failed/);
+  assert.equal(director.getState().timeMs, 100);
+  const retry = await director.update(100);
+  assert.deepEqual(retry.events, []);
+  assert.equal(callbackAttempts, 1);
+  assert.equal(playCalls, 1);
+  assert.deepEqual(delivered, ["impact-event"]);
+  director.destroy();
+});
