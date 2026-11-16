@@ -131,3 +131,34 @@ test("image decode failure preserves the previously visible scene", async () => 
   await assert.rejects(broken.render(scene, profile), /decode failed/);
   assert.equal(root.children, previous);
 });
+
+
+test("destroy is idempotent, clears safely and rejects later renders", async () => {
+  const { root, scene, profile } = fixture();
+  const renderer = new BackgroundRenderer({ root, resolveAsset: key => `/${key}.png` });
+  await renderer.render(scene, profile);
+
+  renderer.destroy();
+  renderer.destroy();
+  renderer.clear();
+
+  assert.equal(root.children.length, 0);
+  assert.equal(root.dataset.qartonSceneId, undefined);
+  await assert.rejects(renderer.render(scene, profile), /has been destroyed/);
+});
+
+test("destroy invalidates a render while assets are still resolving", async () => {
+  const { root, scene, profile } = fixture();
+  const releases = [];
+  const renderer = new BackgroundRenderer({
+    root,
+    resolveAsset: () => new Promise(resolve => releases.push(resolve))
+  });
+
+  const pending = renderer.render(scene, profile);
+  renderer.destroy();
+  releases.forEach((resolve, index) => resolve(`/late-${index}.png`));
+
+  assert.equal(await pending, false);
+  assert.equal(root.children.length, 0);
+});
