@@ -31,7 +31,7 @@ function fixture(options = {}) {
   const controller = createCharacterController({
     id: "hero",
     initial: { expression: "neutral" },
-    motions: [{ id: "walk", path, startMs: 100, durationMs: 1000, expression: "focused" }]
+    motions: [{ id: "walk", path, startMs: 0, durationMs: 1000, expression: "focused" }]
   });
   return {
     root,
@@ -330,7 +330,7 @@ test("character stage waits for sprite sampling before dispatching async timelin
   const controller = createCharacterController({
     id: "hero",
     initial: { expression: "neutral" },
-    motions: [{ id: "walk", path, startMs: 0, durationMs: 1000, expression: "focused" }]
+    motions: [{ id: "walk", path, startMs: 100, durationMs: 1000, expression: "focused" }]
   });
   let resolveSprite;
   let spriteCalls = 0;
