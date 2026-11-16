@@ -122,3 +122,34 @@ test("destroy during an asynchronous mount still releases the late scene handle"
   assert.deepEqual(events, ["unmount:late"]);
   assert.equal(manager.current, null);
 });
+
+
+test("an explicitly cancelled crossfade never commits the candidate scene", async () => {
+  const { manager, events } = setup({
+    crossfade: async ({ to }) => {
+      events.push(`fade-cancelled:${to.id}`);
+      return false;
+    }
+  });
+
+  await manager.transitionTo({ id: "old" }, {});
+  const old = manager.current;
+  assert.equal(await manager.transitionTo({ id: "cancelled" }, {}), false);
+  assert.equal(manager.current, old);
+  assert.ok(events.includes("unmount:cancelled"));
+});
+
+test("failure to retire the previous scene does not roll back the committed scene", async () => {
+  const { manager } = setup({
+    unmount: async handle => {
+      if (handle.id === "old") throw new Error("old scene cleanup failed");
+    }
+  });
+
+  await manager.transitionTo({ id: "old" }, {});
+  await assert.rejects(
+    manager.transitionTo({ id: "new" }, {}),
+    /old scene cleanup failed/
+  );
+  assert.equal(manager.current.id, "new");
+});
