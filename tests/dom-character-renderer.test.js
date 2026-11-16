@@ -564,3 +564,28 @@ test("superseded expression updates report incomplete after a newer sprite wins"
   assert.equal(handle.children[0].src, "https://assets.test/angry.png");
   renderer.destroy();
 });
+
+
+test("DOM character layer alt text tracks expression changes when sprites are shared", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`
+  });
+  const handle = await renderer.mount({
+    id: "hero",
+    sprites: { neutral: "shared-face", happy: "shared-face" },
+    initialState: { expression: "neutral" }
+  });
+
+  const image = handle.children[0];
+  assert.equal(image.alt, "hero — body — neutral");
+  await renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0,
+    expression: "happy"
+  });
+  assert.equal(image.alt, "hero — body — happy");
+  assert.equal(image.src, "https://assets.test/shared-face.png");
+  renderer.destroy();
+});
