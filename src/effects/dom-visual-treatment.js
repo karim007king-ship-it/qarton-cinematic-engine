@@ -73,16 +73,34 @@ export function createDOMVisualTreatmentAdapter({ root, document = root?.ownerDo
     }
   }
 
+  function removeElement(element, parent) {
+    try {
+      element.remove?.();
+    } catch {
+      // Fall back to the injected parent when a host remove() implementation fails.
+    }
+    if (element.parentNode === parent) {
+      try {
+        parent.removeChild(element);
+      } catch {
+        // Continue releasing the remaining overlays.
+      }
+    }
+  }
+
   function destroy() {
     if (destroyed) return;
-    clear();
     destroyed = true;
-    animationStyles.remove?.();
-    if (animationStyles.parentNode === styleHost) styleHost.removeChild(animationStyles);
     for (const element of Object.values(overlays)) {
-      element.remove?.();
-      if (element.parentNode === root) root.removeChild(element);
+      try {
+        element.style.opacity = "0";
+        element.style.animation = "none";
+      } catch {
+        // A broken host style object must not block the remaining teardown.
+      }
     }
+    removeElement(animationStyles, styleHost);
+    for (const element of Object.values(overlays)) removeElement(element, root);
   }
 
   return Object.freeze({ apply, clear, destroy, elements: Object.freeze({ ...overlays }) });
