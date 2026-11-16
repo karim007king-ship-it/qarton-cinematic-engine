@@ -74,9 +74,10 @@ export function createCinematicDirector({
   async function performUpdate(timeMs, ticket) {
     // Reject work that was queued before pause, unmount, remount or destroy.
     if (destroyed || ticket.generation !== updateGeneration ||
-        ticket.lifecycle !== lifecycleVersion || !mounted) {
+        ticket.lifecycle !== lifecycleVersion) {
       return Object.freeze({ timeMs, events: Object.freeze([]), paused: false, cancelled: true });
     }
+    if (!mounted) throw new Error("Cinematic director must be mounted before update");
     if (paused) return Object.freeze({ timeMs: lastTimeMs, events: Object.freeze([]), paused: true });
     if (!Number.isFinite(timeMs) || timeMs < 0) {
       throw new TypeError("Director timeMs must be non-negative and finite");
