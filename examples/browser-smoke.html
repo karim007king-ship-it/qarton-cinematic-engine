@@ -21,6 +21,9 @@
     .qarton-character-layer[data-layer-id="left-arm"] { transform-origin: 34% 42%; }
     .qarton-character-layer[data-layer-id="right-arm"] { transform-origin: 66% 42%; }
     .qarton-character-mouth, .qarton-character-eyes { pointer-events: none; }
+    @media (prefers-reduced-motion: reduce) {
+      .qarton-character, .qarton-character-layer, .qarton-character-base { will-change: auto; }
+    }
     .controls { display: flex; flex-wrap: wrap; gap: 9px; margin: 14px 0; }
     button { border: 1px solid #8e6b2f; border-radius: 8px; padding: 10px 13px; background: #292117; color: #fff; font: inherit; }
     button:disabled { opacity: .5; }
@@ -134,6 +137,8 @@
         id: "hero", initial: { x: 24, y: 120, scale: 1.08, expression: "neutral" },
         motions: [{ id: "hero-walk", path: walkPath, startMs: 500, durationMs: 5200, expression: "determined" }],
         dialogue: [{ startMs: 1400, endMs: 4100, expression: "determined" }],
+        facialMotion: { reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches },
+        poseMotion: { reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches },
         poseClips: [{
           id: "hero-gesture", pose: "speaking-gesture", startMs: 1500, durationMs: 1800, loop: true,
           layers: {
@@ -148,7 +153,8 @@
       { controller: createCharacterController({
         id: "companion", initial: { x: 650, y: 142, scale: .9, expression: "neutral", opacity: .92 },
         motions: [{ id: "companion-enter", path: enterPath, startMs: 1100, durationMs: 4800, expression: "alert" }],
-        dialogue: [{ startMs: 4300, endMs: 5900, expression: "alert" }]
+        dialogue: [{ startMs: 4300, endMs: 5900, expression: "alert" }],
+        facialMotion: { reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches }
       }), sprites: { neutral: makeSprite("#b8c7d8", "#253a55"), alert: makeSprite("#b8c7d8", "#a65b36"), default: makeSprite("#b8c7d8", "#253a55") },
         mouthSprites: [makeRigPart("mouth-closed"), makeRigPart("mouth-open")],
         eyeSprites: [makeRigPart("eyes-open"), makeRigPart("eyes-blink")] }
@@ -156,7 +162,7 @@
   });
 
   function makeSprite(skin, clothes) {
-    return `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 260"><ellipse cx="80" cy="248" rx="42" ry="8" fill="#000" opacity=".35"/><circle cx="80" cy="48" r="31" fill="${skin}"/><path d="M48 42Q54 4 92 17Q116 25 111 57Q92 34 48 42" fill="#17151c"/><path d="M43 92Q80 72 117 92L137 218H23Z" fill="${clothes}"/><path d="M48 210 42 252H68L80 210 92 252H118L111 210Z" fill="#20212b"/><path d="M50 103 16 177 31 185 70 132M110 103 144 177 129 185 90 132" fill="${skin}"/></svg>`) }`;
+    return `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 260"><ellipse cx="80" cy="248" rx="42" ry="8" fill="#000" opacity=".35"/><circle cx="80" cy="48" r="31" fill="${skin}"/><path d="M48 42Q54 4 92 17Q116 25 111 57Q92 34 48 42" fill="#17151c"/><path d="M43 92Q80 72 117 92L137 218H23Z" fill="${clothes}"/><path d="M48 210 42 252H68L80 210 92 252H118L111 210Z" fill="#20212b"/></svg>`) }`;
   }
 
   function makeRigPart(kind, skin = "#e8c18a", clothes = "#8b263d") {
