@@ -41,32 +41,52 @@ export class SceneTransitionManager {
 
     const generation = ++this.#generation;
     const previous = this.#current;
-    let next;
+    let next = null;
+    let nextReleased = false;
+    const isCurrentRequest = () => generation === this.#generation && !this.#destroyed;
+    const releaseCandidate = async () => {
+      if (next == null || nextReleased || next === this.#current) return;
+      // Mark before awaiting so a failing unmount is never invoked twice.
+      nextReleased = true;
+      await this.#unmount(next);
+    };
 
     try {
       next = await this.#mount(scene, profile);
       if (next == null) throw new TypeError("mount() must return a scene handle");
-      if (generation !== this.#generation || this.#destroyed) {
-        await this.#unmount(next);
+      if (!isCurrentRequest()) {
+        await releaseCandidate();
         return false;
       }
 
-      await this.#crossfade({ from: previous, to: next, duration, generation });
-      if (generation !== this.#generation || this.#destroyed) {
-        await this.#unmount(next);
+      const completed = await this.#crossfade({
+        from: previous,
+        to: next,
+        duration,
+        generation
+      });
+      // A transition adapter may explicitly report cancellation without
+      // throwing. Such a result must never be committed as the current scene.
+      if (completed === false || !isCurrentRequest()) {
+        await releaseCandidate();
         return false;
       }
-
-      this.#current = next;
-      if (previous != null && previous !== next) await this.#unmount(previous);
-      return true;
     } catch (error) {
-      if (next != null && next !== this.#current) {
-        try { await this.#unmount(next); } catch { /* preserve the original failure */ }
+      try {
+        await releaseCandidate();
+      } catch {
+        // Preserve the mount/crossfade error; cleanup is best-effort here.
       }
-      if (generation === this.#generation && !this.#destroyed) this.#current = previous;
+      if (isCurrentRequest()) this.#current = previous;
       throw error;
     }
+
+    // Commit only after the adapter confirms that the visual transition
+    // completed. Retirement of the old scene is a separate cleanup phase:
+    // if its unmount fails, do not roll back to a scene that may be half-removed.
+    this.#current = next;
+    if (previous != null && previous !== next) await this.#unmount(previous);
+    return true;
   }
 
   /** Invalidate pending work and unmount the active scene. */
