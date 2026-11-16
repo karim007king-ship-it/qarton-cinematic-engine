@@ -37,8 +37,8 @@ npm test
 - `clamp(value, min, max)`, `lerp(from, to, progress)`, `easeInOutCubic(progress)`.
 - `createMotionPath(points)` و`sampleMotionPath(path, progress, easing)`: مسارات 2D محايدة للمنصة مع أخذ عينات للحركة.
 - `createTimeline(events)` و`getTimelineEvents(timeline, range)`: ترتيب أحداث الصوت/التعبير/الكاميرا وإرجاع الأحداث ضمن نافذة زمنية ثابتة.
-- `createCharacterController({ id, initial, motions })`: حساب موضع الشخصية وحالتها وتعبيرها وخصائصها عبر الزمن دون ربطها بـ DOM أو محرك رسم.
-- `createDOMCharacterRenderer({ root, resolveSprite })`: محول اختياري لعرض sprites عبر DOM، مع حقن تحميل الأصول وحماية من نتائج التحميل القديمة.
+- `createCharacterController({ id, initial, motions, dialogue, facialMotion, poseClips, poseMotion })`: حساب موضع الشخصية وحالتها والتعبير وإطارات الكلام وحركة الوجه وطبقات الـ pose عبر الزمن دون ربطها بـ DOM أو محرك رسم.
+- `createDOMCharacterRenderer({ root, resolveSprite })`: محول DOM اختياري يعرض sprite أساسيّاً مع `layerSprites` لطبقات الجسم، و`mouthSprites` و`eyeSprites` لإطارات الفم والعين؛ يطبق `layerTransforms` والتنفس ودوران الرأس وحالة الكلام من snapshot المتحكم. يحدد التطبيق المضيف مواضع الطبقات عبر CSS، ويحقن حل الأصول عبر `resolveSprite`.
 - `computeParallaxOffset(...)`: حساب حركة طبقات العمق مع حد أقصى للإزاحة.
 - `sampleCameraShake(...)`: اهتزاز كاميرا deterministic يتلاشى زمنياً.
 - `createCameraTrack(keyframes)`: مسار كاميرا مستقل يدعم pan وzoom وrotation عبر keyframes مرتبة زمنياً مع easing حتمي.
