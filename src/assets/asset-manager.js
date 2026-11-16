@@ -45,8 +45,12 @@ export class AssetManager {
     if (this.#pending.has(key)) return this.#pending.get(key);
 
     const generation = this.#generation;
+    const loader = this.#loader;
     const request = Promise.resolve()
-      .then(() => this.#loader(key, metadata))
+      .then(() => {
+        if (this.#destroyed) throw new Error("AssetManager has been destroyed");
+        return loader(key, metadata);
+      })
       .then(value => {
         const safeUrl = assertSafeAssetUrl(value, key);
         if (generation === this.#generation) this.#cache.set(key, safeUrl);
