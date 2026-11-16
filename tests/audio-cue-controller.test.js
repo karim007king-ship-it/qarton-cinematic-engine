@@ -121,3 +121,33 @@ test("destroy retries failed voices while keeping the controller closed to new w
   assert.deepEqual(stopped, ["music", "effect", "music"]);
   assert.equal(controller.getState().activeVoices, 0);
 });
+
+
+test("a synchronous play failure leaves the failed cue retryable without replaying earlier cues", () => {
+  const attempts = [];
+  const failure = new Error("impact adapter failed");
+  let failImpact = true;
+  const controller = createAudioCueController({
+    cues: [
+      { id: "music", atMs: 0, asset: "theme", loop: true },
+      { id: "impact", atMs: 0, asset: "impact" }
+    ],
+    play: (_asset, options) => {
+      attempts.push(options.id);
+      if (options.id === "impact" && failImpact) throw failure;
+      return options.id;
+    }
+  });
+
+  assert.throws(() => controller.update(0), error => error === failure);
+  assert.deepEqual(attempts, ["music", "impact"]);
+  assert.deepEqual(controller.getState(), {
+    cursor: -1, paused: false, destroyed: false, volume: 1, activeVoices: 1
+  });
+
+  failImpact = false;
+  assert.deepEqual(controller.update(0), ["impact"]);
+  assert.deepEqual(attempts, ["music", "impact", "impact"]);
+  assert.equal(controller.getState().cursor, 0);
+  assert.equal(controller.getState().activeVoices, 2);
+});
