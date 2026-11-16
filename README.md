@@ -32,7 +32,7 @@ npm test
 تستخدم GitHub Actions إصدارات حديثة متوافقة مع Node.js 24 لتشغيل بيئة CI، بينما تعمل اختبارات المشروع على Node.js 22.
 
 ### اختبار المتصفح الحقيقي
-شغّل خادماً محلياً من جذر المستودع (مثلاً `npx serve .`) ثم افتح `examples/browser-smoke.html`. تختبر الصفحة تحميل صور SVG وفك ترميزها فعلياً، وتركيب مشاهد متعددة الطبقات، وتحريك شخصيتين عبر Character Stage، وتنسيق حركة الشخصيات والصوت وأحداث timeline بواسطة Cinematic Director على ساعة مشتركة، وparallax وcamera track (pan/zoom/rotation) وcamera shake والجسيمات، وانتقالات Web Animations API أو CSS fallback، وصوتاً مولداً محلياً يبدأ بتفاعل المستخدم، ثم تنظيف runtime والأصول. هذا اختبار يدوي في متصفح حقيقي وليس جزءاً من CI حالياً؛ نجاح اختبارات Node وحده لا يثبت سلامة العرض على Android WebView. تم ضبط حساب اهتزاز الكاميرا على توقيت Director النسبي، وتُسلسل تحديثات المشهد عبر الساعة المشتركة.
+شغّل خادماً محلياً من جذر المستودع (مثلاً `npx serve .`) ثم افتح `examples/browser-smoke.html` للتجربة اليدوية. كما يشغّل GitHub Actions اختبار Chromium headless تلقائياً عبر `scripts/browser-smoke.mjs`. الاختبار الآلي يتحقق من تحميل صور SVG وفك ترميزها، وتركيب مشاهد متعددة الطبقات، وتحريك الشخصيات، وأحداث timeline، وتحويلات الكاميرا وparallax، ورسم الجسيمات وطبقات vignette/bloom/grain، وتغيير حجم العرض إلى قياس هاتف، وانتقالات المشاهد، والصوت بعد تفاعل المستخدم، وتنظيف runtime، وعدم وجود أخطاء JavaScript. نجاح Chromium لا يثبت التوافق الكامل مع Android System WebView؛ ما زال يلزم اختبار داخل WebView على محاكي أو جهاز Android فعلي. تم ضبط حساب اهتزاز الكاميرا على توقيت Director النسبي، وتُسلسل تحديثات المشهد عبر الساعة المشتركة.
 
 ## واجهة API الحالية
 - `resolveQualityProfile(device)`: اختيار ملف أداء low / medium / high.
