@@ -127,8 +127,8 @@ export function createCharacterStage({
     // Allow an immediate remount to start a fresh operation while the stale
     // asynchronous mount finishes and releases any late handles.
     mountingPromise = null;
-    for (const record of records.values()) {
-      if (record.handle) renderer.unmount(record.handle);
+    for (const [id, record] of records) {
+      renderer.cancelMount(id);
       record.handle = null;
     }
     mounted = false;
