@@ -39,6 +39,7 @@ export function createCinematicDirector({
   let paused = false;
   let destroyed = false;
   let lastTimeMs = -1;
+  let destroyPromise = null;
 
   function assertAlive() {
     if (destroyed) throw new Error("Cinematic director has been destroyed");
@@ -55,7 +56,7 @@ export function createCinematicDirector({
         if (!result) return false;
       }
       if (destroyed || version !== lifecycleVersion) {
-        characterStage?.unmount();
+        // CharacterStage owns cancellation and rollback for its own pending mount.
         return false;
       }
       mounted = true;
@@ -144,27 +145,48 @@ export function createCinematicDirector({
   }
 
   function destroy() {
-    if (destroyed) return;
-    destroyed = true;
-    lifecycleVersion += 1;
-    mounted = false;
-    paused = false;
-    lastTimeMs = -1;
-
-    let firstError;
-    let failed = false;
-    for (const cleanup of [
-      () => characterStage?.destroy(),
-      () => audio?.destroy()
-    ]) {
-      try {
-        cleanup();
-      } catch (error) {
-        if (!failed) firstError = error;
-        failed = true;
-      }
+    if (destroyPromise) return destroyPromise;
+    if (!destroyed) {
+      destroyed = true;
+      lifecycleVersion += 1;
+      mounted = false;
+      paused = false;
+      lastTimeMs = -1;
     }
-    if (failed) throw firstError;
+
+    destroyPromise = (async () => {
+      const errors = [];
+      // Attempt every owned subsystem even if another subsystem fails.
+      for (const cleanup of [
+        () => characterStage?.destroy(),
+        () => audio?.destroy()
+      ]) {
+        try {
+          await cleanup();
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+
+      // Wait for a mount that was already in flight. CharacterStage invalidates
+      // it during destroy and performs its own late-mount rollback.
+      if (mountingPromise) {
+        try {
+          await mountingPromise;
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) {
+        throw new AggregateError(errors, "One or more cinematic director resources could not be destroyed");
+      }
+    })().finally(() => {
+      // Keep the director closed, but permit another teardown attempt after failure.
+      destroyPromise = null;
+    });
+    return destroyPromise;
   }
 
   return Object.freeze({
