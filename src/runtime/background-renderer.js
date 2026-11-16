@@ -37,13 +37,21 @@ export class BackgroundRenderer {
     if (this.#destroyed) throw new Error("BackgroundRenderer has been destroyed");
     const token = ++this.#renderToken;
     const plan = buildLayerPlan(scene, profile);
-    const assets = await Promise.all(plan.map(async layer => {
-      const url = await this.#resolveAsset(layer.asset, layer);
-      if (typeof url !== "string" || !url.trim()) {
-        throw new TypeError(`Asset resolver returned no URL for "${layer.asset}"`);
-      }
-      return url;
-    }));
+    let assets;
+    try {
+      assets = await Promise.all(plan.map(async layer => {
+        const url = await this.#resolveAsset(layer.asset, layer);
+        if (typeof url !== "string" || !url.trim()) {
+          throw new TypeError(`Asset resolver returned no URL for "${layer.asset}"`);
+        }
+        return url;
+      }));
+    } catch (error) {
+      // A newer render or clear() owns the root now; stale failures must not
+      // escape as errors from work that can no longer be committed.
+      if (token !== this.#renderToken) return false;
+      throw error;
+    }
 
     if (token !== this.#renderToken) return false;
 
