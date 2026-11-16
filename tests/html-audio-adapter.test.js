@@ -26,6 +26,16 @@ test("HTMLAudio adapter creates voices and supports stop and volume", () => {
   assert.equal(voice.paused, true);
 });
 
+test("HTMLAudio validates voice volume before allocating a media object", () => {
+  let allocations = 0;
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/voice.mp3",
+    createAudio: () => { allocations += 1; return fakeAudio(); }
+  });
+  assert.throws(() => adapter.play("voice", { volume: 2 }), /voice volume/);
+  assert.equal(allocations, 0);
+});
+
 test("HTMLAudio adapter validates injected host functions and media objects", () => {
   assert.throws(() => createHTMLAudioAdapter({}), /requires resolveAsset/);
   const adapter = createHTMLAudioAdapter({ resolveAsset: () => "/x.mp3", createAudio: () => ({}) });
