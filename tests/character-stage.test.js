@@ -232,3 +232,40 @@ test("stale partial mount cannot clear handles created by a newer multi-characte
   assert.equal(root.children.length, 0);
   stage.destroy();
 });
+
+
+test("character stage forwards rig and facial sprite maps to the DOM renderer", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const controller = createCharacterController({
+    id: "speaker",
+    dialogue: [{ startMs: 0, endMs: 500 }],
+    poseClips: [{
+      id: "gesture", startMs: 0, durationMs: 500,
+      layers: { arm: [{ at: 0, rotation: 0 }, { at: 1, rotation: 20 }] }
+    }]
+  });
+  const stage = createCharacterStage({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`,
+    characters: [{
+      controller,
+      sprites: { default: "speaker" },
+      layerSprites: { arm: "speaker-arm" },
+      mouthSprites: ["mouth-closed", "mouth-open"],
+      eyeSprites: ["eyes-open", "eyes-blink"]
+    }]
+  });
+
+  await stage.mount();
+  await stage.update(250);
+  const character = root.children[0];
+  const arm = character.children.find(child => child.dataset.layerId === "arm");
+  const mouth = character.children.filter(child => child.className === "qarton-character-mouth");
+  assert.ok(arm);
+  assert.match(arm.style.transform, /rotate\(10deg\)/);
+  assert.equal(character.dataset.speaking, "true");
+  assert.equal(mouth.some(part => part.style.display === "block"), true);
+  stage.destroy();
+  assert.equal(root.children.length, 0);
+});
