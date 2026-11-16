@@ -181,10 +181,9 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
   }
 
   function destroy() {
-    if (destroyed) return;
+    // Destruction is terminal for new work, but cleanup remains retryable.
     destroyed = true;
     const active = [...records.entries()];
-    records.clear();
     for (const [, record] of active) {
       record.assetVersion += 1;
       record.pendingAssetKey = null;
@@ -196,6 +195,7 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     for (const [handle] of active) {
       try {
         removeElement(handle);
+        records.delete(handle);
       } catch (error) {
         if (!failed) firstError = error;
         failed = true;
