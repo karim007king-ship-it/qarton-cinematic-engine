@@ -39,7 +39,7 @@
   </div>
   <p id="status" role="status">Preparing integrated showcase…</p>
   <p class="note">Audio is generated locally (two short oscillator cues); it starts only after a user gesture. No external assets or copyrighted music are used.</p>
-  <p class="note">Run from the repository root with <code>npx serve .</code>, then open <code>/examples/browser-smoke.html</code>. This is a manual real-browser test, not an automated CI/browser test.</p>
+  <p class="note">Run from the repository root with <code>npx serve .</code>, then open <code>/examples/browser-smoke.html</code>. This showcase is exercised automatically in Chromium by the GitHub Actions browser-smoke job.</p>
 </main>
 <script type="module">
   import {
@@ -224,6 +224,8 @@
     { atMs: 9000, x: 0, y: 0, zoom: 1, rotation: 0 }
   ]);
 
+  const timelineEventsSeen = [];
+  window.__qartonSmoke = { getTimelineEvents: () => [...timelineEventsSeen] };
   let audioCues = null;
   const audioProxy = {
     update: timeMs => audioCues?.update(timeMs),
@@ -237,6 +239,7 @@
     audio: audioProxy,
     timeline,
     onEvent: event => {
+      timelineEventsSeen.push(event.id);
       if (event.type === "camera-shake") shakeStart = event.atMs;
       if (event.type === "particle-burst") burstBoost = 1;
     }
