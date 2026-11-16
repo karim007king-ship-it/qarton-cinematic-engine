@@ -74,3 +74,57 @@ test("ended voice references are removed from active voice tracking", () => {
   assert.equal(controller.getState().activeVoices, 0);
   controller.destroy();
 });
+
+
+test("stopAll releases every voice and resets state when an adapter stop throws", () => {
+  const stopped = [];
+  const controller = createAudioCueController({
+    cues: [
+      { id: "first", atMs: 0, asset: "first" },
+      { id: "second", atMs: 0, asset: "second" }
+    ],
+    play: asset => asset,
+    stop: voice => {
+      stopped.push(voice);
+      if (voice === "first") throw new Error("host stop failed");
+    }
+  });
+  controller.update(0);
+  controller.pause(0);
+  assert.throws(() => controller.stopAll({ reset: true }), /host stop failed/);
+  assert.deepEqual(stopped, ["first", "second"]);
+  assert.deepEqual(controller.getState(), {
+    cursor: -1,
+    paused: false,
+    destroyed: false,
+    volume: 1,
+    activeVoices: 0
+  });
+});
+
+test("destroy attempts every voice and remains destroyed when an adapter stop throws", () => {
+  const stopped = [];
+  const controller = createAudioCueController({
+    cues: [
+      { id: "first", atMs: 0, asset: "first" },
+      { id: "second", atMs: 0, asset: "second" }
+    ],
+    play: asset => asset,
+    stop: voice => {
+      stopped.push(voice);
+      if (voice === "first") throw new Error("host stop failed");
+    }
+  });
+  controller.update(0);
+  assert.throws(() => controller.destroy(), /host stop failed/);
+  assert.deepEqual(stopped, ["first", "second"]);
+  assert.deepEqual(controller.getState(), {
+    cursor: 0,
+    paused: false,
+    destroyed: true,
+    volume: 1,
+    activeVoices: 0
+  });
+  assert.doesNotThrow(() => controller.destroy());
+  assert.throws(() => controller.update(1), /destroyed/);
+});
