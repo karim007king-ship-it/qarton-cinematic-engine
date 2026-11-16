@@ -481,3 +481,29 @@ test("unmount falls back to the root when a character element remove method thro
   assert.equal(root.children.length, 0);
   assert.equal(renderer.unmount(handle), undefined);
 });
+
+
+test("an update invalidated by unmount reports that it did not complete", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let resolveFocused;
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => key === "focused"
+      ? new Promise(resolve => { resolveFocused = resolve; })
+      : `https://assets.test/${key}.png`
+  });
+  const handle = await renderer.mount({
+    id: "hero",
+    sprites: { neutral: "neutral", focused: "focused" },
+    initialState: { expression: "neutral" }
+  });
+  const pendingUpdate = renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, expression: "focused"
+  });
+  renderer.unmount(handle);
+  resolveFocused("https://assets.test/focused.png");
+
+  assert.equal(await pendingUpdate, false);
+  assert.equal(root.children.length, 0);
+});
