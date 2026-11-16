@@ -26,10 +26,15 @@ export function createHTMLAudioAdapter({
   function stop(audio) {
     if (!audio) return;
     const entry = active.get(audio);
-    if (entry?.endedHandler) audio.removeEventListener?.("ended", entry.endedHandler);
-    audio.pause();
-    try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
+    // Release adapter references before invoking host media methods: pause()
+    // can throw in constrained WebViews or during media teardown.
     active.delete(audio);
+    if (entry?.endedHandler) {
+      try { audio.removeEventListener?.("ended", entry.endedHandler); } catch { /* best-effort listener cleanup */ }
+    }
+    try { audio.pause(); } finally {
+      try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
+    }
   }
 
   function play(asset, options = {}) {
@@ -97,15 +102,19 @@ export function createHTMLAudioAdapter({
 
   function destroy() {
     if (destroyed) return;
-    for (const audio of active.keys()) {
-      const entry = active.get(audio);
-      if (entry?.endedHandler) audio.removeEventListener?.("ended", entry.endedHandler);
-      audio.pause();
-      try { audio.currentTime = 0; } catch { /* best-effort cleanup */ }
-      audio.src = "";
-    }
-    active.clear();
     destroyed = true;
+    const voices = [...active.entries()];
+    // Detach all voices first so a host cleanup failure cannot retain the
+    // remaining media objects or make a second destroy() repeat the work.
+    active.clear();
+    for (const [audio, entry] of voices) {
+      if (entry?.endedHandler) {
+        try { audio.removeEventListener?.("ended", entry.endedHandler); } catch { /* best-effort listener cleanup */ }
+      }
+      try { audio.pause(); } catch { /* best-effort media shutdown */ }
+      try { audio.currentTime = 0; } catch { /* best-effort seek reset */ }
+      try { audio.src = ""; } catch { /* best-effort source release */ }
+    }
   }
 
   return Object.freeze({ play, stop, setVolume, setMasterVolume, destroy });
