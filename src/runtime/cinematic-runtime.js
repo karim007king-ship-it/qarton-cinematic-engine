@@ -57,8 +57,10 @@ export function createCinematicRuntime({
     destroyPromise = (async () => {
       const errors = [];
       for (const cleanup of [
-        () => scenes.destroy(),
+        // Cancel host-side animation promises before waiting for the scene
+        // manager to settle and release every in-flight scene handle.
         () => dom.destroy(),
+        () => scenes.destroy(),
         () => assets.destroy(),
         () => activity.destroy()
       ]) {
