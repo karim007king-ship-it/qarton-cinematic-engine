@@ -69,3 +69,40 @@ test("invalid dependencies and keys are rejected", async () => {
   await assert.rejects(manager.load(" "), /Asset key/);
   await assert.rejects(manager.preload("not-an-array"), /expects an array/);
 });
+
+
+test("destroy is terminal and rejects new loads", async () => {
+  let calls = 0;
+  const manager = new AssetManager({
+    loader: async key => {
+      calls += 1;
+      return `/${key}.png`;
+    }
+  });
+
+  await manager.load("before");
+  manager.destroy();
+  manager.destroy();
+
+  await assert.rejects(manager.load("after"), /has been destroyed/);
+  assert.equal(calls, 1);
+  assert.equal(manager.size, 0);
+  assert.equal(manager.pendingCount, 0);
+});
+
+test("a load already in flight can settle after destroy without repopulating cache", async () => {
+  let finish;
+  const manager = new AssetManager({
+    loader: () => new Promise(resolve => { finish = resolve; })
+  });
+
+  const pending = manager.load("late");
+  await Promise.resolve();
+  manager.destroy();
+  finish("/late.png");
+
+  assert.equal(await pending, "/late.png");
+  assert.equal(manager.size, 0);
+  assert.equal(manager.pendingCount, 0);
+  await assert.rejects(manager.load("new"), /has been destroyed/);
+});
