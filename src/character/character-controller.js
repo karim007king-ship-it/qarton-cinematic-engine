@@ -46,8 +46,10 @@ function normalizePoseClips(poseClips) {
         }
         previousAt = frame.at;
         for (const key of POSE_TRANSFORM_KEYS) {
-          if (frame[key] !== undefined && !Number.isFinite(frame[key])) {
-            throw new TypeError(`Pose clip "${clip.id}" layer "${layerId}" has a non-finite ${key}`);
+          if (frame[key] !== undefined && (
+            !Number.isFinite(frame[key]) || (key.startsWith("scale") && frame[key] < 0)
+          )) {
+            throw new TypeError(`Pose clip "${clip.id}" layer "${layerId}" has an invalid ${key}`);
           }
         }
         return Object.freeze({
