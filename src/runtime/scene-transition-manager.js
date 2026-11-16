@@ -122,9 +122,9 @@ export class SceneTransitionManager {
     this.#generation += 1;
     this.#current = null;
 
-    // Let invalidated transitions finish their rollback first. destroy() calls
-    // the adapter's destroy() before this method so active visual transitions
-    // are cancelled and these promises can settle.
+    // Let invalidated transitions finish their rollback first. Hosts that
+    // own a cancellable adapter must cancel its active visual transition before
+    // calling destroy(); the composed CinematicRuntime enforces that ordering.
     const transitions = await Promise.allSettled([...this.#pendingTransitions]);
     const errors = transitions
       .filter(result => result.status === "rejected")
