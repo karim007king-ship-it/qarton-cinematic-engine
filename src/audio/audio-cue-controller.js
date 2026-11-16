@@ -127,33 +127,37 @@ export function createAudioCueController({
     const active = [...voices.values()];
     voices.clear();
     let firstError;
+    let hasError = false;
     for (const voice of active) {
       if (voice == null) continue;
       try {
         stop(voice);
       } catch (error) {
-        firstError ??= error;
+        if (!hasError) {
+          firstError = error;
+          hasError = true;
+        }
       }
     }
-    return firstError;
+    return { hasError, error: firstError };
   }
 
   function stopAll({ reset = false } = {}) {
     assertAlive();
-    const error = stopTrackedVoices();
+    const result = stopTrackedVoices();
     paused = false;
     if (reset) {
       cursor = -1;
       firedIds.clear();
     }
-    if (error) throw error;
+    if (result.hasError) throw result.error;
   }
 
   function destroy() {
     if (destroyed) return;
     destroyed = true;
-    const error = stopTrackedVoices();
-    if (error) throw error;
+    const result = stopTrackedVoices();
+    if (result.hasError) throw result.error;
   }
 
   return Object.freeze({
