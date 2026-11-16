@@ -162,3 +162,33 @@ test("destroy invalidates a render while assets are still resolving", async () =
   assert.equal(await pending, false);
   assert.equal(root.children.length, 0);
 });
+
+test("unsafe background asset URLs are rejected without replacing the visible scene", async () => {
+  const { root, scene, profile } = fixture();
+  const stable = new BackgroundRenderer({ root, resolveAsset: key => `/${key}.png` });
+  await stable.render(scene, profile);
+  const previous = root.children;
+  const unsafe = new BackgroundRenderer({ root, resolveAsset: () => "javascript:alert(1)" });
+  await assert.rejects(unsafe.render(scene, profile), /unsafe URL/);
+  assert.equal(root.children, previous);
+});
+
+test("a superseded background render resolves false when its asset load later fails", async () => {
+  const { root, scene, profile } = fixture();
+  const pendingResolvers = [];
+  let defer = true;
+  const renderer = new BackgroundRenderer({
+    root,
+    resolveAsset: key => defer
+      ? new Promise((_resolve, reject) => pendingResolvers.push(reject))
+      : `/latest-${key}.png`
+  });
+
+  const stale = renderer.render(scene, profile);
+  defer = false;
+  assert.equal(await renderer.render(scene, profile), true);
+  pendingResolvers.forEach(reject => reject(new Error("stale asset failure")));
+  assert.equal(await stale, false);
+  assert.equal(root.dataset.qartonSceneId, "intro");
+  assert.ok(root.children[0].children[0].src.startsWith("/latest-"));
+});
