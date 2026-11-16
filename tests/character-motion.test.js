@@ -249,3 +249,23 @@ test("facial reduced-motion preference also freezes body pose clips and ids must
     poseClips: [...poseClips, { ...poseClips[0], startMs: 1000 }]
   }), /unique id/);
 });
+
+
+test("pose clips reject negative local scale values", () => {
+  for (const key of ["scaleX", "scaleY"]) {
+    assert.throws(() => createCharacterController({
+      id: "hero",
+      poseClips: [{
+        id: "invalid-scale",
+        startMs: 0,
+        durationMs: 100,
+        layers: {
+          arm: [
+            { at: 0, [key]: -1 },
+            { at: 1, [key]: 1 }
+          ]
+        }
+      }]
+    }), /invalid ${key}/);
+  }
+});
