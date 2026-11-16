@@ -61,7 +61,15 @@ public final class WebViewSmokeTest {
             org.json.JSONObject effectState = new JSONArray("[" + effects + "]").getJSONObject(0);
             assertFalse("Camera should update the scene transform", effectState.getString("camera").isEmpty());
             assertTrue("Parallax should update every background layer", effectState.getBoolean("parallax"));
-            assertTrue("Timeline should dispatch the impact event", effectState.getJSONArray("timeline").toList().contains("impact"));
+            JSONArray timeline = effectState.getJSONArray("timeline");
+            boolean hasImpactEvent = false;
+            for (int i = 0; i < timeline.length(); i++) {
+                if ("impact".equals(timeline.optString(i))) {
+                    hasImpactEvent = true;
+                    break;
+                }
+            }
+            assertTrue("Timeline should dispatch the impact event", hasImpactEvent);
             assertTrue("Canvas should have a non-zero backing size", effectState.getInt("canvasWidth") > 0
                     && effectState.getInt("canvasHeight") > 0);
 
