@@ -127,8 +127,12 @@ test("destroy during an asynchronous mount still releases the late scene handle"
 test("an explicitly cancelled crossfade never commits the candidate scene", async () => {
   const { manager, events } = setup({
     crossfade: async ({ to }) => {
-      events.push(`fade-cancelled:${to.id}`);
-      return false;
+      if (to.id === "cancelled") {
+        events.push(`fade-cancelled:${to.id}`);
+        return false;
+      }
+      events.push(`fade:${to.id}`);
+      return true;
     }
   });
 
