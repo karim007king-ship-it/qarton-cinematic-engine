@@ -128,3 +128,15 @@ test("destroy attempts every voice and remains destroyed when an adapter stop th
   assert.doesNotThrow(() => controller.destroy());
   assert.throws(() => controller.update(1), /destroyed/);
 });
+
+
+test("audio cleanup preserves falsy values thrown by the host adapter", () => {
+  const controller = createAudioCueController({
+    cues: [{ id: "impact", atMs: 0, asset: "impact" }],
+    play: () => "voice",
+    stop: () => { throw null; }
+  });
+  controller.update(0);
+  assert.throws(() => controller.stopAll(), error => error === null);
+  assert.equal(controller.getState().activeVoices, 0);
+});
