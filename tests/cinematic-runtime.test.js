@@ -98,7 +98,11 @@ test("cinematic runtime destroy retries when scene DOM cleanup fails", async () 
 
   const originalRemoveChild = root.removeChild.bind(root);
   root.removeChild = () => { throw new Error("persistent DOM cleanup failure"); };
-  await assert.rejects(runtime.destroy(), /persistent DOM cleanup failure/);
+  await assert.rejects(runtime.destroy(), error => {
+    assert.ok(error instanceof AggregateError);
+    assert.ok(error.errors.some(item => /persistent DOM cleanup failure/.test(item.message)));
+    return true;
+  });
   assert.equal(root.children.length, 1);
 
   root.removeChild = originalRemoveChild;
