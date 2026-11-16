@@ -153,3 +153,28 @@ test("activity gate remains closed and retries pause when destroy callback fails
   assert.doesNotThrow(() => gate.destroy());
   assert.equal(attempts, 2);
 });
+
+
+test("adaptive monitor retries a failed profile notification before accepting more frames", () => {
+  const notifications = [];
+  let fail = true;
+  const monitor = createAdaptivePerformanceMonitor({
+    device: { quality: "high" },
+    sampleWindow: 1,
+    stableWindows: 1,
+    onProfileChange: (next, previous) => {
+      notifications.push([previous.tier, next.tier]);
+      if (fail) throw new Error("host profile callback failed");
+    }
+  });
+
+  assert.throws(() => monitor.recordFrame(40), /host profile callback failed/);
+  assert.equal(monitor.getProfile().tier, "medium");
+  assert.equal(monitor.getMetrics().pendingFrames, 0);
+
+  fail = false;
+  const result = monitor.recordFrame(20);
+  assert.equal(result.evaluated, true);
+  assert.deepEqual(notifications, [["high", "medium"], ["high", "medium"]]);
+  assert.equal(monitor.getMetrics().pendingFrames, 0);
+});
