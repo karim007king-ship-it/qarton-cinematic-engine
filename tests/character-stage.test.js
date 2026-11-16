@@ -31,7 +31,7 @@ function fixture(options = {}) {
   const controller = createCharacterController({
     id: "hero",
     initial: { expression: "neutral" },
-    motions: [{ id: "walk", path, startMs: 0, durationMs: 1000, expression: "focused" }]
+    motions: [{ id: "walk", path, startMs: 100, durationMs: 1000, expression: "focused" }]
   });
   return {
     root,
