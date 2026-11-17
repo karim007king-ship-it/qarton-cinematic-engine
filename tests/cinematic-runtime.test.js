@@ -396,7 +396,9 @@ test("runtime lifecycle pauses the shared director clock and audio cues together
   target.dispatch("visibilitychange");
   assert.equal(director.getState().paused, false);
   await director.update(250);
-  assert.deepEqual(played, ["before", "after"]);
+  assert.deepEqual(played, ["before", "hidden", "after"]);
+  await director.update(300);
+  assert.deepEqual(played, ["before", "hidden", "after"], "resuming must not replay any cue");
 
   await runtime.destroy();
   await director.destroy();
