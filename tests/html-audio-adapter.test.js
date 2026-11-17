@@ -344,6 +344,41 @@ test("resume rejection after stop is ignored", async () => {
   assert.deepEqual(errors, []);
 });
 
+test("resume rejection preserves the suspended playhead for a later retry", async () => {
+  const audio = fakeAudio();
+  let playCount = 0;
+  let rejectResume;
+  audio.currentTime = 18.75;
+  audio.play = () => {
+    playCount += 1;
+    if (playCount === 1) return Promise.resolve();
+    if (playCount === 2) return new Promise((_resolve, reject) => { rejectResume = reject; });
+    return Promise.resolve();
+  };
+  const errors = [];
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/long-theme.mp3",
+    createAudio: () => audio,
+    onPlaybackError: error => errors.push(error.message)
+  });
+
+  const voice = adapter.play("theme", { loop: true });
+  adapter.pause(voice);
+  adapter.resume(voice);
+  rejectResume(new Error("resume blocked"));
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.equal(audio.paused, true);
+  assert.equal(audio.currentTime, 18.75);
+  assert.deepEqual(errors, ["resume blocked"]);
+
+  adapter.resume(voice);
+  assert.equal(playCount, 3);
+  assert.equal(audio.currentTime, 18.75);
+  adapter.destroy();
+});
+
 test("playback error callback exceptions are contained", async () => {
   const reported = [];
   const audio = fakeAudio();
