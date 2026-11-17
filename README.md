@@ -52,7 +52,7 @@ npm test
 - `createAdaptivePerformanceMonitor(...)`: قياس أزمنة الإطارات المقدمة من المضيف، وخفض/رفع الجودة تدريجياً مع hysteresis.
 - `createRuntimeActivityGate({ onPause, onResume })`: بوابة صريحة لإيقاف واستئناف المؤثرات عندما تصبح اللعبة غير نشطة أو مخفية.
 - `createPageLifecycleAdapter({ target, setActive })`: محول اختياري يربط `visibilitychange` و`pagehide` و`pageshow` ببوابة النشاط عبر EventTarget يحقنه المضيف؛ لا يستخدم globals ولا يفرض اعتماد المتصفح على الوحدات الأساسية.
-- `createCinematicRuntime({ root, loadAsset, renderScene, ... })`: واجهة تجميع للمضيف تربط إدارة الأصول والمشاهد والانتقالات وملف الأداء في runtime واحد، دون الاعتماد على مشروع لعبة محدد.
+- `createCinematicRuntime({ root, loadAsset, renderScene, lifecycleTarget, ... })`: واجهة تجميع للمضيف تربط إدارة الأصول والمشاهد والانتقالات وملف الأداء في runtime واحد. تمرير `lifecycleTarget` (مثل `document`) يفعّل ربط الصفحة تلقائياً ببوابة النشاط؛ ويمكن التحكم به عبر `startPageLifecycle()` و`stopPageLifecycle()` و`syncPageLifecycle()`. تركه دون تمرير يحافظ على السلوك اليدوي السابق.
 - `createCinematicDirector({ characterStage, audio, timeline, onEvent })`: ساعة سينمائية مشتركة تنسق تحديث الشخصيات والصوت وأحداث المشهد، وتدعم pause/resume والرجوع الزمني وإعادة تشغيل الأحداث بشكل حتمي؛ المضيف يظل مسؤولاً عن جدولة الإطارات.
 - `createSceneDefinition(config)`: التحقق من تعريف مشهد وطبقاته دون الوصول إلى DOM.
 - `buildLayerPlan(scene, profile)`: ترتيب الطبقات وتطبيق ميزانية الخلفيات.
