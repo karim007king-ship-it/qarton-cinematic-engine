@@ -64,13 +64,13 @@ export class BackgroundRenderer {
     const token = ++this.#renderToken;
     let assets;
     try {
-      assets = await Promise.all(plan.map(async layer => {
+      assets = await raceWithAbort(Promise.all(plan.map(async layer => {
         const url = await this.#resolveAsset(layer.asset, layer, { signal: controller.signal });
         if (typeof url !== "string" || !url.trim()) {
           throw new TypeError(`Asset resolver returned no URL for "${layer.asset}"`);
         }
         return url;
-      }));
+      })), controller.signal);
     } catch (error) {
       // A newer render or clear() owns the root now; stale failures must not
       // escape as errors from work that can no longer be committed.
