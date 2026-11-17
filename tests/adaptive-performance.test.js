@@ -203,3 +203,21 @@ test("reset discards a failed notification from the previous measurement epoch",
   assert.deepEqual(notifications, [["high", "medium"], ["low", "medium"]]);
   assert.equal(monitor.getProfile().tier, "medium");
 });
+
+test("clearSamples resets the measurement window without changing the selected profile", () => {
+  const monitor = createAdaptivePerformanceMonitor({
+    device: { quality: "high" },
+    sampleWindow: 3,
+    stableWindows: 2
+  });
+  monitor.recordFrame(40);
+  monitor.recordFrame(40);
+  assert.equal(monitor.getMetrics().pendingFrames, 2);
+  const profileBefore = monitor.getProfile();
+
+  const metrics = monitor.clearSamples();
+  assert.equal(monitor.getProfile(), profileBefore);
+  assert.deepEqual(metrics, { averageFps: null, pendingFrames: 0, stableWindows: 0 });
+  monitor.recordFrame(16);
+  assert.equal(monitor.getMetrics().pendingFrames, 1);
+});

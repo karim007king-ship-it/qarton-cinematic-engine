@@ -479,3 +479,141 @@ test("unmount invalidates an in-flight director frame before it dispatches timel
   assert.equal(director.getState().timeMs, -1);
   await director.destroy();
 });
+
+
+test("director rebases raw host timestamps after background pause and freezes the shared clock", async () => {
+  const audio = audioSpy();
+  const characterTimes = [];
+  const director = createCinematicDirector({
+    characterStage: {
+      mount: async () => true,
+      update: async time => characterTimes.push(time),
+      unmount: () => {},
+      destroy: () => {}
+    },
+    audio
+  });
+
+  await director.mount();
+  await director.update(100);
+  director.pause();
+  assert.equal((await director.update(10000)).paused, true);
+  director.resume();
+  const resumed = await director.update(20000);
+  assert.equal(resumed.timeMs, 100);
+  const next = await director.update(20100);
+  assert.equal(next.timeMs, 200);
+  assert.deepEqual(characterTimes, [100, 100, 200]);
+  assert.deepEqual(audio.calls, [
+    ["update", 100], ["pause", 100], ["resume", 100], ["update", 100], ["update", 200]
+  ]);
+  await director.destroy();
+});
+
+test("director resumes from logical zero when the page was hidden before its first frame", async () => {
+  const audio = audioSpy();
+  const director = createCinematicDirector({ audio });
+  await director.mount();
+  director.pause();
+  director.resume();
+  const result = await director.update(8000);
+  assert.equal(result.timeMs, 0);
+  assert.deepEqual(audio.calls, [
+    ["pause", -1], ["resume", -1], ["update", 0]
+  ]);
+  await director.destroy();
+});
+
+
+test("director commits paused state when an active audio voice fails to pause", async () => {
+  let failPause = true;
+  const audio = createAudioCueController({
+    cues: [{ id: "ambience", atMs: 0, asset: "ambience", loop: true }],
+    play: () => "voice",
+    pauseVoice: () => {
+      if (failPause) throw new Error("voice pause failed");
+    }
+  });
+  const director = createCinematicDirector({ audio });
+  await director.mount();
+  await director.update(100);
+
+  assert.throws(() => director.pause(), /voice pause failed/);
+  assert.equal(director.getState().paused, true);
+  assert.equal((await director.update(10000)).timeMs, 100);
+  assert.equal(audio.getState().paused, true);
+
+  failPause = false;
+  assert.equal(director.resume(), true);
+  assert.equal(director.getState().paused, false);
+  assert.equal((await director.update(20000)).timeMs, 100);
+  await director.destroy();
+});
+
+
+test("director pauses at the audio cursor after a character frame fails and preserves pending events", async () => {
+  let failCharacter = true;
+  const delivered = [];
+  const played = [];
+  const stage = {
+    mount: async () => true,
+    update: async () => {
+      if (failCharacter) throw new Error("character update failed");
+    },
+    unmount: () => {},
+    destroy: () => {}
+  };
+  const audio = createAudioCueController({
+    cues: [{ id: "impact", atMs: 50, asset: "impact" }],
+    play: asset => { played.push(asset); return asset; }
+  });
+  const director = createCinematicDirector({
+    characterStage: stage,
+    audio,
+    timeline: createTimeline([{ id: "story-beat", atMs: 50, type: "story" }]),
+    onEvent: event => delivered.push(event.id)
+  });
+
+  await director.mount();
+  await assert.rejects(director.update(100), /character update failed/);
+  assert.equal(audio.getState().cursor, 100);
+  assert.doesNotThrow(() => director.pause());
+  assert.equal(director.getState().timeMs, 100);
+  assert.equal(director.getState().paused, true);
+
+  failCharacter = false;
+  director.resume();
+  const resumed = await director.update(20000);
+  assert.equal(resumed.timeMs, 100);
+  assert.deepEqual(played, ["impact"], "audio cues already fired before the failure must not replay");
+  assert.deepEqual(delivered, ["story-beat"], "events from the interrupted frame must remain pending");
+  await director.destroy();
+});
+
+
+test("director keeps failed scene callbacks pending when page lifecycle pauses the clock", async () => {
+  const delivered = [];
+  let failOnce = true;
+  const director = createCinematicDirector({
+    timeline: createTimeline([
+      { id: "delivered", atMs: 10, type: "story" },
+      { id: "retry", atMs: 20, type: "story" }
+    ]),
+    onEvent: event => {
+      delivered.push(event.id);
+      if (event.id === "retry" && failOnce) {
+        failOnce = false;
+        throw new Error("event callback failed");
+      }
+    }
+  });
+
+  await director.mount();
+  await assert.rejects(director.update(20), /event callback failed/);
+  assert.equal(director.getState().timeMs, 20);
+  director.pause();
+  director.resume();
+  await director.update(20000);
+  assert.deepEqual(delivered, ["delivered", "retry", "retry"]);
+  await director.destroy();
+});

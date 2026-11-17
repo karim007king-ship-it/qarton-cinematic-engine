@@ -41,6 +41,10 @@ export function createCinematicDirector({
   let destroyed = false;
   let lastTimeMs = -1;
   let eventCursorMs = -1;
+  let clockOffsetMs = 0;
+  let rebaseClockOnResume = false;
+  let lastInputTimeMs = -1;
+  let audioTimeMs = -1;
   const deliveredEventIds = new Set();
   let destroyPromise = null;
   let updateQueue = Promise.resolve();
@@ -86,10 +90,23 @@ export function createCinematicDirector({
       throw new TypeError("Director timeMs must be non-negative and finite");
     }
 
+    // Hosts commonly pass performance.now()-based timestamps. Rebase the
+    // first frame after resume so time spent in the background is excluded.
+    if (rebaseClockOnResume) {
+      // Before the first frame, -1 is only a sentinel; resume at logical zero.
+      clockOffsetMs = timeMs - Math.max(0, lastTimeMs);
+      rebaseClockOnResume = false;
+    } else if (lastInputTimeMs >= 0 && timeMs < lastInputTimeMs) {
+      // An intentional host-clock rewind must remain a rewind, not inherit
+      // the offset accumulated while the page was suspended.
+      clockOffsetMs = 0;
+    }
+    const timelineTimeMs = timeMs - clockOffsetMs;
     const version = lifecycleVersion;
-    const rewound = timeMs < lastTimeMs;
+    const rewound = timelineTimeMs < lastTimeMs;
     if (rewound) {
       audio?.stopAll({ reset: true });
+      audioTimeMs = -1;
       if (destroyed || !mounted || version !== lifecycleVersion) {
         return Object.freeze({ timeMs: lastTimeMs, events: Object.freeze([]), paused });
       }
@@ -98,17 +115,19 @@ export function createCinematicDirector({
     }
     const events = getTimelineEvents(timeline, {
       fromMs: eventCursorMs,
-      toMs: timeMs
+      toMs: timelineTimeMs
     });
 
     // Advance audio and character state before committing the shared clock.
     // Queued frames prevent overlapping updates from racing the same timeline.
-    audio?.update(timeMs);
-    if (characterStage) await characterStage.update(timeMs);
+    audio?.update(timelineTimeMs);
+    if (audio) audioTimeMs = timelineTimeMs;
+    if (characterStage) await characterStage.update(timelineTimeMs);
     if (destroyed || !mounted || version !== lifecycleVersion) {
       return Object.freeze({ timeMs: lastTimeMs, events: Object.freeze([]), paused });
     }
-    lastTimeMs = timeMs;
+    lastTimeMs = timelineTimeMs;
+    lastInputTimeMs = timeMs;
 
     // Commit an event only after its callback resolves. Failed callbacks remain
     // pending, while already delivered events are not replayed on a retry.
@@ -116,12 +135,12 @@ export function createCinematicDirector({
     for (const event of events) {
       if (destroyed || !mounted || version !== lifecycleVersion) break;
       if (deliveredEventIds.has(event.id)) continue;
-      await onEvent(event, timeMs);
+      await onEvent(event, timelineTimeMs);
       if (destroyed || !mounted || version !== lifecycleVersion) break;
       deliveredEventIds.add(event.id);
       dispatchedEvents.push(event);
     }
-    if (!destroyed && mounted && version === lifecycleVersion) eventCursorMs = timeMs;
+    if (!destroyed && mounted && version === lifecycleVersion) eventCursorMs = timelineTimeMs;
     return Object.freeze({
       timeMs: lastTimeMs,
       events: Object.freeze(dispatchedEvents),
@@ -139,30 +158,54 @@ export function createCinematicDirector({
     return operation;
   }
 
-  function pause(timeMs = lastTimeMs) {
+  function pause(timeMs) {
     assertAlive();
     if (paused) return false;
-    if (!Number.isFinite(timeMs) || timeMs < lastTimeMs) {
+    if (timeMs === undefined) timeMs = Math.max(lastTimeMs, audioTimeMs);
+    if (!Number.isFinite(timeMs) || timeMs < lastTimeMs || timeMs < audioTimeMs) {
       throw new TypeError("Pause time must be finite and not earlier than the director clock");
     }
-    audio?.pause(timeMs);
+    const errors = [];
+    try {
+      audio?.pause(timeMs);
+    } catch (error) {
+      errors.push(error);
+    }
+    if (audio) audioTimeMs = Math.max(audioTimeMs, timeMs);
+    // Commit the director clock as paused even when one audio voice fails to
+    // suspend. Otherwise the hidden-page RAF loop could keep advancing scenes.
+    // Keep eventCursorMs unchanged: an audio frame may have advanced while a
+    // character update failed, and its pending scene events must still dispatch.
+    lifecycleVersion += 1;
     lastTimeMs = timeMs;
-    eventCursorMs = timeMs;
     paused = true;
-    onPause(timeMs);
+    try {
+      onPause(timeMs);
+    } catch (error) {
+      errors.push(error);
+    }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1) {
+      throw new AggregateError(errors, "Cinematic director paused with lifecycle errors");
+    }
     return true;
   }
 
-  function resume(timeMs = lastTimeMs) {
+  function resume(timeMs) {
     assertAlive();
     if (!paused) return false;
+    const rebaseHostClock = timeMs === undefined;
+    if (rebaseHostClock) timeMs = lastTimeMs;
     if (!Number.isFinite(timeMs) || timeMs < lastTimeMs) {
       throw new TypeError("Resume time must be finite and not earlier than the director clock");
     }
     audio?.resume(timeMs);
+    if (audio) audioTimeMs = timeMs;
+    lifecycleVersion += 1;
+    if (timeMs > lastTimeMs) eventCursorMs = timeMs;
     lastTimeMs = timeMs;
-    eventCursorMs = timeMs;
     paused = false;
+    rebaseClockOnResume = rebaseHostClock;
     onResume(timeMs);
     return true;
   }
@@ -178,6 +221,10 @@ export function createCinematicDirector({
     paused = false;
     lastTimeMs = -1;
     eventCursorMs = -1;
+    clockOffsetMs = 0;
+    rebaseClockOnResume = false;
+    lastInputTimeMs = -1;
+    audioTimeMs = -1;
     deliveredEventIds.clear();
 
     let firstError;
@@ -205,6 +252,9 @@ export function createCinematicDirector({
       paused = false;
       lastTimeMs = -1;
       eventCursorMs = -1;
+      clockOffsetMs = 0;
+      rebaseClockOnResume = false;
+      lastInputTimeMs = -1;
       deliveredEventIds.clear();
     }
 

@@ -38,7 +38,7 @@
     <button id="destroy" type="button">Destroy runtime</button>
   </div>
   <p id="status" role="status">Preparing integrated showcase…</p>
-  <p class="note">Audio is generated locally (two short oscillator cues); it starts only after a user gesture. No external assets or copyrighted music are used.</p>
+  <p class="note">Audio is generated locally (two short oscillator cues); it starts only after a user gesture. Hiding this page pauses the shared scene, character and audio timeline; returning resumes from the same cinematic time. No external assets or copyrighted music are used.</p>
   <p class="note">Run from the repository root with <code>npx serve .</code>, then open <code>/examples/browser-smoke.html</code>. This is a manual real-browser test, not an automated CI/browser test.</p>
 </main>
 <script type="module">
@@ -56,6 +56,7 @@
   const context = canvas.getContext("2d");
   const status = document.querySelector("#status");
   const buttons = [...document.querySelectorAll("button")];
+  let previousFrameTime = performance.now();
   const svg = (sky, ground, sun, foreground) => `data:image/svg+xml,${encodeURIComponent(
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700"><defs><linearGradient id="g" x2="0" y2="1"><stop stop-color="${sky}"/><stop offset="1" stop-color="${ground}"/></linearGradient></defs><rect width="1200" height="700" fill="url(#g)"/><circle cx="900" cy="160" r="76" fill="${sun}"/><path d="M0 520 250 310 470 520 720 260 1200 540V700H0Z" fill="#252b36" opacity=".82"/><path d="M0 610 300 470 540 620 850 420 1200 600V700H0Z" fill="${foreground}" opacity=".94"/></svg>`
   )}`;
@@ -86,8 +87,23 @@
     });
   }
 
+  let director = null;
   const runtime = createCinematicRuntime({
     root: stage,
+    lifecycleTarget: document,
+    lifecyclePageTarget: window,
+    audioController: {
+      pause: () => director?.pause(),
+      resume: () => director?.resume()
+    },
+    onAudioError: (error, context) => {
+      status.textContent = `Lifecycle audio ${context.phase} issue: ${error.message}`;
+    },
+    onResume: () => {
+      // The runtime cleared adaptive samples while hidden; discard the long
+      // wall-clock gap so the first resumed frame is not counted as a hitch.
+      previousFrameTime = performance.now();
+    },
     device: {
       reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches,
       saveData: navigator.connection?.saveData === true
@@ -154,7 +170,7 @@
     stopAll: options => audioCues?.stopAll(options),
     destroy: () => audioCues?.destroy()
   };
-  const director = createCinematicDirector({
+  director = createCinematicDirector({
     characterStage,
     audio: audioProxy,
     timeline,
@@ -164,6 +180,10 @@
     }
   });
 
+  // If the page was already hidden when the showcase initialized, apply the
+  // paused state now that the director exists.
+  if (!runtime.isActive()) director.pause();
+
   let running = true;
   let destroyed = false;
   let frameId = 0;
@@ -171,7 +191,6 @@
   let shakeStart = -Infinity;
   let burstBoost = 0;
   let audioContext = null;
-  let previousFrameTime = performance.now();
   const particles = createParticleField({ count: 44, seed: 19, width: 1000, height: 560, speedMin: 5, speedMax: 18 });
   const lighting = resolveLighting({ keyIntensity: .9, ambientIntensity: .5, warmth: .18 });
 
@@ -187,7 +206,19 @@
 
   async function tick(now) {
     if (!running) return;
-    const elapsed = now - startTime;
+    let elapsed;
+    try {
+      // Use the director's rebased logical clock for every visual subsystem.
+      // This keeps camera, parallax, particles and character/audio timelines
+      // frozen together while the document is hidden.
+      const frame = await director.update(now - startTime);
+      elapsed = frame.timeMs;
+    } catch (error) {
+      running = false;
+      status.textContent = `Director error: ${error.message}`;
+      return;
+    }
+    if (!running || destroyed) return;
     const profile = runtime.getProfile();
     const rect = stage.getBoundingClientRect();
     const camera = elapsed - shakeStart >= 0 && elapsed - shakeStart < 650
@@ -217,13 +248,6 @@
       context.fill();
     }
     burstBoost = Math.max(0, burstBoost - .012);
-    try {
-      await director.update(elapsed);
-    } catch (error) {
-      running = false;
-      status.textContent = `Director error: ${error.message}`;
-      return;
-    }
     runtime.recordFrame(Math.max(1, now - previousFrameTime));
     previousFrameTime = now;
     if (running) frameId = requestAnimationFrame(tick);
@@ -257,7 +281,7 @@
       await audioContext.resume();
       if (destroyed) return;
       audioCues?.destroy();
-      const audioCueStart = performance.now() - startTime;
+      const audioCueStart = Math.max(0, director.getState().timeMs);
       audioCues = createAudioCueController({
         cues: [
           { id: "intro-tone", atMs: audioCueStart, asset: "tone-a", volume: .16 },
@@ -293,9 +317,9 @@
     status.textContent = "Cleaning up director, audio context and runtime…";
     const cleanupErrors = [];
     for (const cleanup of [
+      () => runtime.destroy(),
       () => director.destroy(),
-      () => audioContext?.close(),
-      () => runtime.destroy()
+      () => audioContext?.close()
     ]) {
       try {
         await cleanup();

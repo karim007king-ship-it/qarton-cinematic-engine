@@ -108,6 +108,14 @@ export function createAdaptivePerformanceMonitor({
     return Object.freeze({ profile: next, evaluated: true, averageFps: lastFps });
   }
 
+  function clearSamples() {
+    frames = [];
+    stableCount = 0;
+    stableDirection = null;
+    lastFps = null;
+    return Object.freeze({ averageFps: lastFps, pendingFrames: frames.length, stableWindows: stableCount });
+  }
+
   function reset(nextDevice = device) {
     if (!nextDevice || typeof nextDevice !== "object" || Array.isArray(nextDevice)) {
       throw new TypeError("Adaptive performance device hints must be an object");
@@ -129,6 +137,7 @@ export function createAdaptivePerformanceMonitor({
     recordFrame,
     getProfile: () => profile,
     getMetrics: () => Object.freeze({ averageFps: lastFps, pendingFrames: frames.length, stableWindows: stableCount }),
+    clearSamples,
     reset
   });
 }
