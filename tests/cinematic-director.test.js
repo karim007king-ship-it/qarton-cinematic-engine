@@ -523,3 +523,29 @@ test("director resumes from logical zero when the page was hidden before its fir
   ]);
   await director.destroy();
 });
+
+
+test("director commits paused state when an active audio voice fails to pause", async () => {
+  let failPause = true;
+  const audio = createAudioCueController({
+    cues: [{ id: "ambience", atMs: 0, asset: "ambience", loop: true }],
+    play: () => "voice",
+    pauseVoice: () => {
+      if (failPause) throw new Error("voice pause failed");
+    }
+  });
+  const director = createCinematicDirector({ audio });
+  await director.mount();
+  await director.update(100);
+
+  assert.throws(() => director.pause(), /voice pause failed/);
+  assert.equal(director.getState().paused, true);
+  assert.equal((await director.update(10000)).timeMs, 100);
+  assert.equal(audio.getState().paused, true);
+
+  failPause = false;
+  assert.equal(director.resume(), true);
+  assert.equal(director.getState().paused, false);
+  assert.equal((await director.update(20000)).timeMs, 100);
+  await director.destroy();
+});
