@@ -147,8 +147,12 @@ test("destroy is terminal and rejects new loads without invoking the loader", as
   await manager.load("before-destroy");
   manager.destroy();
   manager.destroy();
-  await assert.rejects(manager.load("after-destroy"), /has been destroyed/);
-  await assert.rejects(manager.preload(["another"]), /has been destroyed/);
+  const lateLoad = manager.load("after-destroy");
+  assert.equal(manager.pendingCount, 0, "destroyed managers must not create new pending requests");
+  await assert.rejects(lateLoad, /has been destroyed/);
+  const latePreload = manager.preload(["another"]);
+  assert.equal(manager.pendingCount, 0, "preload after destroy must not enqueue requests");
+  await assert.rejects(latePreload, /has been destroyed/);
   assert.equal(calls, 1);
   assert.equal(manager.size, 0);
   assert.equal(manager.pendingCount, 0);
