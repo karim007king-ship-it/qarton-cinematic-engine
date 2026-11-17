@@ -73,10 +73,22 @@ export function createAudioCueController({
     const fired = [];
     for (const cue of normalized) {
       if (firedIds.has(cue.id) || cue.atMs > timeMs) continue;
-      const voice = play(cue.asset, {
-        id: cue.id, channel: cue.channel, loop: cue.loop, volume: cue.volume * volume
+      let voice;
+      let endedBeforeRegistration = false;
+      const onEnded = () => {
+        // A very short one-shot may finish before play() returns. Defer the
+        // registry decision until its returned voice has been registered.
+        if (voice === undefined) {
+          endedBeforeRegistration = true;
+          return;
+        }
+        if (voices.get(cue.id) === voice) voices.delete(cue.id);
+      };
+      voice = play(cue.asset, {
+        id: cue.id, channel: cue.channel, loop: cue.loop, volume: cue.volume * volume,
+        onEnded: cue.loop ? undefined : onEnded
       });
-      if (voice != null) voices.set(cue.id, voice);
+      if (voice != null && !endedBeforeRegistration) voices.set(cue.id, voice);
       firedIds.add(cue.id);
       fired.push(cue.id);
     }
