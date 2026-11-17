@@ -397,3 +397,25 @@ test("playback error callback exceptions are contained", async () => {
   await Promise.resolve();
   assert.deepEqual(reported, ["decode failed"]);
 });
+
+
+test("one-shot ended event notifies the cue owner and detaches its listener", () => {
+  const listeners = new Map();
+  const audio = {
+    ...fakeAudio(),
+    addEventListener(type, handler) { listeners.set(type, handler); },
+    removeEventListener(type, handler) {
+      if (listeners.get(type) === handler) listeners.delete(type);
+    }
+  };
+  let endedVoice;
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/effect.mp3",
+    createAudio: () => audio
+  });
+  adapter.play("effect", { onEnded: voice => { endedVoice = voice; } });
+  listeners.get("ended")();
+  assert.equal(endedVoice, audio);
+  assert.equal(listeners.has("ended"), false);
+  adapter.destroy();
+});
