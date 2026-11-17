@@ -10,6 +10,34 @@ test("parallax offset scales with depth and clamps extreme movement", () => {
   assert.throws(() => computeParallaxOffset({ depth: Infinity }), /finite/);
 });
 
+test("parallax calculation remains finite for extreme values and zero intensity", () => {
+  const extreme = Number.MAX_VALUE;
+  assert.deepEqual(computeParallaxOffset({
+    cameraX: extreme,
+    cameraY: -extreme,
+    depth: extreme,
+    intensity: 0,
+    maxOffset: extreme
+  }), { x: 0, y: 0 });
+
+  assert.deepEqual(computeParallaxOffset({
+    cameraX: extreme,
+    cameraY: -extreme,
+    depth: extreme,
+    maxOffset: 50
+  }), { x: -50, y: 50 });
+
+  const reordered = computeParallaxOffset({
+    cameraX: extreme,
+    depth: extreme,
+    intensity: Number.MIN_VALUE,
+    maxOffset: extreme
+  });
+  assert.ok(Number.isFinite(reordered.x));
+  assert.ok(reordered.x < 0);
+  assert.ok(reordered.x > -extreme);
+});
+
 test("camera shake is deterministic and decays to zero", () => {
   const a = sampleCameraShake({ timeMs: 250, durationMs: 1000, amplitude: 8, seed: 42 });
   const b = sampleCameraShake({ timeMs: 250, durationMs: 1000, amplitude: 8, seed: 42 });
