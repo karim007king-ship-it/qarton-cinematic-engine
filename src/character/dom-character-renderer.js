@@ -57,6 +57,8 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       // Returning to the already-visible sprite must invalidate any slower
       // request for a different expression that is still in flight.
       record.assetVersion += 1;
+      record.assetController?.abort();
+      record.assetController = null;
       record.pendingAssetKey = null;
       record.pendingAssetPromise = null;
       return true;
@@ -65,13 +67,16 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       return record.pendingAssetPromise;
     }
 
+    record.assetController?.abort();
+    const controller = new AbortController();
+    record.assetController = controller;
     const version = ++record.assetVersion;
     record.pendingAssetKey = key;
     let resolved;
     try {
       // Invoke the injected resolver immediately for predictable host behavior,
       // while converting synchronous throws into the same promise path.
-      resolved = resolveSprite(key);
+      resolved = resolveSprite(key, { signal: controller.signal });
     } catch (error) {
       resolved = Promise.reject(error);
     }
@@ -93,6 +98,7 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       if (version === record.assetVersion) {
         record.pendingAssetKey = null;
         record.pendingAssetPromise = null;
+        record.assetController = null;
       }
     });
     record.pendingAssetPromise = pending;
@@ -135,6 +141,7 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       assetKey: null,
       pendingAssetKey: null,
       pendingAssetPromise: null,
+      assetController: null,
       assetVersion: 0
     };
     const expression = typeof initialState.expression === "string" ? initialState.expression : "neutral";
@@ -175,6 +182,8 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     const record = records.get(handle);
     if (!record) return;
     record.assetVersion += 1;
+    record.assetController?.abort();
+    record.assetController = null;
     record.pendingAssetKey = null;
     record.pendingAssetPromise = null;
     // A fallback root removal may succeed even when Element.remove() throws.
@@ -194,6 +203,8 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     const active = [...records.entries()];
     for (const [, record] of active) {
       record.assetVersion += 1;
+      record.assetController?.abort();
+      record.assetController = null;
       record.pendingAssetKey = null;
       record.pendingAssetPromise = null;
     }
