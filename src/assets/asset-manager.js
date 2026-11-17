@@ -11,7 +11,7 @@ function assertSafeAssetUrl(value, key) {
     const code = character.charCodeAt(0);
     return code <= 31 || code === 127;
   });
-  if (hasControlCharacter || url.startsWith("//") ||
+  if (hasControlCharacter || url.includes("\\") || url.startsWith("//") ||
       /^(?:javascript|vbscript|file):/i.test(url)) {
     throw new TypeError(`Asset loader returned an unsafe URL for "${key}"`);
   }
