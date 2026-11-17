@@ -131,8 +131,8 @@ export class AssetManager {
   destroy() {
     if (this.#destroyed) return;
     // Close the manager before invalidating pending work so no new request can
-    // enter while teardown is in progress. Existing callers may still receive
-    // their resolved value, but late completions cannot repopulate the cache.
+    // enter while teardown is in progress. Active loaders are aborted, and
+    // their callers observe AbortError even if a loader ignores the signal.
     this.#destroyed = true;
     // Abort active loaders as well as invalidating their cache writes. This
     // prevents network/decode work from continuing after terminal teardown.
