@@ -48,10 +48,16 @@ export class AssetManager {
     if (this.#pending.has(normalizedKey)) return this.#pending.get(normalizedKey).promise;
 
     const generation = this.#generation;
+    const loader = this.#loader;
     const controller = new AbortController();
     const entry = { controller, promise: null };
     const request = Promise.resolve()
-      .then(() => this.#loader(normalizedKey, metadata, { signal: controller.signal }))
+      .then(() => {
+        if (controller.signal.aborted) {
+          throw controller.signal.reason ?? Object.assign(new Error("Asset load was cancelled"), { name: "AbortError" });
+        }
+        return loader(normalizedKey, metadata, { signal: controller.signal });
+      })
       .then(value => {
         if (controller.signal.aborted) {
           throw controller.signal.reason ?? Object.assign(new Error("Asset load was cancelled"), { name: "AbortError" });
