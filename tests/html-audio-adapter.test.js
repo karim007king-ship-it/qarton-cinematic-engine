@@ -139,3 +139,44 @@ test("HTMLAudio resume reports the asset and ignores a rejection after stop", as
   await Promise.resolve();
   assert.deepEqual(errors, []);
 });
+
+
+test("HTMLAudio ignores initial play rejection after stop", async () => {
+  let rejectPlay;
+  const errors = [];
+  const audio = fakeAudio();
+  audio.play = () => new Promise((_resolve, reject) => { rejectPlay = reject; });
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: key => `/${key}.mp3`,
+    createAudio: () => audio,
+    onPlaybackError: error => errors.push(error.message)
+  });
+
+  const voice = adapter.play("impact");
+  adapter.stop(voice);
+  rejectPlay(new Error("late initial play rejection"));
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.deepEqual(errors, []);
+});
+
+test("HTMLAudio contains exceptions thrown by playback error reporting", async () => {
+  const reported = [];
+  const audio = fakeAudio();
+  audio.play = () => Promise.reject(new Error("decode failed"));
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/voice.mp3",
+    createAudio: () => audio,
+    onPlaybackError: error => {
+      reported.push(error.message);
+      throw new Error("reporting failed");
+    }
+  });
+
+  adapter.play("voice");
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.deepEqual(reported, ["decode failed"]);
+});
