@@ -20,6 +20,7 @@ export function createCharacterStage({
 
   const renderer = createDOMCharacterRenderer({ root, resolveSprite });
   const records = new Map();
+  const orphanedHandles = new Set();
   let mounted = false;
   let mountingPromise = null;
   let lifecycleVersion = 0;
@@ -42,6 +43,24 @@ export function createCharacterStage({
     records.set(id, { controller: entry.controller, sprites: entry.sprites, handle: null });
   }
 
+  function releaseOrphaned() {
+    let firstError;
+    let failed = false;
+    for (const handle of [...orphanedHandles]) {
+      try {
+        renderer.unmount(handle);
+        orphanedHandles.delete(handle);
+      } catch (error) {
+        // The renderer may report an adapter error after its fallback detached
+        // the node. Do not retain a handle that no longer owns a DOM child.
+        if (handle.parentNode !== root) orphanedHandles.delete(handle);
+        if (!failed) firstError = error;
+        failed = true;
+      }
+    }
+    if (failed) throw firstError;
+  }
+
   function releaseCompleted(completed) {
     let firstError;
     let failed = false;
@@ -59,12 +78,22 @@ export function createCharacterStage({
 
   async function performMount(version) {
     const completed = [];
+    let staleCleanupFailed = false;
     try {
+      // A prior cancelled mount may have left a handle whose cleanup failed.
+      // Retry it before creating another visible character instance.
+      releaseOrphaned();
       for (const [id, record] of records) {
         const initialState = record.controller.update(0);
         const handle = await renderer.mount({ id, sprites: record.sprites, initialState });
         if (destroyed || version !== lifecycleVersion) {
-          renderer.unmount(handle);
+          try {
+            renderer.unmount(handle);
+          } catch (error) {
+            orphanedHandles.add(handle);
+            staleCleanupFailed = true;
+            throw error;
+          }
           releaseCompleted(completed);
           return false;
         }
@@ -86,6 +115,7 @@ export function createCharacterStage({
       }
       if (destroyed || version !== lifecycleVersion) {
         if (cleanupError) throw cleanupError;
+        if (staleCleanupFailed) throw error;
         return false;
       }
       mounted = false;
@@ -183,6 +213,12 @@ export function createCharacterStage({
         failed = true;
       }
     }
+    try {
+      releaseOrphaned();
+    } catch (error) {
+      if (!failed) firstError = error;
+      failed = true;
+    }
     if (failed) throw firstError;
   }
 
@@ -196,6 +232,7 @@ export function createCharacterStage({
     }
     // The renderer retains handles whose DOM removal failed; allow teardown retry.
     renderer.destroy();
+    orphanedHandles.clear();
     for (const record of records.values()) record.handle = null;
   }
 
