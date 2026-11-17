@@ -3,6 +3,25 @@
  * Sprite asset resolution is injected so the engine stays independent of
  * asset URLs, bundlers, and application-specific loading systems.
  */
+function raceWithAbort(promise, signal) {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => signal.removeEventListener("abort", onAbort);
+    const onAbort = () => {
+      cleanup();
+      reject(signal.reason ?? Object.assign(new Error("Sprite resolution was cancelled"), { name: "AbortError" }));
+    };
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+    Promise.resolve(promise).then(
+      value => { cleanup(); resolve(value); },
+      error => { cleanup(); reject(error); }
+    );
+  });
+}
+
 export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
   if (!root || typeof root.appendChild !== "function" || !root.ownerDocument) {
     throw new TypeError("DOM character renderer requires a root element");
@@ -80,7 +99,9 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     } catch (error) {
       resolved = Promise.reject(error);
     }
-    const pending = Promise.resolve(resolved).then(url => {
+    // A host resolver may ignore AbortSignal or never settle. Race it so
+    // superseded expressions and teardown release every waiting update/mount.
+    const pending = raceWithAbort(resolved, controller.signal).then(url => {
       if (destroyed || !records.has(record.element) || version !== record.assetVersion) return false;
       if (typeof url !== "string" || !url.trim()) {
         throw new TypeError(`resolveSprite() returned an invalid URL for "${key}"`);
