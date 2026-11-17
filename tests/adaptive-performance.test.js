@@ -241,3 +241,39 @@ test("adaptive stability metrics saturate at quality tier boundaries", () => {
   assert.equal(low.getProfile().tier, "low");
   assert.equal(low.getMetrics().stableWindows, 3);
 });
+
+test("adaptive controller traverses the complete quality ladder one tier at a time", () => {
+  const changes = [];
+  const monitor = createAdaptivePerformanceMonitor({
+    device: { quality: "high" },
+    sampleWindow: 2,
+    stableWindows: 2,
+    onProfileChange: (next, previous) => changes.push([previous.tier, next.tier])
+  });
+
+  const sampleWindow = duration => {
+    monitor.recordFrame(duration);
+    return monitor.recordFrame(duration);
+  };
+
+  sampleWindow(40);
+  sampleWindow(40);
+  assert.equal(monitor.getProfile().tier, "medium");
+  sampleWindow(40);
+  sampleWindow(40);
+  assert.equal(monitor.getProfile().tier, "low");
+
+  sampleWindow(10);
+  sampleWindow(10);
+  assert.equal(monitor.getProfile().tier, "medium");
+  sampleWindow(10);
+  sampleWindow(10);
+  assert.equal(monitor.getProfile().tier, "high");
+
+  assert.deepEqual(changes, [
+    ["high", "medium"],
+    ["medium", "low"],
+    ["low", "medium"],
+    ["medium", "high"]
+  ]);
+});
