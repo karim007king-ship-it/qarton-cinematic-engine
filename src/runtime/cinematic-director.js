@@ -161,12 +161,27 @@ export function createCinematicDirector({
     if (!Number.isFinite(timeMs) || timeMs < lastTimeMs) {
       throw new TypeError("Pause time must be finite and not earlier than the director clock");
     }
-    audio?.pause(timeMs);
+    const errors = [];
+    try {
+      audio?.pause(timeMs);
+    } catch (error) {
+      errors.push(error);
+    }
+    // Commit the director clock as paused even when one audio voice fails to
+    // suspend. Otherwise the hidden-page RAF loop could keep advancing scenes.
     lifecycleVersion += 1;
     lastTimeMs = timeMs;
     eventCursorMs = timeMs;
     paused = true;
-    onPause(timeMs);
+    try {
+      onPause(timeMs);
+    } catch (error) {
+      errors.push(error);
+    }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1) {
+      throw new AggregateError(errors, "Cinematic director paused with lifecycle errors");
+    }
     return true;
   }
 
