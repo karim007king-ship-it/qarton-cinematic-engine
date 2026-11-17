@@ -59,10 +59,8 @@ The adapter must validate that every `assetKey` exists in the host manifest. Kee
 The engine's cue controller owns cue timing, not the game soundtrack or asset manifest. The host resolves asset keys and supplies playback functions.
 
 ```js
-import {
-  createAudioCueController,
-  createHTMLAudioAdapter
-} from "@qarton/cinematic-engine/audio";
+import { createAudioCueController } from "@qarton/cinematic-engine/audio";
+import { createHTMLAudioAdapter } from "@qarton/cinematic-engine/audio/html";
 
 const audioAdapter = createHTMLAudioAdapter({
   resolveAsset: key => audioManifest[key],
