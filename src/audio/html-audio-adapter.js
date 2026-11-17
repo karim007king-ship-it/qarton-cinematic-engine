@@ -89,6 +89,7 @@ export function createHTMLAudioAdapter({
         active.delete(audio);
         voiceStates.set(audio, "ended");
         detachEndedHandler(audio);
+        try { options.onEnded?.(audio); } catch { /* completion observers must not break media cleanup */ }
       };
       try {
         audio.addEventListener("ended", onEnded, { once: true });
