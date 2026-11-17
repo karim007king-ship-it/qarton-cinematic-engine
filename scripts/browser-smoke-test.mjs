@@ -134,7 +134,16 @@ try {
   process.stdout.write("Chromium smoke passed: real image loading, scene transitions, character mounts, and runtime cleanup.\n");
 } finally {
   try { socket?.close(); } catch {}
-  if (browser && browser.exitCode === null) browser.kill("SIGTERM");
+  if (browser && browser.exitCode === null) {
+    const exited = new Promise(resolveExit => browser.once("exit", resolveExit));
+    browser.kill("SIGTERM");
+    await Promise.race([exited, delay(5000)]);
+    if (browser.exitCode === null) {
+      const killed = new Promise(resolveExit => browser.once("exit", resolveExit));
+      browser.kill("SIGKILL");
+      await killed;
+    }
+  }
   await new Promise(resolveClose => server.close(resolveClose));
   await rm(profile, { recursive: true, force: true });
 }
