@@ -589,3 +589,31 @@ test("director pauses at the audio cursor after a character frame fails and pres
   assert.deepEqual(delivered, ["story-beat"], "events from the interrupted frame must remain pending");
   await director.destroy();
 });
+
+
+test("director keeps failed scene callbacks pending when page lifecycle pauses the clock", async () => {
+  const delivered = [];
+  let failOnce = true;
+  const director = createCinematicDirector({
+    timeline: createTimeline([
+      { id: "delivered", atMs: 10, type: "story" },
+      { id: "retry", atMs: 20, type: "story" }
+    ]),
+    onEvent: event => {
+      delivered.push(event.id);
+      if (event.id === "retry" && failOnce) {
+        failOnce = false;
+        throw new Error("event callback failed");
+      }
+    }
+  });
+
+  await director.mount();
+  await assert.rejects(director.update(20), /event callback failed/);
+  assert.equal(director.getState().timeMs, 20);
+  director.pause();
+  director.resume();
+  await director.update(20000);
+  assert.deepEqual(delivered, ["delivered", "retry", "retry"]);
+  await director.destroy();
+});
