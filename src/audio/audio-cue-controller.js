@@ -15,7 +15,7 @@ export function createAudioCueController({
   if (!Array.isArray(cues)) throw new TypeError("Audio cues must be an array");
   if (typeof play !== "function" || typeof stop !== "function" || typeof pauseVoice !== "function"
     || typeof resumeVoice !== "function" || typeof setVolume !== "function") {
-    throw new TypeError("Audio play, stop and setVolume adapters must be functions");
+    throw new TypeError("Audio play, stop, pause, resume and setVolume adapters must be functions");
   }
   if (!Number.isFinite(masterVolume) || masterVolume < 0 || masterVolume > 1) {
     throw new TypeError("Master volume must be between 0 and 1");
