@@ -32,7 +32,7 @@ test("fog sampling rejects overflow from extreme finite drift values", () => {
   }), /drift exceeded/);
   assert.throws(() => sampleFog({
     timeMs: 1000,
-    speed: 1,
+    speed: 2,
     driftY: Number.MAX_VALUE
   }), /drift exceeded/);
 });
