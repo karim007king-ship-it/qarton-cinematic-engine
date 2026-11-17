@@ -2,6 +2,7 @@ import { AssetManager } from "../assets/asset-manager.js";
 import { createAdaptivePerformanceMonitor, createRuntimeActivityGate } from "./adaptive-performance.js";
 import { createDOMTransitionAdapter } from "./dom-transition-adapter.js";
 import { SceneTransitionManager } from "./scene-transition-manager.js";
+import { createPageLifecycleAdapter } from "./page-lifecycle-adapter.js";
 
 /**
  * Compose the independent runtime modules into one host-facing engine.
@@ -20,7 +21,8 @@ export function createCinematicRuntime({
   animate,
   onProfileChange = () => {},
   onPause = () => {},
-  onResume = () => {}
+  onResume = () => {},
+  lifecycleTarget
 } = {}) {
   if (typeof loadAsset !== "function") throw new TypeError("Cinematic runtime requires loadAsset()");
   if (typeof renderScene !== "function") throw new TypeError("Cinematic runtime requires renderScene()");
@@ -30,6 +32,9 @@ export function createCinematicRuntime({
   const assets = new AssetManager({ loader: loadAsset });
   const adaptive = createAdaptivePerformanceMonitor({ device, onProfileChange });
   const activity = createRuntimeActivityGate({ onPause, onResume });
+  const pageLifecycle = lifecycleTarget
+    ? createPageLifecycleAdapter({ target: lifecycleTarget, setActive: activity.setActive })
+    : null;
   const transitionOptions = { root, duration, reducedMotion };
   if (wait !== undefined) transitionOptions.wait = wait;
   if (nextFrame !== undefined) transitionOptions.nextFrame = nextFrame;
@@ -45,6 +50,9 @@ export function createCinematicRuntime({
     duration
   });
 
+  // Opt-in only: existing hosts remain unchanged unless they inject a lifecycle target.
+  pageLifecycle?.start();
+
   async function transitionTo(scene, { profile = adaptive.getProfile(), duration: transitionDuration } = {}) {
     if (destroyed) throw new Error("Cinematic runtime has been destroyed");
     const options = transitionDuration === undefined ? {} : { duration: transitionDuration };
@@ -59,6 +67,7 @@ export function createCinematicRuntime({
       for (const cleanup of [
         // Notify the host first so it can stop its frame loop before resources
         // are torn down. Then cancel DOM animation before awaiting scene release.
+        () => pageLifecycle?.stop(),
         () => activity.destroy(),
         () => dom.destroy(),
         () => scenes.destroy(),
@@ -98,6 +107,10 @@ export function createCinematicRuntime({
     },
     getProfile: adaptive.getProfile,
     setActive: activity.setActive,
+    startPageLifecycle: () => pageLifecycle?.start() ?? false,
+    stopPageLifecycle: () => pageLifecycle?.stop() ?? false,
+    syncPageLifecycle: () => pageLifecycle?.sync() ?? false,
+    get pageLifecycleState() { return pageLifecycle?.getState() ?? null; },
     get currentScene() { return scenes.current; },
     destroy
   });
