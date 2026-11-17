@@ -43,6 +43,7 @@ export function createCinematicDirector({
   let eventCursorMs = -1;
   let clockOffsetMs = 0;
   let rebaseClockOnResume = false;
+  let lastInputTimeMs = -1;
   const deliveredEventIds = new Set();
   let destroyPromise = null;
   let updateQueue = Promise.resolve();
@@ -91,8 +92,13 @@ export function createCinematicDirector({
     // Hosts commonly pass performance.now()-based timestamps. Rebase the
     // first frame after resume so time spent in the background is excluded.
     if (rebaseClockOnResume) {
-      clockOffsetMs = timeMs - lastTimeMs;
+      // Before the first frame, -1 is only a sentinel; resume at logical zero.
+      clockOffsetMs = timeMs - Math.max(0, lastTimeMs);
       rebaseClockOnResume = false;
+    } else if (lastInputTimeMs >= 0 && timeMs < lastInputTimeMs) {
+      // An intentional host-clock rewind must remain a rewind, not inherit
+      // the offset accumulated while the page was suspended.
+      clockOffsetMs = 0;
     }
     const timelineTimeMs = timeMs - clockOffsetMs;
     const version = lifecycleVersion;
@@ -118,6 +124,7 @@ export function createCinematicDirector({
       return Object.freeze({ timeMs: lastTimeMs, events: Object.freeze([]), paused });
     }
     lastTimeMs = timelineTimeMs;
+    lastInputTimeMs = timeMs;
 
     // Commit an event only after its callback resolves. Failed callbacks remain
     // pending, while already delivered events are not replayed on a retry.
@@ -192,6 +199,7 @@ export function createCinematicDirector({
     eventCursorMs = -1;
     clockOffsetMs = 0;
     rebaseClockOnResume = false;
+    lastInputTimeMs = -1;
     deliveredEventIds.clear();
 
     let firstError;
@@ -219,6 +227,9 @@ export function createCinematicDirector({
       paused = false;
       lastTimeMs = -1;
       eventCursorMs = -1;
+      clockOffsetMs = 0;
+      rebaseClockOnResume = false;
+      lastInputTimeMs = -1;
       deliveredEventIds.clear();
     }
 
