@@ -45,6 +45,7 @@ export function createCinematicDirector({
   let rebaseClockOnResume = false;
   let lastInputTimeMs = -1;
   let audioTimeMs = -1;
+  let audioPausePending = false;
   const deliveredEventIds = new Set();
   let destroyPromise = null;
   let updateQueue = Promise.resolve();
@@ -160,7 +161,17 @@ export function createCinematicDirector({
 
   function pause(timeMs) {
     assertAlive();
-    if (paused) return false;
+    if (paused) {
+      if (!audioPausePending) return false;
+      if (timeMs === undefined) timeMs = Math.max(lastTimeMs, audioTimeMs);
+      if (!Number.isFinite(timeMs) || timeMs < lastTimeMs || timeMs < audioTimeMs) {
+        throw new TypeError("Pause time must be finite and not earlier than the director clock");
+      }
+      audio?.pause(timeMs);
+      if (audio) audioTimeMs = Math.max(audioTimeMs, timeMs);
+      audioPausePending = false;
+      return false;
+    }
     if (timeMs === undefined) timeMs = Math.max(lastTimeMs, audioTimeMs);
     if (!Number.isFinite(timeMs) || timeMs < lastTimeMs || timeMs < audioTimeMs) {
       throw new TypeError("Pause time must be finite and not earlier than the director clock");
@@ -168,7 +179,9 @@ export function createCinematicDirector({
     const errors = [];
     try {
       audio?.pause(timeMs);
+      audioPausePending = false;
     } catch (error) {
+      audioPausePending = true;
       errors.push(error);
     }
     if (audio) audioTimeMs = Math.max(audioTimeMs, timeMs);
@@ -201,6 +214,7 @@ export function createCinematicDirector({
     }
     audio?.resume(timeMs);
     if (audio) audioTimeMs = timeMs;
+    audioPausePending = false;
     lifecycleVersion += 1;
     if (timeMs > lastTimeMs) eventCursorMs = timeMs;
     lastTimeMs = timeMs;
@@ -225,6 +239,7 @@ export function createCinematicDirector({
     rebaseClockOnResume = false;
     lastInputTimeMs = -1;
     audioTimeMs = -1;
+    audioPausePending = false;
     deliveredEventIds.clear();
 
     let firstError;
@@ -255,6 +270,7 @@ export function createCinematicDirector({
       clockOffsetMs = 0;
       rebaseClockOnResume = false;
       lastInputTimeMs = -1;
+      audioPausePending = false;
       deliveredEventIds.clear();
     }
 
