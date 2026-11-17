@@ -279,3 +279,59 @@ test("unmount and destroy abort pending character sprite resolutions", async () 
   pending[1].resolve("https://assets.test/late-focused.png");
   assert.equal(await secondUpdate, false);
 });
+
+
+test("destroy settles a pending mount when the sprite resolver ignores abort", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let observedSignal;
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: (_key, { signal }) => {
+      observedSignal = signal;
+      return new Promise(() => {});
+    }
+  });
+
+  const mounting = renderer.mount({
+    id: "hero",
+    sprites: { neutral: "hero-neutral" },
+    initialState: { expression: "neutral" }
+  });
+  await Promise.resolve();
+  assert.equal(observedSignal.aborted, false);
+
+  renderer.destroy();
+
+  await assert.rejects(mounting, /destroyed/);
+  assert.equal(observedSignal.aborted, true);
+  assert.equal(root.children.length, 0);
+});
+
+test("destroy settles a pending sprite update when the resolver never resolves", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let observedSignal;
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: (key, { signal }) => {
+      if (key === "neutral") return "https://assets.test/neutral.png";
+      observedSignal = signal;
+      return new Promise(() => {});
+    }
+  });
+  const handle = await renderer.mount({
+    id: "hero",
+    sprites: { neutral: "neutral", focused: "focused" },
+    initialState: { expression: "neutral" }
+  });
+
+  const updating = renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, expression: "focused"
+  });
+  renderer.destroy();
+
+  assert.equal(await updating, false);
+  assert.equal(observedSignal.aborted, true);
+  assert.equal(root.children.length, 0);
+});
