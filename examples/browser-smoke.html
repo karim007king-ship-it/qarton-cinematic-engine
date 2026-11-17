@@ -329,6 +329,12 @@
         },
         resumeVoice: voice => {
           if (voice.stopped || !voice.paused) return;
+          // Do not bypass browser autoplay policy after returning from background.
+          // The Audio button provides the next explicit user gesture if needed.
+          if (audioContext.state !== "running") {
+            status.textContent = "Audio context is suspended; tap Audio to resume playback.";
+            return;
+          }
           voice.gain.gain.setValueAtTime(voice.volume, audioContext.currentTime);
           voice.paused = false;
         },
