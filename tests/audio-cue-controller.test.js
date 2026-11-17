@@ -151,3 +151,41 @@ test("a synchronous play failure leaves the failed cue retryable without replayi
   assert.equal(controller.getState().cursor, 0);
   assert.equal(controller.getState().activeVoices, 2);
 });
+
+
+test("audio cue identifiers, asset keys and channels are normalized", () => {
+  const played = [];
+  const controller = createAudioCueController({
+    cues: [{
+      id: "  intro-music  ",
+      atMs: 0,
+      asset: "  theme/main  ",
+      channel: "  music  "
+    }],
+    play: (asset, options) => {
+      played.push({ asset, options });
+      return "voice";
+    }
+  });
+
+  assert.deepEqual(controller.update(0), ["intro-music"]);
+  assert.deepEqual(played, [{
+    asset: "theme/main",
+    options: {
+      id: "intro-music",
+      channel: "music",
+      loop: false,
+      volume: 1
+    }
+  }]);
+});
+
+test("audio cue IDs that collide after trimming are rejected", () => {
+  assert.throws(() => createAudioCueController({
+    cues: [
+      { id: "intro", atMs: 0, asset: "theme" },
+      { id: " intro ", atMs: 100, asset: "theme" }
+    ],
+    play() {}
+  }), /unique id/);
+});
