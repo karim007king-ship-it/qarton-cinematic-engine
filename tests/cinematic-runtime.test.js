@@ -475,3 +475,44 @@ test("runtime isolates host pause and resume callback failures from activity sta
   ]);
   await runtime.destroy();
 });
+
+
+test("runtime exposes asset cancellation and cache release to its host", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let signal;
+  let calls = 0;
+  const runtime = createCinematicRuntime({
+    root,
+    loadAsset: (key, _metadata, context) => {
+      calls += 1;
+      if (calls === 1) {
+        signal = context.signal;
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      }
+      return `/${key}.png`;
+    },
+    renderScene: () => document.createElement("div")
+  });
+
+  const pending = runtime.loadAsset("portrait");
+  await Promise.resolve();
+  assert.equal(runtime.cancelAsset("portrait"), true);
+  assert.equal(signal.aborted, true);
+  await assert.rejects(pending, { name: "AbortError" });
+
+  assert.equal(await runtime.loadAsset("portrait"), "/portrait.png");
+  assert.equal(runtime.releaseAsset("portrait"), true);
+  assert.equal(runtime.releaseAsset("portrait"), false);
+  assert.equal(await runtime.loadAsset("portrait"), "/portrait.png");
+  assert.equal(calls, 3);
+
+  runtime.clearAssets();
+  assert.equal(await runtime.loadAsset("portrait"), "/portrait.png");
+  await runtime.destroy();
+  assert.throws(() => runtime.cancelAsset("portrait"), /destroyed/);
+  assert.throws(() => runtime.releaseAsset("portrait"), /destroyed/);
+  assert.throws(() => runtime.clearAssets(), /destroyed/);
+});
