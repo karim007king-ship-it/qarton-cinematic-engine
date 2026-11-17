@@ -28,7 +28,7 @@ This repository includes a standalone, dependency-free diagnostics page at
 - Web Animations API availability, CSS transition execution, transform/filter.
 - Image.decode() or the image-load fallback, including inline SVG decoding.
 - Canvas 2D, HTMLAudio capability and Web Audio API availability.
-- HTMLAudio playback from a local generated WAV sample, including play/pause/resume and natural completion events.
+- HTMLAudio playback from a five-second locally generated WAV sample, long enough to test pause/resume manually and observe natural completion.
 - Web Audio resume/playback initiated from a tap, AudioContext state changes, and sample completion.
 - Optional hardware concurrency, device-memory and JS-heap hints when exposed by the browser; these are not native RAM or GPU measurements.
 - Page visibility and page lifecycle events, plus viewport and device-pixel ratio. The diagnostic pauses HTMLAudio and suspends Web Audio when the page becomes hidden; returning to foreground does not auto-resume either API, so use the explicit audio buttons again.
