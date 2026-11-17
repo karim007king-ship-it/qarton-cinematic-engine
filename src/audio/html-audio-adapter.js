@@ -44,7 +44,10 @@ export function createHTMLAudioAdapter({
     active.set(audio, baseVolume);
     const result = audio.play();
     if (result && typeof result.catch === "function") {
-      result.catch(error => onPlaybackError(error, { asset, audio }));
+      result.catch(error => {
+        // Ignore a late rejection when the host has already stopped this voice.
+        if (active.has(audio)) onPlaybackError(error, { asset, audio });
+      });
     }
     return audio;
   }
