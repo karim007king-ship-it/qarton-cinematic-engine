@@ -38,7 +38,7 @@
     <button id="destroy" type="button">Destroy runtime</button>
   </div>
   <p id="status" role="status">Preparing integrated showcase…</p>
-  <p class="note">Audio is generated locally (two short oscillator cues); it starts only after a user gesture. No external assets or copyrighted music are used.</p>
+  <p class="note">Audio is generated locally (two short oscillator cues); it starts only after a user gesture. Hiding this page pauses the shared scene, character and audio timeline; returning resumes from the same cinematic time. No external assets or copyrighted music are used.</p>
   <p class="note">Run from the repository root with <code>npx serve .</code>, then open <code>/examples/browser-smoke.html</code>. This is a manual real-browser test, not an automated CI/browser test.</p>
 </main>
 <script type="module">
@@ -86,8 +86,17 @@
     });
   }
 
+  let director = null;
   const runtime = createCinematicRuntime({
     root: stage,
+    lifecycleTarget: document,
+    audioController: {
+      pause: () => director?.pause(),
+      resume: () => director?.resume()
+    },
+    onAudioError: (error, context) => {
+      status.textContent = `Lifecycle audio ${context.phase} issue: ${error.message}`;
+    },
     device: {
       reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches,
       saveData: navigator.connection?.saveData === true
@@ -154,7 +163,7 @@
     stopAll: options => audioCues?.stopAll(options),
     destroy: () => audioCues?.destroy()
   };
-  const director = createCinematicDirector({
+  director = createCinematicDirector({
     characterStage,
     audio: audioProxy,
     timeline,
@@ -163,6 +172,10 @@
       if (event.type === "particle-burst") burstBoost = 1;
     }
   });
+
+  // If the page was already hidden when the showcase initialized, apply the
+  // paused state now that the director exists.
+  if (!runtime.isActive()) director.pause();
 
   let running = true;
   let destroyed = false;
@@ -293,9 +306,9 @@
     status.textContent = "Cleaning up director, audio context and runtime…";
     const cleanupErrors = [];
     for (const cleanup of [
+      () => runtime.destroy(),
       () => director.destroy(),
-      () => audioContext?.close(),
-      () => runtime.destroy()
+      () => audioContext?.close()
     ]) {
       try {
         await cleanup();
