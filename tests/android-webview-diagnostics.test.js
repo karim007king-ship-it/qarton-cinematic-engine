@@ -34,3 +34,14 @@ test("diagnostics collect bounded frame-pacing metrics without claiming a benchm
   assert.match(page, /Foreground-only rough measurement/);
   assert.match(page, /timestamp - startedAt >= 1200/);
 });
+
+test("audio lifecycle and optional resource hints are observable without autoplay", () => {
+  assert.match(page, /audio-context-statechange/);
+  assert.match(page, /audio-sample-ended/);
+  assert.match(page, /audio-sample-started/);
+  assert.match(page, /audioContextState/);
+  assert.match(page, /deviceMemoryGb/);
+  assert.match(page, /usedJSHeapSize/);
+  assert.match(page, /not native Android RAM or GPU-memory measurements/);
+  assert.match(page, /AudioContext did not enter running state/);
+});
