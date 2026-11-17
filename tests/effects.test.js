@@ -37,12 +37,14 @@ test("parallax calculation remains finite for extreme values and zero intensity"
   assert.ok(reordered.x < 0);
   assert.ok(reordered.x > -extreme);
 
-  assert.deepEqual(computeParallaxOffset({
+  const fractional = computeParallaxOffset({
     cameraX: 0.8,
     depth: 0.8,
     intensity: 0.7,
     maxOffset: 0.5
-  }), { x: -0.448, y: 0 });
+  });
+  assert.ok(Math.abs(fractional.x + 0.448) < 1e-12);
+  assert.equal(fractional.y, 0);
 });
 
 test("camera shake is deterministic and decays to zero", () => {
