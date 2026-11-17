@@ -117,3 +117,25 @@ test("page lifecycle adapter is exported through root, runtime, and package subp
   assert.equal(runtimeExports.createPageLifecycleAdapter, createPageLifecycleAdapter);
   assert.equal(packageExport, createPageLifecycleAdapter);
 });
+
+test("stop remains retryable when a host EventTarget refuses listener removal", () => {
+  const target = createTarget("visible");
+  const originalRemove = target.removeEventListener.bind(target);
+  let failOnce = true;
+  target.removeEventListener = (type, listener) => {
+    if (failOnce && type === "pagehide") {
+      failOnce = false;
+      throw new Error("remove blocked");
+    }
+    originalRemove(type, listener);
+  };
+  const adapter = createPageLifecycleAdapter({ target, setActive() {} });
+  adapter.start();
+
+  assert.throws(() => adapter.stop(), /remove blocked/);
+  assert.equal(adapter.getState().started, true);
+  assert.equal(target.listenerCount(), 1);
+  assert.equal(adapter.stop(), true);
+  assert.equal(adapter.getState().started, false);
+  assert.equal(target.listenerCount(), 0);
+});
