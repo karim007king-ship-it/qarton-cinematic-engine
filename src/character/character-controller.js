@@ -1,5 +1,5 @@
 import { clamp, easeInOutCubic } from "../motion/easing.js";
-import { sampleMotionPath } from "../motion/path.js";
+import { createMotionPath, sampleMotionPath } from "../motion/path.js";
 
 /**
  * Platform-neutral character sampler. It returns render state only; a host
@@ -7,8 +7,12 @@ import { sampleMotionPath } from "../motion/path.js";
  */
 export function createCharacterController({ id, initial = {}, motions = [] } = {}) {
   if (typeof id !== "string" || !id.trim()) throw new TypeError("Character id is required");
+  if (!initial || typeof initial !== "object" || Array.isArray(initial)) {
+    throw new TypeError("Character initial state must be an object");
+  }
   if (!Array.isArray(motions)) throw new TypeError("Character motions must be an array");
 
+  const characterId = id.trim();
   const base = Object.freeze({
     x: Number.isFinite(initial.x) ? initial.x : 0,
     y: Number.isFinite(initial.y) ? initial.y : 0,
@@ -19,21 +23,26 @@ export function createCharacterController({ id, initial = {}, motions = [] } = {
     state: typeof initial.state === "string" ? initial.state : "idle"
   });
 
+  const seenMotionIds = new Set();
   const normalized = motions.map((motion, index) => {
     if (!motion || typeof motion !== "object") throw new TypeError(`Motion ${index} must be an object`);
     if (typeof motion.id !== "string" || !motion.id.trim()) throw new TypeError(`Motion ${index} needs an id`);
+    const motionId = motion.id.trim();
+    if (seenMotionIds.has(motionId)) throw new TypeError(`Duplicate character motion id: ${motionId}`);
+    seenMotionIds.add(motionId);
     if (!motion.path || !Array.isArray(motion.path.points) || motion.path.points.length < 2) {
-      throw new TypeError(`Motion "${motion.id}" needs a valid path`);
+      throw new TypeError(`Motion "${motionId}" needs a valid path`);
     }
     if (!Number.isFinite(motion.startMs) || motion.startMs < 0
-      || !Number.isFinite(motion.durationMs) || motion.durationMs <= 0) {
-      throw new TypeError(`Motion "${motion.id}" needs valid startMs and positive durationMs`);
+      || !Number.isFinite(motion.durationMs) || motion.durationMs <= 0
+      || !Number.isFinite(motion.startMs + motion.durationMs)) {
+      throw new TypeError(`Motion "${motionId}" needs valid startMs and positive durationMs`);
     }
     const easing = motion.easing ?? easeInOutCubic;
-    if (typeof easing !== "function") throw new TypeError(`Motion "${motion.id}" easing must be a function`);
+    if (typeof easing !== "function") throw new TypeError(`Motion "${motionId}" easing must be a function`);
     return Object.freeze({
-      id: motion.id,
-      path: motion.path,
+      id: motionId,
+      path: createMotionPath(motion.path.points),
       startMs: motion.startMs,
       endMs: motion.startMs + motion.durationMs,
       durationMs: motion.durationMs,
@@ -71,8 +80,8 @@ export function createCharacterController({ id, initial = {}, motions = [] } = {
       };
       if (progress < 1) break;
     }
-    return Object.freeze({ id, timeMs, ...state });
+    return Object.freeze({ id: characterId, timeMs, ...state });
   }
 
-  return Object.freeze({ id, update });
+  return Object.freeze({ id: characterId, update });
 }
