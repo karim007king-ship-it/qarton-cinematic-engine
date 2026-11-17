@@ -178,3 +178,28 @@ test("adaptive monitor retries a failed profile notification before accepting mo
   assert.deepEqual(notifications, [["high", "medium"], ["high", "medium"]]);
   assert.equal(monitor.getMetrics().pendingFrames, 0);
 });
+
+
+test("reset discards a failed notification from the previous measurement epoch", () => {
+  const notifications = [];
+  let fail = true;
+  const monitor = createAdaptivePerformanceMonitor({
+    device: { quality: "high" },
+    sampleWindow: 1,
+    stableWindows: 1,
+    onProfileChange: (next, previous) => {
+      notifications.push([previous.tier, next.tier]);
+      if (fail) throw new Error("host callback failed");
+    }
+  });
+
+  assert.throws(() => monitor.recordFrame(40), /host callback failed/);
+  assert.equal(monitor.getProfile().tier, "medium");
+
+  fail = false;
+  monitor.reset({ quality: "low" });
+  const result = monitor.recordFrame(16);
+  assert.equal(result.evaluated, true);
+  assert.deepEqual(notifications, [["high", "medium"]]);
+  assert.equal(monitor.getProfile().tier, "low");
+});
