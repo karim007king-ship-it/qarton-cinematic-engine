@@ -131,7 +131,7 @@ try {
   }
 
   assert.equal(result, "passed", `Chromium showcase smoke failed. Page status: ${status}`);
-  process.stdout.write("Chromium smoke passed: real image loading, scene transitions, character mounts, and runtime cleanup.\n");
+  process.stdout.write("Chromium smoke passed: image decoding, repeated scene transitions, stable character count, and DOM cleanup.\n");
 } finally {
   try { socket?.close(); } catch {}
   if (browser && browser.exitCode === null) {
