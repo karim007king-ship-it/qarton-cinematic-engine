@@ -265,3 +265,59 @@ test("unmount attempts every character release and resets stage state when a DOM
   stage.destroy();
   assert.equal(root.children.length, 0);
 });
+
+
+test("partial mount rollback attempts every completed character cleanup", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const first = createCharacterController({ id: "first" });
+  const second = createCharacterController({ id: "second" });
+  const third = createCharacterController({ id: "third" });
+  const cleanupFailure = new Error("second character removal failed");
+  const mountFailure = new Error("third sprite unavailable");
+  const originalRemoveChild = root.removeChild.bind(root);
+  root.removeChild = child => {
+    if (child.dataset.characterId === "second") throw cleanupFailure;
+    originalRemoveChild(child);
+  };
+  const stage = createCharacterStage({
+    root,
+    resolveSprite: key => {
+      if (key === "broken") throw mountFailure;
+      return `https://assets.test/${key}.png`;
+    },
+    characters: [
+      { controller: first, sprites: { default: "first" } },
+      { controller: second, sprites: { default: "second" } },
+      { controller: third, sprites: { default: "broken" } }
+    ]
+  });
+
+  await assert.rejects(stage.mount(), error => {
+    assert.ok(error instanceof AggregateError);
+    assert.equal(error.cause, mountFailure);
+    assert.deepEqual(error.errors, [mountFailure, cleanupFailure]);
+    return true;
+  });
+  assert.deepEqual(root.children.map(child => child.dataset.characterId), ["second"]);
+  // A transient DOM cleanup failure must remain recoverable by final teardown.
+  root.removeChild = originalRemoveChild;
+  stage.destroy();
+  assert.equal(root.children.length, 0);
+});
+
+
+test("character stage destroy can retry a transient DOM cleanup failure", async () => {
+  const { root, stage } = fixture();
+  await stage.mount();
+  const originalRemoveChild = root.removeChild.bind(root);
+  const failure = new Error("temporary stage cleanup failure");
+  root.removeChild = () => { throw failure; };
+
+  assert.throws(() => stage.destroy(), error => error === failure);
+  assert.equal(root.children.length, 1);
+  root.removeChild = originalRemoveChild;
+  assert.doesNotThrow(() => stage.destroy());
+  assert.equal(root.children.length, 0);
+  await assert.rejects(stage.mount(), /destroyed/);
+});

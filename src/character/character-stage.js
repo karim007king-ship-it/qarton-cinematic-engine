@@ -41,10 +41,18 @@ export function createCharacterStage({
   }
 
   function releaseCompleted(completed) {
+    let firstError;
+    let failed = false;
     for (const item of completed.reverse()) {
-      renderer.unmount(item.handle);
-      if (item.record.handle === item.handle) item.record.handle = null;
+      try {
+        renderer.unmount(item.handle);
+        if (item.record.handle === item.handle) item.record.handle = null;
+      } catch (error) {
+        if (!failed) firstError = error;
+        failed = true;
+      }
     }
+    if (failed) throw firstError;
   }
 
   async function performMount(version) {
@@ -68,9 +76,24 @@ export function createCharacterStage({
       mounted = true;
       return true;
     } catch (error) {
-      releaseCompleted(completed);
-      if (destroyed || version !== lifecycleVersion) return false;
+      let cleanupError;
+      try {
+        releaseCompleted(completed);
+      } catch (failure) {
+        cleanupError = failure;
+      }
+      if (destroyed || version !== lifecycleVersion) {
+        if (cleanupError) throw cleanupError;
+        return false;
+      }
       mounted = false;
+      if (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          "Character mount failed and rollback cleanup also failed",
+          { cause: error }
+        );
+      }
       throw error;
     }
   }
@@ -133,11 +156,13 @@ export function createCharacterStage({
   }
 
   function destroy() {
-    if (destroyed) return;
-    lifecycleVersion += 1;
-    destroyed = true;
-    mounted = false;
-    lastTimeMs = -1;
+    if (!destroyed) {
+      lifecycleVersion += 1;
+      destroyed = true;
+      mounted = false;
+      lastTimeMs = -1;
+    }
+    // The renderer retains handles whose DOM removal failed; allow teardown retry.
     renderer.destroy();
     for (const record of records.values()) record.handle = null;
   }
