@@ -18,6 +18,19 @@ test("camera shake is deterministic and decays to zero", () => {
   assert.throws(() => sampleCameraShake({ timeMs: -1, durationMs: 1000 }), /invalid/);
 });
 
+test("camera shake rejects finite inputs whose phase or output overflows", () => {
+  assert.throws(() => sampleCameraShake({
+    timeMs: Number.MAX_VALUE / 2,
+    durationMs: Number.MAX_VALUE,
+    frequencyHz: Number.MAX_VALUE
+  }), /phase calculation/);
+  assert.throws(() => sampleCameraShake({
+    timeMs: 1,
+    durationMs: 1000,
+    amplitude: Number.MAX_VALUE
+  }), /output exceeded/);
+});
+
 test("particle field is deterministic and respects adaptive particle budgets", () => {
   const options = { count: 20, seed: 7, width: 320, height: 180, lifetimeMs: 2000, profile: { particleBudget: 6 } };
   const a = createParticleField(options);
@@ -28,4 +41,29 @@ test("particle field is deterministic and respects adaptive particle budgets", (
   assert.ok(a.sample(400).every(particle => particle.x >= 0 && particle.x < 320 && particle.opacity >= 0 && particle.opacity <= 1));
   assert.equal(createParticleField({ ...options, profile: { maxParticles: 3 } }).count, 3);
   assert.throws(() => createParticleField({ count: -1, width: 100, height: 100 }), /invalid/);
+});
+
+test("particle field safely wraps very large timestamps and rejects non-finite derived positions", () => {
+  const stable = createParticleField({
+    count: 3,
+    width: 100,
+    height: 100,
+    lifetimeMs: 3000,
+    speedMin: 0,
+    speedMax: 0
+  });
+  assert.ok(stable.sample(Number.MAX_VALUE).every(particle =>
+    Number.isFinite(particle.x) && Number.isFinite(particle.y)
+  ));
+
+  const unstable = createParticleField({
+    count: 1,
+    width: 100,
+    height: 100,
+    lifetimeMs: Number.MAX_VALUE,
+    speedMin: 0,
+    speedMax: 0,
+    gravity: Number.MAX_VALUE
+  });
+  assert.throws(() => unstable.sample(Number.MAX_VALUE), /position exceeded/);
 });
