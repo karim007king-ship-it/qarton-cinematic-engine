@@ -64,7 +64,8 @@ test("HTMLAudio diagnostics require a tap and expose play, pause and resume", ()
   assert.match(page, /await htmlAudio\.play\(\)/);
   assert.match(page, /htmlAudio\.pause\(\)/);
   assert.match(page, /html-audio-play-resolved/);
-  assert.match(page, /html-audio-ended/);
+  assert.match(page, /\["play", "playing", "pause", "ended", "error"\]/);
+  assert.match(page, /type: "html-audio-" \+ eventName/);
   assert.match(page, /data:audio\/wav;base64,/);
 });
 
