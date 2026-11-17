@@ -153,9 +153,10 @@ export function createCinematicRuntime({
     getProfile: adaptive.getProfile,
     setActive: activity.setActive,
     isActive: activity.isActive,
-    startPageLifecycle: () => pageLifecycle?.start() ?? false,
+    // Keep stop available after destroy so a failed listener removal can be retried.
+    startPageLifecycle: () => !destroyed && (pageLifecycle?.start() ?? false),
     stopPageLifecycle: () => pageLifecycle?.stop() ?? false,
-    syncPageLifecycle: () => pageLifecycle?.sync() ?? false,
+    syncPageLifecycle: () => !destroyed && (pageLifecycle?.sync() ?? false),
     get pageLifecycleState() { return pageLifecycle?.getState() ?? null; },
     get currentScene() { return scenes.current; },
     destroy
