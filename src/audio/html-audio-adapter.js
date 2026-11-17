@@ -56,6 +56,24 @@ export function createHTMLAudioAdapter({
     active.delete(audio);
   }
 
+  function pause(audio) {
+    if (destroyed) throw new Error("HTMLAudio adapter has been destroyed");
+    if (!audio || !active.has(audio)) return;
+    audio.pause();
+  }
+
+  function resume(audio) {
+    if (destroyed) throw new Error("HTMLAudio adapter has been destroyed");
+    if (!audio || !active.has(audio)) return;
+    const result = audio.play();
+    if (result && typeof result.catch === "function") {
+      result.catch(error => {
+        if (!active.has(audio)) return;
+        try { onPlaybackError(error, { audio }); } catch { /* error reporting must not create an unhandled rejection */ }
+      });
+    }
+  }
+
   function setVolume(audio, nextVolume) {
     if (destroyed) throw new Error("HTMLAudio adapter has been destroyed");
     if (!audio || !Number.isFinite(nextVolume) || nextVolume < 0 || nextVolume > 1) {
@@ -103,5 +121,5 @@ export function createHTMLAudioAdapter({
     }
   }
 
-  return Object.freeze({ play, stop, setVolume, setMasterVolume, destroy });
+  return Object.freeze({ play, pause, resume, stop, setVolume, setMasterVolume, destroy });
 }
