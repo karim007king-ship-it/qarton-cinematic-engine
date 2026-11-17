@@ -90,6 +90,13 @@ export function createAudioCueController({
       throw new TypeError("Pause time must be finite and not earlier than the audio cursor");
     }
     if (Number.isFinite(timeMs) && timeMs >= cursor) cursor = timeMs;
+    // A previous pause may have failed for one or more voices. Keep the
+    // controller paused, but retry every voice so a failed host pause can be
+    // recovered without requiring an unrelated resume/pause cycle.
+    if (paused) {
+      invokeForVoices(pauseVoice, "One or more audio voices could not be paused");
+      return;
+    }
     paused = true;
     invokeForVoices(pauseVoice, "One or more audio voices could not be paused");
   }
