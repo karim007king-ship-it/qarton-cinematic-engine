@@ -2,7 +2,7 @@
  * Small, host-agnostic asset URL manager.
  * The host supplies the loader (fetch, bundler manifest, native bridge, etc.).
  */
-function assertSafeAssetUrl(value, normalizedKey) {
+function assertSafeAssetUrl(value, key) {
   if (typeof value !== "string" || !value.trim()) {
     throw new TypeError(`Asset loader returned no URL for "${key}"`);
   }
@@ -71,7 +71,8 @@ export class AssetManager {
   /** Resolve a group of keys concurrently; duplicate keys are loaded once. */
   preload(keys) {
     if (!Array.isArray(keys)) return Promise.reject(new TypeError("preload expects an array of asset keys"));
-    return Promise.all([...new Set(keys)].map(key => this.load(key)));
+    const normalizedKeys = keys.map(key => typeof key === "string" ? key.trim() : key);
+    return Promise.all([...new Set(normalizedKeys)].map(key => this.load(key)));
   }
 
   /**
@@ -80,6 +81,7 @@ export class AssetManager {
    */
   release(key) {
     const removed = this.#cache.delete(key);
+    const normalizedKey = typeof key === "string" ? key.trim() : key;
     const pending = this.#pending.delete(normalizedKey);
     return removed || pending;
   }
