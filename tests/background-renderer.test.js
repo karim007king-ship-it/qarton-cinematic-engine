@@ -133,6 +133,54 @@ test("image decode failure preserves the previously visible scene", async () => 
 });
 
 
+test("superseding a render releases callers waiting for obsolete image decoding", async () => {
+  const { root, scene, profile } = fixture();
+  const originalCreate = root.ownerDocument.createElement.bind(root.ownerDocument);
+  let decodeCalls = 0;
+  root.ownerDocument.createElement = tag => {
+    const element = originalCreate(tag);
+    if (tag === "img") {
+      decodeCalls += 1;
+      const isStaleDecode = decodeCalls <= 3;
+      element.decode = () => isStaleDecode
+        ? new Promise(() => {})
+        : Promise.resolve();
+    }
+    return element;
+  };
+
+  const renderer = new BackgroundRenderer({ root, resolveAsset: key => `/${key}.png` });
+  const stale = renderer.render(scene, profile);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(decodeCalls, 3);
+
+  assert.equal(await renderer.render(scene, profile), true);
+  assert.equal(await stale, false);
+  assert.equal(root.dataset.qartonSceneId, "intro");
+  assert.equal(root.children.length, 3);
+  renderer.destroy();
+});
+
+test("clear releases callers waiting for image decoding", async () => {
+  const { root, scene, profile } = fixture();
+  const originalCreate = root.ownerDocument.createElement.bind(root.ownerDocument);
+  root.ownerDocument.createElement = tag => {
+    const element = originalCreate(tag);
+    if (tag === "img") element.decode = () => new Promise(() => {});
+    return element;
+  };
+
+  const renderer = new BackgroundRenderer({ root, resolveAsset: key => `/${key}.png` });
+  const pending = renderer.render(scene, profile);
+  await new Promise(resolve => setImmediate(resolve));
+  renderer.clear();
+
+  assert.equal(await pending, false);
+  assert.equal(root.children.length, 0);
+  assert.equal(root.dataset.qartonSceneId, undefined);
+  renderer.destroy();
+});
+
 test("destroy is idempotent, clears safely and rejects later renders", async () => {
   const { root, scene, profile } = fixture();
   const renderer = new BackgroundRenderer({ root, resolveAsset: key => `/${key}.png` });
