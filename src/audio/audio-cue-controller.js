@@ -7,11 +7,14 @@ export function createAudioCueController({
   cues = [],
   play,
   stop = () => {},
+  pauseVoice = () => {},
+  resumeVoice = () => {},
   setVolume = () => {},
   masterVolume = 1
 } = {}) {
   if (!Array.isArray(cues)) throw new TypeError("Audio cues must be an array");
-  if (typeof play !== "function" || typeof stop !== "function" || typeof setVolume !== "function") {
+  if (typeof play !== "function" || typeof stop !== "function" || typeof pauseVoice !== "function"
+    || typeof resumeVoice !== "function" || typeof setVolume !== "function") {
     throw new TypeError("Audio play, stop and setVolume adapters must be functions");
   }
   if (!Number.isFinite(masterVolume) || masterVolume < 0 || masterVolume > 1) {
@@ -85,6 +88,12 @@ export function createAudioCueController({
     }
     if (Number.isFinite(timeMs) && timeMs >= cursor) cursor = timeMs;
     paused = true;
+    const errors = [];
+    for (const voice of voices.values()) {
+      try { pauseVoice(voice); } catch (error) { errors.push(error); }
+    }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1) throw new AggregateError(errors, "One or more audio voices could not be paused");
   }
 
   function resume(timeMs = cursor) {
@@ -92,6 +101,12 @@ export function createAudioCueController({
     if (!Number.isFinite(timeMs) || timeMs < cursor) {
       throw new TypeError("Resume time must be finite and not earlier than the audio cursor");
     }
+    const errors = [];
+    for (const voice of voices.values()) {
+      try { resumeVoice(voice); } catch (error) { errors.push(error); }
+    }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1) throw new AggregateError(errors, "One or more audio voices could not be resumed");
     // Advancing the cursor skips cues that elapsed while playback was paused.
     for (const cue of normalized) if (cue.atMs <= timeMs) firedIds.add(cue.id);
     cursor = timeMs;
