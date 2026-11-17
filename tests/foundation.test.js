@@ -27,6 +27,29 @@ test("scene definitions validate and freeze background layers", () => {
   assert.equal(scene.layers[1].opacity, 1);
   assert.ok(Object.isFrozen(scene.layers));
 });
+test("scene definitions normalize scene, layer, and asset identifiers", () => {
+  const scene = createSceneDefinition({
+    id: "  intro  ",
+    layers: [
+      { id: " sky ", role: "background", asset: " images/sky " },
+      { id: " hero ", role: "character", asset: " images/hero " }
+    ]
+  });
+
+  assert.equal(scene.id, "intro");
+  assert.deepEqual(scene.layers.map(layer => [layer.id, layer.asset]), [
+    ["sky", "images/sky"],
+    ["hero", "images/hero"]
+  ]);
+  assert.throws(() => createSceneDefinition({
+    id: "duplicate",
+    layers: [
+      { id: "sky", role: "background", asset: "a" },
+      { id: " sky ", role: "foreground", asset: "b" }
+    ]
+  }), /unique id/);
+});
+
 test("scene definitions reject duplicate ids and invalid roles", () => {
   assert.throws(() => createSceneDefinition({ id: "broken", layers: [
     { id: "x", role: "background", asset: "a" }, { id: "x", role: "foreground", asset: "b" }
