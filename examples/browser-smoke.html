@@ -339,15 +339,26 @@
   // /examples/browser-smoke.html?smoke=1
   if (new URLSearchParams(location.search).get("smoke") === "1") {
     try {
-      await show(1);
-      if (!stage.querySelector(".qarton-scene")) throw new Error("Dusk scene did not mount");
-      if (characterRoot.querySelectorAll(".qarton-character").length !== 2) {
-        throw new Error("Expected both character sprites to mount");
+      const assertSceneOwnership = expectedId => {
+        const mounted = stage.querySelectorAll("[data-qarton-scene-id]");
+        if (mounted.length !== 1) {
+          throw new Error(`Expected exactly one mounted scene, found ${mounted.length}`);
+        }
+        if (mounted[0].dataset.qartonSceneId !== expectedId) {
+          throw new Error(`Expected scene ${expectedId}, found ${mounted[0].dataset.qartonSceneId}`);
+        }
+        if (characterRoot.querySelectorAll(".qarton-character").length !== 2) {
+          throw new Error("Character count changed during scene transition");
+        }
+      };
+      for (const index of [1, 0, 1, 0]) {
+        await show(index);
+        assertSceneOwnership(scenes[index].id);
       }
-      await show(0);
-      if (stage.querySelector(".qarton-scene")?.dataset.qartonSceneId !== "dawn") {
-        throw new Error("Dawn scene did not become active after transition");
-      }
+      await Promise.all([
+        ...stage.querySelectorAll("[data-qarton-scene-id] img"),
+        ...characterRoot.querySelectorAll("img")
+      ].map(image => image.decode()));
       document.querySelector("#destroy").click();
       const deadline = performance.now() + 8000;
       while (!status.textContent.startsWith("Destroyed:")
@@ -357,6 +368,12 @@
       }
       if (!status.textContent.startsWith("Destroyed:")) {
         throw new Error(status.textContent || "Runtime cleanup did not finish");
+      }
+      if (stage.querySelectorAll("[data-qarton-scene-id]").length !== 0) {
+        throw new Error("Scene wrappers remain mounted after runtime destruction");
+      }
+      if (characterRoot.querySelectorAll(".qarton-character").length !== 0) {
+        throw new Error("Character elements remain mounted after runtime destruction");
       }
       document.documentElement.dataset.smokeResult = "passed";
     } catch (error) {
