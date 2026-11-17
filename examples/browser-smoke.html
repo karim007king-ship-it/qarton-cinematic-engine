@@ -200,7 +200,19 @@
 
   async function tick(now) {
     if (!running) return;
-    const elapsed = now - startTime;
+    let elapsed;
+    try {
+      // Use the director's rebased logical clock for every visual subsystem.
+      // This keeps camera, parallax, particles and character/audio timelines
+      // frozen together while the document is hidden.
+      const frame = await director.update(now - startTime);
+      elapsed = frame.timeMs;
+    } catch (error) {
+      running = false;
+      status.textContent = `Director error: ${error.message}`;
+      return;
+    }
+    if (!running || destroyed) return;
     const profile = runtime.getProfile();
     const rect = stage.getBoundingClientRect();
     const camera = elapsed - shakeStart >= 0 && elapsed - shakeStart < 650
@@ -230,13 +242,6 @@
       context.fill();
     }
     burstBoost = Math.max(0, burstBoost - .012);
-    try {
-      await director.update(elapsed);
-    } catch (error) {
-      running = false;
-      status.textContent = `Director error: ${error.message}`;
-      return;
-    }
     runtime.recordFrame(Math.max(1, now - previousFrameTime));
     previousFrameTime = now;
     if (running) frameId = requestAnimationFrame(tick);
@@ -270,7 +275,7 @@
       await audioContext.resume();
       if (destroyed) return;
       audioCues?.destroy();
-      const audioCueStart = performance.now() - startTime;
+      const audioCueStart = Math.max(0, director.getState().timeMs);
       audioCues = createAudioCueController({
         cues: [
           { id: "intro-tone", atMs: audioCueStart, asset: "tone-a", volume: .16 },
