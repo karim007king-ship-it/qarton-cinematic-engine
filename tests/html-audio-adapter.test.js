@@ -89,3 +89,50 @@ test("HTMLAudio destroy attempts every voice and retries transient pause failure
   assert.throws(() => adapter.setVolume(made[0], 0.5), /destroyed/);
   assert.throws(() => adapter.play("late"), /destroyed/);
 });
+
+
+test("naturally ended non-looping voices leave the active registry", () => {
+  const listeners = new Map();
+  let pauseCalls = 0;
+  const audio = {
+    ...fakeAudio(),
+    addEventListener(type, handler) { listeners.set(type, handler); },
+    removeEventListener(type, handler) {
+      if (listeners.get(type) === handler) listeners.delete(type);
+    },
+    pause() { pauseCalls += 1; this.paused = true; }
+  };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/effect.mp3",
+    createAudio: () => audio
+  });
+
+  adapter.play("effect");
+  assert.equal(listeners.has("ended"), true);
+  listeners.get("ended")();
+  assert.equal(listeners.has("ended"), false);
+
+  // An already-ended one-shot must not be paused again during teardown.
+  adapter.destroy();
+  assert.equal(pauseCalls, 0);
+});
+
+test("looping voices do not detach on ended events and stop removes their listener", () => {
+  const listeners = new Map();
+  const audio = {
+    ...fakeAudio(),
+    addEventListener(type, handler) { listeners.set(type, handler); },
+    removeEventListener(type, handler) {
+      if (listeners.get(type) === handler) listeners.delete(type);
+    }
+  };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/music.mp3",
+    createAudio: () => audio
+  });
+
+  adapter.play("music", { loop: true });
+  assert.equal(listeners.has("ended"), false);
+  adapter.stop(audio);
+  assert.equal(listeners.has("ended"), false);
+});
