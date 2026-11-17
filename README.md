@@ -30,7 +30,7 @@ npm test
 ```
 
 ### اختبار المتصفح الحقيقي
-شغّل خادماً محلياً من جذر المستودع (مثلاً `npx serve .`) ثم افتح `examples/browser-smoke.html`. تختبر الصفحة تحميل صور SVG وفك ترميزها فعلياً، وتركيب مشاهد متعددة الطبقات، وتحريك شخصيتين عبر Character Stage، وتنسيق حركة الشخصيات والصوت وأحداث timeline بواسطة Cinematic Director على ساعة مشتركة، وparallax وcamera track (pan/zoom/rotation) وcamera shake والجسيمات، وانتقالات Web Animations API أو CSS fallback، وصوتاً مولداً محلياً يبدأ بتفاعل المستخدم، ثم تنظيف runtime والأصول. هذا اختبار يدوي في متصفح حقيقي وليس جزءاً من CI حالياً؛ نجاح اختبارات Node وحده لا يثبت سلامة العرض على Android WebView. تم ضبط حساب اهتزاز الكاميرا على توقيت Director النسبي، وتُسلسل تحديثات المشهد عبر الساعة المشتركة.
+شغّل خادماً محلياً من جذر المستودع (مثلاً `npx serve .`) ثم افتح `examples/browser-smoke.html`. تختبر الصفحة تحميل صور SVG وفك ترميزها فعلياً، وتركيب مشاهد متعددة الطبقات، وتحريك شخصيتين عبر Character Stage، وتنسيق حركة الشخصيات والصوت وأحداث timeline بواسطة Cinematic Director على ساعة مشتركة، وparallax وcamera track (pan/zoom/rotation) وcamera shake والجسيمات، وانتقالات Web Animations API أو CSS fallback، وصوتاً مولداً محلياً يبدأ بتفاعل المستخدم، ثم تنظيف runtime والأصول. يشغّل CI الآن اختبار Chromium headless آلياً عبر `node scripts/browser-smoke-test.mjs`؛ ويُفعّل مسار الانتقالات والتنظيف في الصفحة عبر `?smoke=1`. هذا لا يغني عن اختبار Android WebView على جهاز فعلي. تم ضبط حساب اهتزاز الكاميرا على توقيت Director النسبي، وتُسلسل تحديثات المشهد عبر الساعة المشتركة.
 
 ## واجهة API الحالية
 - `resolveQualityProfile(device)`: اختيار ملف أداء low / medium / high.
@@ -38,7 +38,7 @@ npm test
 - `createMotionPath(points)` و`sampleMotionPath(path, progress, easing)`: مسارات 2D محايدة للمنصة مع أخذ عينات للحركة.
 - `createTimeline(events)` و`getTimelineEvents(timeline, range)`: ترتيب أحداث الصوت/التعبير/الكاميرا وإرجاع الأحداث ضمن نافذة زمنية ثابتة.
 - `createCharacterController({ id, initial, motions })`: حساب موضع الشخصية وحالتها وتعبيرها وخصائصها عبر الزمن دون ربطها بـ DOM أو محرك رسم.
-- `createDOMCharacterRenderer({ root, resolveSprite })`: محول اختياري لعرض sprites عبر DOM، مع حقن تحميل الأصول وحماية من نتائج التحميل القديمة.
+- `createDOMCharacterRenderer({ root, resolveSprite })`: محول اختياري لعرض sprites عبر DOM؛ يستدعي `resolveSprite(key, { signal })`، ويلغي طلب التعبير السابق عند تغييره، ويلغي التحميل عند `unmount()` و`destroy()`، مع منع النتائج القديمة من استبدال sprite الأحدث.
 - `computeParallaxOffset(...)`: حساب حركة طبقات العمق مع حد أقصى للإزاحة.
 - `sampleCameraShake(...)`: اهتزاز كاميرا deterministic يتلاشى زمنياً.
 - `createCameraTrack(keyframes)`: مسار كاميرا مستقل يدعم pan وzoom وrotation عبر keyframes مرتبة زمنياً مع easing حتمي.
@@ -51,12 +51,12 @@ npm test
 - `createHTMLAudioAdapter({ resolveAsset, createAudio })`: adapter اختياري لـ HTMLAudio في المتصفح وAndroid WebView، مع حقن إنشاء الصوت وحجم عام لكل الأصوات.
 - `createAdaptivePerformanceMonitor(...)`: قياس أزمنة الإطارات المقدمة من المضيف، وخفض/رفع الجودة تدريجياً مع hysteresis.
 - `createRuntimeActivityGate({ onPause, onResume })`: بوابة صريحة لإيقاف واستئناف المؤثرات عندما تصبح اللعبة غير نشطة أو مخفية.
-- `createCinematicRuntime({ root, loadAsset, renderScene, ... })`: واجهة تجميع للمضيف تربط إدارة الأصول والمشاهد والانتقالات وملف الأداء في runtime واحد، دون الاعتماد على مشروع لعبة محدد.
+- `createCinematicRuntime({ root, loadAsset, renderScene, ... })`: واجهة تجميع للمضيف تربط إدارة الأصول والمشاهد والانتقالات وملف الأداء في runtime واحد، دون الاعتماد على مشروع لعبة محدد؛ وتوفر `loadAsset()` و`preloadAssets()` و`releaseAsset()` و`cancelAsset()` و`clearAssets()` لإدارة دورة حياة الأصول من المضيف.
 - `createCinematicDirector({ characterStage, audio, timeline, onEvent })`: ساعة سينمائية مشتركة تنسق تحديث الشخصيات والصوت وأحداث المشهد، وتدعم pause/resume والرجوع الزمني وإعادة تشغيل الأحداث بشكل حتمي؛ المضيف يظل مسؤولاً عن جدولة الإطارات.
 - `createSceneDefinition(config)`: التحقق من تعريف مشهد وطبقاته دون الوصول إلى DOM.
 - `buildLayerPlan(scene, profile)`: ترتيب الطبقات وتطبيق ميزانية الخلفيات.
-- `AssetManager({ loader })`: تحميل أصول عبر محمّل يوفّره التطبيق، مع دمج الطلبات المتزامنة، وذاكرة مؤقتة، و`preload()` و`release()` و`clear()`.
-- `BackgroundRenderer({ root, resolveAsset })`: عارض DOM مستقل؛ يمكن تمرير `key => assetManager.load(key)` كدالة حلّ الأصول. `render()` غير متزامنة، و`clear()` و`destroy()` لتنظيف دورة الحياة.
+- `AssetManager({ loader })`: تحميل أصول عبر محمّل يوفّره التطبيق، مع دمج الطلبات المتزامنة، وذاكرة مؤقتة، و`preload()` و`release()` و`cancel()` و`clear()` و`destroy()`. يستقبل المحمّل `(key, metadata, { signal })`؛ `cancel(key)` يلغي الطلب المشترك قيد التنفيذ باستخدام `AbortSignal` ويمنع تخزين نتيجته المتأخرة حتى إن تجاهل المحمّل الإشارة.
+- `BackgroundRenderer({ root, resolveAsset })`: عارض DOM مستقل؛ يستدعي `resolveAsset(key, layer, { signal })`، ويمكن للمضيف استخدام `signal` لإلغاء جلب الأصول القديمة عند بدء مشهد أحدث أو استدعاء `clear()` / `destroy()`. يمكن تمرير `key => assetManager.load(key)` عند عدم الحاجة إلى الإلغاء، أو ربط الإشارة بمحمّل التطبيق. `render()` غير متزامنة وتحافظ على المشهد السابق حتى اكتمال التحميل وفك ترميز الصور.
 - `SceneTransitionManager({ mount, crossfade, unmount, duration })`: منسّق انتقالات مستقل عن المنصة؛ يجهّز المشهد الجديد قبل الانتقال، ويحافظ على الحالي عند الفشل، ويلغي نتائج الانتقالات التي تم تجاوزها.
 - `createDOMTransitionAdapter({ root, renderScene, duration, reducedMotion, wait, animate })`: محول DOM فعلي يوفر mount / crossfade / unmount / destroy ويمكن تمرير دواله مباشرة إلى `SceneTransitionManager`. يستخدم Web Animations API عند توفره، ويرجع إلى CSS transitions مع wait قابل للحقن. الانتقال الحالي يجمع opacity مع blur، وليس shader أو pixel dissolve. الانتقالات الأحدث تلغي الحركة السابقة، كما أن unmount وdestroy يوقفان الانتقالات النشطة.
 

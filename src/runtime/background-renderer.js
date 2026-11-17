@@ -10,6 +10,7 @@ export class BackgroundRenderer {
   #document;
   #resolveAsset;
   #renderToken = 0;
+  #renderController = null;
   #destroyed = false;
 
   constructor({ root, resolveAsset }) {
@@ -35,12 +36,17 @@ export class BackgroundRenderer {
    */
   async render(scene, profile) {
     if (this.#destroyed) throw new Error("BackgroundRenderer has been destroyed");
-    const token = ++this.#renderToken;
     const plan = buildLayerPlan(scene, profile);
+    // A newer scene supersedes asset resolution for the previous one. The
+    // resolver may use this signal to stop fetch/decode work it owns.
+    this.#renderController?.abort();
+    const controller = new AbortController();
+    this.#renderController = controller;
+    const token = ++this.#renderToken;
     let assets;
     try {
       assets = await Promise.all(plan.map(async layer => {
-        const url = await this.#resolveAsset(layer.asset, layer);
+        const url = await this.#resolveAsset(layer.asset, layer, { signal: controller.signal });
         if (typeof url !== "string" || !url.trim()) {
           throw new TypeError(`Asset resolver returned no URL for "${layer.asset}"`);
         }
@@ -50,6 +56,7 @@ export class BackgroundRenderer {
       // A newer render or clear() owns the root now; stale failures must not
       // escape as errors from work that can no longer be committed.
       if (token !== this.#renderToken) return false;
+      if (this.#renderController === controller) this.#renderController = null;
       throw error;
     }
 
@@ -105,11 +112,13 @@ export class BackgroundRenderer {
       }));
     } catch (error) {
       if (token !== this.#renderToken) return false;
+      if (this.#renderController === controller) this.#renderController = null;
       throw error;
     }
 
     if (token !== this.#renderToken) return false;
     this.#root.replaceChildren(fragment);
+    if (this.#renderController === controller) this.#renderController = null;
     this.#root.dataset.qartonSceneId = scene.id;
     return true;
   }
@@ -117,6 +126,8 @@ export class BackgroundRenderer {
   clear() {
     if (this.#destroyed) return;
     this.#renderToken += 1;
+    this.#renderController?.abort();
+    this.#renderController = null;
     this.#root.replaceChildren();
     delete this.#root.dataset.qartonSceneId;
   }
