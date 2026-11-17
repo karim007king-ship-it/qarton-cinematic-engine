@@ -20,21 +20,27 @@ export function createAudioCueController({
 
   const ids = new Set();
   const normalized = cues.map((cue, index) => {
-    if (!cue || typeof cue !== "object" || typeof cue.id !== "string" || !cue.id.trim() || ids.has(cue.id)) {
+    if (!cue || typeof cue !== "object" || Array.isArray(cue)
+      || typeof cue.id !== "string" || !cue.id.trim()) {
       throw new TypeError(`Audio cue ${index} requires a unique id`);
     }
+    const id = cue.id.trim();
+    if (ids.has(id)) throw new TypeError(`Audio cue ${index} requires a unique id`);
     if (!Number.isFinite(cue.atMs) || cue.atMs < 0 || typeof cue.asset !== "string" || !cue.asset.trim()) {
-      throw new TypeError(`Audio cue "${cue.id}" requires non-negative atMs and an asset key`);
+      throw new TypeError(`Audio cue "${id}" requires non-negative atMs and an asset key`);
     }
     if (cue.volume !== undefined && (!Number.isFinite(cue.volume) || cue.volume < 0 || cue.volume > 1)) {
-      throw new TypeError(`Audio cue "${cue.id}" volume must be between 0 and 1`);
+      throw new TypeError(`Audio cue "${id}" volume must be between 0 and 1`);
     }
-    ids.add(cue.id);
+    ids.add(id);
+    const channel = typeof cue.channel === "string" && cue.channel.trim()
+      ? cue.channel.trim()
+      : "sfx";
     return Object.freeze({
-      id: cue.id,
+      id,
       atMs: cue.atMs,
-      asset: cue.asset,
-      channel: typeof cue.channel === "string" ? cue.channel : "sfx",
+      asset: cue.asset.trim(),
+      channel,
       loop: cue.loop === true,
       volume: cue.volume ?? 1
     });
