@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createPageLifecycleAdapter } from "../src/runtime/page-lifecycle-adapter.js";
+import * as rootExports from "../src/index.js";
+import * as runtimeExports from "../src/runtime/index.js";
+import { createPageLifecycleAdapter as packageExport } from "@qarton/cinematic-engine/runtime/page-lifecycle";
 
 function createTarget(visibilityState = "visible") {
   const listeners = new Map();
@@ -107,4 +110,10 @@ test("adapter validates the injected event target and activity callback", () => 
     target: { addEventListener() {} },
     setActive() {}
   }), /EventTarget/);
+});
+
+test("page lifecycle adapter is exported through root, runtime, and package subpath", () => {
+  assert.equal(rootExports.createPageLifecycleAdapter, createPageLifecycleAdapter);
+  assert.equal(runtimeExports.createPageLifecycleAdapter, createPageLifecycleAdapter);
+  assert.equal(packageExport, createPageLifecycleAdapter);
 });
