@@ -141,25 +141,40 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     records.set(element, record);
     try {
       await resolveAsset(record, expression);
+      if (destroyed) throw new Error("DOM character renderer has been destroyed");
+      applyState(record, {
+        x: Number.isFinite(initialState.x) ? initialState.x : 0,
+        y: Number.isFinite(initialState.y) ? initialState.y : 0,
+        opacity: Number.isFinite(initialState.opacity) ? initialState.opacity : 1,
+        scale: Number.isFinite(initialState.scale) ? initialState.scale : 1,
+        rotation: Number.isFinite(initialState.rotation) ? initialState.rotation : 0,
+        expression,
+        state: initialState.state ?? "idle"
+      });
+      root.appendChild(element);
+      return element;
     } catch (error) {
-      records.delete(element);
+      // Roll back every mount failure, not only sprite-resolution failures.
+      // Keep ownership only when a failed removal leaves the node attached,
+      // so destroy() can retry that cleanup later.
+      record.assetVersion += 1;
+      record.pendingAssetKey = null;
+      record.pendingAssetPromise = null;
+      if (records.has(element)) {
+        try {
+          removeElement(element);
+          records.delete(element);
+        } catch (cleanupError) {
+          if (element.parentNode !== root) records.delete(element);
+          throw new AggregateError(
+            [error, cleanupError],
+            "Character mount failed and rollback cleanup was incomplete",
+            { cause: error }
+          );
+        }
+      }
       throw error;
     }
-    if (destroyed) {
-      records.delete(element);
-      throw new Error("DOM character renderer has been destroyed");
-    }
-    applyState(record, {
-      x: Number.isFinite(initialState.x) ? initialState.x : 0,
-      y: Number.isFinite(initialState.y) ? initialState.y : 0,
-      opacity: Number.isFinite(initialState.opacity) ? initialState.opacity : 1,
-      scale: Number.isFinite(initialState.scale) ? initialState.scale : 1,
-      rotation: Number.isFinite(initialState.rotation) ? initialState.rotation : 0,
-      expression,
-      state: initialState.state ?? "idle"
-    });
-    root.appendChild(element);
-    return element;
   }
 
   async function update(handle, state) {
