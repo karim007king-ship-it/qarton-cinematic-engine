@@ -80,8 +80,8 @@ export class AssetManager {
    * still receive the pending result, but a later load starts a fresh request.
    */
   release(key) {
-    const removed = this.#cache.delete(key);
     const normalizedKey = typeof key === "string" ? key.trim() : key;
+    const removed = this.#cache.delete(normalizedKey);
     const pending = this.#pending.delete(normalizedKey);
     return removed || pending;
   }
