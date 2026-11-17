@@ -92,6 +92,18 @@ export function createCinematicRuntime({
       if (destroyed) return Promise.reject(new Error("Cinematic runtime has been destroyed"));
       return assets.preload(keys);
     },
+    releaseAsset: key => {
+      if (destroyed) throw new Error("Cinematic runtime has been destroyed");
+      return assets.release(key);
+    },
+    cancelAsset: (key, reason) => {
+      if (destroyed) throw new Error("Cinematic runtime has been destroyed");
+      return assets.cancel(key, reason);
+    },
+    clearAssets: () => {
+      if (destroyed) throw new Error("Cinematic runtime has been destroyed");
+      assets.clear();
+    },
     recordFrame: frameDurationMs => {
       if (destroyed) throw new Error("Cinematic runtime has been destroyed");
       return adaptive.recordFrame(frameDurationMs);
