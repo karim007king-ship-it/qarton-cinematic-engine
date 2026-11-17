@@ -31,7 +31,16 @@ export function createCinematicRuntime({
 
   const assets = new AssetManager({ loader: loadAsset });
   const adaptive = createAdaptivePerformanceMonitor({ device, onProfileChange });
-  const activity = createRuntimeActivityGate({ onPause, onResume });
+  const activity = createRuntimeActivityGate({
+    onPause: () => {
+      adaptive.clearSamples();
+      onPause();
+    },
+    onResume: () => {
+      adaptive.clearSamples();
+      onResume();
+    }
+  });
   const pageLifecycle = lifecycleTarget
     ? createPageLifecycleAdapter({ target: lifecycleTarget, setActive: activity.setActive })
     : null;
@@ -103,10 +112,14 @@ export function createCinematicRuntime({
     },
     recordFrame: frameDurationMs => {
       if (destroyed) throw new Error("Cinematic runtime has been destroyed");
+      if (!activity.isActive()) {
+        return Object.freeze({ profile: adaptive.getProfile(), evaluated: false, averageFps: null, skipped: true });
+      }
       return adaptive.recordFrame(frameDurationMs);
     },
     getProfile: adaptive.getProfile,
     setActive: activity.setActive,
+    isActive: activity.isActive,
     startPageLifecycle: () => pageLifecycle?.start() ?? false,
     stopPageLifecycle: () => pageLifecycle?.stop() ?? false,
     syncPageLifecycle: () => pageLifecycle?.sync() ?? false,
