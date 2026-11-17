@@ -141,12 +141,12 @@
       report.performance = {
         sampleDurationMs: Math.round(performance.now() - startedAt),
         frameCount: samples.length,
-        averageFps: Number((1000 / averageFrameMs).toFixed(1)),
+        averageFps: averageFrameMs > 0 ? Number((1000 / averageFrameMs).toFixed(1)) : null,
         p95FrameMs: Number(percentile95.toFixed(2)),
         framesOver25MsRatio: Number(droppedFrameRatio.toFixed(3)),
         note: "Foreground-only rough measurement; repeat under representative scene load."
       };
-      record("requestAnimationFrame sampling", samples.length >= 10, samples.length + " frames / " + report.performance.averageFps + " average FPS");
+      record("requestAnimationFrame sampling", samples.length >= 10, samples.length + " frames / " + (report.performance.averageFps ?? "n/a") + " average FPS");
     } catch (error) {
       record("requestAnimationFrame sampling", false, error.message);
       report.performance = { error: error.message };
