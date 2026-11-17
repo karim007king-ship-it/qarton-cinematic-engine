@@ -58,7 +58,7 @@ test("stage retains and retries cleanup for a stale mount whose first unmount fa
   assert.equal(root.children.length, 1);
 
   root.removeChild = originalRemoveChild;
-  stage.unmount();
+  assert.throws(() => stage.unmount(), error => error === cleanupFailure);
   assert.equal(root.children.length, 0);
   stage.destroy();
 });
