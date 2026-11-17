@@ -5,10 +5,12 @@ const EVENTS = ["visibilitychange", "pagehide", "pageshow"];
  * The engine core remains platform-neutral: the host injects an EventTarget
  * (normally document) and a setActive callback (normally activityGate.setActive).
  */
-export function createPageLifecycleAdapter({ target, setActive } = {}) {
-  if (!target || typeof target.addEventListener !== "function"
-    || typeof target.removeEventListener !== "function") {
-    throw new TypeError("Page lifecycle adapter requires an EventTarget");
+export function createPageLifecycleAdapter({ target, pageTarget = target, setActive } = {}) {
+  const isEventTarget = value => value
+    && typeof value.addEventListener === "function"
+    && typeof value.removeEventListener === "function";
+  if (!isEventTarget(target) || !isEventTarget(pageTarget)) {
+    throw new TypeError("Page lifecycle adapter requires document and page EventTargets");
   }
   if (typeof setActive !== "function") {
     throw new TypeError("Page lifecycle adapter requires setActive()");
@@ -42,26 +44,28 @@ export function createPageLifecycleAdapter({ target, setActive } = {}) {
     sync();
   }
 
+  // visibilitychange belongs to Document; pagehide/pageshow belong to Window.
+  // Hosts may inject one target for tests/non-browser environments.
   const listeners = [
-    ["visibilitychange", handleVisibilityChange],
-    ["pagehide", handlePageHide],
-    ["pageshow", handlePageShow]
+    [target, "visibilitychange", handleVisibilityChange],
+    [pageTarget, "pagehide", handlePageHide],
+    [pageTarget, "pageshow", handlePageShow]
   ];
 
   function start() {
     if (started) return false;
     const attached = [];
     try {
-      for (const [type, listener] of listeners) {
-        target.addEventListener(type, listener);
-        attached.push([type, listener]);
+      for (const [eventTarget, type, listener] of listeners) {
+        eventTarget.addEventListener(type, listener);
+        attached.push([eventTarget, type, listener]);
       }
       sync();
       started = true;
       return true;
     } catch (error) {
-      for (const [type, listener] of attached.reverse()) {
-        try { target.removeEventListener(type, listener); } catch {}
+      for (const [eventTarget, type, listener] of attached.reverse()) {
+        try { eventTarget.removeEventListener(type, listener); } catch {}
       }
       throw error;
     }
@@ -70,9 +74,9 @@ export function createPageLifecycleAdapter({ target, setActive } = {}) {
   function stop() {
     if (!started) return false;
     const errors = [];
-    for (const [type, listener] of listeners) {
+    for (const [eventTarget, type, listener] of listeners) {
       try {
-        target.removeEventListener(type, listener);
+        eventTarget.removeEventListener(type, listener);
       } catch (error) {
         errors.push(error);
       }
