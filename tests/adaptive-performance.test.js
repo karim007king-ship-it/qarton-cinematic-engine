@@ -203,3 +203,77 @@ test("reset discards a failed notification from the previous measurement epoch",
   assert.deepEqual(notifications, [["high", "medium"], ["low", "medium"]]);
   assert.equal(monitor.getProfile().tier, "medium");
 });
+
+test("clearSamples resets the measurement window without changing the selected profile", () => {
+  const monitor = createAdaptivePerformanceMonitor({
+    device: { quality: "high" },
+    sampleWindow: 3,
+    stableWindows: 2
+  });
+  monitor.recordFrame(40);
+  monitor.recordFrame(40);
+  assert.equal(monitor.getMetrics().pendingFrames, 2);
+  const profileBefore = monitor.getProfile();
+
+  const metrics = monitor.clearSamples();
+  assert.equal(monitor.getProfile(), profileBefore);
+  assert.deepEqual(metrics, { averageFps: null, pendingFrames: 0, stableWindows: 0 });
+  monitor.recordFrame(16);
+  assert.equal(monitor.getMetrics().pendingFrames, 1);
+});
+
+test("adaptive stability metrics saturate at quality tier boundaries", () => {
+  const high = createAdaptivePerformanceMonitor({
+    device: { quality: "high" },
+    sampleWindow: 1,
+    stableWindows: 3
+  });
+  for (let i = 0; i < 20; i += 1) high.recordFrame(10);
+  assert.equal(high.getProfile().tier, "high");
+  assert.equal(high.getMetrics().stableWindows, 3);
+
+  const low = createAdaptivePerformanceMonitor({
+    device: { quality: "low" },
+    sampleWindow: 1,
+    stableWindows: 3
+  });
+  for (let i = 0; i < 20; i += 1) low.recordFrame(40);
+  assert.equal(low.getProfile().tier, "low");
+  assert.equal(low.getMetrics().stableWindows, 3);
+});
+
+test("adaptive controller traverses the complete quality ladder one tier at a time", () => {
+  const changes = [];
+  const monitor = createAdaptivePerformanceMonitor({
+    device: { quality: "high" },
+    sampleWindow: 2,
+    stableWindows: 2,
+    onProfileChange: (next, previous) => changes.push([previous.tier, next.tier])
+  });
+
+  const sampleWindow = duration => {
+    monitor.recordFrame(duration);
+    return monitor.recordFrame(duration);
+  };
+
+  sampleWindow(40);
+  sampleWindow(40);
+  assert.equal(monitor.getProfile().tier, "medium");
+  sampleWindow(40);
+  sampleWindow(40);
+  assert.equal(monitor.getProfile().tier, "low");
+
+  sampleWindow(10);
+  sampleWindow(10);
+  assert.equal(monitor.getProfile().tier, "medium");
+  sampleWindow(10);
+  sampleWindow(10);
+  assert.equal(monitor.getProfile().tier, "high");
+
+  assert.deepEqual(changes, [
+    ["high", "medium"],
+    ["medium", "low"],
+    ["low", "medium"],
+    ["medium", "high"]
+  ]);
+});

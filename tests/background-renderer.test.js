@@ -81,6 +81,28 @@ test("clear removes rendered nodes and invalidates in-flight renders", async () 
   assert.equal(root.dataset.qartonSceneId, undefined);
 });
 
+test("clear releases a render when host asset resolvers ignore AbortSignal", async () => {
+  const { root, scene, profile } = fixture();
+  const signals = [];
+  const renderer = new BackgroundRenderer({
+    root,
+    resolveAsset: (_key, _layer, { signal }) => {
+      signals.push(signal);
+      return new Promise(() => {});
+    }
+  });
+
+  const pending = renderer.render(scene, profile);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(signals.length, 3);
+  renderer.clear();
+
+  assert.ok(signals.every(signal => signal.aborted));
+  assert.equal(await pending, false);
+  assert.equal(root.children.length, 0);
+  renderer.destroy();
+});
+
 test("renderer validates injected dependencies", () => {
   assert.throws(() => new BackgroundRenderer({ root: {}, resolveAsset: () => "/x" }), /DOM root/);
   const { root } = fixture();
@@ -132,6 +154,54 @@ test("image decode failure preserves the previously visible scene", async () => 
   assert.equal(root.children, previous);
 });
 
+
+test("superseding a render releases callers waiting for obsolete image decoding", async () => {
+  const { root, scene, profile } = fixture();
+  const originalCreate = root.ownerDocument.createElement.bind(root.ownerDocument);
+  let decodeCalls = 0;
+  root.ownerDocument.createElement = tag => {
+    const element = originalCreate(tag);
+    if (tag === "img") {
+      decodeCalls += 1;
+      const isStaleDecode = decodeCalls <= 3;
+      element.decode = () => isStaleDecode
+        ? new Promise(() => {})
+        : Promise.resolve();
+    }
+    return element;
+  };
+
+  const renderer = new BackgroundRenderer({ root, resolveAsset: key => `/${key}.png` });
+  const stale = renderer.render(scene, profile);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(decodeCalls, 3);
+
+  assert.equal(await renderer.render(scene, profile), true);
+  assert.equal(await stale, false);
+  assert.equal(root.dataset.qartonSceneId, "intro");
+  assert.equal(root.children.length, 3);
+  renderer.destroy();
+});
+
+test("clear releases callers waiting for image decoding", async () => {
+  const { root, scene, profile } = fixture();
+  const originalCreate = root.ownerDocument.createElement.bind(root.ownerDocument);
+  root.ownerDocument.createElement = tag => {
+    const element = originalCreate(tag);
+    if (tag === "img") element.decode = () => new Promise(() => {});
+    return element;
+  };
+
+  const renderer = new BackgroundRenderer({ root, resolveAsset: key => `/${key}.png` });
+  const pending = renderer.render(scene, profile);
+  await new Promise(resolve => setImmediate(resolve));
+  renderer.clear();
+
+  assert.equal(await pending, false);
+  assert.equal(root.children.length, 0);
+  assert.equal(root.dataset.qartonSceneId, undefined);
+  renderer.destroy();
+});
 
 test("destroy is idempotent, clears safely and rejects later renders", async () => {
   const { root, scene, profile } = fixture();
@@ -188,4 +258,113 @@ test("superseded asset resolution failures are ignored without disturbing the ne
     "/current-images/hero.png",
     "/current-images/title.png"
   ]);
+});
+
+
+test("superseding a render aborts its asset resolver signals", async () => {
+  const { root, scene, profile } = fixture();
+  const staleResolvers = [];
+  const staleSignals = [];
+  let firstRender = true;
+  const renderer = new BackgroundRenderer({
+    root,
+    resolveAsset: (key, layer, { signal }) => {
+      if (firstRender) {
+        staleSignals.push(signal);
+        return new Promise(resolve => staleResolvers.push(resolve));
+      }
+      return `/current-${key}.png`;
+    }
+  });
+
+  const stale = renderer.render(scene, profile);
+  firstRender = false;
+  assert.equal(await renderer.render(scene, profile), true);
+  assert.equal(staleSignals.length, 3);
+  assert.ok(staleSignals.every(signal => signal.aborted));
+
+  staleResolvers.forEach((resolve, index) => resolve(`/stale-${index}.png`));
+  assert.equal(await stale, false);
+  assert.deepEqual(root.children.map(node => node.children[0].src), [
+    "/current-images/sky.png",
+    "/current-images/hero.png",
+    "/current-images/title.png"
+  ]);
+});
+
+test("clear aborts in-flight asset resolver signals", async () => {
+  const { root, scene, profile } = fixture();
+  const signals = [];
+  const releases = [];
+  const renderer = new BackgroundRenderer({
+    root,
+    resolveAsset: (key, layer, { signal }) => {
+      signals.push(signal);
+      return new Promise(resolve => releases.push(resolve));
+    }
+  });
+
+  const pending = renderer.render(scene, profile);
+  renderer.clear();
+  assert.ok(signals.every(signal => signal.aborted));
+  releases.forEach((resolve, index) => resolve(`/late-${index}.png`));
+  assert.equal(await pending, false);
+  assert.equal(root.children.length, 0);
+});
+
+
+test("a failed layer aborts sibling asset requests from the same render", async () => {
+  const { root, scene, profile } = fixture();
+  const siblingSignals = [];
+  const renderer = new BackgroundRenderer({
+    root,
+    resolveAsset: (key, layer, { signal }) => {
+      if (key === "images/sky") return Promise.reject(new Error("sky asset failed"));
+      siblingSignals.push(signal);
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    }
+  });
+
+  await assert.rejects(renderer.render(scene, profile), /sky asset failed/);
+  assert.equal(siblingSignals.length, 2);
+  assert.ok(siblingSignals.every(signal => signal.aborted));
+  assert.equal(root.children.length, 0);
+});
+
+
+test("rerendering an active scene applies a new quality budget without dropping characters or overlays", async () => {
+  const document = new FakeDocument();
+  const root = new FakeElement("main", document);
+  const layers = [
+    ...Array.from({ length: 5 }, (_, index) => ({
+      id: `background-${index}`,
+      role: "background",
+      asset: `background-${index}`,
+      depth: index
+    })),
+    { id: "hero", role: "character", asset: "hero", depth: 0 },
+    { id: "dialogue", role: "overlay", asset: "dialogue", depth: 0 }
+  ];
+  const scene = createSceneDefinition({ id: "adaptive-live-scene", layers });
+  const renderer = new BackgroundRenderer({ root, resolveAsset: key => `/${key}.webp` });
+
+  assert.equal(await renderer.render(scene, resolveQualityProfile({ quality: "high" })), true);
+  assert.equal(root.children.length, 7);
+
+  assert.equal(await renderer.render(scene, resolveQualityProfile({ quality: "low" })), true);
+  assert.deepEqual(root.children.map(node => node.dataset.layerId), [
+    "background-0",
+    "background-1",
+    "hero",
+    "dialogue"
+  ]);
+
+  assert.equal(await renderer.render(scene, resolveQualityProfile({ quality: "medium" })), true);
+  assert.equal(root.children.length, 6);
+  assert.equal(root.children.at(-2).dataset.layerId, "hero");
+  assert.equal(root.children.at(-1).dataset.layerId, "dialogue");
+
+  renderer.destroy();
 });

@@ -147,19 +147,25 @@ test("destroy is terminal and rejects new loads without invoking the loader", as
   await manager.load("before-destroy");
   manager.destroy();
   manager.destroy();
-  await assert.rejects(manager.load("after-destroy"), /has been destroyed/);
-  await assert.rejects(manager.preload(["another"]), /has been destroyed/);
+  const lateLoad = manager.load("after-destroy");
+  assert.equal(manager.pendingCount, 0, "destroyed managers must not create new pending requests");
+  await assert.rejects(lateLoad, /has been destroyed/);
+  const latePreload = manager.preload(["another"]);
+  assert.equal(manager.pendingCount, 0, "preload after destroy must not enqueue requests");
+  await assert.rejects(latePreload, /has been destroyed/);
   assert.equal(calls, 1);
   assert.equal(manager.size, 0);
   assert.equal(manager.pendingCount, 0);
 });
 
-test("destroy invalidates an in-flight cache write while preserving its existing caller", async () => {
+test("destroy aborts an in-flight loader and prevents its late result from reaching callers", async () => {
   let finish;
+  let observedSignal;
   let calls = 0;
   const manager = new AssetManager({
-    loader: key => {
+    loader: (key, _metadata, { signal }) => {
       calls += 1;
+      observedSignal = signal;
       return new Promise(resolve => { finish = () => resolve(`/${key}.png`); });
     }
   });
@@ -169,14 +175,145 @@ test("destroy invalidates an in-flight cache write while preserving its existing
   assert.equal(manager.pendingCount, 1);
 
   manager.destroy();
+  assert.equal(observedSignal.aborted, true);
   assert.equal(manager.size, 0);
   assert.equal(manager.pendingCount, 0);
   await assert.rejects(manager.load("late-request"), /has been destroyed/);
 
   finish();
-  assert.equal(await pending, "/scene-background.png");
+  await assert.rejects(pending, { name: "AbortError" });
   assert.equal(manager.size, 0);
   assert.equal(manager.pendingCount, 0);
   assert.equal(calls, 1);
 });
 
+
+
+test("cancel aborts a shared in-flight load for every deduplicated caller", async () => {
+  let calls = 0;
+  let observedSignal;
+  const manager = new AssetManager({
+    loader: (_key, _metadata, { signal }) => {
+      calls += 1;
+      observedSignal = signal;
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    }
+  });
+
+  const first = manager.load("scene");
+  const second = manager.load(" scene ");
+  await Promise.resolve();
+  assert.equal(calls, 1);
+  assert.equal(manager.cancel(" scene "), true);
+  assert.equal(observedSignal.aborted, true);
+  await assert.rejects(first, { name: "AbortError" });
+  await assert.rejects(second, { name: "AbortError" });
+  assert.equal(manager.pendingCount, 0);
+  assert.equal(manager.size, 0);
+  assert.equal(manager.cancel("scene"), false);
+});
+
+test("cancel prevents a loader that ignores AbortSignal from caching a late result", async () => {
+  let finish;
+  let calls = 0;
+  const manager = new AssetManager({
+    loader: () => {
+      calls += 1;
+      if (calls === 1) return new Promise(resolve => { finish = resolve; });
+      return "/retry-background.png";
+    }
+  });
+
+  const pending = manager.load("background");
+  await Promise.resolve();
+  assert.equal(manager.cancel("background"), true);
+  finish("/late-background.png");
+  await assert.rejects(pending, { name: "AbortError" });
+  assert.equal(manager.size, 0);
+  assert.equal(manager.pendingCount, 0);
+  assert.equal(await manager.load("background"), "/retry-background.png");
+  assert.equal(calls, 2);
+});
+
+test("cancelled asset requests can be retried independently", async () => {
+  let calls = 0;
+  const manager = new AssetManager({
+    loader: async key => {
+      calls += 1;
+      return `/${key}-${calls}.png`;
+    }
+  });
+
+  const pending = manager.load("portrait");
+  await Promise.resolve();
+  assert.equal(manager.cancel("portrait"), true);
+  await assert.rejects(pending, { name: "AbortError" });
+  assert.equal(await manager.load("portrait"), "/portrait-2.png");
+  assert.equal(calls, 2);
+});
+
+
+test("cancel before the loader microtask prevents starting unnecessary work", async () => {
+  let calls = 0;
+  const manager = new AssetManager({
+    loader: async () => { calls += 1; return "/unused.png"; }
+  });
+  const pending = manager.load("unused");
+  assert.equal(manager.cancel("unused"), true);
+  await assert.rejects(pending, { name: "AbortError" });
+  assert.equal(calls, 0);
+  assert.equal(manager.pendingCount, 0);
+});
+
+
+test("destroy aborts active loaders and rejects their existing callers", async () => {
+  let observedSignal;
+  let calls = 0;
+  const manager = new AssetManager({
+    loader: (_key, _metadata, { signal }) => {
+      calls += 1;
+      observedSignal = signal;
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    }
+  });
+
+  const pending = manager.load("large-background");
+  await Promise.resolve();
+  assert.equal(calls, 1);
+  assert.equal(observedSignal.aborted, false);
+
+  manager.destroy();
+
+  assert.equal(observedSignal.aborted, true);
+  await assert.rejects(pending, { name: "AbortError" });
+  assert.equal(manager.pendingCount, 0);
+  assert.equal(manager.size, 0);
+  await assert.rejects(manager.load("after-destroy"), /has been destroyed/);
+  assert.equal(calls, 1);
+});
+
+
+test("destroy settles callers when a loader ignores abort and never resolves", async () => {
+  let observedSignal;
+  const manager = new AssetManager({
+    loader: (_key, _metadata, { signal }) => {
+      observedSignal = signal;
+      return new Promise(() => {});
+    }
+  });
+
+  const pending = manager.load("never-finishing-image");
+  await Promise.resolve();
+  assert.equal(observedSignal.aborted, false);
+
+  manager.destroy();
+
+  await assert.rejects(pending, { name: "AbortError" });
+  assert.equal(observedSignal.aborted, true);
+  assert.equal(manager.pendingCount, 0);
+  assert.equal(manager.size, 0);
+});

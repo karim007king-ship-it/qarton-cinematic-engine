@@ -208,3 +208,130 @@ test("renderer destroy retains failed elements and retries cleanup", async () =>
     id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0
   }), /destroyed/);
 });
+
+
+test("superseding a character expression aborts the obsolete sprite resolver", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let resolveFocused;
+  let focusedSignal;
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: (key, { signal }) => {
+      if (key === "focused") {
+        focusedSignal = signal;
+        return new Promise(resolve => { resolveFocused = resolve; });
+      }
+      return `https://assets.test/${key}.png`;
+    }
+  });
+  const handle = await renderer.mount({
+    id: "hero",
+    sprites: { neutral: "neutral", focused: "focused", angry: "angry" },
+    initialState: { expression: "neutral" }
+  });
+
+  const stale = renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, expression: "focused"
+  });
+  await renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, expression: "angry"
+  });
+
+  assert.equal(focusedSignal.aborted, true);
+  resolveFocused("https://assets.test/focused.png");
+  assert.equal(await stale, false);
+  assert.equal(handle.children[0].src, "https://assets.test/angry.png");
+});
+
+test("unmount and destroy abort pending character sprite resolutions", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const pending = [];
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: (key, { signal }) => {
+      if (key === "neutral") return "https://assets.test/neutral.png";
+      return new Promise(resolve => pending.push({ resolve, signal }));
+    }
+  });
+  const first = await renderer.mount({
+    id: "first", sprites: { neutral: "neutral", focused: "focused" },
+    initialState: { expression: "neutral" }
+  });
+  const firstUpdate = renderer.update(first, {
+    id: "first", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, expression: "focused"
+  });
+  renderer.unmount(first);
+  assert.equal(pending[0].signal.aborted, true);
+  pending[0].resolve("https://assets.test/late-focused.png");
+  assert.equal(await firstUpdate, false);
+
+  const second = await renderer.mount({
+    id: "second", sprites: { neutral: "neutral", focused: "focused" },
+    initialState: { expression: "neutral" }
+  });
+  const secondUpdate = renderer.update(second, {
+    id: "second", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, expression: "focused"
+  });
+  renderer.destroy();
+  assert.equal(pending[1].signal.aborted, true);
+  pending[1].resolve("https://assets.test/late-focused.png");
+  assert.equal(await secondUpdate, false);
+});
+
+
+test("destroy settles a pending mount when the sprite resolver ignores abort", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let observedSignal;
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: (_key, { signal }) => {
+      observedSignal = signal;
+      return new Promise(() => {});
+    }
+  });
+
+  const mounting = renderer.mount({
+    id: "hero",
+    sprites: { neutral: "hero-neutral" },
+    initialState: { expression: "neutral" }
+  });
+  await Promise.resolve();
+  assert.equal(observedSignal.aborted, false);
+
+  renderer.destroy();
+
+  await assert.rejects(mounting, /destroyed/);
+  assert.equal(observedSignal.aborted, true);
+  assert.equal(root.children.length, 0);
+});
+
+test("destroy settles a pending sprite update when the resolver never resolves", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let observedSignal;
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: (key, { signal }) => {
+      if (key === "neutral") return "https://assets.test/neutral.png";
+      observedSignal = signal;
+      return new Promise(() => {});
+    }
+  });
+  const handle = await renderer.mount({
+    id: "hero",
+    sprites: { neutral: "neutral", focused: "focused" },
+    initialState: { expression: "neutral" }
+  });
+
+  const updating = renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, expression: "focused"
+  });
+  renderer.destroy();
+
+  assert.equal(await updating, false);
+  assert.equal(observedSignal.aborted, true);
+  assert.equal(root.children.length, 0);
+});

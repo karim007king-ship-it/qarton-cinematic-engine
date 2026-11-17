@@ -1,5 +1,24 @@
 import { buildLayerPlan } from "../scene/layer-plan.js";
 
+function raceWithAbort(promise, signal) {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => signal.removeEventListener("abort", onAbort);
+    const onAbort = () => {
+      cleanup();
+      reject(signal.reason ?? Object.assign(new Error("Background render was cancelled"), { name: "AbortError" }));
+    };
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+    Promise.resolve(promise).then(
+      value => { cleanup(); resolve(value); },
+      error => { cleanup(); reject(error); }
+    );
+  });
+}
+
 /**
  * DOM renderer for scene layers.
  * The host supplies both the mount element and asset resolver; importing this
@@ -10,6 +29,7 @@ export class BackgroundRenderer {
   #document;
   #resolveAsset;
   #renderToken = 0;
+  #renderController = null;
   #destroyed = false;
 
   constructor({ root, resolveAsset }) {
@@ -35,21 +55,30 @@ export class BackgroundRenderer {
    */
   async render(scene, profile) {
     if (this.#destroyed) throw new Error("BackgroundRenderer has been destroyed");
-    const token = ++this.#renderToken;
     const plan = buildLayerPlan(scene, profile);
+    // A newer scene supersedes asset resolution for the previous one. The
+    // resolver may use this signal to stop fetch/decode work it owns.
+    this.#renderController?.abort();
+    const controller = new AbortController();
+    this.#renderController = controller;
+    const token = ++this.#renderToken;
     let assets;
     try {
-      assets = await Promise.all(plan.map(async layer => {
-        const url = await this.#resolveAsset(layer.asset, layer);
+      assets = await raceWithAbort(Promise.all(plan.map(async layer => {
+        const url = await this.#resolveAsset(layer.asset, layer, { signal: controller.signal });
         if (typeof url !== "string" || !url.trim()) {
           throw new TypeError(`Asset resolver returned no URL for "${layer.asset}"`);
         }
         return url;
-      }));
+      })), controller.signal);
     } catch (error) {
       // A newer render or clear() owns the root now; stale failures must not
       // escape as errors from work that can no longer be committed.
       if (token !== this.#renderToken) return false;
+      // Stop sibling layer requests when one layer fails. Promise.all rejects
+      // early, but the other resolvers may still be consuming network/memory.
+      controller.abort(error);
+      if (this.#renderController === controller) this.#renderController = null;
       throw error;
     }
 
@@ -91,7 +120,7 @@ export class BackgroundRenderer {
     });
 
     try {
-      await Promise.all(Array.from(fragment.children, wrapper => {
+      await raceWithAbort(Promise.all(Array.from(fragment.children, wrapper => {
         const image = wrapper.children[0];
         if (typeof image.decode === "function") return image.decode();
         if (image.complete) {
@@ -102,14 +131,17 @@ export class BackgroundRenderer {
           image.onload = () => resolve();
           image.onerror = () => reject(new Error(`Image failed to load: ${image.src}`));
         });
-      }));
+      })), controller.signal);
     } catch (error) {
       if (token !== this.#renderToken) return false;
+      controller.abort(error);
+      if (this.#renderController === controller) this.#renderController = null;
       throw error;
     }
 
     if (token !== this.#renderToken) return false;
     this.#root.replaceChildren(fragment);
+    if (this.#renderController === controller) this.#renderController = null;
     this.#root.dataset.qartonSceneId = scene.id;
     return true;
   }
@@ -117,6 +149,8 @@ export class BackgroundRenderer {
   clear() {
     if (this.#destroyed) return;
     this.#renderToken += 1;
+    this.#renderController?.abort();
+    this.#renderController = null;
     this.#root.replaceChildren();
     delete this.#root.dataset.qartonSceneId;
   }

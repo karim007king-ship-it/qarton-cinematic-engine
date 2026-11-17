@@ -151,3 +151,152 @@ test("a synchronous play failure leaves the failed cue retryable without replayi
   assert.equal(controller.getState().cursor, 0);
   assert.equal(controller.getState().activeVoices, 2);
 });
+
+
+test("pause and resume suspend every active voice while preserving cue timing", () => {
+  const calls = [];
+  const controller = createAudioCueController({
+    cues: [
+      { id: "music", atMs: 0, asset: "theme", loop: true },
+      { id: "impact", atMs: 100, asset: "impact" }
+    ],
+    play: (_asset, options) => options.id,
+    pauseVoice: voice => calls.push(["pause", voice]),
+    resumeVoice: voice => calls.push(["resume", voice])
+  });
+
+  controller.update(120);
+  controller.pause(120);
+  assert.deepEqual(calls, [["pause", "music"], ["pause", "impact"]]);
+  assert.equal(controller.getState().paused, true);
+  controller.update(250);
+  controller.resume(250);
+  assert.deepEqual(calls, [
+    ["pause", "music"], ["pause", "impact"],
+    ["resume", "music"], ["resume", "impact"]
+  ]);
+  controller.update(300);
+  assert.equal(controller.getState().paused, false);
+});
+
+test("voice lifecycle attempts every voice and leaves failed resume retryable", () => {
+  const calls = [];
+  let fail = true;
+  const controller = createAudioCueController({
+    cues: [{ id: "a", atMs: 0, asset: "a" }, { id: "b", atMs: 0, asset: "b" }],
+    play: (_asset, options) => options.id,
+    pauseVoice: voice => calls.push(["pause", voice]),
+    resumeVoice: voice => {
+      calls.push(["resume", voice]);
+      if (voice === "a" && fail) throw new Error("resume denied");
+    }
+  });
+  controller.update(0);
+  controller.pause(0);
+  assert.throws(() => controller.resume(0), /resume denied/);
+  assert.equal(controller.getState().paused, true);
+  fail = false;
+  controller.resume(0);
+  assert.equal(controller.getState().paused, false);
+  assert.deepEqual(calls, [
+    ["pause", "a"], ["pause", "b"],
+    ["resume", "a"], ["resume", "b"],
+    ["resume", "a"], ["resume", "b"]
+  ]);
+});
+
+
+test("pause retries voices that failed to suspend on the first attempt", () => {
+  const calls = [];
+  let fail = true;
+  const controller = createAudioCueController({
+    cues: [{ id: "music", atMs: 0, asset: "music" }, { id: "ambience", atMs: 0, asset: "ambience" }],
+    play: (_asset, options) => options.id,
+    pauseVoice: voice => {
+      calls.push(voice);
+      if (voice === "music" && fail) throw new Error("pause denied");
+    }
+  });
+
+  controller.update(0);
+  assert.throws(() => controller.pause(0), /pause denied/);
+  assert.equal(controller.getState().paused, true);
+  assert.deepEqual(calls, ["music", "ambience"]);
+
+  fail = false;
+  assert.doesNotThrow(() => controller.pause(0));
+  assert.equal(controller.getState().paused, true);
+  assert.deepEqual(calls, ["music", "ambience", "music", "ambience"]);
+});
+
+
+test("naturally ended one-shot cues release their voice from controller ownership", () => {
+  let ended;
+  const controller = createAudioCueController({
+    cues: [{ id: "impact", atMs: 0, asset: "impact" }],
+    play: (_asset, options) => {
+      ended = options.onEnded;
+      return { id: "impact" };
+    },
+    stop: () => {}
+  });
+  controller.update(0);
+  assert.equal(controller.getState().activeVoices, 1);
+  ended();
+  assert.equal(controller.getState().activeVoices, 0);
+  controller.destroy();
+});
+
+test("a one-shot that ends before play returns is not registered as active", () => {
+  const controller = createAudioCueController({
+    cues: [{ id: "short", atMs: 0, asset: "short" }],
+    play: (_asset, options) => {
+      options.onEnded();
+      return { id: "short" };
+    }
+  });
+  controller.update(0);
+  assert.equal(controller.getState().activeVoices, 0);
+  controller.destroy();
+});
+
+test("a stale one-shot completion cannot release a replacement voice with the same cue id", () => {
+  const completions = [];
+  const controller = createAudioCueController({
+    cues: [{ id: "impact", atMs: 0, asset: "impact" }],
+    play: (_asset, options) => {
+      const voice = { generation: completions.length };
+      completions.push({ voice, onEnded: options.onEnded });
+      return voice;
+    },
+    stop: () => {}
+  });
+
+  controller.update(0);
+  controller.stopAll({ reset: true });
+  controller.update(0);
+  assert.equal(controller.getState().activeVoices, 1);
+
+  completions[0].onEnded();
+  assert.equal(controller.getState().activeVoices, 1,
+    "an ended callback from the previous playback must not remove the replacement voice");
+
+  completions[1].onEnded();
+  assert.equal(controller.getState().activeVoices, 0);
+  controller.destroy();
+});
+
+test("looping cues do not receive a one-shot completion callback", () => {
+  let received;
+  const controller = createAudioCueController({
+    cues: [{ id: "music", atMs: 0, asset: "music", loop: true }],
+    play: (_asset, options) => {
+      received = options.onEnded;
+      return { id: "music" };
+    }
+  });
+  controller.update(0);
+  assert.equal(received, undefined);
+  assert.equal(controller.getState().activeVoices, 1);
+  controller.destroy();
+});

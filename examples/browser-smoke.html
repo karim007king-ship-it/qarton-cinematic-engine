@@ -38,7 +38,7 @@
     <button id="destroy" type="button">Destroy runtime</button>
   </div>
   <p id="status" role="status">Preparing integrated showcase…</p>
-  <p class="note">Audio is generated locally (two short oscillator cues); it starts only after a user gesture. No external assets or copyrighted music are used.</p>
+  <p class="note">Audio is generated locally (two short oscillator cues); it starts only after a user gesture. Hiding this page pauses the shared scene, character and audio timeline; returning resumes from the same cinematic time. No external assets or copyrighted music are used.</p>
   <p class="note">Run from the repository root with <code>npx serve .</code>, then open <code>/examples/browser-smoke.html</code>. This is a manual real-browser test, not an automated CI/browser test.</p>
 </main>
 <script type="module">
@@ -56,6 +56,7 @@
   const context = canvas.getContext("2d");
   const status = document.querySelector("#status");
   const buttons = [...document.querySelectorAll("button")];
+  let previousFrameTime = performance.now();
   const svg = (sky, ground, sun, foreground) => `data:image/svg+xml,${encodeURIComponent(
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700"><defs><linearGradient id="g" x2="0" y2="1"><stop stop-color="${sky}"/><stop offset="1" stop-color="${ground}"/></linearGradient></defs><rect width="1200" height="700" fill="url(#g)"/><circle cx="900" cy="160" r="76" fill="${sun}"/><path d="M0 520 250 310 470 520 720 260 1200 540V700H0Z" fill="#252b36" opacity=".82"/><path d="M0 610 300 470 540 620 850 420 1200 600V700H0Z" fill="${foreground}" opacity=".94"/></svg>`
   )}`;
@@ -76,18 +77,57 @@
     ] })
   ];
 
-  function loadImage(key) {
+  function loadImage(key, metadata, { signal } = {}) {
     if (!sources[key]) return Promise.reject(new Error(`Unknown image asset: ${key}`));
+    if (signal?.aborted) {
+      return Promise.reject(signal.reason ?? new DOMException("Image load aborted", "AbortError"));
+    }
     return new Promise((resolve, reject) => {
       const image = new Image();
-      image.onload = () => resolve(image.src);
-      image.onerror = () => reject(new Error(`Image failed to load: ${key}`));
+      const cleanup = () => {
+        image.onload = null;
+        image.onerror = null;
+        signal?.removeEventListener("abort", onAbort);
+      };
+      const onAbort = () => {
+        cleanup();
+        image.src = "";
+        reject(signal.reason ?? new DOMException("Image load aborted", "AbortError"));
+      };
+      image.onload = () => {
+        cleanup();
+        resolve(image.src);
+      };
+      image.onerror = () => {
+        cleanup();
+        reject(new Error(`Image failed to load: ${key}`));
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      if (signal?.aborted) {
+        onAbort();
+        return;
+      }
       image.src = sources[key];
     });
   }
 
+  let director = null;
   const runtime = createCinematicRuntime({
     root: stage,
+    lifecycleTarget: document,
+    lifecyclePageTarget: window,
+    audioController: {
+      pause: () => director?.pause(),
+      resume: () => director?.resume()
+    },
+    onAudioError: (error, context) => {
+      status.textContent = `Lifecycle audio ${context.phase} issue: ${error.message}`;
+    },
+    onResume: () => {
+      // The runtime cleared adaptive samples while hidden; discard the long
+      // wall-clock gap so the first resumed frame is not counted as a hitch.
+      previousFrameTime = performance.now();
+    },
     device: {
       reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches,
       saveData: navigator.connection?.saveData === true
@@ -154,7 +194,7 @@
     stopAll: options => audioCues?.stopAll(options),
     destroy: () => audioCues?.destroy()
   };
-  const director = createCinematicDirector({
+  director = createCinematicDirector({
     characterStage,
     audio: audioProxy,
     timeline,
@@ -164,6 +204,10 @@
     }
   });
 
+  // If the page was already hidden when the showcase initialized, apply the
+  // paused state now that the director exists.
+  if (!runtime.isActive()) director.pause();
+
   let running = true;
   let destroyed = false;
   let frameId = 0;
@@ -171,7 +215,6 @@
   let shakeStart = -Infinity;
   let burstBoost = 0;
   let audioContext = null;
-  let previousFrameTime = performance.now();
   const particles = createParticleField({ count: 44, seed: 19, width: 1000, height: 560, speedMin: 5, speedMax: 18 });
   const lighting = resolveLighting({ keyIntensity: .9, ambientIntensity: .5, warmth: .18 });
 
@@ -187,7 +230,19 @@
 
   async function tick(now) {
     if (!running) return;
-    const elapsed = now - startTime;
+    let elapsed;
+    try {
+      // Use the director's rebased logical clock for every visual subsystem.
+      // This keeps camera, parallax, particles and character/audio timelines
+      // frozen together while the document is hidden.
+      const frame = await director.update(now - startTime);
+      elapsed = frame.timeMs;
+    } catch (error) {
+      running = false;
+      status.textContent = `Director error: ${error.message}`;
+      return;
+    }
+    if (!running || destroyed) return;
     const profile = runtime.getProfile();
     const rect = stage.getBoundingClientRect();
     const camera = elapsed - shakeStart >= 0 && elapsed - shakeStart < 650
@@ -217,13 +272,6 @@
       context.fill();
     }
     burstBoost = Math.max(0, burstBoost - .012);
-    try {
-      await director.update(elapsed);
-    } catch (error) {
-      running = false;
-      status.textContent = `Director error: ${error.message}`;
-      return;
-    }
     runtime.recordFrame(Math.max(1, now - previousFrameTime));
     previousFrameTime = now;
     if (running) frameId = requestAnimationFrame(tick);
@@ -257,10 +305,10 @@
       await audioContext.resume();
       if (destroyed) return;
       audioCues?.destroy();
-      const audioCueStart = performance.now() - startTime;
+      const audioCueStart = Math.max(0, director.getState().timeMs);
       audioCues = createAudioCueController({
         cues: [
-          { id: "intro-tone", atMs: audioCueStart, asset: "tone-a", volume: .16 },
+          { id: "intro-tone", atMs: audioCueStart, asset: "tone-a", volume: .16, loop: true },
           { id: "impact-tone", atMs: audioCueStart + 1800, asset: "tone-b", volume: .22 }
         ],
         play: (asset, options) => {
@@ -271,13 +319,38 @@
           gain.gain.value = options.volume;
           oscillator.connect(gain).connect(audioContext.destination);
           oscillator.start();
-          oscillator.stop(audioContext.currentTime + 0.18);
-          const voice = { oscillator, gain };
-          return voice;
+          if (!options.loop) oscillator.stop(audioContext.currentTime + 0.18);
+          return { oscillator, gain, volume: options.volume, paused: false, stopped: false };
         },
-        stop: voice => { try { voice.oscillator.stop(); } catch {} },
-        setVolume: (voice, volume) => { voice.gain.gain.value = volume; }
+        pauseVoice: voice => {
+          if (voice.stopped || voice.paused) return;
+          voice.gain.gain.setValueAtTime(0, audioContext.currentTime);
+          voice.paused = true;
+        },
+        resumeVoice: voice => {
+          if (voice.stopped || !voice.paused) return;
+          // Do not bypass browser autoplay policy after returning from background.
+          // The Audio button provides the next explicit user gesture if needed.
+          if (audioContext.state !== "running") {
+            status.textContent = "Audio context is suspended; tap Audio to resume playback.";
+            throw new Error("Audio context requires a user gesture before voice resume");
+          }
+          voice.gain.gain.setValueAtTime(voice.volume, audioContext.currentTime);
+          voice.paused = false;
+        },
+        stop: voice => {
+          if (voice.stopped) return;
+          voice.stopped = true;
+          try { voice.oscillator.stop(); } catch {}
+        },
+        setVolume: (voice, volume) => {
+          voice.volume = volume;
+          if (!voice.paused && !voice.stopped) voice.gain.gain.value = volume;
+        }
       });
+      // A prior pageshow may have been blocked by autoplay policy. This
+      // explicit button gesture now has a running context and can safely retry.
+      if (director.getState().paused) director.resume();
       status.textContent = "Audio cues started from user gesture and synchronized to the director clock.";
     } catch (error) {
       if (!destroyed) status.textContent = `Audio unavailable: ${error.message}`;
@@ -293,9 +366,9 @@
     status.textContent = "Cleaning up director, audio context and runtime…";
     const cleanupErrors = [];
     for (const cleanup of [
+      () => runtime.destroy(),
       () => director.destroy(),
-      () => audioContext?.close(),
-      () => runtime.destroy()
+      () => audioContext?.close()
     ]) {
       try {
         await cleanup();
@@ -310,6 +383,102 @@
 
   await show(0);
   frameId = requestAnimationFrame(tick);
+
+  // Optional automated real-browser smoke path used by CI:
+  // /examples/browser-smoke.html?smoke=1
+  if (new URLSearchParams(location.search).get("smoke") === "1") {
+    try {
+      const assertSceneOwnership = expectedId => {
+        const mounted = stage.querySelectorAll("[data-qarton-scene-id]");
+        if (mounted.length !== 1) {
+          throw new Error(`Expected exactly one mounted scene, found ${mounted.length}`);
+        }
+        if (mounted[0].dataset.qartonSceneId !== expectedId) {
+          throw new Error(`Expected scene ${expectedId}, found ${mounted[0].dataset.qartonSceneId}`);
+        }
+        if (characterRoot.querySelectorAll(".qarton-character").length !== 2) {
+          throw new Error("Character count changed during scene transition");
+        }
+      };
+
+      // Install a deterministic looping voice so this smoke path verifies
+      // the full lifecycle bridge, not only the director's paused flag.
+      const lifecycleAudioCalls = [];
+      let allowLifecycleAudioResume = false;
+      audioCues = createAudioCueController({
+        cues: [{ id: "lifecycle-loop", atMs: 0, asset: "smoke-loop", loop: true }],
+        play: () => ({ id: "smoke-loop" }),
+        pauseVoice: voice => lifecycleAudioCalls.push(["pause", voice.id]),
+        resumeVoice: voice => {
+          lifecycleAudioCalls.push(["resume", voice.id]);
+          if (!allowLifecycleAudioResume) throw new Error("user gesture required");
+        },
+        stop: () => {}
+      });
+      await director.update(Math.max(0, director.getState().timeMs));
+
+      // Exercise the same lifecycle events emitted when a browser tab is
+      // backgrounded and restored; the director clock and active audio voice
+      // must follow together.
+      window.dispatchEvent(new Event("pagehide"));
+      if (runtime.isActive() || !director.getState().paused) {
+        throw new Error("Page hide did not pause the cinematic director");
+      }
+      if (JSON.stringify(lifecycleAudioCalls) !== JSON.stringify([["pause", "smoke-loop"]])) {
+        throw new Error("Page hide did not pause the active audio voice");
+      }
+      window.dispatchEvent(new Event("pageshow"));
+      if (!runtime.isActive() || !director.getState().paused || !audioCues.getState().paused) {
+        throw new Error("A denied audio resume must keep the director and voice paused");
+      }
+      if (JSON.stringify(lifecycleAudioCalls) !== JSON.stringify([
+        ["pause", "smoke-loop"], ["resume", "smoke-loop"]
+      ])) {
+        throw new Error("Page show did not attempt to resume the active audio voice");
+      }
+      // Simulate the explicit Audio-button gesture after browser autoplay denial.
+      allowLifecycleAudioResume = true;
+      director.resume();
+      if (director.getState().paused || audioCues.getState().paused) {
+        throw new Error("A user-gesture retry did not resume the director and active voice");
+      }
+      if (JSON.stringify(lifecycleAudioCalls) !== JSON.stringify([
+        ["pause", "smoke-loop"], ["resume", "smoke-loop"], ["resume", "smoke-loop"]
+      ])) {
+        throw new Error("User-gesture retry did not resume the active audio voice");
+      }
+
+      for (const index of [1, 0, 1, 0]) {
+        await show(index);
+        assertSceneOwnership(scenes[index].id);
+      }
+      await Promise.all([
+        ...stage.querySelectorAll("[data-qarton-scene-id] img"),
+        ...characterRoot.querySelectorAll("img")
+      ].map(image => image.decode()));
+
+      document.querySelector("#destroy").click();
+      const deadline = performance.now() + 8000;
+      while (!status.textContent.startsWith("Destroyed:")
+        && !status.textContent.startsWith("Cleanup completed with")
+        && performance.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+      if (!status.textContent.startsWith("Destroyed:")) {
+        throw new Error(status.textContent || "Runtime cleanup did not finish");
+      }
+      if (stage.querySelectorAll("[data-qarton-scene-id]").length !== 0) {
+        throw new Error("Scene wrappers remain mounted after runtime destruction");
+      }
+      if (characterRoot.querySelectorAll(".qarton-character").length !== 0) {
+        throw new Error("Character elements remain mounted after runtime destruction");
+      }
+      document.documentElement.dataset.smokeResult = "passed";
+    } catch (error) {
+      document.documentElement.dataset.smokeResult = "failed";
+      status.textContent = `Browser smoke failed: ${error.message}`;
+    }
+  }
 </script>
 </body>
 </html>
