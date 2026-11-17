@@ -42,5 +42,5 @@ test("browser showcase drives all visual tracks from the rebased director clock"
   assert.ok(particleSample > directorUpdate, "particle sampling must happen after director clock rebasing");
   assert.match(tick, /elapsed = frame\.timeMs;/, "visual tracks must use the director's logical time");
   assert.doesNotMatch(tick, /const elapsed = now - startTime;/, "visual tracks must not use raw wall-clock elapsed time");
-  assert.match(match[1], /onResume:\\s*\\(\\)\\s*=>\\s*\\{[\\s\\S]*?previousFrameTime = performance\\.now\\(\\);/, "adaptive frame baseline must reset after page resume");
+  assert.match(match[1], /onResume:\s*\(\)\s*=>\s*\{[\s\S]*?previousFrameTime = performance\.now\(\);/, "adaptive frame baseline must reset after page resume");
 });
