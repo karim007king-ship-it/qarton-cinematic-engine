@@ -22,6 +22,7 @@ export function createHTMLAudioAdapter({
   let volume = masterVolume;
   let destroyed = false;
   const active = new Map();
+  const assets = new WeakMap();
 
   function play(asset, options = {}) {
     if (destroyed) throw new Error("HTMLAudio adapter has been destroyed");
@@ -42,6 +43,7 @@ export function createHTMLAudioAdapter({
     audio.preload = "auto";
     audio.volume = baseVolume * volume;
     active.set(audio, baseVolume);
+    assets.set(audio, asset);
     const result = audio.play();
     if (result && typeof result.catch === "function") {
       result.catch(error => onPlaybackError(error, { asset, audio }));
@@ -69,7 +71,7 @@ export function createHTMLAudioAdapter({
     if (result && typeof result.catch === "function") {
       result.catch(error => {
         if (!active.has(audio)) return;
-        try { onPlaybackError(error, { audio }); } catch { /* error reporting must not create an unhandled rejection */ }
+        try { onPlaybackError(error, { asset: assets.get(audio), audio }); } catch { /* error reporting must not create an unhandled rejection */ }
       });
     }
   }
