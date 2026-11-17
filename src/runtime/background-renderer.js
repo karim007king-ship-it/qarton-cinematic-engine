@@ -36,13 +36,13 @@ export class BackgroundRenderer {
    */
   async render(scene, profile) {
     if (this.#destroyed) throw new Error("BackgroundRenderer has been destroyed");
+    const plan = buildLayerPlan(scene, profile);
     // A newer scene supersedes asset resolution for the previous one. The
     // resolver may use this signal to stop fetch/decode work it owns.
     this.#renderController?.abort();
     const controller = new AbortController();
     this.#renderController = controller;
     const token = ++this.#renderToken;
-    const plan = buildLayerPlan(scene, profile);
     let assets;
     try {
       assets = await Promise.all(plan.map(async layer => {
