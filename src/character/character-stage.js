@@ -51,6 +51,9 @@ export function createCharacterStage({
         renderer.unmount(handle);
         orphanedHandles.delete(handle);
       } catch (error) {
+        // The renderer may report an adapter error after its fallback detached
+        // the node. Do not retain a handle that no longer owns a DOM child.
+        if (handle.parentNode !== root) orphanedHandles.delete(handle);
         if (!failed) firstError = error;
         failed = true;
       }
