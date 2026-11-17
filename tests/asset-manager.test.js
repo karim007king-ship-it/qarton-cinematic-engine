@@ -87,7 +87,7 @@ test("release removes one cached key without disturbing others", async () => {
 });
 
 test("unsafe or empty URLs are rejected and not cached", async () => {
-  const manager = new AssetManager({ loader: key => key === "bad" ? "javascript:alert(1)" : "  " });
+  const manager = new AssetManager({ loader: key => key === "bad" ? "javascript:alert(1)" : key === "backslash-network-path" ? "\\\\cdn.example.com/asset.png" : "  " });
   await assert.rejects(manager.load("bad"), /unsafe URL/);
   await assert.rejects(manager.load("backslash-network-path"), /unsafe URL/);
   await assert.rejects(manager.load("empty"), /no URL/);
