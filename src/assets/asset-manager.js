@@ -23,6 +23,7 @@ export class AssetManager {
   #cache = new Map();
   #pending = new Map();
   #generation = 0;
+  #destroyed = false;
 
   constructor({ loader } = {}) {
     if (typeof loader !== "function") {
@@ -36,6 +37,9 @@ export class AssetManager {
    * Optional metadata is passed to the loader on the first request only.
    */
   load(key, metadata) {
+    if (this.#destroyed) {
+      return Promise.reject(new Error("AssetManager has been destroyed"));
+    }
     if (typeof key !== "string" || !key.trim()) {
       return Promise.reject(new TypeError("Asset key must be a non-empty string"));
     }
@@ -47,7 +51,12 @@ export class AssetManager {
       .then(() => this.#loader(key, metadata))
       .then(value => {
         const safeUrl = assertSafeAssetUrl(value, key);
-        if (generation === this.#generation) this.#cache.set(key, safeUrl);
+        // A per-key release invalidates the pending entry without cancelling
+        // the promise already returned to its callers. Only the still-current
+        // request may populate the cache.
+        if (generation === this.#generation && this.#pending.get(key) === request) {
+          this.#cache.set(key, safeUrl);
+        }
         return safeUrl;
       })
       .finally(() => {
@@ -64,9 +73,14 @@ export class AssetManager {
     return Promise.all([...new Set(keys)].map(key => this.load(key)));
   }
 
-  /** Remove one cached asset. An in-flight request may still resolve to its caller. */
+  /**
+   * Release one key and invalidate its in-flight cache write. Existing callers
+   * still receive the pending result, but a later load starts a fresh request.
+   */
   release(key) {
-    return this.#cache.delete(key);
+    const removed = this.#cache.delete(key);
+    const pending = this.#pending.delete(key);
+    return removed || pending;
   }
 
   /** Drop cached and pending entries; late completions will not repopulate cache. */
@@ -85,6 +99,11 @@ export class AssetManager {
   }
 
   destroy() {
+    if (this.#destroyed) return;
+    // Close the manager before invalidating pending work so no new request can
+    // enter while teardown is in progress. Existing callers may still receive
+    // their resolved value, but late completions cannot repopulate the cache.
+    this.#destroyed = true;
     this.clear();
     this.#loader = null;
   }

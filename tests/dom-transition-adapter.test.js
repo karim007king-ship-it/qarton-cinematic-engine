@@ -274,3 +274,22 @@ test("animation cancel failures do not mask the original Web Animation rejection
   // itself throws, so the adapter remains usable.
   assert.equal(await adapter.crossfade({ from: null, to: from, duration: 0 }), true);
 });
+
+
+test("destroy retains DOM handles after removal failure and retries cleanup", async () => {
+  const { root, adapter } = setup();
+  const scene = await adapter.mount({ id: "retry-remove" }, {});
+  const originalRemoveChild = root.removeChild.bind(root);
+  let fail = true;
+  root.removeChild = child => {
+    if (fail) throw new Error("temporary DOM removal failure");
+    return originalRemoveChild(child);
+  };
+
+  assert.throws(() => adapter.destroy(), /temporary DOM removal failure/);
+  assert.equal(root.children.includes(scene), true);
+  fail = false;
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.equal(root.children.length, 0);
+  await assert.rejects(adapter.mount({ id: "after-destroy" }, {}), /destroyed/);
+});

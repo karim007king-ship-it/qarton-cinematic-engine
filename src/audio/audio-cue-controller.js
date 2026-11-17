@@ -112,36 +112,36 @@ export function createAudioCueController({
   }
 
   function stopVoices() {
-    const active = [...voices.values()];
-    voices.clear();
-    let firstError;
-    let failed = false;
-    for (const voice of active) {
-      if (voice == null) continue;
+    const errors = [];
+    for (const [id, voice] of voices) {
       try {
         stop(voice);
+        voices.delete(id);
       } catch (error) {
-        if (!failed) firstError = error;
-        failed = true;
+        // Keep ownership of failed voices so stopAll()/destroy() can retry.
+        errors.push(error);
       }
     }
-    if (failed) throw firstError;
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1) {
+      throw new AggregateError(errors, "One or more audio voices could not be stopped");
+    }
   }
 
   function stopAll({ reset = false } = {}) {
     assertAlive();
     paused = false;
+    // Do not rewind the timeline until every currently owned voice is stopped.
+    // Otherwise a failed stop could be followed by a duplicate cue playback.
+    stopVoices();
     if (reset) {
       cursor = -1;
       firedIds.clear();
     }
-    stopVoices();
   }
 
   function destroy() {
-    if (destroyed) return;
-    // Mark the controller closed before invoking host code so a throwing
-    // adapter cannot leave it partially alive or make destroy non-idempotent.
+    // Close playback immediately, but retain failed voices for a later retry.
     destroyed = true;
     stopVoices();
   }

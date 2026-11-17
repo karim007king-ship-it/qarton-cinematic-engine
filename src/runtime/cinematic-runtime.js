@@ -53,17 +53,32 @@ export function createCinematicRuntime({
 
   function destroy() {
     if (destroyPromise) return destroyPromise;
-    if (destroyed) return Promise.resolve();
     destroyed = true;
     destroyPromise = (async () => {
-      try {
-        await scenes.destroy();
-      } finally {
-        dom.destroy();
-        assets.destroy();
-        activity.destroy();
+      const errors = [];
+      for (const cleanup of [
+        // Notify the host first so it can stop its frame loop before resources
+        // are torn down. Then cancel DOM animation before awaiting scene release.
+        () => activity.destroy(),
+        () => dom.destroy(),
+        () => scenes.destroy(),
+        () => assets.destroy()
+      ]) {
+        try {
+          await cleanup();
+        } catch (error) {
+          errors.push(error);
+        }
       }
-    })();
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) {
+        throw new AggregateError(errors, "One or more cinematic runtime resources could not be destroyed");
+      }
+    })().finally(() => {
+      // A failed teardown can be retried. Successful cleanup operations are
+      // idempotent, while scene/DOM owners retain resources that failed removal.
+      destroyPromise = null;
+    });
     return destroyPromise;
   }
 
