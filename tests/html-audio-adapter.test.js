@@ -89,3 +89,27 @@ test("HTMLAudio destroy attempts every voice and retries transient pause failure
   assert.throws(() => adapter.setVolume(made[0], 0.5), /destroyed/);
   assert.throws(() => adapter.play("late"), /destroyed/);
 });
+
+
+test("HTMLAudio adapter pauses and resumes an active voice without releasing it", async () => {
+  let playCalls = 0;
+  const audio = fakeAudio();
+  audio.play = () => { playCalls += 1; audio.paused = false; return Promise.resolve(); };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/theme.mp3",
+    createAudio: () => audio
+  });
+  const voice = adapter.play("theme", { loop: true });
+  assert.equal(playCalls, 1);
+
+  adapter.pause(voice);
+  assert.equal(audio.paused, true);
+  adapter.resume(voice);
+  assert.equal(audio.paused, false);
+  assert.equal(playCalls, 2);
+
+  adapter.stop(voice);
+  adapter.resume(voice);
+  assert.equal(audio.paused, true);
+  assert.equal(playCalls, 2);
+});
