@@ -45,26 +45,38 @@ export class AssetManager {
     }
     const normalizedKey = key.trim();
     if (this.#cache.has(normalizedKey)) return Promise.resolve(this.#cache.get(normalizedKey));
-    if (this.#pending.has(normalizedKey)) return this.#pending.get(normalizedKey);
+    if (this.#pending.has(normalizedKey)) return this.#pending.get(normalizedKey).promise;
 
     const generation = this.#generation;
+    const loader = this.#loader;
+    const controller = new AbortController();
+    const entry = { controller, promise: null };
     const request = Promise.resolve()
-      .then(() => this.#loader(normalizedKey, metadata))
+      .then(() => {
+        if (controller.signal.aborted) {
+          throw controller.signal.reason ?? Object.assign(new Error("Asset load was cancelled"), { name: "AbortError" });
+        }
+        return loader(normalizedKey, metadata, { signal: controller.signal });
+      })
       .then(value => {
+        if (controller.signal.aborted) {
+          throw controller.signal.reason ?? Object.assign(new Error("Asset load was cancelled"), { name: "AbortError" });
+        }
         const safeUrl = assertSafeAssetUrl(value, normalizedKey);
         // A per-key release invalidates the pending entry without cancelling
         // the promise already returned to its callers. Only the still-current
         // request may populate the cache.
-        if (generation === this.#generation && this.#pending.get(normalizedKey) === request) {
+        if (generation === this.#generation && this.#pending.get(normalizedKey) === entry) {
           this.#cache.set(normalizedKey, safeUrl);
         }
         return safeUrl;
       })
       .finally(() => {
-        if (this.#pending.get(normalizedKey) === request) this.#pending.delete(normalizedKey);
+        if (this.#pending.get(normalizedKey) === entry) this.#pending.delete(normalizedKey);
       });
 
-    this.#pending.set(normalizedKey, request);
+    entry.promise = request;
+    this.#pending.set(normalizedKey, entry);
     return request;
   }
 
@@ -84,6 +96,21 @@ export class AssetManager {
     const removed = this.#cache.delete(normalizedKey);
     const pending = this.#pending.delete(normalizedKey);
     return removed || pending;
+  }
+
+  /**
+   * Cancel the shared in-flight request for a key. Every caller awaiting that
+   * deduplicated request observes cancellation if the loader honors its signal;
+   * loaders that ignore AbortSignal are still prevented from populating cache.
+   */
+  cancel(key, reason) {
+    const normalizedKey = typeof key === "string" ? key.trim() : key;
+    const entry = this.#pending.get(normalizedKey);
+    if (!entry) return false;
+    this.#pending.delete(normalizedKey);
+    const abortReason = reason ?? Object.assign(new Error(`Asset load cancelled: "${normalizedKey}"`), { name: "AbortError" });
+    entry.controller.abort(abortReason);
+    return true;
   }
 
   /** Drop cached and pending entries; late completions will not repopulate cache. */
