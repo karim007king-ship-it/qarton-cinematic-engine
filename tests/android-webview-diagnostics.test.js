@@ -67,6 +67,7 @@ test("HTMLAudio diagnostics require a tap and expose play, pause and resume", ()
   assert.match(page, /\["play", "playing", "pause", "ended", "error"\]/);
   assert.match(page, /type: "html-audio-" \+ eventName/);
   assert.match(page, /data:audio\/wav;base64,/);
+  assert.match(page, /Math\.floor\(sampleRate \* 5\)/, "HTMLAudio sample must remain long enough for a manual pause/resume check");
 });
 
 test("background lifecycle pauses HTMLAudio without automatic foreground resume", () => {
