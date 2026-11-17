@@ -2,6 +2,25 @@
  * Small, host-agnostic asset URL manager.
  * The host supplies the loader (fetch, bundler manifest, native bridge, etc.).
  */
+function raceWithAbort(promise, signal) {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => signal.removeEventListener("abort", onAbort);
+    const onAbort = () => {
+      cleanup();
+      reject(signal.reason ?? Object.assign(new Error("Asset load was cancelled"), { name: "AbortError" }));
+    };
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+    Promise.resolve(promise).then(
+      value => { cleanup(); resolve(value); },
+      error => { cleanup(); reject(error); }
+    );
+  });
+}
+
 function assertSafeAssetUrl(value, key) {
   if (typeof value !== "string" || !value.trim()) {
     throw new TypeError(`Asset loader returned no URL for "${key}"`);
@@ -51,17 +70,17 @@ export class AssetManager {
     const loader = this.#loader;
     const controller = new AbortController();
     const entry = { controller, promise: null };
-    const request = Promise.resolve()
+    const loaderPromise = Promise.resolve()
       .then(() => {
         if (controller.signal.aborted) {
           throw controller.signal.reason ?? Object.assign(new Error("Asset load was cancelled"), { name: "AbortError" });
         }
         return loader(normalizedKey, metadata, { signal: controller.signal });
-      })
+      });
+    // Race the loader against cancellation: a host loader may ignore the
+    // signal or never settle, but callers must still be released on teardown.
+    const request = raceWithAbort(loaderPromise, controller.signal)
       .then(value => {
-        if (controller.signal.aborted) {
-          throw controller.signal.reason ?? Object.assign(new Error("Asset load was cancelled"), { name: "AbortError" });
-        }
         const safeUrl = assertSafeAssetUrl(value, normalizedKey);
         // A per-key release invalidates the pending entry without cancelling
         // the promise already returned to its callers. Only the still-current
@@ -131,11 +150,8 @@ export class AssetManager {
   destroy() {
     if (this.#destroyed) return;
     // Close the manager before invalidating pending work so no new request can
-    // enter while teardown is in progress. Active loaders are aborted, and
-    // their callers observe AbortError even if a loader ignores the signal.
-    this.#destroyed = true;
-    // Abort active loaders as well as invalidating their cache writes. This
-    // prevents network/decode work from continuing after terminal teardown.
+    // enter while teardown is in progress. AbortSignal releases callers even
+    // when a host loader ignores cancellation or never settles.
     const pendingEntries = [...this.#pending.values()];
     this.clear();
     for (const entry of pendingEntries) {
