@@ -38,8 +38,10 @@ export function createHTMLAudioAdapter({
   function releaseFailedPlayback(audio, { retainOwnership = false } = {}) {
     try {
       audio.pause();
-      try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
+      // A rejected resume must preserve the playhead so a later user-gesture
+      // retry continues from the suspended position instead of restarting.
       if (!retainOwnership) {
+        try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
         active.delete(audio);
         voiceStates.set(audio, "stopped");
         detachEndedHandler(audio);
