@@ -180,3 +180,63 @@ test("destroy invalidates an in-flight cache write while preserving its existing
   assert.equal(calls, 1);
 });
 
+
+
+test("cancel aborts a shared in-flight load for every deduplicated caller", async () => {
+  let calls = 0;
+  let observedSignal;
+  const manager = new AssetManager({
+    loader: (_key, _metadata, { signal }) => {
+      calls += 1;
+      observedSignal = signal;
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    }
+  });
+
+  const first = manager.load("scene");
+  const second = manager.load(" scene ");
+  await Promise.resolve();
+  assert.equal(calls, 1);
+  assert.equal(manager.cancel(" scene "), true);
+  assert.equal(observedSignal.aborted, true);
+  await assert.rejects(first, { name: "AbortError" });
+  await assert.rejects(second, { name: "AbortError" });
+  assert.equal(manager.pendingCount, 0);
+  assert.equal(manager.size, 0);
+  assert.equal(manager.cancel("scene"), false);
+});
+
+test("cancel prevents a loader that ignores AbortSignal from caching a late result", async () => {
+  let finish;
+  const manager = new AssetManager({
+    loader: () => new Promise(resolve => { finish = resolve; })
+  });
+
+  const pending = manager.load("background");
+  await Promise.resolve();
+  assert.equal(manager.cancel("background"), true);
+  finish("/late-background.png");
+  await assert.rejects(pending, { name: "AbortError" });
+  assert.equal(manager.size, 0);
+  assert.equal(manager.pendingCount, 0);
+  assert.equal(await manager.load("background"), "/late-background.png");
+});
+
+test("cancelled asset requests can be retried independently", async () => {
+  let calls = 0;
+  const manager = new AssetManager({
+    loader: async key => {
+      calls += 1;
+      return `/${key}-${calls}.png`;
+    }
+  });
+
+  const pending = manager.load("portrait");
+  await Promise.resolve();
+  assert.equal(manager.cancel("portrait"), true);
+  await assert.rejects(pending, { name: "AbortError" });
+  assert.equal(await manager.load("portrait"), "/portrait-2.png");
+  assert.equal(calls, 2);
+});
