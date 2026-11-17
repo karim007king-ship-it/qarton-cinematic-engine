@@ -72,7 +72,7 @@ try {
     "--remote-allow-origins=*",
     `--user-data-dir=${profile}`,
     "about:blank"
-  ], { stdio: "ignore" });
+  ], { stdio: "ignore", detached: process.platform !== "win32" });
 
   const activePortFile = resolve(profile, "DevToolsActivePort");
   let portInfo;
@@ -135,15 +135,23 @@ try {
 } finally {
   try { socket?.close(); } catch {}
   if (browser && browser.exitCode === null) {
+    const signalTree = signal => {
+      if (process.platform !== "win32" && browser.pid) {
+        try { process.kill(-browser.pid, signal); } catch {}
+      } else {
+        browser.kill(signal);
+      }
+    };
     const exited = new Promise(resolveExit => browser.once("exit", resolveExit));
-    browser.kill("SIGTERM");
+    signalTree("SIGTERM");
     await Promise.race([exited, delay(5000)]);
     if (browser.exitCode === null) {
       const killed = new Promise(resolveExit => browser.once("exit", resolveExit));
-      browser.kill("SIGKILL");
+      signalTree("SIGKILL");
       await killed;
     }
   }
+  await delay(300);
   await new Promise(resolveClose => server.close(resolveClose));
-  await rm(profile, { recursive: true, force: true });
+  await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 }
