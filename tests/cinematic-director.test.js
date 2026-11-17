@@ -718,3 +718,46 @@ test("director retries failed audio suspension while remaining paused on the sam
   assert.deepEqual(calls.at(-1), ["resume", 125]);
   await director.destroy();
 });
+
+test("destroy waits for an in-flight director frame before releasing its resources", async () => {
+  let releaseFrame;
+  const order = [];
+  const frame = new Promise(resolve => { releaseFrame = resolve; });
+  const director = createCinematicDirector({
+    characterStage: {
+      mount: async () => true,
+      update: async () => {
+        order.push("frame-start");
+        await frame;
+        order.push("frame-end");
+      },
+      unmount: () => {},
+      destroy: () => { order.push("stage-destroy"); }
+    },
+    audio: {
+      update: () => {},
+      pause: () => {},
+      resume: () => {},
+      stopAll: () => {},
+      destroy: () => { order.push("audio-destroy"); }
+    }
+  });
+
+  await director.mount();
+  const updating = director.update(100);
+  await Promise.resolve();
+  assert.deepEqual(order, ["frame-start"]);
+
+  const destroying = director.destroy();
+  await Promise.resolve();
+  assert.deepEqual(order, ["frame-start"],
+    "owned resources must remain available while the active frame is pending");
+  assert.equal(director.getState().destroyed, true);
+  assert.deepEqual((await director.update(200)).events, [],
+    "new frames must be invalidated as soon as destroy begins");
+
+  releaseFrame();
+  await updating;
+  await destroying;
+  assert.deepEqual(order, ["frame-start", "frame-end", "stage-destroy", "audio-destroy"]);
+});
