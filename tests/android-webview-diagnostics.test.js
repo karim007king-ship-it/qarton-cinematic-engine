@@ -53,7 +53,10 @@ test("background lifecycle requests audio suspension and never auto-resumes on f
   assert.match(page, /audio-suspend-request/);
   assert.match(page, /audio-suspend-complete/);
   assert.match(page, /audio-suspend-error/);
-  assert.doesNotMatch(page, /visibilityState === "visible".*audioContext/);
+  assert.match(page, /audioContext\\.suspend\\(\\)/);
+  const visibilitychange = page.match(/document\\.addEventListener\\("visibilitychange",[\\s\\S]*?\\n  \\}\\);/);
+  assert.ok(visibilitychange, "diagnostics must observe visibility changes");
+  assert.doesNotMatch(visibilitychange[0], /audioContext\\.resume\\(|htmlAudio\\.play\\(/);
 });
 
 
@@ -76,6 +79,7 @@ test("background lifecycle pauses HTMLAudio without automatic foreground resume"
   const pageshow = page.match(/window\.addEventListener\("pageshow",[\s\S]*?\n  \}\);/);
   assert.ok(pageshow, "diagnostics must observe pageshow");
   assert.doesNotMatch(pageshow[0], /htmlAudio\.play\(\)/);
+  assert.doesNotMatch(pageshow[0], /audioContext\.resume\(\)/);
 });
 
 
