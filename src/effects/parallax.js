@@ -5,14 +5,9 @@ function boundedProduct(factors, maxOffset) {
   const sign = factors.reduce((result, value) => result * Math.sign(value), 1);
   const magnitudes = factors.map(Math.abs).sort((a, b) => a - b);
   let product = 1;
-  for (const magnitude of magnitudes) {
-    product *= magnitude;
-    // Sorted magnitudes ensure an overflow here cannot later be reduced by
-    // multiplying by a smaller factor.
-    if (!Number.isFinite(product) || product >= maxOffset) {
-      return sign * maxOffset;
-    }
-  }
+  for (const magnitude of magnitudes) product *= magnitude;
+
+  if (!Number.isFinite(product) || product >= maxOffset) return sign * maxOffset;
   return sign * product;
 }
 
