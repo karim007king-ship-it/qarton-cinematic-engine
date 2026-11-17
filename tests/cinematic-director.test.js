@@ -745,6 +745,7 @@ test("destroy waits for an in-flight director frame before releasing its resourc
 
   await director.mount();
   const updating = director.update(100);
+  const queued = director.update(200);
   await Promise.resolve();
   assert.deepEqual(order, ["frame-start"]);
 
@@ -753,11 +754,11 @@ test("destroy waits for an in-flight director frame before releasing its resourc
   assert.deepEqual(order, ["frame-start"],
     "owned resources must remain available while the active frame is pending");
   assert.equal(director.getState().destroyed, true);
-  assert.deepEqual((await director.update(200)).events, [],
-    "new frames must be invalidated as soon as destroy begins");
 
   releaseFrame();
   await updating;
+  assert.deepEqual((await queued).events, [],
+    "frames queued before destroy must be invalidated");
   await destroying;
   assert.deepEqual(order, ["frame-start", "frame-end", "stage-destroy", "audio-destroy"]);
 });
