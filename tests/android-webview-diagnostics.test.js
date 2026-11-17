@@ -45,3 +45,12 @@ test("audio lifecycle and optional resource hints are observable without autopla
   assert.match(page, /not native Android RAM or GPU-memory measurements/);
   assert.match(page, /AudioContext did not enter running state/);
 });
+
+test("background lifecycle requests audio suspension and never auto-resumes on foreground", () => {
+  assert.match(page, /suspendAudioForBackground\("visibilitychange"\)/);
+  assert.match(page, /suspendAudioForBackground\("pagehide"\)/);
+  assert.match(page, /audio-suspend-request/);
+  assert.match(page, /audio-suspend-complete/);
+  assert.match(page, /audio-suspend-error/);
+  assert.doesNotMatch(page, /visibilityState === "visible"[\\s\\S]{0,180}audioContext\\.resume/);
+});
