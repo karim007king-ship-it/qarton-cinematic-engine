@@ -151,3 +151,31 @@ test("a synchronous play failure leaves the failed cue retryable without replayi
   assert.equal(controller.getState().cursor, 0);
   assert.equal(controller.getState().activeVoices, 2);
 });
+
+
+test("pause and resume suspend every active voice while preserving cue timing", () => {
+  const calls = [];
+  const controller = createAudioCueController({
+    cues: [
+      { id: "music", atMs: 0, asset: "theme", loop: true },
+      { id: "impact", atMs: 100, asset: "impact" }
+    ],
+    play: (_asset, options) => options.id,
+    pauseVoice: voice => calls.push(["pause", voice]),
+    resumeVoice: voice => calls.push(["resume", voice])
+  });
+
+  controller.update(120);
+  controller.pause(120);
+  assert.deepEqual(calls, [["pause", "music"], ["pause", "impact"]]);
+  assert.equal(controller.getState().paused, true);
+
+  controller.update(250);
+  controller.resume(250);
+  assert.deepEqual(calls, [
+    ["pause", "music"], ["pause", "impact"],
+    ["resume", "music"], ["resume", "impact"]
+  ]);
+  controller.update(300);
+  assert.deepEqual(controller.getState().paused, false);
+});

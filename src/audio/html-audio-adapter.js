@@ -22,6 +22,7 @@ export function createHTMLAudioAdapter({
   let volume = masterVolume;
   let destroyed = false;
   const active = new Map();
+  const assets = new WeakMap();
 
   function play(asset, options = {}) {
     if (destroyed) throw new Error("HTMLAudio adapter has been destroyed");
@@ -42,9 +43,15 @@ export function createHTMLAudioAdapter({
     audio.preload = "auto";
     audio.volume = baseVolume * volume;
     active.set(audio, baseVolume);
+    assets.set(audio, asset);
     const result = audio.play();
     if (result && typeof result.catch === "function") {
-      result.catch(error => onPlaybackError(error, { asset, audio }));
+      result.catch(error => {
+        // A stopped voice is no longer owned by this adapter; ignore late
+        // playback failures instead of reporting an obsolete cue.
+        if (!active.has(audio)) return;
+        try { onPlaybackError(error, { asset, audio }); } catch { /* reporting must not create an unhandled rejection */ }
+      });
     }
     return audio;
   }
@@ -54,6 +61,24 @@ export function createHTMLAudioAdapter({
     audio.pause();
     try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
     active.delete(audio);
+  }
+
+  function pause(audio) {
+    if (destroyed) throw new Error("HTMLAudio adapter has been destroyed");
+    if (!audio || !active.has(audio)) return;
+    audio.pause();
+  }
+
+  function resume(audio) {
+    if (destroyed) throw new Error("HTMLAudio adapter has been destroyed");
+    if (!audio || !active.has(audio)) return;
+    const result = audio.play();
+    if (result && typeof result.catch === "function") {
+      result.catch(error => {
+        if (!active.has(audio)) return;
+        try { onPlaybackError(error, { asset: assets.get(audio), audio }); } catch { /* error reporting must not create an unhandled rejection */ }
+      });
+    }
   }
 
   function setVolume(audio, nextVolume) {
@@ -103,5 +128,5 @@ export function createHTMLAudioAdapter({
     }
   }
 
-  return Object.freeze({ play, stop, setVolume, setMasterVolume, destroy });
+  return Object.freeze({ play, pause, resume, stop, setVolume, setMasterVolume, destroy });
 }
