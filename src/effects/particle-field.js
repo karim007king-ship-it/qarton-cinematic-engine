@@ -50,13 +50,22 @@ export function createParticleField({
       throw new TypeError("Particle sample time must be non-negative and finite");
     }
     return Object.freeze(particles.map(particle => {
-      const ageMs = (timeMs + particle.phaseMs) % lifetimeMs;
+      // Add modulo values without overflowing when lifetimeMs is very large.
+      const timePhase = timeMs % lifetimeMs;
+      const particlePhase = particle.phaseMs % lifetimeMs;
+      const remaining = lifetimeMs - particlePhase;
+      const ageMs = timePhase >= remaining ? timePhase - remaining : timePhase + particlePhase;
       const seconds = ageMs / 1000;
+      const x = particle.x + particle.vx * seconds;
+      const y = particle.y + particle.vy * seconds + 0.5 * gravity * seconds * seconds;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        throw new RangeError("Particle position exceeded the finite numeric range");
+      }
       const wrap = (value, size) => ((value % size) + size) % size;
       return Object.freeze({
         id: particle.id,
-        x: wrap(particle.x + particle.vx * seconds, width),
-        y: wrap(particle.y + particle.vy * seconds + 0.5 * gravity * seconds * seconds, height),
+        x: wrap(x, width),
+        y: wrap(y, height),
         radius: particle.radius,
         opacity: 1 - ageMs / lifetimeMs
       });
