@@ -134,8 +134,10 @@ test("asynchronous play rejection releases the voice and reports once", async ()
   await Promise.resolve();
   assert.equal(reported, 1);
   assert.equal(paused, 1);
+  // The cue controller already received this voice handle; retain adapter
+  // ownership until its later stop/destroy call releases that handle.
   assert.doesNotThrow(() => adapter.destroy());
-  assert.equal(paused, 1);
+  assert.equal(paused, 2);
 });
 
 test("failed asynchronous playback retains ownership when pause cleanup fails", async () => {
