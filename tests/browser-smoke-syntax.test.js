@@ -48,8 +48,8 @@ test("browser showcase drives all visual tracks from the rebased director clock"
 
 test("browser showcase asset loader honors AbortSignal", async () => {
   const html = await readFile(resolve(root, "examples/browser-smoke.html"), "utf8");
-  assert.match(html, /function loadImage\\(key, metadata, \\{ signal \\} = \\{\\}\\)/);
-  assert.match(html, /signal\\?\\.addEventListener\\("abort", onAbort, \\{ once: true \\}\\)/);
-  assert.match(html, /image\\.src = ""/);
-  assert.match(html, /signal\\?\\.removeEventListener\\("abort", onAbort\\)/);
+  assert.match(html, /function loadImage\(key, metadata, \{ signal \} = \{\}\)/);
+  assert.match(html, /signal\?\.addEventListener\("abort", onAbort, \{ once: true \}\)/);
+  assert.match(html, /image\.src = ""/);
+  assert.match(html, /signal\?\.removeEventListener\("abort", onAbort\)/);
 });
