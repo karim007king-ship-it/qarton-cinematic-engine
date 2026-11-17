@@ -286,3 +286,75 @@ test("runtime ignores background frame samples and starts a fresh adaptive windo
 
   await runtime.destroy();
 });
+
+
+test("runtime pauses and resumes the injected audio controller with page visibility", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const target = new LifecycleTarget("visible");
+  const calls = [];
+  const audioController = {
+    pause() { calls.push("pause"); },
+    resume() { calls.push("resume"); }
+  };
+  const runtime = createCinematicRuntime({
+    root,
+    loadAsset: key => key,
+    renderScene: () => document.createElement("div"),
+    lifecycleTarget: target,
+    audioController
+  });
+
+  target.visibilityState = "hidden";
+  target.dispatch("visibilitychange");
+  target.dispatch("pagehide");
+  assert.deepEqual(calls, ["pause"]);
+  assert.equal(runtime.isActive(), false);
+
+  target.visibilityState = "visible";
+  target.dispatch("pageshow");
+  assert.deepEqual(calls, ["pause", "resume"]);
+  assert.equal(runtime.isActive(), true);
+
+  await runtime.destroy();
+  assert.deepEqual(calls, ["pause", "resume", "pause"]);
+});
+
+test("audio lifecycle failures are reported without blocking runtime pause or resume", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const target = new LifecycleTarget("visible");
+  const calls = [];
+  const errors = [];
+  const runtime = createCinematicRuntime({
+    root,
+    loadAsset: key => key,
+    renderScene: () => document.createElement("div"),
+    lifecycleTarget: target,
+    audioController: {
+      pause() { calls.push("pause"); throw new Error("pause failed"); },
+      resume() { calls.push("resume"); throw new Error("resume failed"); }
+    },
+    onAudioError: (error, context) => errors.push([error.message, context.phase])
+  });
+
+  target.visibilityState = "hidden";
+  target.dispatch("visibilitychange");
+  assert.equal(runtime.isActive(), false);
+  target.visibilityState = "visible";
+  target.dispatch("visibilitychange");
+  assert.equal(runtime.isActive(), true);
+  assert.deepEqual(calls, ["pause", "resume"]);
+  assert.deepEqual(errors, [["pause failed", "pause"], ["resume failed", "resume"]]);
+
+  await runtime.destroy();
+  assert.equal(runtime.isActive(), false);
+});
+
+test("runtime validates the optional audio controller contract", () => {
+  assert.throws(() => createCinematicRuntime({
+    loadAsset: () => null,
+    renderScene: () => null,
+    audioController: { pause() {} }
+  }), /pause\(\) and resume\(\)/);
+});
