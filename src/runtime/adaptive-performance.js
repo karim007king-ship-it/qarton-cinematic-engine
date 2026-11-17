@@ -70,7 +70,10 @@ export function createAdaptivePerformanceMonitor({
     } else {
       if (direction !== stableDirection) stableCount = 0;
       stableDirection = direction;
-      stableCount += 1;
+      // Saturate at the required window count. At the lowest/highest tier
+      // there is no further transition to make, so allowing this counter to
+      // grow forever would expose meaningless, unbounded stability metrics.
+      stableCount = Math.min(stableWindows, stableCount + 1);
       if (stableCount >= stableWindows) {
         nextIndex = direction === "downgrade"
           ? Math.max(0, currentIndex - 1)
