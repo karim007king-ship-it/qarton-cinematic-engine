@@ -291,3 +291,25 @@ test("destroy aborts active loaders and rejects their existing callers", async (
   await assert.rejects(manager.load("after-destroy"), /has been destroyed/);
   assert.equal(calls, 1);
 });
+
+
+test("destroy settles callers when a loader ignores abort and never resolves", async () => {
+  let observedSignal;
+  const manager = new AssetManager({
+    loader: (_key, _metadata, { signal }) => {
+      observedSignal = signal;
+      return new Promise(() => {});
+    }
+  });
+
+  const pending = manager.load("never-finishing-image");
+  await Promise.resolve();
+  assert.equal(observedSignal.aborted, false);
+
+  manager.destroy();
+
+  await assert.rejects(pending, { name: "AbortError" });
+  assert.equal(observedSignal.aborted, true);
+  assert.equal(manager.pendingCount, 0);
+  assert.equal(manager.size, 0);
+});
