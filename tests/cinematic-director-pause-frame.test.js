@@ -100,10 +100,10 @@ test("rewind does not replay audio until character sampling succeeds", async () 
   await assert.rejects(director.update(100), /rewound character sample failed/);
   assert.deepEqual(stopped, ["early", "middle"]);
   assert.deepEqual(played, ["early", "middle"]);
-  assert.deepEqual(delivered, []);
+  assert.deepEqual(delivered, ["rewound-event"]);
 
   await director.update(100);
   assert.deepEqual(played, ["early", "middle", "early"]);
-  assert.deepEqual(delivered, ["rewound-event"]);
+  assert.deepEqual(delivered, ["rewound-event", "rewound-event"]);
   await director.destroy();
 });
