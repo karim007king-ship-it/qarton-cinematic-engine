@@ -90,6 +90,7 @@
   const runtime = createCinematicRuntime({
     root: stage,
     lifecycleTarget: document,
+    lifecyclePageTarget: window,
     audioController: {
       pause: () => director?.pause(),
       resume: () => director?.resume()
