@@ -680,3 +680,41 @@ test("director stays paused when an audio voice needs a user gesture and retries
   ]);
   await director.destroy();
 });
+
+test("director retries failed audio suspension while remaining paused on the same clock", async () => {
+  const calls = [];
+  let failPause = true;
+  const audio = {
+    update: time => calls.push(["update", time]),
+    pause: time => {
+      calls.push(["pause", time]);
+      if (failPause) throw new Error("transient audio suspension failure");
+    },
+    resume: time => calls.push(["resume", time]),
+    stopAll: options => calls.push(["stopAll", options]),
+    destroy: () => calls.push(["destroy"])
+  };
+  const director = createCinematicDirector({ audio });
+
+  await director.mount();
+  await director.update(125);
+  assert.throws(() => director.pause(), /transient audio suspension failure/);
+  assert.deepEqual(director.getState(), {
+    mounted: true, paused: true, destroyed: false, timeMs: 125
+  });
+
+  failPause = false;
+  assert.equal(director.pause(), false, "retrying an already-paused director does not emit a second pause transition");
+  assert.deepEqual(director.getState(), {
+    mounted: true, paused: true, destroyed: false, timeMs: 125
+  });
+  assert.deepEqual(calls, [
+    ["update", 125],
+    ["pause", 125],
+    ["pause", 125]
+  ], "retry must not advance the audio or director clock");
+
+  assert.equal(director.resume(), true);
+  assert.deepEqual(calls.at(-1), ["resume", 125]);
+  await director.destroy();
+});
