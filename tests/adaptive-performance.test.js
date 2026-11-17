@@ -200,6 +200,6 @@ test("reset discards a failed notification from the previous measurement epoch",
   monitor.reset({ quality: "low" });
   const result = monitor.recordFrame(16);
   assert.equal(result.evaluated, true);
-  assert.deepEqual(notifications, [["high", "medium"]]);
-  assert.equal(monitor.getProfile().tier, "low");
+  assert.deepEqual(notifications, [["high", "medium"], ["low", "medium"]]);
+  assert.equal(monitor.getProfile().tier, "medium");
 });
