@@ -72,7 +72,10 @@ export function createCinematicRuntime({
     ? createPageLifecycleAdapter({
       target: lifecycleTarget,
       pageTarget: lifecyclePageTarget ?? lifecycleTarget,
-      setActive: activity.setActive
+      setActive: nextActive => {
+        // A failed listener removal must not let a late page event call a destroyed activity gate.
+        if (!destroyed) activity.setActive(nextActive);
+      }
     })
     : null;
   const transitionOptions = { root, duration, reducedMotion };
