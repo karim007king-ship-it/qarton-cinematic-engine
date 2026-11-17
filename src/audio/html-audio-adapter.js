@@ -23,20 +23,21 @@ export function createHTMLAudioAdapter({
   let destroyed = false;
   const active = new Map();
 
-  function releaseFailedPlayback(audio) {
-    // A failed play() must not leave a silent voice registered indefinitely.
-    // Keep ownership only when pause itself fails, so destroy() can retry it.
+  function releaseFailedPlayback(audio, { retainOwnership = false } = {}) {
+    // A synchronous failure has no returned handle, so release it when possible.
+    // For async rejection the controller already owns the returned handle; keep
+    // it registered until stop()/destroy() releases that same voice.
     try {
       audio.pause();
       try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
-      active.delete(audio);
+      if (!retainOwnership) active.delete(audio);
     } catch {
       // Retain the voice for a later stop()/destroy() cleanup attempt.
     }
   }
 
-  function reportPlaybackError(error, asset, audio) {
-    if (active.has(audio)) releaseFailedPlayback(audio);
+  function reportPlaybackError(error, asset, audio, retainOwnership = false) {
+    if (active.has(audio)) releaseFailedPlayback(audio, { retainOwnership });
     try {
       onPlaybackError(error, { asset, audio });
     } catch {
@@ -71,7 +72,7 @@ export function createHTMLAudioAdapter({
       throw error;
     }
     if (result && typeof result.then === "function") {
-      Promise.resolve(result).catch(error => reportPlaybackError(error, asset, audio));
+      Promise.resolve(result).catch(error => reportPlaybackError(error, asset, audio, true));
     }
     return audio;
   }
