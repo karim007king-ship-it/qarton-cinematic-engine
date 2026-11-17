@@ -25,3 +25,5 @@ test("diagnostics report failures without assuming optional APIs exist", () => {
   assert.match(page, /window\.AudioContext \|\| window\.webkitAudioContext/);
   assert.match(page, /navigator\.clipboard\.writeText/);
 });
+
+test("diagnostics collect bounded frame-pacing metrics without claiming a benchmark", () => {\n  assert.match(page, /sampleDurationMs/);\n  assert.match(page, /averageFps/);\n  assert.match(page, /p95FrameMs/);\n  assert.match(page, /framesOver25MsRatio/);\n  assert.match(page, /Foreground-only rough measurement/);\n  assert.match(page, /timestamp - startedAt >= 1200/);\n});\n
