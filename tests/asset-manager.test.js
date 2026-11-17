@@ -40,6 +40,17 @@ test("preload deduplicates keys and loads independent assets concurrently", asyn
   assert.deepEqual(calls.sort(), ["hero", "sky"]);
 });
 
+test("preload deduplicates keys after trimming whitespace", async () => {
+  const calls = [];
+  const manager = new AssetManager({
+    loader: async key => { calls.push(key); return `/${key}.png`; }
+  });
+
+  const urls = await manager.preload([" sky ", "sky", "hero "]);
+  assert.deepEqual(urls, ["/sky.png", "/hero.png"]);
+  assert.deepEqual(calls.sort(), ["hero", "sky"]);
+});
+
 test("failed loads are not cached and can be retried", async () => {
   let attempts = 0;
   const manager = new AssetManager({ loader: async () => {
@@ -93,6 +104,14 @@ test("release invalidates an in-flight cache write and allows a fresh load", asy
   assert.equal(await manager.load("background"), "/background-2.png");
   assert.equal(manager.size, 1);
   assert.equal(calls, 2);
+});
+
+test("release trims keys consistently with load", async () => {
+  const manager = new AssetManager({ loader: key => `/${key}.png` });
+  await manager.load(" background ");
+  assert.equal(manager.release(" background "), true);
+  assert.equal(manager.size, 0);
+  assert.equal(await manager.load("background"), "/background.png");
 });
 
 test("release removes one cached key without disturbing others", async () => {
