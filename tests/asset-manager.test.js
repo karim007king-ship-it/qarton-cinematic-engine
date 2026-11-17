@@ -14,10 +14,39 @@ test("concurrent loads share one loader call and cache the result", async () => 
   assert.equal(manager.size, 1);
 });
 
+test("asset keys are trimmed before cache lookup and loader invocation", async () => {
+  const calls = [];
+  const manager = new AssetManager({
+    loader: async key => { calls.push(key); return `/${key}.png`; }
+  });
+
+  const [first, second] = await Promise.all([
+    manager.load("  background  "),
+    manager.load("background")
+  ]);
+
+  assert.equal(first, "/background.png");
+  assert.equal(second, first);
+  assert.deepEqual(calls, ["background"]);
+  assert.equal(manager.size, 1);
+  assert.equal(manager.pendingCount, 0);
+});
+
 test("preload deduplicates keys and loads independent assets concurrently", async () => {
   const calls = [];
   const manager = new AssetManager({ loader: async key => { calls.push(key); return `/${key}.png`; } });
   const urls = await manager.preload(["sky", "hero", "sky"]);
+  assert.deepEqual(urls, ["/sky.png", "/hero.png"]);
+  assert.deepEqual(calls.sort(), ["hero", "sky"]);
+});
+
+test("preload deduplicates keys after trimming whitespace", async () => {
+  const calls = [];
+  const manager = new AssetManager({
+    loader: async key => { calls.push(key); return `/${key}.png`; }
+  });
+
+  const urls = await manager.preload([" sky ", "sky", "hero "]);
   assert.deepEqual(urls, ["/sky.png", "/hero.png"]);
   assert.deepEqual(calls.sort(), ["hero", "sky"]);
 });
@@ -75,6 +104,14 @@ test("release invalidates an in-flight cache write and allows a fresh load", asy
   assert.equal(await manager.load("background"), "/background-2.png");
   assert.equal(manager.size, 1);
   assert.equal(calls, 2);
+});
+
+test("release trims keys consistently with load", async () => {
+  const manager = new AssetManager({ loader: key => `/${key}.png` });
+  await manager.load(" background ");
+  assert.equal(manager.release(" background "), true);
+  assert.equal(manager.size, 0);
+  assert.equal(await manager.load("background"), "/background.png");
 });
 
 test("release removes one cached key without disturbing others", async () => {

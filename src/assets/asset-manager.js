@@ -43,34 +43,36 @@ export class AssetManager {
     if (typeof key !== "string" || !key.trim()) {
       return Promise.reject(new TypeError("Asset key must be a non-empty string"));
     }
-    if (this.#cache.has(key)) return Promise.resolve(this.#cache.get(key));
-    if (this.#pending.has(key)) return this.#pending.get(key);
+    const normalizedKey = key.trim();
+    if (this.#cache.has(normalizedKey)) return Promise.resolve(this.#cache.get(normalizedKey));
+    if (this.#pending.has(normalizedKey)) return this.#pending.get(normalizedKey);
 
     const generation = this.#generation;
     const request = Promise.resolve()
-      .then(() => this.#loader(key, metadata))
+      .then(() => this.#loader(normalizedKey, metadata))
       .then(value => {
-        const safeUrl = assertSafeAssetUrl(value, key);
+        const safeUrl = assertSafeAssetUrl(value, normalizedKey);
         // A per-key release invalidates the pending entry without cancelling
         // the promise already returned to its callers. Only the still-current
         // request may populate the cache.
-        if (generation === this.#generation && this.#pending.get(key) === request) {
-          this.#cache.set(key, safeUrl);
+        if (generation === this.#generation && this.#pending.get(normalizedKey) === request) {
+          this.#cache.set(normalizedKey, safeUrl);
         }
         return safeUrl;
       })
       .finally(() => {
-        if (this.#pending.get(key) === request) this.#pending.delete(key);
+        if (this.#pending.get(normalizedKey) === request) this.#pending.delete(normalizedKey);
       });
 
-    this.#pending.set(key, request);
+    this.#pending.set(normalizedKey, request);
     return request;
   }
 
   /** Resolve a group of keys concurrently; duplicate keys are loaded once. */
   preload(keys) {
     if (!Array.isArray(keys)) return Promise.reject(new TypeError("preload expects an array of asset keys"));
-    return Promise.all([...new Set(keys)].map(key => this.load(key)));
+    const normalizedKeys = keys.map(key => typeof key === "string" ? key.trim() : key);
+    return Promise.all([...new Set(normalizedKeys)].map(key => this.load(key)));
   }
 
   /**
@@ -78,8 +80,9 @@ export class AssetManager {
    * still receive the pending result, but a later load starts a fresh request.
    */
   release(key) {
-    const removed = this.#cache.delete(key);
-    const pending = this.#pending.delete(key);
+    const normalizedKey = typeof key === "string" ? key.trim() : key;
+    const removed = this.#cache.delete(normalizedKey);
+    const pending = this.#pending.delete(normalizedKey);
     return removed || pending;
   }
 
