@@ -16,9 +16,19 @@ export function sampleCameraShake({
   if (progress >= 1 || amplitude === 0) return Object.freeze({ x: 0, y: 0, rotation: 0 });
   const envelope = 1 - progress;
   const phase = (timeMs / 1000) * frequencyHz * Math.PI * 2;
-  return Object.freeze({
-    x: Math.sin(phase + seed * 1.17) * amplitude * envelope,
-    y: Math.sin(phase * 1.31 + seed * 2.03) * amplitude * 0.72 * envelope,
-    rotation: Math.sin(phase * 0.73 + seed * 0.61) * amplitude * 0.035 * envelope
-  });
+  const phaseX = phase + seed * 1.17;
+  const phaseY = phase * 1.31 + seed * 2.03;
+  const phaseRotation = phase * 0.73 + seed * 0.61;
+  if (![phase, phaseX, phaseY, phaseRotation].every(Number.isFinite)) {
+    throw new RangeError("Camera shake phase calculation exceeded the finite numeric range");
+  }
+  const sample = {
+    x: Math.sin(phaseX) * amplitude * envelope,
+    y: Math.sin(phaseY) * amplitude * 0.72 * envelope,
+    rotation: Math.sin(phaseRotation) * amplitude * 0.035 * envelope
+  };
+  if (!Object.values(sample).every(Number.isFinite)) {
+    throw new RangeError("Camera shake output exceeded the finite numeric range");
+  }
+  return Object.freeze(sample);
 }
