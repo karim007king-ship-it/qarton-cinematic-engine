@@ -121,6 +121,36 @@
       probe.classList.remove("move");
       record("CSS transform transition execution", moved);
     } catch (error) { record("CSS transform transition execution", false, error.message); }
+    try {
+      const samples = [];
+      let previous = null;
+      const startedAt = performance.now();
+      await new Promise(resolve => {
+        function sample(timestamp) {
+          if (previous !== null) samples.push(timestamp - previous);
+          previous = timestamp;
+          if (timestamp - startedAt >= 1200) resolve();
+          else requestAnimationFrame(sample);
+        }
+        requestAnimationFrame(sample);
+      });
+      const sorted = [...samples].sort((a, b) => a - b);
+      const averageFrameMs = samples.reduce((sum, value) => sum + value, 0) / Math.max(1, samples.length);
+      const percentile95 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))] || 0;
+      const droppedFrameRatio = samples.filter(value => value > (1000 / 60) * 1.5).length / Math.max(1, samples.length);
+      report.performance = {
+        sampleDurationMs: Math.round(performance.now() - startedAt),
+        frameCount: samples.length,
+        averageFps: Number((1000 / averageFrameMs).toFixed(1)),
+        p95FrameMs: Number(percentile95.toFixed(2)),
+        framesOver25MsRatio: Number(droppedFrameRatio.toFixed(3)),
+        note: "Foreground-only rough measurement; repeat under representative scene load."
+      };
+      record("requestAnimationFrame sampling", samples.length >= 10, samples.length + " frames / " + report.performance.averageFps + " average FPS");
+    } catch (error) {
+      record("requestAnimationFrame sampling", false, error.message);
+      report.performance = { error: error.message };
+    }
     const supported = Object.values(report.checks).filter(item => item.supported).length;
     const total = Object.keys(report.checks).length;
     summary.textContent = "Checks completed: " + supported + "/" + total + " available. Review warnings against your target device.";
