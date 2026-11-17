@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createCinematicRuntime } from "../src/runtime/cinematic-runtime.js";
+import { createCinematicDirector } from "../src/runtime/cinematic-director.js";
+import { createAudioCueController } from "../src/audio/audio-cue-controller.js";
 
 class Element {
   constructor(tag, ownerDocument) {
@@ -357,4 +359,45 @@ test("runtime validates the optional audio controller contract", () => {
     renderScene: () => null,
     audioController: { pause() {} }
   }), /pause\(\) and resume\(\)/);
+});
+
+
+test("runtime lifecycle pauses the shared director clock and audio cues together", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const target = new LifecycleTarget("visible");
+  const played = [];
+  const audio = createAudioCueController({
+    cues: [
+      { id: "before", atMs: 0, asset: "before" },
+      { id: "hidden", atMs: 100, asset: "hidden" },
+      { id: "after", atMs: 200, asset: "after" }
+    ],
+    play: asset => { played.push(asset); return asset; }
+  });
+  const director = createCinematicDirector({ audio });
+  await director.mount();
+  await director.update(50);
+
+  const runtime = createCinematicRuntime({
+    root,
+    loadAsset: key => key,
+    renderScene: () => document.createElement("div"),
+    lifecycleTarget: target,
+    audioController: director
+  });
+  target.visibilityState = "hidden";
+  target.dispatch("visibilitychange");
+  assert.equal(director.getState().paused, true);
+  await director.update(150);
+  assert.deepEqual(played, ["before"]);
+
+  target.visibilityState = "visible";
+  target.dispatch("visibilitychange");
+  assert.equal(director.getState().paused, false);
+  await director.update(250);
+  assert.deepEqual(played, ["before", "after"]);
+
+  await runtime.destroy();
+  await director.destroy();
 });
