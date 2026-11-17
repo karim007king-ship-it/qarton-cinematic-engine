@@ -2,9 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { resolveQualityProfile, clamp, lerp, easeInOutCubic, scaleDuration, createSceneDefinition } from "../src/index.js";
 
-test("adaptive profile respects reduced motion and save-data", () => {
+test("adaptive profile respects reduced motion and save-data, even with a high manual request", () => {
   assert.equal(resolveQualityProfile({ reducedMotion: true }).tier, "low");
   assert.equal(resolveQualityProfile({ saveData: true }).tier, "low");
+  assert.equal(resolveQualityProfile({ quality: "high", reducedMotion: true }).tier, "low");
+  assert.equal(resolveQualityProfile({ quality: "high", reducedMotion: true }).reason, "reduced-motion");
+  assert.equal(resolveQualityProfile({ quality: "high", saveData: true }).tier, "low");
+  assert.equal(resolveQualityProfile({ quality: "high", saveData: true }).reason, "save-data");
 });
 test("adaptive profile selects manual and capability tiers", () => {
   assert.equal(resolveQualityProfile({ quality: "medium" }).reason, "manual");
@@ -49,7 +53,6 @@ test("scene definitions normalize scene, layer, and asset identifiers", () => {
     ]
   }), /unique id/);
 });
-
 test("scene definitions reject duplicate ids and invalid roles", () => {
   assert.throws(() => createSceneDefinition({ id: "broken", layers: [
     { id: "x", role: "background", asset: "a" }, { id: "x", role: "foreground", asset: "b" }
