@@ -14,6 +14,24 @@ test("concurrent loads share one loader call and cache the result", async () => 
   assert.equal(manager.size, 1);
 });
 
+test("asset keys are trimmed before cache lookup and loader invocation", async () => {
+  const calls = [];
+  const manager = new AssetManager({
+    loader: async key => { calls.push(key); return `/${key}.png`; }
+  });
+
+  const [first, second] = await Promise.all([
+    manager.load("  background  "),
+    manager.load("background")
+  ]);
+
+  assert.equal(first, "/background.png");
+  assert.equal(second, first);
+  assert.deepEqual(calls, ["background"]);
+  assert.equal(manager.size, 1);
+  assert.equal(manager.pendingCount, 0);
+});
+
 test("preload deduplicates keys and loads independent assets concurrently", async () => {
   const calls = [];
   const manager = new AssetManager({ loader: async key => { calls.push(key); return `/${key}.png`; } });
