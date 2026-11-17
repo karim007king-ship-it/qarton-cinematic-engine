@@ -7,7 +7,7 @@ import { createPageLifecycleAdapter } from "./page-lifecycle-adapter.js";
 /**
  * Compose the independent runtime modules into one host-facing engine.
  * renderScene(scene, profile, { assets }) returns a DOM element; the host
- * controls drawing, asset manifests, audio, and lifecycle notifications.
+ * controls drawing, asset manifests, audio ownership, and frame scheduling.
  */
 export function createCinematicRuntime({
   root,
@@ -22,22 +22,42 @@ export function createCinematicRuntime({
   onProfileChange = () => {},
   onPause = () => {},
   onResume = () => {},
+  onAudioError = () => {},
+  audioController,
   lifecycleTarget
 } = {}) {
   if (typeof loadAsset !== "function") throw new TypeError("Cinematic runtime requires loadAsset()");
   if (typeof renderScene !== "function") throw new TypeError("Cinematic runtime requires renderScene()");
+  if (typeof onAudioError !== "function") throw new TypeError("onAudioError must be a function");
+  if (audioController != null
+    && (typeof audioController.pause !== "function" || typeof audioController.resume !== "function")) {
+    throw new TypeError("audioController must expose pause() and resume()");
+  }
   let destroyed = false;
   let destroyPromise = null;
+
+  function syncAudioLifecycle(phase) {
+    if (!audioController) return;
+    try {
+      audioController[phase]();
+    } catch (error) {
+      // Audio failure must not prevent the runtime activity gate from closing
+      // or reopening. The host can log the error and offer a user-gesture retry.
+      try { onAudioError(error, { phase }); } catch { /* diagnostics must not break lifecycle */ }
+    }
+  }
 
   const assets = new AssetManager({ loader: loadAsset });
   const adaptive = createAdaptivePerformanceMonitor({ device, onProfileChange });
   const activity = createRuntimeActivityGate({
     onPause: () => {
       adaptive.clearSamples();
+      syncAudioLifecycle("pause");
       onPause();
     },
     onResume: () => {
       adaptive.clearSamples();
+      syncAudioLifecycle("resume");
       onResume();
     }
   });
@@ -53,10 +73,7 @@ export function createCinematicRuntime({
     renderScene: (scene, profile) => renderScene(scene, profile, { assets })
   });
   const scenes = new SceneTransitionManager({
-    mount: dom.mount,
-    crossfade: dom.crossfade,
-    unmount: dom.unmount,
-    duration
+    mount: dom.mount, crossfade: dom.crossfade, unmount: dom.unmount, duration
   });
 
   // Opt-in only: existing hosts remain unchanged unless they inject a lifecycle target.
@@ -74,29 +91,19 @@ export function createCinematicRuntime({
     destroyPromise = (async () => {
       const errors = [];
       for (const cleanup of [
-        // Notify the host first so it can stop its frame loop before resources
-        // are torn down. Then cancel DOM animation before awaiting scene release.
         () => pageLifecycle?.stop(),
         () => activity.destroy(),
         () => dom.destroy(),
         () => scenes.destroy(),
         () => assets.destroy()
       ]) {
-        try {
-          await cleanup();
-        } catch (error) {
-          errors.push(error);
-        }
+        try { await cleanup(); } catch (error) { errors.push(error); }
       }
       if (errors.length === 1) throw errors[0];
       if (errors.length > 1) {
         throw new AggregateError(errors, "One or more cinematic runtime resources could not be destroyed");
       }
-    })().finally(() => {
-      // A failed teardown can be retried. Successful cleanup operations are
-      // idempotent, while scene/DOM owners retain resources that failed removal.
-      destroyPromise = null;
-    });
+    })().finally(() => { destroyPromise = null; });
     return destroyPromise;
   }
 
