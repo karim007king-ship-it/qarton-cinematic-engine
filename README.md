@@ -38,7 +38,7 @@ npm test
 - `createMotionPath(points)` و`sampleMotionPath(path, progress, easing)`: مسارات 2D محايدة للمنصة مع أخذ عينات للحركة.
 - `createTimeline(events)` و`getTimelineEvents(timeline, range)`: ترتيب أحداث الصوت/التعبير/الكاميرا وإرجاع الأحداث ضمن نافذة زمنية ثابتة.
 - `createCharacterController({ id, initial, motions })`: حساب موضع الشخصية وحالتها وتعبيرها وخصائصها عبر الزمن دون ربطها بـ DOM أو محرك رسم.
-- `createDOMCharacterRenderer({ root, resolveSprite })`: محول اختياري لعرض sprites عبر DOM، مع حقن تحميل الأصول وحماية من نتائج التحميل القديمة.
+- `createDOMCharacterRenderer({ root, resolveSprite })`: محول اختياري لعرض sprites عبر DOM؛ يستدعي `resolveSprite(key, { signal })`، ويلغي طلب التعبير السابق عند تغييره، ويلغي التحميل عند `unmount()` و`destroy()`، مع منع النتائج القديمة من استبدال sprite الأحدث.
 - `computeParallaxOffset(...)`: حساب حركة طبقات العمق مع حد أقصى للإزاحة.
 - `sampleCameraShake(...)`: اهتزاز كاميرا deterministic يتلاشى زمنياً.
 - `createCameraTrack(keyframes)`: مسار كاميرا مستقل يدعم pan وzoom وrotation عبر keyframes مرتبة زمنياً مع easing حتمي.
