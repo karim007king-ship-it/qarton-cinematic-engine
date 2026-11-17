@@ -259,3 +259,32 @@ test("cancel before the loader microtask prevents starting unnecessary work", as
   assert.equal(calls, 0);
   assert.equal(manager.pendingCount, 0);
 });
+
+
+test("destroy aborts active loaders and rejects their existing callers", async () => {
+  let observedSignal;
+  let calls = 0;
+  const manager = new AssetManager({
+    loader: (_key, _metadata, { signal }) => {
+      calls += 1;
+      observedSignal = signal;
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    }
+  });
+
+  const pending = manager.load("large-background");
+  await Promise.resolve();
+  assert.equal(calls, 1);
+  assert.equal(observedSignal.aborted, false);
+
+  manager.destroy();
+
+  assert.equal(observedSignal.aborted, true);
+  await assert.rejects(pending, { name: "AbortError" });
+  assert.equal(manager.pendingCount, 0);
+  assert.equal(manager.size, 0);
+  await assert.rejects(manager.load("after-destroy"), /has been destroyed/);
+  assert.equal(calls, 1);
+});
