@@ -334,6 +334,36 @@
 
   await show(0);
   frameId = requestAnimationFrame(tick);
+
+  // Optional automated real-browser smoke path used by CI:
+  // /examples/browser-smoke.html?smoke=1
+  if (new URLSearchParams(location.search).get("smoke") === "1") {
+    try {
+      await show(1);
+      if (!stage.querySelector(".qarton-scene")) throw new Error("Dusk scene did not mount");
+      if (characterRoot.querySelectorAll(".qarton-character").length !== 2) {
+        throw new Error("Expected both character sprites to mount");
+      }
+      await show(0);
+      if (stage.querySelector(".qarton-scene")?.dataset.qartonSceneId !== "dawn") {
+        throw new Error("Dawn scene did not become active after transition");
+      }
+      document.querySelector("#destroy").click();
+      const deadline = performance.now() + 8000;
+      while (!status.textContent.startsWith("Destroyed:")
+        && !status.textContent.startsWith("Cleanup completed with")
+        && performance.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+      if (!status.textContent.startsWith("Destroyed:")) {
+        throw new Error(status.textContent || "Runtime cleanup did not finish");
+      }
+      document.documentElement.dataset.smokeResult = "passed";
+    } catch (error) {
+      document.documentElement.dataset.smokeResult = "failed";
+      status.textContent = `Browser smoke failed: ${error.message}`;
+    }
+  }
 </script>
 </body>
 </html>
