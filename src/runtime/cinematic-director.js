@@ -276,6 +276,10 @@ export function createCinematicDirector({
 
     destroyPromise = (async () => {
       const errors = [];
+      // Invalidate queued frames immediately above, then let the active frame
+      // settle before releasing the stage/audio resources it may still use.
+      // updateQueue absorbs frame failures, so teardown is not poisoned by them.
+      await updateQueue;
       // Attempt every owned subsystem even if another subsystem fails.
       for (const cleanup of [
         () => characterStage?.destroy(),
