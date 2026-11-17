@@ -78,7 +78,7 @@ test("background lifecycle pauses HTMLAudio without automatic foreground resume"
 
 
 test("diagnostic inline script has valid JavaScript syntax", () => {
-  const match = page.match(/<script>([\\s\\S]*?)<\\/script>/i);
+  const match = page.match(/<script>([\s\S]*?)<\/script>/i);
   assert.ok(match, "diagnostic page must contain an inline script");
   const checked = spawnSync(process.execPath, ["--check", "--input-type=module"], {
     input: match[1],
@@ -87,6 +87,6 @@ test("diagnostic inline script has valid JavaScript syntax", () => {
   assert.equal(
     checked.status,
     0,
-    [checked.stdout, checked.stderr].filter(Boolean).join("\\n") || "diagnostic script syntax check failed"
+    [checked.stdout, checked.stderr].filter(Boolean).join("\n") || "diagnostic script syntax check failed"
   );
 });
