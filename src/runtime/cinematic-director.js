@@ -59,10 +59,7 @@ export function createCinematicDirector({
         const result = await characterStage.mount();
         if (!result) return false;
       }
-      if (destroyed || version !== lifecycleVersion) {
-        // CharacterStage owns cancellation and rollback for its own pending mount.
-        return false;
-      }
+      if (destroyed || version !== lifecycleVersion) return false;
       mounted = true;
       return true;
     })();
@@ -101,12 +98,23 @@ export function createCinematicDirector({
       toMs: timeMs
     });
 
-    // Advance audio and character state before committing the shared clock.
-    // Queued frames prevent overlapping updates from racing the same timeline.
-    audio?.update(timeMs);
+    // Sample character state first. If pause/unmount occurs while an async
+    // character update is pending, do not advance audio or dispatch this frame.
     if (characterStage) await characterStage.update(timeMs);
-    if (destroyed || !mounted || version !== lifecycleVersion) {
-      return Object.freeze({ timeMs: lastTimeMs, events: Object.freeze([]), paused });
+    if (destroyed || !mounted || version !== lifecycleVersion || paused) {
+      return Object.freeze({
+        timeMs: lastTimeMs,
+        events: Object.freeze([]),
+        paused
+      });
+    }
+    audio?.update(timeMs);
+    if (destroyed || !mounted || version !== lifecycleVersion || paused) {
+      return Object.freeze({
+        timeMs: lastTimeMs,
+        events: Object.freeze([]),
+        paused
+      });
     }
     lastTimeMs = timeMs;
 
@@ -114,14 +122,14 @@ export function createCinematicDirector({
     // pending, while already delivered events are not replayed on a retry.
     const dispatchedEvents = [];
     for (const event of events) {
-      if (destroyed || !mounted || version !== lifecycleVersion) break;
+      if (destroyed || !mounted || version !== lifecycleVersion || paused) break;
       if (deliveredEventIds.has(event.id)) continue;
       await onEvent(event, timeMs);
       if (destroyed || !mounted || version !== lifecycleVersion) break;
       deliveredEventIds.add(event.id);
       dispatchedEvents.push(event);
     }
-    if (!destroyed && mounted && version === lifecycleVersion) eventCursorMs = timeMs;
+    if (!destroyed && mounted && version === lifecycleVersion && !paused) eventCursorMs = timeMs;
     return Object.freeze({
       timeMs: lastTimeMs,
       events: Object.freeze(dispatchedEvents),
@@ -133,8 +141,6 @@ export function createCinematicDirector({
     const requestedVersion = lifecycleVersion;
     const run = () => performUpdate(timeMs, requestedVersion);
     const operation = updateQueue.then(run, run);
-    // A rejected frame must not poison the queue; preserve its rejection for
-    // the submitting caller while allowing the next frame to retry.
     updateQueue = operation.catch(() => {});
     return operation;
   }
@@ -170,10 +176,7 @@ export function createCinematicDirector({
   function unmount() {
     assertAlive();
     lifecycleVersion += 1;
-    // Allow a new mount while the invalidated operation settles in the background.
     mountingPromise = null;
-    // Reset shared state before host cleanup so failures cannot leave the
-    // director reporting a mounted scene with a partially released stage.
     mounted = false;
     paused = false;
     lastTimeMs = -1;
@@ -210,7 +213,6 @@ export function createCinematicDirector({
 
     destroyPromise = (async () => {
       const errors = [];
-      // Attempt every owned subsystem even if another subsystem fails.
       for (const cleanup of [
         () => characterStage?.destroy(),
         () => audio?.destroy()
@@ -222,8 +224,6 @@ export function createCinematicDirector({
         }
       }
 
-      // Wait for a mount that was already in flight. CharacterStage invalidates
-      // it during destroy and performs its own late-mount rollback.
       const pending = [...pendingMounts];
       const settled = await Promise.allSettled(pending);
       for (const result of settled) {
@@ -235,7 +235,6 @@ export function createCinematicDirector({
         throw new AggregateError(errors, "One or more cinematic director resources could not be destroyed");
       }
     })().finally(() => {
-      // Keep the director closed, but permit another teardown attempt after failure.
       destroyPromise = null;
     });
     return destroyPromise;
