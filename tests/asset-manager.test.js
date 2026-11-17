@@ -210,8 +210,13 @@ test("cancel aborts a shared in-flight load for every deduplicated caller", asyn
 
 test("cancel prevents a loader that ignores AbortSignal from caching a late result", async () => {
   let finish;
+  let calls = 0;
   const manager = new AssetManager({
-    loader: () => new Promise(resolve => { finish = resolve; })
+    loader: () => {
+      calls += 1;
+      if (calls === 1) return new Promise(resolve => { finish = resolve; });
+      return "/retry-background.png";
+    }
   });
 
   const pending = manager.load("background");
@@ -221,7 +226,8 @@ test("cancel prevents a loader that ignores AbortSignal from caching a late resu
   await assert.rejects(pending, { name: "AbortError" });
   assert.equal(manager.size, 0);
   assert.equal(manager.pendingCount, 0);
-  assert.equal(await manager.load("background"), "/late-background.png");
+  assert.equal(await manager.load("background"), "/retry-background.png");
+  assert.equal(calls, 2);
 });
 
 test("cancelled asset requests can be retried independently", async () => {
