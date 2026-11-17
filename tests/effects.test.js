@@ -22,13 +22,15 @@ test("camera shake rejects finite inputs whose phase overflows and keeps extreme
   assert.throws(() => sampleCameraShake({
     timeMs: Number.MAX_VALUE / 2,
     durationMs: Number.MAX_VALUE,
-    frequencyHz: Number.MAX_VALUE
+    frequencyHz: Number.MAX_VALUE,
+    amplitude: 1
   }), /phase calculation/);
   assert.throws(() => sampleCameraShake({
     timeMs: 1,
     durationMs: 1000,
     frequencyHz: 0,
-    seed: Number.MAX_VALUE
+    seed: Number.MAX_VALUE,
+    amplitude: 1
   }), /phase calculation/);
   const extremeAmplitude = sampleCameraShake({
     timeMs: 1,
