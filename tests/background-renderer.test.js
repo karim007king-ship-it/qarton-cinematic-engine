@@ -189,3 +189,55 @@ test("superseded asset resolution failures are ignored without disturbing the ne
     "/current-images/title.png"
   ]);
 });
+
+
+test("superseding a render aborts its asset resolver signals", async () => {
+  const { root, scene, profile } = fixture();
+  const staleResolvers = [];
+  const staleSignals = [];
+  let firstRender = true;
+  const renderer = new BackgroundRenderer({
+    root,
+    resolveAsset: (key, layer, { signal }) => {
+      if (firstRender) {
+        staleSignals.push(signal);
+        return new Promise(resolve => staleResolvers.push(resolve));
+      }
+      return `/current-${key}.png`;
+    }
+  });
+
+  const stale = renderer.render(scene, profile);
+  firstRender = false;
+  assert.equal(await renderer.render(scene, profile), true);
+  assert.equal(staleSignals.length, 3);
+  assert.ok(staleSignals.every(signal => signal.aborted));
+
+  staleResolvers.forEach((resolve, index) => resolve(`/stale-${index}.png`));
+  assert.equal(await stale, false);
+  assert.deepEqual(root.children.map(node => node.children[0].src), [
+    "/current-images/sky.png",
+    "/current-images/hero.png",
+    "/current-images/title.png"
+  ]);
+});
+
+test("clear aborts in-flight asset resolver signals", async () => {
+  const { root, scene, profile } = fixture();
+  const signals = [];
+  const releases = [];
+  const renderer = new BackgroundRenderer({
+    root,
+    resolveAsset: (key, layer, { signal }) => {
+      signals.push(signal);
+      return new Promise(resolve => releases.push(resolve));
+    }
+  });
+
+  const pending = renderer.render(scene, profile);
+  renderer.clear();
+  assert.ok(signals.every(signal => signal.aborted));
+  releases.forEach((resolve, index) => resolve(`/late-${index}.png`));
+  assert.equal(await pending, false);
+  assert.equal(root.children.length, 0);
+});
