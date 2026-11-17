@@ -89,3 +89,76 @@ test("HTMLAudio destroy attempts every voice and retries transient pause failure
   assert.throws(() => adapter.setVolume(made[0], 0.5), /destroyed/);
   assert.throws(() => adapter.play("late"), /destroyed/);
 });
+
+
+test("synchronous play failure releases the allocated voice and reports the error", () => {
+  const failure = new Error("synchronous media failure");
+  const audio = fakeAudio();
+  let reported;
+  let paused = 0;
+  audio.play = () => { throw failure; };
+  audio.pause = () => { paused += 1; audio.paused = true; };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/broken.mp3",
+    createAudio: () => audio,
+    onPlaybackError: error => { reported = error; }
+  });
+
+  assert.throws(() => adapter.play("broken"), error => error === failure);
+  assert.equal(reported, failure);
+  assert.equal(paused, 1);
+  // A second destroy must not need to clean the already released voice.
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.equal(paused, 1);
+});
+
+test("asynchronous play rejection releases the voice and reports once", async () => {
+  const failure = new Error("autoplay denied");
+  const audio = fakeAudio();
+  let reported = 0;
+  let paused = 0;
+  audio.play = () => Promise.reject(failure);
+  audio.pause = () => { paused += 1; audio.paused = true; };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/blocked.mp3",
+    createAudio: () => audio,
+    onPlaybackError: (error, context) => {
+      assert.equal(error, failure);
+      assert.equal(context.audio, audio);
+      reported += 1;
+    }
+  });
+
+  adapter.play("blocked");
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(reported, 1);
+  assert.equal(paused, 1);
+  // The cue controller already received this voice handle; retain adapter
+  // ownership until its later stop/destroy call releases that handle.
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.equal(paused, 2);
+});
+
+test("failed asynchronous playback retains ownership when pause cleanup fails", async () => {
+  const audio = fakeAudio();
+  const failure = new Error("play rejected");
+  let pauseFails = true;
+  let pauseCalls = 0;
+  audio.play = () => Promise.reject(failure);
+  audio.pause = () => {
+    pauseCalls += 1;
+    if (pauseFails) throw new Error("pause unavailable");
+  };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/retry.mp3",
+    createAudio: () => audio
+  });
+
+  adapter.play("retry");
+  await Promise.resolve();
+  await Promise.resolve();
+  pauseFails = false;
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.equal(pauseCalls, 2);
+});

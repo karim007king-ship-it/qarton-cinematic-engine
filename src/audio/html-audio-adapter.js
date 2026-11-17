@@ -23,6 +23,28 @@ export function createHTMLAudioAdapter({
   let destroyed = false;
   const active = new Map();
 
+  function releaseFailedPlayback(audio, { retainOwnership = false } = {}) {
+    // A synchronous failure has no returned handle, so release it when possible.
+    // For async rejection the controller already owns the returned handle; keep
+    // it registered until stop()/destroy() releases that same voice.
+    try {
+      audio.pause();
+      try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
+      if (!retainOwnership) active.delete(audio);
+    } catch {
+      // Retain the voice for a later stop()/destroy() cleanup attempt.
+    }
+  }
+
+  function reportPlaybackError(error, asset, audio, retainOwnership = false) {
+    if (active.has(audio)) releaseFailedPlayback(audio, { retainOwnership });
+    try {
+      onPlaybackError(error, { asset, audio });
+    } catch {
+      // Error reporting must not create an unhandled rejection of its own.
+    }
+  }
+
   function play(asset, options = {}) {
     if (destroyed) throw new Error("HTMLAudio adapter has been destroyed");
     const url = resolveAsset(asset);
@@ -42,9 +64,15 @@ export function createHTMLAudioAdapter({
     audio.preload = "auto";
     audio.volume = baseVolume * volume;
     active.set(audio, baseVolume);
-    const result = audio.play();
-    if (result && typeof result.catch === "function") {
-      result.catch(error => onPlaybackError(error, { asset, audio }));
+    let result;
+    try {
+      result = audio.play();
+    } catch (error) {
+      reportPlaybackError(error, asset, audio);
+      throw error;
+    }
+    if (result && typeof result.then === "function") {
+      Promise.resolve(result).catch(error => reportPlaybackError(error, asset, audio, true));
     }
     return audio;
   }
