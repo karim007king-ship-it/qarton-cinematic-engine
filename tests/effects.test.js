@@ -18,7 +18,7 @@ test("camera shake is deterministic and decays to zero", () => {
   assert.throws(() => sampleCameraShake({ timeMs: -1, durationMs: 1000 }), /invalid/);
 });
 
-test("camera shake rejects finite inputs whose phase or output overflows", () => {
+test("camera shake rejects finite inputs whose phase overflows and keeps extreme amplitudes finite", () => {
   assert.throws(() => sampleCameraShake({
     timeMs: Number.MAX_VALUE / 2,
     durationMs: Number.MAX_VALUE,
@@ -27,8 +27,15 @@ test("camera shake rejects finite inputs whose phase or output overflows", () =>
   assert.throws(() => sampleCameraShake({
     timeMs: 1,
     durationMs: 1000,
+    frequencyHz: 0,
+    seed: Number.MAX_VALUE
+  }), /phase calculation/);
+  const extremeAmplitude = sampleCameraShake({
+    timeMs: 1,
+    durationMs: 1000,
     amplitude: Number.MAX_VALUE
-  }), /output exceeded/);
+  });
+  assert.ok(Object.values(extremeAmplitude).every(Number.isFinite));
 });
 
 test("particle field is deterministic and respects adaptive particle budgets", () => {
