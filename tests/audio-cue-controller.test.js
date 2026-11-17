@@ -151,3 +151,56 @@ test("a synchronous play failure leaves the failed cue retryable without replayi
   assert.equal(controller.getState().cursor, 0);
   assert.equal(controller.getState().activeVoices, 2);
 });
+
+
+test("pause and resume suspend every active voice while preserving cue timing", () => {
+  const calls = [];
+  const controller = createAudioCueController({
+    cues: [
+      { id: "music", atMs: 0, asset: "theme", loop: true },
+      { id: "impact", atMs: 100, asset: "impact" }
+    ],
+    play: (_asset, options) => options.id,
+    pauseVoice: voice => calls.push(["pause", voice]),
+    resumeVoice: voice => calls.push(["resume", voice])
+  });
+
+  controller.update(120);
+  controller.pause(120);
+  assert.deepEqual(calls, [["pause", "music"], ["pause", "impact"]]);
+  assert.equal(controller.getState().paused, true);
+  controller.update(250);
+  controller.resume(250);
+  assert.deepEqual(calls, [
+    ["pause", "music"], ["pause", "impact"],
+    ["resume", "music"], ["resume", "impact"]
+  ]);
+  controller.update(300);
+  assert.equal(controller.getState().paused, false);
+});
+
+test("voice lifecycle attempts every voice and leaves failed resume retryable", () => {
+  const calls = [];
+  let fail = true;
+  const controller = createAudioCueController({
+    cues: [{ id: "a", atMs: 0, asset: "a" }, { id: "b", atMs: 0, asset: "b" }],
+    play: (_asset, options) => options.id,
+    pauseVoice: voice => calls.push(["pause", voice]),
+    resumeVoice: voice => {
+      calls.push(["resume", voice]);
+      if (voice === "a" && fail) throw new Error("resume denied");
+    }
+  });
+  controller.update(0);
+  controller.pause(0);
+  assert.throws(() => controller.resume(0), /resume denied/);
+  assert.equal(controller.getState().paused, true);
+  fail = false;
+  controller.resume(0);
+  assert.equal(controller.getState().paused, false);
+  assert.deepEqual(calls, [
+    ["pause", "a"], ["pause", "b"],
+    ["resume", "a"], ["resume", "b"],
+    ["resume", "a"], ["resume", "b"]
+  ]);
+});
