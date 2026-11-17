@@ -333,7 +333,7 @@
           // The Audio button provides the next explicit user gesture if needed.
           if (audioContext.state !== "running") {
             status.textContent = "Audio context is suspended; tap Audio to resume playback.";
-            return;
+            throw new Error("Audio context requires a user gesture before voice resume");
           }
           voice.gain.gain.setValueAtTime(voice.volume, audioContext.currentTime);
           voice.paused = false;
@@ -348,6 +348,9 @@
           if (!voice.paused && !voice.stopped) voice.gain.gain.value = volume;
         }
       });
+      // A prior pageshow may have been blocked by autoplay policy. This
+      // explicit button gesture now has a running context and can safely retry.
+      if (director.getState().paused) director.resume();
       status.textContent = "Audio cues started from user gesture and synchronized to the director clock.";
     } catch (error) {
       if (!destroyed) status.textContent = `Audio unavailable: ${error.message}`;
