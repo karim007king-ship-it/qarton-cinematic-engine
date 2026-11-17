@@ -648,3 +648,35 @@ test("director retries an audio pause failure while keeping the cinematic clock 
   assert.equal(director.getState().paused, true);
   await director.destroy();
 });
+
+
+test("director stays paused when an audio voice needs a user gesture and retries cleanly", async () => {
+  let contextRunning = false;
+  const voiceCalls = [];
+  const audio = createAudioCueController({
+    cues: [{ id: "music", atMs: 0, asset: "music", loop: true }],
+    play: () => ({ id: "music" }),
+    pauseVoice: voice => { voiceCalls.push(["pause", voice.id]); },
+    resumeVoice: voice => {
+      voiceCalls.push(["resume", voice.id]);
+      if (!contextRunning) throw new Error("user gesture required");
+    }
+  });
+  const director = createCinematicDirector({ audio });
+  await director.mount();
+  await director.update(100);
+  director.pause();
+
+  assert.throws(() => director.resume(), /user gesture required/);
+  assert.equal(director.getState().paused, true);
+  assert.equal(audio.getState().paused, true);
+
+  contextRunning = true;
+  assert.equal(director.resume(), true);
+  assert.equal(director.getState().paused, false);
+  assert.equal(audio.getState().paused, false);
+  assert.deepEqual(voiceCalls, [
+    ["pause", "music"], ["resume", "music"], ["resume", "music"]
+  ]);
+  await director.destroy();
+});
