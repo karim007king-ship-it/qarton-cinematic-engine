@@ -47,7 +47,7 @@ npm test
 - `toCameraCSS(pose)`: تحويل وضع الكاميرا إلى CSS transform لعنصر viewport يملكه التطبيق المضيف.
 - `createParticleField(...)`: حقل جسيمات deterministic يراعي `profile.particleBudget`.
 - `resolveLighting(...)` و`sampleFog(...)`: معلمات إضاءة وضباب تتكيف مع ملف الجودة.
-- `createAudioCueController({ cues, play, stop, pauseVoice, resumeVoice, setVolume })`: جدولة أصوات المشهد حسب التوقيت؛ يوقف ويستأنف الأصوات النشطة فعلياً مع الحفاظ على مؤشر الـ cues، ويتجاوز cues التي انتهى وقتها أثناء الإيقاف.
+- `createAudioCueController({ cues, play, stop, pauseVoice, resumeVoice, setVolume })`: جدولة أصوات المشهد حسب التوقيت؛ يوقف ويستأنف الأصوات النشطة فعلياً مع الحفاظ على مؤشر الـ cues، ويتجاوز cues التي انتهى وقتها أثناء الإيقاف، ويحرر one-shot voices عند اكتمالها عبر `options.onEnded` الذي يمرره إلى adapter.
 - `createHTMLAudioAdapter({ resolveAsset, createAudio, onPlaybackError })`: adapter اختياري لـ HTMLAudio في المتصفح وAndroid WebView، يدعم pause/resume دون تحرير الصوت، ويتجاهل رفض Promise المتأخر بعد stop ويعزل أخطاء callback.
 - `createAdaptivePerformanceMonitor(...)`: قياس أزمنة الإطارات المقدمة من المضيف، وخفض/رفع الجودة تدريجياً مع hysteresis.
 - `createRuntimeActivityGate({ onPause, onResume })`: بوابة صريحة لإيقاف واستئناف المؤثرات عندما تصبح اللعبة غير نشطة أو مخفية.
