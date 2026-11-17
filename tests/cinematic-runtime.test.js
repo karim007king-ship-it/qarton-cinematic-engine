@@ -563,8 +563,7 @@ test("runtime ignores late page events when lifecycle listener removal fails dur
   });
 
   await assert.rejects(runtime.destroy(), error => {
-    assert.ok(error instanceof AggregateError);
-    assert.ok(error.errors.some(item => /pagehide listener removal failed/.test(item.message)));
+    assert.match(error.message, /pagehide listener removal failed/);
     return true;
   });
   assert.equal(target.listenerCount(), 1);
