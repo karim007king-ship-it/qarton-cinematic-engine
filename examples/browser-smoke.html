@@ -404,11 +404,15 @@
       // Install a deterministic looping voice so this smoke path verifies
       // the full lifecycle bridge, not only the director's paused flag.
       const lifecycleAudioCalls = [];
+      let allowLifecycleAudioResume = false;
       audioCues = createAudioCueController({
         cues: [{ id: "lifecycle-loop", atMs: 0, asset: "smoke-loop", loop: true }],
         play: () => ({ id: "smoke-loop" }),
         pauseVoice: voice => lifecycleAudioCalls.push(["pause", voice.id]),
-        resumeVoice: voice => lifecycleAudioCalls.push(["resume", voice.id]),
+        resumeVoice: voice => {
+          lifecycleAudioCalls.push(["resume", voice.id]);
+          if (!allowLifecycleAudioResume) throw new Error("user gesture required");
+        },
         stop: () => {}
       });
       await director.update(Math.max(0, director.getState().timeMs));
@@ -424,13 +428,24 @@
         throw new Error("Page hide did not pause the active audio voice");
       }
       window.dispatchEvent(new Event("pageshow"));
-      if (!runtime.isActive() || director.getState().paused) {
-        throw new Error("Page show did not resume the cinematic director");
+      if (!runtime.isActive() || !director.getState().paused || !audioCues.getState().paused) {
+        throw new Error("A denied audio resume must keep the director and voice paused");
       }
       if (JSON.stringify(lifecycleAudioCalls) !== JSON.stringify([
         ["pause", "smoke-loop"], ["resume", "smoke-loop"]
       ])) {
-        throw new Error("Page show did not resume the active audio voice");
+        throw new Error("Page show did not attempt to resume the active audio voice");
+      }
+      // Simulate the explicit Audio-button gesture after browser autoplay denial.
+      allowLifecycleAudioResume = true;
+      director.resume();
+      if (director.getState().paused || audioCues.getState().paused) {
+        throw new Error("A user-gesture retry did not resume the director and active voice");
+      }
+      if (JSON.stringify(lifecycleAudioCalls) !== JSON.stringify([
+        ["pause", "smoke-loop"], ["resume", "smoke-loop"], ["resume", "smoke-loop"]
+      ])) {
+        throw new Error("User-gesture retry did not resume the active audio voice");
       }
 
       for (const index of [1, 0, 1, 0]) {
