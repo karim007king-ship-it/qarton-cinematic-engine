@@ -221,3 +221,23 @@ test("clearSamples resets the measurement window without changing the selected p
   monitor.recordFrame(16);
   assert.equal(monitor.getMetrics().pendingFrames, 1);
 });
+
+test("adaptive stability metrics saturate at quality tier boundaries", () => {
+  const high = createAdaptivePerformanceMonitor({
+    device: { quality: "high" },
+    sampleWindow: 1,
+    stableWindows: 3
+  });
+  for (let i = 0; i < 20; i += 1) high.recordFrame(10);
+  assert.equal(high.getProfile().tier, "high");
+  assert.equal(high.getMetrics().stableWindows, 3);
+
+  const low = createAdaptivePerformanceMonitor({
+    device: { quality: "low" },
+    sampleWindow: 1,
+    stableWindows: 3
+  });
+  for (let i = 0; i < 20; i += 1) low.recordFrame(40);
+  assert.equal(low.getProfile().tier, "low");
+  assert.equal(low.getMetrics().stableWindows, 3);
+});
