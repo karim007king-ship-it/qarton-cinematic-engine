@@ -11,11 +11,14 @@ This repository includes a standalone, dependency-free diagnostics page at
 2. Open `/examples/android-webview-diagnostics.html` inside the Android
    application's actual WebView, not only in Chrome.
 3. Tap **Run compatibility checks** and review the raw report.
-4. Tap **Test Web Audio**. Audio is deliberately initiated only by this user
+4. Tap **Test HTMLAudio**. Confirm the sample starts, then use **Pause / resume
+   HTMLAudio** to verify the media element can be paused and resumed.
+5. Tap **Test Web Audio**. Audio is deliberately initiated only by this user
    gesture because Android WebView may suspend or reject playback without it.
-5. Background the app, return to it, and inspect the recorded
-   `visibilitychange`, `pagehide`, and `pageshow` events.
-6. Copy the report or manually select the JSON if clipboard access is denied.
+6. Background the app, return to it, and inspect the recorded
+   `visibilitychange`, `pagehide`, and `pageshow` events. HTMLAudio is paused
+   when the page becomes inactive; resume it with the button after returning.
+7. Copy the report or manually select the JSON if clipboard access is denied.
 
 ## What it checks
 
@@ -25,9 +28,10 @@ This repository includes a standalone, dependency-free diagnostics page at
 - Web Animations API availability, CSS transition execution, transform/filter.
 - Image.decode() or the image-load fallback, including inline SVG decoding.
 - Canvas 2D, HTMLAudio capability and Web Audio API availability.
+- HTMLAudio playback from a local generated WAV sample, including play/pause/resume and natural completion events.
 - Web Audio resume/playback initiated from a tap, AudioContext state changes, and sample completion.
 - Optional hardware concurrency, device-memory and JS-heap hints when exposed by the browser; these are not native RAM or GPU measurements.
-- Page visibility and page lifecycle events, plus viewport and device-pixel ratio. The diagnostic suspends Web Audio when the page becomes hidden; returning to foreground does not auto-resume it, so tap the audio test again.
+- Page visibility and page lifecycle events, plus viewport and device-pixel ratio. The diagnostic pauses HTMLAudio and suspends Web Audio when the page becomes hidden; returning to foreground does not auto-resume either API, so use the explicit audio buttons again.
 - A short foreground requestAnimationFrame sample: average FPS, p95 frame interval, and proportion of intervals above 25 ms.
 
 A capability being present does not prove that every engine feature behaves
