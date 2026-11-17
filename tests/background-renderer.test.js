@@ -241,3 +241,24 @@ test("clear aborts in-flight asset resolver signals", async () => {
   assert.equal(await pending, false);
   assert.equal(root.children.length, 0);
 });
+
+
+test("a failed layer aborts sibling asset requests from the same render", async () => {
+  const { root, scene, profile } = fixture();
+  const siblingSignals = [];
+  const renderer = new BackgroundRenderer({
+    root,
+    resolveAsset: (key, layer, { signal }) => {
+      if (key === "images/sky") return Promise.reject(new Error("sky asset failed"));
+      siblingSignals.push(signal);
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    }
+  });
+
+  await assert.rejects(renderer.render(scene, profile), /sky asset failed/);
+  assert.equal(siblingSignals.length, 2);
+  assert.ok(siblingSignals.every(signal => signal.aborted));
+  assert.equal(root.children.length, 0);
+});
