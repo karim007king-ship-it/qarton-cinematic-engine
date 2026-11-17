@@ -72,7 +72,7 @@ export class AssetManager {
         return safeUrl;
       })
       .finally(() => {
-        if (this.#pending.get(normalizedKey) === request) this.#pending.delete(normalizedKey);
+        if (this.#pending.get(normalizedKey) === entry) this.#pending.delete(normalizedKey);
       });
 
     entry.promise = request;
