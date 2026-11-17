@@ -226,13 +226,30 @@
     }
   });
 
+  function suspendAudioForBackground(source) {
+    if (!audioContext || audioContext.state === "closed" || audioContext.state === "suspended") return;
+    report.events.push({ type: "audio-suspend-request", source, state: audioContext.state, at: new Date().toISOString() });
+    try {
+      audioContext.suspend().then(() => {
+        report.events.push({ type: "audio-suspend-complete", source, state: audioContext.state, at: new Date().toISOString() });
+        refreshReport();
+      }).catch(error => {
+        report.events.push({ type: "audio-suspend-error", source, message: error.message, at: new Date().toISOString() });
+        refreshReport();
+      });
+    } catch (error) {
+      report.events.push({ type: "audio-suspend-error", source, message: error.message, at: new Date().toISOString() });
+    }
+  }
+
   document.addEventListener("visibilitychange", () => {
     report.events.push({ type: "visibilitychange", state: document.visibilityState, audioContextState: audioContext ? audioContext.state : "not-created", at: new Date().toISOString() });
+    if (document.visibilityState === "hidden") suspendAudioForBackground("visibilitychange");
     refreshReport();
   });
   window.addEventListener("pagehide", () => {
     report.events.push({ type: "pagehide", at: new Date().toISOString() });
-    try { if (audioContext && audioContext.state !== "closed") audioContext.suspend(); } catch {}
+    suspendAudioForBackground("pagehide");
     refreshReport();
   });
   window.addEventListener("pageshow", event => {
