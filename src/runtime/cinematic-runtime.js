@@ -24,7 +24,8 @@ export function createCinematicRuntime({
   onResume = () => {},
   onAudioError = () => {},
   audioController,
-  lifecycleTarget
+  lifecycleTarget,
+  lifecyclePageTarget
 } = {}) {
   if (typeof loadAsset !== "function") throw new TypeError("Cinematic runtime requires loadAsset()");
   if (typeof renderScene !== "function") throw new TypeError("Cinematic runtime requires renderScene()");
@@ -62,7 +63,11 @@ export function createCinematicRuntime({
     }
   });
   const pageLifecycle = lifecycleTarget
-    ? createPageLifecycleAdapter({ target: lifecycleTarget, setActive: activity.setActive })
+    ? createPageLifecycleAdapter({
+      target: lifecycleTarget,
+      pageTarget: lifecyclePageTarget ?? lifecycleTarget,
+      setActive: activity.setActive
+    })
     : null;
   const transitionOptions = { root, duration, reducedMotion };
   if (wait !== undefined) transitionOptions.wait = wait;
