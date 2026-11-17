@@ -260,6 +260,32 @@ test("a one-shot that ends before play returns is not registered as active", () 
   controller.destroy();
 });
 
+test("a stale one-shot completion cannot release a replacement voice with the same cue id", () => {
+  const completions = [];
+  const controller = createAudioCueController({
+    cues: [{ id: "impact", atMs: 0, asset: "impact" }],
+    play: (_asset, options) => {
+      const voice = { generation: completions.length };
+      completions.push({ voice, onEnded: options.onEnded });
+      return voice;
+    },
+    stop: () => {}
+  });
+
+  controller.update(0);
+  controller.stopAll({ reset: true });
+  controller.update(0);
+  assert.equal(controller.getState().activeVoices, 1);
+
+  completions[0].onEnded();
+  assert.equal(controller.getState().activeVoices, 1,
+    "an ended callback from the previous playback must not remove the replacement voice");
+
+  completions[1].onEnded();
+  assert.equal(controller.getState().activeVoices, 0);
+  controller.destroy();
+});
+
 test("looping cues do not receive a one-shot completion callback", () => {
   let received;
   const controller = createAudioCueController({
