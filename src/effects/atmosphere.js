@@ -38,10 +38,15 @@ export function sampleFog({
   const quality = profile?.tier ?? "high";
   const tierScale = quality === "low" ? 0.35 : quality === "medium" ? 0.7 : 1;
   const t = timeMs / 1000 * speed;
+  const offsetX = driftX * t;
+  const offsetY = driftY * t;
+  if (![t, offsetX, offsetY].every(Number.isFinite)) {
+    throw new RangeError("Fog drift exceeded the finite numeric range");
+  }
   return Object.freeze({
     density: clamp(density, 0, 1) * tierScale,
-    offsetX: driftX * t,
-    offsetY: driftY * t,
+    offsetX,
+    offsetY,
     animated: quality !== "low" && speed > 0
   });
 }
