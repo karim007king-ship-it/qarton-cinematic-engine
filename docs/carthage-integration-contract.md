@@ -2,6 +2,18 @@
 
 Status: design and implementation boundary only. This document does not modify the Carthage game or its save format.
 
+## Observed Carthage repository architecture (17 November 2026)
+
+The current Carthage repository was inspected before proposing a runtime integration:
+
+- The playable game is currently delivered as a self-contained `index.html` (approximately 3.85 MB on the inspected `main` revision); the React/game source is bundled into that file.
+- Android-specific presentation and navigation enhancements are assembled by `scripts/prepare-web.cjs` during `npm run prepare:web`. That script injects several presentation/runtime blocks into the web build.
+- The current package manifest depends on Capacitor packages; it does not yet declare `@qarton/cinematic-engine` as a dependency.
+- The existing Chapter 3 Great Wall moment already has a presentation-only cinematic pilot in the Android preparation script (camera push-in, light pass, impact shake, dust/rubble/character effects). Its activation is guarded by the existing story text, and the smoke test checks that the pilot remains present.
+- The existing test suite includes HTML/embedded-JavaScript smoke checks and save-recovery checks. It does not yet exercise the new engine against the actual game renderer or validate Android WebView playback.
+
+These observations change the safest integration path: do not inject another large inline runtime into the already complex preparation script, and do not replace the existing Great Wall pilot as the first experiment. First establish a separately testable adapter module and a pinned, reproducible way for the Carthage build to consume the engine. Then select a small, revisitable scene whose presentation can be compared against the existing renderer. Keep the current Great Wall pilot intact until the new adapter passes device validation.
+
 ## Goals
 
 - Integrate QARTON Cinematic Engine behind a Carthage-owned adapter.
