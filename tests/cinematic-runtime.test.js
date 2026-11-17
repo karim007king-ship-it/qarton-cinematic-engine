@@ -516,3 +516,27 @@ test("runtime exposes asset cancellation and cache release to its host", async (
   assert.throws(() => runtime.releaseAsset("portrait"), /destroyed/);
   assert.throws(() => runtime.clearAssets(), /destroyed/);
 });
+
+
+test("runtime forwards adaptive quality transitions to the host with previous and next profiles", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const changes = [];
+  const runtime = createCinematicRuntime({
+    root,
+    loadAsset: key => key,
+    renderScene: () => document.createElement("div"),
+    device: { quality: "high" },
+    onProfileChange: (next, previous) => {
+      changes.push({ from: previous.tier, to: next.tier, reason: next.reason });
+    }
+  });
+
+  assert.equal(runtime.getProfile().tier, "high");
+  for (let frame = 0; frame < 60; frame += 1) runtime.recordFrame(30);
+
+  assert.equal(runtime.getProfile().tier, "medium");
+  assert.deepEqual(changes, [{ from: "high", to: "medium", reason: "adaptive" }]);
+
+  await runtime.destroy();
+});
