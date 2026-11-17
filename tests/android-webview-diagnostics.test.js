@@ -40,6 +40,9 @@ test("audio lifecycle and optional resource hints are observable without autopla
   assert.match(page, /audio-context-statechange/);
   assert.match(page, /audio-sample-ended/);
   assert.match(page, /audio-sample-started/);
+  assert.match(page, /const sampleDurationSeconds = 8/);
+  assert.match(page, /oscillator.stop(audioContext.currentTime + sampleDurationSeconds)/);
+  assert.match(page, /Eight-second Web Audio sample started/);
   assert.match(page, /audioContextState/);
   assert.match(page, /deviceMemoryGb/);
   assert.match(page, /usedJSHeapSize/);
