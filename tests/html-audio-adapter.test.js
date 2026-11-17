@@ -136,3 +136,34 @@ test("looping voices do not detach on ended events and stop removes their listen
   adapter.stop(audio);
   assert.equal(listeners.has("ended"), false);
 });
+
+
+test("master and per-voice volume changes do not resurrect naturally ended voices", () => {
+  const listeners = new Map();
+  let pauseCalls = 0;
+  let volumeWrites = 0;
+  const audio = {
+    paused: true,
+    set volume(value) { this._volume = value; volumeWrites += 1; },
+    get volume() { return this._volume; },
+    play() { this.paused = false; return Promise.resolve(); },
+    pause() { pauseCalls += 1; this.paused = true; },
+    addEventListener(type, handler) { listeners.set(type, handler); },
+    removeEventListener(type, handler) {
+      if (listeners.get(type) === handler) listeners.delete(type);
+    }
+  };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/effect.mp3",
+    createAudio: () => audio
+  });
+
+  adapter.play("effect");
+  listeners.get("ended")();
+  const writesAfterEnd = volumeWrites;
+  adapter.setVolume(audio, 0.3);
+  adapter.setMasterVolume(0.2);
+  assert.equal(volumeWrites, writesAfterEnd);
+  adapter.destroy();
+  assert.equal(pauseCalls, 0);
+});
