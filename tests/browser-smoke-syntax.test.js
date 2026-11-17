@@ -44,3 +44,12 @@ test("browser showcase drives all visual tracks from the rebased director clock"
   assert.doesNotMatch(tick, /const elapsed = now - startTime;/, "visual tracks must not use raw wall-clock elapsed time");
   assert.match(match[1], /onResume:\s*\(\)\s*=>\s*\{[\s\S]*?previousFrameTime = performance\.now\(\);/, "adaptive frame baseline must reset after page resume");
 });
+
+
+test("browser showcase asset loader honors AbortSignal", async () => {
+  const html = await readFile(resolve(root, "examples/browser-smoke.html"), "utf8");
+  assert.match(html, /function loadImage\\(key, metadata, \\{ signal \\} = \\{\\}\\)/);
+  assert.match(html, /signal\\?\\.addEventListener\\("abort", onAbort, \\{ once: true \\}\\)/);
+  assert.match(html, /image\\.src = ""/);
+  assert.match(html, /signal\\?\\.removeEventListener\\("abort", onAbort\\)/);
+});
