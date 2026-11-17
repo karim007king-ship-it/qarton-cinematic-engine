@@ -23,3 +23,16 @@ test("fog animation and density adapt to quality tiers", () => {
   assert.equal(low.animated, false);
   assert.throws(() => sampleFog({ timeMs: -1 }), /finite/);
 });
+
+test("fog sampling rejects overflow from extreme finite drift values", () => {
+  assert.throws(() => sampleFog({
+    timeMs: Number.MAX_VALUE,
+    speed: Number.MAX_VALUE,
+    driftX: 1
+  }), /drift exceeded/);
+  assert.throws(() => sampleFog({
+    timeMs: 1000,
+    speed: 1,
+    driftY: Number.MAX_VALUE
+  }), /drift exceeded/);
+});
