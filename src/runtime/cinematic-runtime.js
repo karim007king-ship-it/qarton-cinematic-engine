@@ -23,6 +23,7 @@ export function createCinematicRuntime({
   onPause = () => {},
   onResume = () => {},
   onAudioError = () => {},
+  onLifecycleError = () => {},
   audioController,
   lifecycleTarget,
   lifecyclePageTarget
@@ -30,12 +31,17 @@ export function createCinematicRuntime({
   if (typeof loadAsset !== "function") throw new TypeError("Cinematic runtime requires loadAsset()");
   if (typeof renderScene !== "function") throw new TypeError("Cinematic runtime requires renderScene()");
   if (typeof onAudioError !== "function") throw new TypeError("onAudioError must be a function");
+  if (typeof onLifecycleError !== "function") throw new TypeError("onLifecycleError must be a function");
   if (audioController != null
     && (typeof audioController.pause !== "function" || typeof audioController.resume !== "function")) {
     throw new TypeError("audioController must expose pause() and resume()");
   }
   let destroyed = false;
   let destroyPromise = null;
+
+  function reportLifecycleError(error, phase) {
+    try { onLifecycleError(error, { phase }); } catch { /* diagnostics must not break lifecycle */ }
+  }
 
   function syncAudioLifecycle(phase) {
     if (!audioController) return;
@@ -54,12 +60,12 @@ export function createCinematicRuntime({
     onPause: () => {
       adaptive.clearSamples();
       syncAudioLifecycle("pause");
-      onPause();
+      try { onPause(); } catch (error) { reportLifecycleError(error, "pause"); }
     },
     onResume: () => {
       adaptive.clearSamples();
       syncAudioLifecycle("resume");
-      onResume();
+      try { onResume(); } catch (error) { reportLifecycleError(error, "resume"); }
     }
   });
   const pageLifecycle = lifecycleTarget
