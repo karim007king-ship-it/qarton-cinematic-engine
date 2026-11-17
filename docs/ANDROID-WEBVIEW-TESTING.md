@@ -26,7 +26,7 @@ This repository includes a standalone, dependency-free diagnostics page at
 - Image.decode() or the image-load fallback, including inline SVG decoding.
 - Canvas 2D, HTMLAudio capability and Web Audio API availability.
 - Web Audio resume/playback initiated from a tap, AudioContext state changes, and sample completion.\n- Optional hardware concurrency, device-memory and JS-heap hints when exposed by the browser; these are not native RAM or GPU measurements.
-- Page visibility and page lifecycle events, plus viewport and device-pixel ratio.\n- A short foreground requestAnimationFrame sample: average FPS, p95 frame interval, and proportion of intervals above 25 ms.
+- Page visibility and page lifecycle events, plus viewport and device-pixel ratio. The diagnostic suspends Web Audio when the page becomes hidden; returning to foreground does not auto-resume it, so tap the audio test again.\n- A short foreground requestAnimationFrame sample: average FPS, p95 frame interval, and proportion of intervals above 25 ms.
 
 A capability being present does not prove that every engine feature behaves
 correctly under load. In particular, this page does not benchmark GPU memory,
