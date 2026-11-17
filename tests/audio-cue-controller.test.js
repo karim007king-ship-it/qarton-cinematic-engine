@@ -204,3 +204,27 @@ test("voice lifecycle attempts every voice and leaves failed resume retryable", 
     ["resume", "a"], ["resume", "b"]
   ]);
 });
+
+
+test("pause retries voices that failed to suspend on the first attempt", () => {
+  const calls = [];
+  let fail = true;
+  const controller = createAudioCueController({
+    cues: [{ id: "music", atMs: 0, asset: "music" }, { id: "ambience", atMs: 0, asset: "ambience" }],
+    play: (_asset, options) => options.id,
+    pauseVoice: voice => {
+      calls.push(voice);
+      if (voice === "music" && fail) throw new Error("pause denied");
+    }
+  });
+
+  controller.update(0);
+  assert.throws(() => controller.pause(0), /pause denied/);
+  assert.equal(controller.getState().paused, true);
+  assert.deepEqual(calls, ["music", "ambience"]);
+
+  fail = false;
+  assert.doesNotThrow(() => controller.pause(0));
+  assert.equal(controller.getState().paused, true);
+  assert.deepEqual(calls, ["music", "ambience", "music", "ambience"]);
+});
