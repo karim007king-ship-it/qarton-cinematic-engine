@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 
 const page = await readFile(new URL("../examples/android-webview-diagnostics.html", import.meta.url), "utf8");
@@ -73,4 +74,19 @@ test("background lifecycle pauses HTMLAudio without automatic foreground resume"
   const pageshow = page.match(/window\.addEventListener\("pageshow",[\s\S]*?\n  \}\);/);
   assert.ok(pageshow, "diagnostics must observe pageshow");
   assert.doesNotMatch(pageshow[0], /htmlAudio\.play\(\)/);
+});
+
+
+test("diagnostic inline script has valid JavaScript syntax", () => {
+  const match = page.match(/<script>([\\s\\S]*?)<\\/script>/i);
+  assert.ok(match, "diagnostic page must contain an inline script");
+  const checked = spawnSync(process.execPath, ["--check", "--input-type=module"], {
+    input: match[1],
+    encoding: "utf8"
+  });
+  assert.equal(
+    checked.status,
+    0,
+    [checked.stdout, checked.stderr].filter(Boolean).join("\\n") || "diagnostic script syntax check failed"
+  );
 });
