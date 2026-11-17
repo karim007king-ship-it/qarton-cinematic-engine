@@ -36,6 +36,18 @@ test("camera pose composition adds shake without changing zoom", () => {
   assert.throws(() => composeCameraPose(pose, { x: NaN }), /finite/);
 });
 
+test("camera pose composition rejects overflow from individually finite values", () => {
+  const extreme = Number.MAX_VALUE;
+  assert.throws(() => composeCameraPose(
+    { x: extreme, zoom: 1 },
+    { x: extreme }
+  ), /remain finite/);
+  assert.throws(() => composeCameraPose(
+    { rotation: extreme, zoom: 1 },
+    { rotation: extreme }
+  ), /remain finite/);
+});
+
 test("camera track uses default pose before its first keyframe and returns a consistent pose shape", () => {
   const track = createCameraTrack(
     [{ atMs: 500, x: 40, y: 10, zoom: 1.5 }],

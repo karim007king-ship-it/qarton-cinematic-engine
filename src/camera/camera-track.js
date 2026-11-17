@@ -90,12 +90,16 @@ export function composeCameraPose(pose, shake = {}) {
   if (!Object.values(offset).every(Number.isFinite)) {
     throw new TypeError("Camera shake offsets must be finite numbers");
   }
-  return Object.freeze({
+  const composed = {
     x: base.x + offset.x,
     y: base.y + offset.y,
     zoom: base.zoom,
     rotation: base.rotation + offset.rotation
-  });
+  };
+  if (![composed.x, composed.y, composed.rotation].every(Number.isFinite)) {
+    throw new TypeError("Composed camera pose values must remain finite");
+  }
+  return Object.freeze(composed);
 }
 
 /** Convert a camera pose into a CSS transform for a host-owned camera viewport. */
