@@ -399,6 +399,31 @@ test("playback error callback exceptions are contained", async () => {
 });
 
 
+test("a queued ended event after stop does not notify the cue owner", () => {
+  const listeners = new Map();
+  const audio = {
+    ...fakeAudio(),
+    addEventListener(type, handler) { listeners.set(type, handler); },
+    removeEventListener(type, handler) {
+      if (listeners.get(type) === handler) listeners.delete(type);
+    }
+  };
+  let endedCount = 0;
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/effect.mp3",
+    createAudio: () => audio
+  });
+
+  const voice = adapter.play("effect", { onEnded: () => { endedCount += 1; } });
+  const queuedEndedHandler = listeners.get("ended");
+  adapter.stop(voice);
+  queuedEndedHandler();
+
+  assert.equal(endedCount, 0);
+  assert.equal(listeners.has("ended"), false);
+  adapter.destroy();
+});
+
 test("one-shot ended event notifies the cue owner and detaches its listener", () => {
   const listeners = new Map();
   const audio = {
