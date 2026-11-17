@@ -22,6 +22,14 @@ export function createHTMLAudioAdapter({
   let volume = masterVolume;
   let destroyed = false;
   const active = new Map();
+  const endedHandlers = new Map();
+
+  function detachEndedHandler(audio) {
+    const handler = endedHandlers.get(audio);
+    if (!handler) return;
+    try { audio.removeEventListener?.("ended", handler); } catch { /* best-effort listener cleanup */ }
+    endedHandlers.delete(audio);
+  }
 
   function play(asset, options = {}) {
     if (destroyed) throw new Error("HTMLAudio adapter has been destroyed");
@@ -42,6 +50,18 @@ export function createHTMLAudioAdapter({
     audio.preload = "auto";
     audio.volume = baseVolume * volume;
     active.set(audio, baseVolume);
+    if (options.loop !== true && typeof audio.addEventListener === "function") {
+      const onEnded = () => {
+        active.delete(audio);
+        detachEndedHandler(audio);
+      };
+      try {
+        audio.addEventListener("ended", onEnded, { once: true });
+        endedHandlers.set(audio, onEnded);
+      } catch {
+        // Playback remains valid on minimal HTMLAudio-compatible hosts.
+      }
+    }
     const result = audio.play();
     if (result && typeof result.catch === "function") {
       result.catch(error => onPlaybackError(error, { asset, audio }));
@@ -54,6 +74,7 @@ export function createHTMLAudioAdapter({
     audio.pause();
     try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
     active.delete(audio);
+    detachEndedHandler(audio);
   }
 
   function setVolume(audio, nextVolume) {
@@ -95,6 +116,7 @@ export function createHTMLAudioAdapter({
         errors.push(error);
         failed = true;
       }
+      detachEndedHandler(audio);
       if (!failed) active.delete(audio);
     }
     if (errors.length === 1) throw errors[0];
