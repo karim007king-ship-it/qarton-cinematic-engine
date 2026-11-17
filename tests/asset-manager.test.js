@@ -240,3 +240,16 @@ test("cancelled asset requests can be retried independently", async () => {
   assert.equal(await manager.load("portrait"), "/portrait-2.png");
   assert.equal(calls, 2);
 });
+
+
+test("cancel before the loader microtask prevents starting unnecessary work", async () => {
+  let calls = 0;
+  const manager = new AssetManager({
+    loader: async () => { calls += 1; return "/unused.png"; }
+  });
+  const pending = manager.load("unused");
+  assert.equal(manager.cancel("unused"), true);
+  await assert.rejects(pending, { name: "AbortError" });
+  assert.equal(calls, 0);
+  assert.equal(manager.pendingCount, 0);
+});
