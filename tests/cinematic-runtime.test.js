@@ -84,3 +84,71 @@ test("concurrent destroy calls share the same teardown promise", async () => {
   await Promise.all([firstDestroy, secondDestroy]);
   assert.equal(root.children.length, 0);
 });
+
+
+test("cinematic runtime destroy retries when scene DOM cleanup fails", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const runtime = createCinematicRuntime({
+    root,
+    loadAsset: key => key,
+    renderScene: () => document.createElement("div")
+  });
+  await runtime.transitionTo({ id: "retry-runtime-destroy" });
+
+  const originalRemoveChild = root.removeChild.bind(root);
+  root.removeChild = () => { throw new Error("persistent DOM cleanup failure"); };
+  await assert.rejects(runtime.destroy(), error => {
+    assert.ok(error instanceof AggregateError);
+    assert.ok(error.errors.some(item => /persistent DOM cleanup failure/.test(item.message)));
+    return true;
+  });
+  assert.equal(root.children.length, 1);
+
+  root.removeChild = originalRemoveChild;
+  await runtime.destroy();
+  assert.equal(root.children.length, 0);
+  await assert.rejects(runtime.transitionTo({ id: "after-destroy" }), /destroyed/);
+});
+
+
+test("runtime destroy cancels an active visual transition before awaiting scene teardown", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let signalFrame;
+  const frameStarted = new Promise(resolve => { signalFrame = resolve; });
+  const runtime = createCinematicRuntime({
+    root,
+    loadAsset: key => key,
+    renderScene: () => document.createElement("div"),
+    nextFrame: () => { signalFrame(); return Promise.resolve(); },
+    wait: () => new Promise(() => {})
+  });
+
+  await runtime.transitionTo({ id: "current" });
+  const pendingTransition = runtime.transitionTo({ id: "incoming" });
+  await frameStarted;
+  const destroying = runtime.destroy();
+  assert.equal(await pendingTransition, false);
+  await destroying;
+  assert.equal(root.children.length, 0);
+});
+
+
+test("runtime pauses the host before releasing scene and asset resources", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let childrenAtPause = null;
+  const runtime = createCinematicRuntime({
+    root,
+    loadAsset: key => key,
+    renderScene: () => document.createElement("div"),
+    onPause: () => { childrenAtPause = root.children.length; }
+  });
+
+  await runtime.transitionTo({ id: "visible" });
+  assert.equal(root.children.length, 1);
+  await runtime.destroy();
+  assert.equal(childrenAtPause, 1);
+  assert.equal(root.children.length, 0);
+});

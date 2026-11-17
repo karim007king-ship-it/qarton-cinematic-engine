@@ -116,9 +116,15 @@ test("destroy during an asynchronous mount still releases the late scene handle"
   await Promise.resolve();
   assert.equal(typeof releaseMount, "function");
 
-  await manager.destroy();
+  const destroying = manager.destroy();
+  let destroySettled = false;
+  destroying.then(() => { destroySettled = true; });
+  await Promise.resolve();
+  assert.equal(destroySettled, false);
+
   releaseMount();
   assert.equal(await pending, false);
+  await destroying;
   assert.deepEqual(events, ["unmount:late"]);
   assert.equal(manager.current, null);
 });
@@ -156,4 +162,41 @@ test("failure to retire the previous scene does not roll back the committed scen
     /old scene cleanup failed/
   );
   assert.equal(manager.current.id, "new");
+});
+
+
+test("clear retains scene ownership and retries a transient unmount failure", async () => {
+  let fail = true;
+  let attempts = 0;
+  const { manager } = setup({
+    unmount: async () => {
+      attempts += 1;
+      if (fail) throw new Error("temporary unmount failure");
+    }
+  });
+  await manager.transitionTo({ id: "retryable" }, {});
+
+  await assert.rejects(manager.clear(), /temporary unmount failure/);
+  assert.equal(manager.current, null);
+  fail = false;
+  await manager.clear();
+  assert.equal(attempts, 2);
+});
+
+test("destroy can be retried after a transient scene cleanup failure", async () => {
+  let fail = true;
+  let attempts = 0;
+  const { manager } = setup({
+    unmount: async () => {
+      attempts += 1;
+      if (fail) throw new Error("destroy cleanup failed");
+    }
+  });
+  await manager.transitionTo({ id: "retry-destroy" }, {});
+
+  await assert.rejects(manager.destroy(), /destroy cleanup failed/);
+  fail = false;
+  await manager.destroy();
+  assert.equal(attempts, 2);
+  await assert.rejects(manager.transitionTo({ id: "late" }, {}), /destroyed/);
 });

@@ -47,6 +47,36 @@ test("clear prevents late requests from repopulating the cache", async () => {
   assert.equal(manager.pendingCount, 0);
 });
 
+
+test("release invalidates an in-flight cache write and allows a fresh load", async () => {
+  const completions = [];
+  let calls = 0;
+  const manager = new AssetManager({
+    loader: key => new Promise(resolve => {
+      calls += 1;
+      const requestNumber = calls;
+      completions.push(() => resolve("/" + key + "-" + requestNumber + ".png"));
+    })
+  });
+
+  const oldRequest = manager.load("background");
+  await Promise.resolve();
+  assert.equal(manager.pendingCount, 1);
+  assert.equal(manager.release("background"), true);
+  assert.equal(manager.pendingCount, 0);
+
+  const newRequest = manager.load("background");
+  await Promise.resolve();
+  assert.equal(calls, 2);
+  completions[1]();
+  assert.equal(await newRequest, "/background-2.png");
+  completions[0]();
+  assert.equal(await oldRequest, "/background-1.png");
+  assert.equal(await manager.load("background"), "/background-2.png");
+  assert.equal(manager.size, 1);
+  assert.equal(calls, 2);
+});
+
 test("release removes one cached key without disturbing others", async () => {
   const manager = new AssetManager({ loader: key => `/${key}.png` });
   await manager.preload(["one", "two"]);
@@ -69,3 +99,46 @@ test("invalid dependencies and keys are rejected", async () => {
   await assert.rejects(manager.load(" "), /Asset key/);
   await assert.rejects(manager.preload("not-an-array"), /expects an array/);
 });
+
+
+test("destroy is terminal and rejects new loads without invoking the loader", async () => {
+  let calls = 0;
+  const manager = new AssetManager({
+    loader: async key => { calls += 1; return `/${key}.png`; }
+  });
+  await manager.load("before-destroy");
+  manager.destroy();
+  manager.destroy();
+  await assert.rejects(manager.load("after-destroy"), /has been destroyed/);
+  await assert.rejects(manager.preload(["another"]), /has been destroyed/);
+  assert.equal(calls, 1);
+  assert.equal(manager.size, 0);
+  assert.equal(manager.pendingCount, 0);
+});
+
+test("destroy invalidates an in-flight cache write while preserving its existing caller", async () => {
+  let finish;
+  let calls = 0;
+  const manager = new AssetManager({
+    loader: key => {
+      calls += 1;
+      return new Promise(resolve => { finish = () => resolve(`/${key}.png`); });
+    }
+  });
+
+  const pending = manager.load("scene-background");
+  await Promise.resolve();
+  assert.equal(manager.pendingCount, 1);
+
+  manager.destroy();
+  assert.equal(manager.size, 0);
+  assert.equal(manager.pendingCount, 0);
+  await assert.rejects(manager.load("late-request"), /has been destroyed/);
+
+  finish();
+  assert.equal(await pending, "/scene-background.png");
+  assert.equal(manager.size, 0);
+  assert.equal(manager.pendingCount, 0);
+  assert.equal(calls, 1);
+});
+

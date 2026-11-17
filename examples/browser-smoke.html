@@ -165,6 +165,7 @@
   });
 
   let running = true;
+  let destroyed = false;
   let frameId = 0;
   let startTime = performance.now();
   let shakeStart = -Infinity;
@@ -229,18 +230,20 @@
   }
 
   async function show(index) {
+    if (destroyed) return;
     buttons.forEach(button => { button.disabled = true; });
     try {
       await runtime.transitionTo(scenes[index]);
+      if (destroyed) return;
       if (!director.getState().mounted) {
         const mounted = await director.mount();
         if (!mounted) throw new Error("Cinematic director did not mount");
       }
       status.textContent = `Scene ${scenes[index].id} active · two characters · parallax · particles · timeline`;
     } catch (error) {
-      status.textContent = `Showcase error: ${error.message}`;
+      if (!destroyed) status.textContent = `Showcase error: ${error.message}`;
     } finally {
-      buttons.forEach(button => { button.disabled = false; });
+      buttons.forEach(button => { button.disabled = destroyed; });
     }
   }
 
@@ -252,6 +255,7 @@
       if (!AudioContextClass) throw new Error("Web Audio is unavailable in this browser");
       audioContext ??= new AudioContextClass();
       await audioContext.resume();
+      if (destroyed) return;
       audioCues?.destroy();
       const audioCueStart = performance.now() - startTime;
       audioCues = createAudioCueController({
@@ -276,18 +280,32 @@
       });
       status.textContent = "Audio cues started from user gesture and synchronized to the director clock.";
     } catch (error) {
-      status.textContent = `Audio unavailable: ${error.message}`;
+      if (!destroyed) status.textContent = `Audio unavailable: ${error.message}`;
     }
   });
   document.querySelector("#destroy").addEventListener("click", async () => {
+    if (destroyed) return;
+    destroyed = true;
     buttons.forEach(button => { button.disabled = true; });
     running = false;
     cancelAnimationFrame(frameId);
     window.removeEventListener("resize", resizeCanvas);
-    director.destroy();
-    if (audioContext) await audioContext.close();
-    await runtime.destroy();
-    status.textContent = "Destroyed: animation loop, characters, audio, scene and cached assets released.";
+    status.textContent = "Cleaning up director, audio context and runtime…";
+    const cleanupErrors = [];
+    for (const cleanup of [
+      () => director.destroy(),
+      () => audioContext?.close(),
+      () => runtime.destroy()
+    ]) {
+      try {
+        await cleanup();
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+    }
+    status.textContent = cleanupErrors.length
+      ? `Cleanup completed with ${cleanupErrors.length} error(s): ${cleanupErrors.map(error => error.message).join("; ")}`
+      : "Destroyed: animation loop, characters, audio, scene and cached assets released.";
   });
 
   await show(0);

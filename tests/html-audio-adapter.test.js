@@ -26,6 +26,16 @@ test("HTMLAudio adapter creates voices and supports stop and volume", () => {
   assert.equal(voice.paused, true);
 });
 
+test("HTMLAudio validates voice volume before allocating a media object", () => {
+  let allocations = 0;
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/voice.mp3",
+    createAudio: () => { allocations += 1; return fakeAudio(); }
+  });
+  assert.throws(() => adapter.play("voice", { volume: 2 }), /voice volume/);
+  assert.equal(allocations, 0);
+});
+
 test("HTMLAudio adapter validates injected host functions and media objects", () => {
   assert.throws(() => createHTMLAudioAdapter({}), /requires resolveAsset/);
   const adapter = createHTMLAudioAdapter({ resolveAsset: () => "/x.mp3", createAudio: () => ({}) });
@@ -43,5 +53,39 @@ test("HTMLAudio adapter applies master volume and cleans up on destroy", () => {
   adapter.destroy();
   assert.equal(audio.paused, true);
   assert.equal(audio.src, "");
+  assert.throws(() => adapter.play("late"), /destroyed/);
+});
+
+
+test("HTMLAudio destroy attempts every voice and retries transient pause failures", () => {
+  const made = [];
+  const calls = [];
+  let failFirstPause = true;
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: key => `/${key}.mp3`,
+    createAudio: () => {
+      const audio = fakeAudio();
+      const id = made.length === 0 ? "first" : "second";
+      audio.pause = () => {
+        calls.push(id);
+        if (id === "first" && failFirstPause) throw new Error("first audio pause failed");
+        audio.paused = true;
+      };
+      made.push(audio);
+      return audio;
+    }
+  });
+  adapter.play("first");
+  adapter.play("second");
+
+  assert.throws(() => adapter.destroy(), /first audio pause failed/);
+  assert.deepEqual(calls, ["first", "second"]);
+  assert.equal(made[0].src, "");
+  assert.equal(made[1].src, "");
+
+  failFirstPause = false;
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.deepEqual(calls, ["first", "second", "first"]);
+  assert.throws(() => adapter.setVolume(made[0], 0.5), /destroyed/);
   assert.throws(() => adapter.play("late"), /destroyed/);
 });

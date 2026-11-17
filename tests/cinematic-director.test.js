@@ -2,6 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createCinematicDirector } from "../src/runtime/cinematic-director.js";
 import { createTimeline } from "../src/motion/timeline.js";
+import { createAudioCueController } from "../src/audio/audio-cue-controller.js";
+import { createCharacterStage } from "../src/character/character-stage.js";
+import { createCharacterController } from "../src/character/character-controller.js";
+import { createMotionPath } from "../src/motion/path.js";
 
 function audioSpy() {
   const calls = [];
@@ -41,7 +45,7 @@ test("director synchronizes timeline, audio and character stage on one clock", a
   assert.deepEqual(events, ["opening", "impact"]);
   assert.deepEqual(calls, [["mount"], ["character", 0], ["character", 500]]);
   assert.deepEqual(audio.calls, [["update", 0], ["update", 500]]);
-  director.destroy();
+  await director.destroy();
   assert.equal(director.getState().destroyed, true);
   assert.equal(calls.at(-1)[0], "destroy");
   assert.equal(audio.calls.at(-1)[0], "destroy");
@@ -54,6 +58,7 @@ test("director pauses, resumes and replays timeline deterministically after rewi
     audio,
     timeline: createTimeline([
       { id: "first", atMs: 100, type: "cue" },
+      { id: "during-pause", atMs: 225, type: "cue" },
       { id: "later", atMs: 300, type: "cue" }
     ]),
     onEvent: event => events.push(event.id)
@@ -72,9 +77,12 @@ test("director pauses, resumes and replays timeline deterministically after rewi
   await director.update(50);
   assert.deepEqual(events, ["first", "later"]);
   assert.deepEqual(audio.calls.slice(-2), [["stopAll", { reset: true }], ["update", 50]]);
+  const replay = await director.update(350);
+  assert.deepEqual(replay.events.map(event => event.id), ["first", "during-pause", "later"]);
+  assert.deepEqual(events, ["first", "later", "first", "during-pause", "later"]);
   director.unmount();
   assert.equal(director.getState().timeMs, -1);
-  director.destroy();
+  await director.destroy();
 });
 
 test("director validates clock order and lifecycle", async () => {
@@ -83,7 +91,7 @@ test("director validates clock order and lifecycle", async () => {
   await director.mount();
   await assert.rejects(director.update(-1), /non-negative/);
   assert.throws(() => director.pause(-2), /Pause time/);
-  director.destroy();
+  await director.destroy();
   await assert.rejects(director.update(0), /destroyed/);
 });
 
@@ -103,8 +111,8 @@ test("unmount invalidates an asynchronous director mount", async () => {
   resolveMount(true);
   assert.equal(await mounting, false);
   assert.equal(director.getState().mounted, false);
-  assert.deepEqual(calls, ["unmount", "unmount"]);
-  director.destroy();
+  assert.deepEqual(calls, ["unmount"]);
+  await director.destroy();
 });
 
 test("destroy invalidates an asynchronous director mount", async () => {
@@ -118,22 +126,24 @@ test("destroy invalidates an asynchronous director mount", async () => {
   };
   const director = createCinematicDirector({ characterStage: stage });
   const mounting = director.mount();
-  director.destroy();
+  const destroying = director.destroy();
   resolveMount(true);
   assert.equal(await mounting, false);
+  await destroying;
   assert.equal(director.getState().mounted, false);
-  assert.deepEqual(calls, ["destroy", "unmount"]);
+  assert.deepEqual(calls, ["destroy"]);
 });
 
-test("director destroys audio even when character stage cleanup throws", () => {
+test("director destroys audio even when character stage cleanup throws", async () => {
   const calls = [];
   const failure = new Error("character stage cleanup failed");
+  let stageDestroyAttempts = 0;
   const director = createCinematicDirector({
     characterStage: {
       mount: async () => true,
       update: async () => {},
       unmount: () => {},
-      destroy: () => { calls.push("stage"); throw failure; }
+      destroy: () => { calls.push("stage"); stageDestroyAttempts += 1; if (stageDestroyAttempts === 1) throw failure; }
     },
     audio: {
       update: () => {},
@@ -144,10 +154,11 @@ test("director destroys audio even when character stage cleanup throws", () => {
     }
   });
 
-  assert.throws(() => director.destroy(), error => error === failure);
+  await assert.rejects(director.destroy(), error => error === failure);
   assert.deepEqual(calls, ["stage", "audio"]);
   assert.equal(director.getState().destroyed, true);
-  assert.doesNotThrow(() => director.destroy());
+  await assert.doesNotReject(director.destroy());
+  assert.deepEqual(calls, ["stage", "audio", "stage", "audio"]);
 });
 
 test("director unmount attempts audio reset and resets state when stage cleanup throws", async () => {
@@ -174,5 +185,297 @@ test("director unmount attempts audio reset and resets state when stage cleanup 
   assert.deepEqual(director.getState(), {
     mounted: false, paused: false, destroyed: false, timeMs: -1
   });
-  assert.doesNotThrow(() => director.mount());
+  await director.mount();
+  await director.destroy();
+});
+
+
+test("director destroy retries asynchronous subsystem cleanup failures", async () => {
+  let fail = true;
+  let stageAttempts = 0;
+  const calls = [];
+  const director = createCinematicDirector({
+    characterStage: {
+      mount: async () => true,
+      update: async () => {},
+      unmount: () => {},
+      destroy: async () => {
+        stageAttempts += 1;
+        calls.push("stage");
+        if (fail) throw new Error("transient stage destroy failure");
+      }
+    },
+    audio: {
+      update: () => {},
+      pause: () => {},
+      resume: () => {},
+      stopAll: () => {},
+      destroy: async () => { calls.push("audio"); }
+    }
+  });
+
+  await assert.rejects(director.destroy(), /transient stage destroy failure/);
+  assert.equal(director.getState().destroyed, true);
+  fail = false;
+  await director.destroy();
+  assert.equal(stageAttempts, 2);
+  assert.deepEqual(calls, ["stage", "audio", "stage", "audio"]);
+  await assert.rejects(director.update(0), /destroyed/);
+});
+
+test("director destroy waits for pending mount rollback before resolving", async () => {
+  let resolveMount;
+  const calls = [];
+  const director = createCinematicDirector({
+    characterStage: {
+      mount: () => new Promise(resolve => { resolveMount = resolve; }),
+      update: async () => {},
+      unmount: () => calls.push("unmount"),
+      destroy: async () => { calls.push("destroy"); }
+    }
+  });
+
+  const mounting = director.mount();
+  const destroying = director.destroy();
+  let settled = false;
+  destroying.then(() => { settled = true; });
+  await Promise.resolve();
+  assert.equal(settled, false);
+  resolveMount(true);
+  assert.equal(await mounting, false);
+  await destroying;
+  assert.deepEqual(calls, ["destroy"]);
+});
+
+
+test("director allows a fresh mount while an invalidated mount is still pending", async () => {
+  const resolvers = [];
+  let mountCount = 0;
+  const stage = {
+    mount: () => {
+      mountCount += 1;
+      return new Promise(resolve => resolvers.push(resolve));
+    },
+    update: async () => {},
+    unmount: () => {},
+    destroy: () => {}
+  };
+  const director = createCinematicDirector({ characterStage: stage });
+
+  const stale = director.mount();
+  director.unmount();
+  const fresh = director.mount();
+  assert.equal(mountCount, 2);
+
+  resolvers[1](true);
+  assert.equal(await fresh, true);
+  resolvers[0](true);
+  assert.equal(await stale, false);
+  assert.equal(director.getState().mounted, true);
+  await director.destroy();
+});
+
+
+test("director resumes event delivery after a callback throws without replaying prior events or audio", async () => {
+  const delivered = [];
+  const played = [];
+  const audio = createAudioCueController({
+    cues: [{ id: "impact", atMs: 0, asset: "impact" }],
+    play: asset => { played.push(asset); return asset; },
+    stop: () => {}
+  });
+  let secondCalls = 0;
+  const director = createCinematicDirector({
+    audio,
+    timeline: createTimeline([
+      { id: "first", atMs: 0, type: "story" },
+      { id: "second", atMs: 10, type: "story" },
+      { id: "third", atMs: 20, type: "story" }
+    ]),
+    onEvent: async event => {
+      delivered.push(event.id);
+      if (event.id === "second") {
+        secondCalls += 1;
+        if (secondCalls === 1) throw new Error("story callback failed");
+      }
+    }
+  });
+
+  await director.mount();
+  await assert.rejects(director.update(20), /story callback failed/);
+  assert.deepEqual(delivered, ["first", "second"]);
+  const retried = await director.update(20);
+  assert.deepEqual(retried.events.map(event => event.id), ["second", "third"]);
+  assert.deepEqual(delivered, ["first", "second", "second", "third"]);
+  assert.deepEqual(played, ["impact"]);
+  await director.destroy();
+});
+
+test("director keeps timeline events pending when character sampling fails", async () => {
+  const delivered = [];
+  const played = [];
+  let fail = true;
+  const stage = {
+    mount: async () => true,
+    update: async () => {
+      if (fail) throw new Error("character sampling failed");
+    },
+    unmount: () => {},
+    destroy: () => {}
+  };
+  const audio = createAudioCueController({
+    cues: [{ id: "ambience", atMs: 0, asset: "ambience" }],
+    play: asset => { played.push(asset); return asset; },
+    stop: () => {}
+  });
+  const director = createCinematicDirector({
+    characterStage: stage,
+    audio,
+    timeline: createTimeline([
+      { id: "line-one", atMs: 10, type: "dialogue" },
+      { id: "line-two", atMs: 20, type: "dialogue" }
+    ]),
+    onEvent: event => delivered.push(event.id)
+  });
+
+  await director.mount();
+  await assert.rejects(director.update(20), /character sampling failed/);
+  assert.deepEqual(delivered, []);
+  fail = false;
+  await director.update(20);
+  assert.deepEqual(delivered, ["line-one", "line-two"]);
+  assert.deepEqual(played, ["ambience"]);
+  await director.destroy();
+});
+
+
+class TestElement {
+  constructor(tag, ownerDocument) {
+    this.tagName = tag;
+    this.ownerDocument = ownerDocument;
+    this.children = [];
+    this.style = {};
+    this.dataset = {};
+    this.parentNode = null;
+  }
+  appendChild(child) { child.parentNode = this; this.children.push(child); return child; }
+  removeChild(child) { this.children = this.children.filter(item => item !== child); child.parentNode = null; }
+  remove() { this.parentNode?.removeChild(this); }
+}
+class TestDocument {
+  createElement(tag) { return new TestElement(tag, this); }
+}
+
+test("director drives real character stage and audio cues from the same timeline clock", async () => {
+  const document = new TestDocument();
+  const root = new TestElement("main", document);
+  const path = createMotionPath([{ x: 0, y: 0 }, { x: 100, y: 0 }]);
+  const controller = createCharacterController({
+    id: "hero",
+    initial: { expression: "neutral" },
+    motions: [{ id: "walk", path, startMs: 0, durationMs: 1000, expression: "focused" }]
+  });
+  const stage = createCharacterStage({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`,
+    characters: [{
+      controller,
+      sprites: { neutral: "hero-neutral", focused: "hero-focused" }
+    }]
+  });
+  const played = [];
+  const audio = createAudioCueController({
+    cues: [{ id: "footstep", atMs: 500, asset: "footstep" }],
+    play: asset => { played.push(asset); return asset; },
+    stop: () => {}
+  });
+  const events = [];
+  const director = createCinematicDirector({
+    characterStage: stage,
+    audio,
+    timeline: createTimeline([{ id: "camera-cut", atMs: 500, type: "camera" }]),
+    onEvent: event => events.push(event.id)
+  });
+
+  await director.mount();
+  await director.update(500);
+  assert.match(root.children[0].style.transform, /translate3d\(50px, 0px, 0\)/);
+  assert.equal(root.children[0].children[0].src, "https://assets.test/hero-focused.png");
+  assert.deepEqual(played, ["footstep"]);
+  assert.deepEqual(events, ["camera-cut"]);
+
+  await director.unmount();
+  assert.equal(root.children.length, 0);
+  await director.destroy();
+});
+
+
+test("concurrent director updates serialize frame sampling and timeline event delivery", async () => {
+  const audio = audioSpy();
+  const characterTimes = [];
+  const delivered = [];
+  let releaseFirstEvent;
+  const firstEvent = new Promise(resolve => { releaseFirstEvent = resolve; });
+  const director = createCinematicDirector({
+    characterStage: {
+      mount: async () => true,
+      update: async time => { characterTimes.push(time); },
+      unmount: () => {},
+      destroy: () => {}
+    },
+    audio,
+    timeline: createTimeline([
+      { id: "opening", atMs: 0, type: "story" },
+      { id: "later", atMs: 150, type: "story" }
+    ]),
+    onEvent: async event => {
+      delivered.push(event.id);
+      if (event.id === "opening") await firstEvent;
+    }
+  });
+
+  await director.mount();
+  const first = director.update(100);
+  const second = director.update(200);
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(characterTimes, [100]);
+  assert.deepEqual(delivered, ["opening"]);
+  assert.deepEqual(audio.calls, [["update", 100]]);
+
+  releaseFirstEvent();
+  const firstResult = await first;
+  const secondResult = await second;
+  assert.deepEqual(firstResult.events.map(event => event.id), ["opening"]);
+  assert.deepEqual(secondResult.events.map(event => event.id), ["later"]);
+  assert.deepEqual(characterTimes, [100, 200]);
+  assert.deepEqual(delivered, ["opening", "later"]);
+  assert.deepEqual(audio.calls, [["update", 100], ["update", 200]]);
+  await director.destroy();
+});
+
+test("unmount invalidates an in-flight director frame before it dispatches timeline events", async () => {
+  let resolveCharacterUpdate;
+  const delivered = [];
+  const director = createCinematicDirector({
+    characterStage: {
+      mount: async () => true,
+      update: () => new Promise(resolve => { resolveCharacterUpdate = resolve; }),
+      unmount: () => {},
+      destroy: () => {}
+    },
+    timeline: createTimeline([{ id: "must-not-fire", atMs: 0, type: "story" }]),
+    onEvent: event => delivered.push(event.id)
+  });
+
+  await director.mount();
+  const updating = director.update(0);
+  await Promise.resolve();
+  director.unmount();
+  resolveCharacterUpdate();
+  const result = await updating;
+  assert.deepEqual(result.events, []);
+  assert.deepEqual(delivered, []);
+  assert.equal(director.getState().timeMs, -1);
+  await director.destroy();
 });

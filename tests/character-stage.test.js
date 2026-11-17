@@ -321,3 +321,128 @@ test("character stage destroy can retry a transient DOM cleanup failure", async 
   assert.equal(root.children.length, 0);
   await assert.rejects(stage.mount(), /destroyed/);
 });
+
+
+
+test("concurrent character updates serialize timeline delivery", async () => {
+  let releaseEvent;
+  const eventGate = new Promise(resolve => { releaseEvent = resolve; });
+  const events = [];
+  const timeline = createTimeline([{ id: "once", atMs: 100, type: "dialogue" }]);
+  const { stage } = fixture({
+    timeline,
+    onEvent: async event => {
+      events.push(event.id);
+      await eventGate;
+    }
+  });
+  await stage.mount();
+
+  const first = stage.update(200);
+  await flushMicrotasks();
+  const second = stage.update(200);
+  releaseEvent();
+  assert.deepEqual(await Promise.all([first, second]), [true, true]);
+  assert.deepEqual(events, ["once"]);
+  stage.destroy();
+});
+
+test("unmount invalidates an update waiting for an asynchronous sprite", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const controller = createCharacterController({
+    id: "hero",
+    initial: { expression: "neutral" },
+    motions: [{
+      id: "walk",
+      path: createMotionPath([{ x: 0, y: 0 }, { x: 10, y: 0 }]),
+      startMs: 100,
+      durationMs: 1000,
+      expression: "focused"
+    }]
+  });
+  let resolveFocused;
+  const events = [];
+  const stage = createCharacterStage({
+    root,
+    resolveSprite: key => key === "focused"
+      ? new Promise(resolve => { resolveFocused = resolve; })
+      : `https://assets.test/${key}.png`,
+    characters: [{ controller, sprites: { neutral: "neutral", focused: "focused" } }],
+    timeline: createTimeline([{ id: "after", atMs: 500, type: "dialogue" }]),
+    onEvent: event => events.push(event.id)
+  });
+
+  await stage.mount();
+  const pending = stage.update(500);
+  await flushMicrotasks();
+  stage.unmount();
+  resolveFocused("https://assets.test/focused.png");
+  assert.equal(await pending, false);
+  assert.deepEqual(events, []);
+  assert.equal(root.children.length, 0);
+  stage.destroy();
+});
+
+test("character stage waits for sprite sampling before dispatching async timeline events", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const path = createMotionPath([{ x: 0, y: 0 }, { x: 10, y: 0 }]);
+  const controller = createCharacterController({
+    id: "hero",
+    initial: { expression: "neutral" },
+    motions: [{ id: "walk", path, startMs: 100, durationMs: 1000, expression: "focused" }]
+  });
+  let resolveSprite;
+  let spriteCalls = 0;
+  const events = [];
+  const stage = createCharacterStage({
+    root,
+    resolveSprite: key => {
+      spriteCalls += 1;
+      if (key === "focused" && spriteCalls === 2) {
+        return new Promise(resolve => { resolveSprite = resolve; });
+      }
+      return `https://assets.test/${key}.png`;
+    },
+    characters: [{ controller, sprites: { neutral: "neutral", focused: "focused" } }],
+    timeline: createTimeline([{ id: "step", atMs: 500, type: "dialogue" }]),
+    onEvent: event => events.push(event.id)
+  });
+
+  await stage.mount();
+  const updating = stage.update(500);
+  await flushMicrotasks();
+  assert.deepEqual(events, []);
+  resolveSprite("https://assets.test/focused.png");
+  assert.equal(await updating, true);
+  assert.deepEqual(events, ["step"]);
+  stage.destroy();
+});
+
+test("character stage retries failed async timeline callbacks without replaying delivered events", async () => {
+  const events = [];
+  let failSecond = true;
+  const timeline = createTimeline([
+    { id: "first", atMs: 100, type: "dialogue" },
+    { id: "second", atMs: 200, type: "dialogue" },
+    { id: "third", atMs: 300, type: "dialogue" }
+  ]);
+  const { stage } = fixture({
+    timeline,
+    onEvent: async event => {
+      events.push(event.id);
+      if (event.id === "second" && failSecond) {
+        failSecond = false;
+        throw new Error("dialogue callback failed");
+      }
+    }
+  });
+
+  await stage.mount();
+  await assert.rejects(stage.update(400), /dialogue callback failed/);
+  assert.deepEqual(events, ["first", "second"]);
+  assert.equal(await stage.update(400), true);
+  assert.deepEqual(events, ["first", "second", "second", "third"]);
+  stage.destroy();
+});
