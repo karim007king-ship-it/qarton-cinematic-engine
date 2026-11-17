@@ -60,3 +60,40 @@ test("character controller rejects overlapping or malformed motions", () => {
   }), /overlap/);
   assert.throws(() => createCharacterController({ id: "hero", motions: [{ id: "bad" }] }), /valid path/);
 });
+
+test("character and motion identifiers are normalized and unique", () => {
+  const path = createMotionPath([{ x: 0, y: 0 }, { x: 10, y: 0 }]);
+  const character = createCharacterController({
+    id: "  hero  ",
+    motions: [{ id: "  walk  ", path, startMs: 0, durationMs: 100 }]
+  });
+  assert.equal(character.id, "hero");
+  assert.equal(character.update(100).id, "hero");
+  assert.throws(() => createCharacterController({
+    id: "hero",
+    motions: [
+      { id: "walk", path, startMs: 0, durationMs: 100 },
+      { id: " walk ", path, startMs: 100, durationMs: 100 }
+    ]
+  }), /Duplicate character motion id/);
+  assert.throws(() => createCharacterController({ id: "hero", initial: null }), /initial state/);
+});
+
+test("character controller snapshots mutable motion paths and rejects overflowing end times", () => {
+  const mutablePath = { points: [{ x: 0, y: 0 }, { x: 10, y: 0 }] };
+  const character = createCharacterController({
+    id: "hero",
+    motions: [{ id: "walk", path: mutablePath, startMs: 0, durationMs: 100 }]
+  });
+  mutablePath.points[1].x = 999;
+  assert.equal(character.update(100).x, 10);
+  assert.throws(() => createCharacterController({
+    id: "hero",
+    motions: [{
+      id: "overflow",
+      path: createMotionPath([{ x: 0, y: 0 }, { x: 1, y: 1 }]),
+      startMs: Number.MAX_VALUE,
+      durationMs: Number.MAX_VALUE
+    }]
+  }), /valid startMs/);
+});
