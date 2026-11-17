@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createCinematicDirector } from "../src/runtime/cinematic-director.js";
 import { createTimeline } from "../src/motion/timeline.js";
+import { createAudioCueController } from "../src/audio/audio-cue-controller.js";
 
 test("pause during asynchronous character sampling prevents audio and event dispatch for that frame", async () => {
   let resolveFirstFrame;
@@ -76,7 +77,6 @@ test("rewind does not replay audio until character sampling succeeds", async () 
     unmount: () => {},
     destroy: () => {}
   };
-  const { createAudioCueController } = await import("../src/audio/audio-cue-controller.js");
   const audio = createAudioCueController({
     cues: [
       { id: "early", atMs: 50, asset: "early" },
