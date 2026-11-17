@@ -93,7 +93,7 @@
 
   function createToneWavDataUrl() {
     const sampleRate = 8000;
-    const sampleCount = Math.floor(sampleRate * 0.28);
+    const sampleCount = Math.floor(sampleRate * 5);
     const buffer = new ArrayBuffer(44 + sampleCount * 2);
     const view = new DataView(buffer);
     const writeAscii = (offset, value) => {
