@@ -170,9 +170,11 @@ export function createCinematicDirector({
     return true;
   }
 
-  function resume(timeMs = lastTimeMs) {
+  function resume(timeMs) {
     assertAlive();
     if (!paused) return false;
+    const rebaseHostClock = timeMs === undefined;
+    if (rebaseHostClock) timeMs = lastTimeMs;
     if (!Number.isFinite(timeMs) || timeMs < lastTimeMs) {
       throw new TypeError("Resume time must be finite and not earlier than the director clock");
     }
@@ -181,7 +183,7 @@ export function createCinematicDirector({
     lastTimeMs = timeMs;
     eventCursorMs = timeMs;
     paused = false;
-    rebaseClockOnResume = true;
+    rebaseClockOnResume = rebaseHostClock;
     onResume(timeMs);
     return true;
   }
