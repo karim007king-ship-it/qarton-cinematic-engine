@@ -407,3 +407,42 @@ test("runtime lifecycle pauses the shared director clock and audio cues together
   await runtime.destroy();
   await director.destroy();
 });
+
+
+test("runtime keeps the director frozen when an audio voice rejects page-hide pause", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const target = new LifecycleTarget("visible");
+  const errors = [];
+  const audio = createAudioCueController({
+    cues: [{ id: "ambience", atMs: 0, asset: "ambience", loop: true }],
+    play: () => "voice",
+    pauseVoice: () => { throw new Error("voice pause failed"); }
+  });
+  const director = createCinematicDirector({ audio });
+  await director.mount();
+  await director.update(100);
+  const runtime = createCinematicRuntime({
+    root,
+    loadAsset: key => key,
+    renderScene: () => document.createElement("div"),
+    lifecycleTarget: target,
+    audioController: director,
+    onAudioError: (error, context) => errors.push([error.message, context.phase])
+  });
+
+  target.visibilityState = "hidden";
+  target.dispatch("visibilitychange");
+  assert.equal(runtime.isActive(), false);
+  assert.equal(director.getState().paused, true);
+  assert.deepEqual(errors, [["voice pause failed", "pause"]]);
+  assert.equal((await director.update(10000)).timeMs, 100);
+
+  target.visibilityState = "visible";
+  target.dispatch("visibilitychange");
+  assert.equal(runtime.isActive(), true);
+  assert.equal(director.getState().paused, false);
+  assert.equal((await director.update(20000)).timeMs, 100);
+  await runtime.destroy();
+  await director.destroy();
+});
