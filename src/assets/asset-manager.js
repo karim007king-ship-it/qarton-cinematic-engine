@@ -156,6 +156,7 @@ export class AssetManager {
     // Close the manager before invalidating pending work so no new request can
     // enter while teardown is in progress. AbortSignal releases callers even
     // when a host loader ignores cancellation or never settles.
+    this.#destroyed = true;
     const pendingEntries = [...this.#pending.values()];
     this.clear();
     for (const entry of pendingEntries) {
