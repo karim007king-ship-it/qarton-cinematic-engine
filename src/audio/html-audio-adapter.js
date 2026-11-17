@@ -19,13 +19,41 @@ export function createHTMLAudioAdapter({
   if (!Number.isFinite(masterVolume) || masterVolume < 0 || masterVolume > 1) {
     throw new TypeError("Master volume must be between 0 and 1");
   }
+
   let volume = masterVolume;
   let destroyed = false;
   const active = new Map();
   const assets = new WeakMap();
+  const endedHandlers = new Map();
+  const voiceStates = new WeakMap();
 
-  function reportPlaybackError(error, audio) {
+  function detachEndedHandler(audio) {
+    const handler = endedHandlers.get(audio);
+    if (!handler) return;
+    try { audio.removeEventListener?.("ended", handler); }
+    catch { /* listener cleanup is best-effort on minimal media hosts */ }
+    endedHandlers.delete(audio);
+  }
+
+  function releaseFailedPlayback(audio, { retainOwnership = false } = {}) {
+    try {
+      audio.pause();
+      try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
+      if (!retainOwnership) {
+        active.delete(audio);
+        voiceStates.set(audio, "stopped");
+        detachEndedHandler(audio);
+      }
+    } catch {
+      // Keep ownership so stop()/destroy() can retry native media cleanup.
+    }
+  }
+
+  function reportPlaybackError(error, audio, { retainOwnership = false } = {}) {
+    // A stopped or naturally ended voice is stale; its late Promise rejection
+    // must not report an error or touch a resource the adapter no longer owns.
     if (!active.has(audio)) return;
+    releaseFailedPlayback(audio, { retainOwnership });
     try { onPlaybackError(error, { asset: assets.get(audio), audio }); }
     catch { /* error reporting must not create an unhandled rejection */ }
   }
@@ -38,26 +66,60 @@ export function createHTMLAudioAdapter({
     if (!Number.isFinite(baseVolume) || baseVolume < 0 || baseVolume > 1) {
       throw new TypeError("Audio voice volume must be between 0 and 1");
     }
+
+    // Validate caller-controlled options before allocating a native media element.
     const audio = createAudio();
     if (!audio || typeof audio.play !== "function" || typeof audio.pause !== "function") {
       throw new TypeError("createAudio() must return an HTMLAudio-like object");
     }
+
     audio.src = url;
     audio.loop = options.loop === true;
     audio.preload = "auto";
     audio.volume = baseVolume * volume;
     active.set(audio, baseVolume);
     assets.set(audio, asset);
-    const result = audio.play();
-    if (result && typeof result.catch === "function") result.catch(error => reportPlaybackError(error, audio));
+    voiceStates.set(audio, "active");
+
+    // One-shot voices release their registry entry as soon as playback ends.
+    if (options.loop !== true && typeof audio.addEventListener === "function") {
+      const onEnded = () => {
+        active.delete(audio);
+        voiceStates.set(audio, "ended");
+        detachEndedHandler(audio);
+      };
+      try {
+        audio.addEventListener("ended", onEnded, { once: true });
+        endedHandlers.set(audio, onEnded);
+      } catch {
+        // Playback remains valid on HTMLAudio-compatible hosts with limited events.
+      }
+    }
+
+    let result;
+    try {
+      result = audio.play();
+    } catch (error) {
+      reportPlaybackError(error, audio);
+      throw error;
+    }
+    if (result && typeof result.then === "function") {
+      Promise.resolve(result).catch(error => reportPlaybackError(error, audio, { retainOwnership: true }));
+    }
     return audio;
   }
 
   function stop(audio) {
     if (!audio) return;
+    if (!active.has(audio)) {
+      detachEndedHandler(audio);
+      return;
+    }
     audio.pause();
     try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
     active.delete(audio);
+    voiceStates.set(audio, "stopped");
+    detachEndedHandler(audio);
   }
 
   function pause(audio) {
@@ -69,8 +131,16 @@ export function createHTMLAudioAdapter({
   function resume(audio) {
     if (destroyed) throw new Error("HTMLAudio adapter has been destroyed");
     if (!audio || !active.has(audio)) return;
-    const result = audio.play();
-    if (result && typeof result.catch === "function") result.catch(error => reportPlaybackError(error, audio));
+    let result;
+    try {
+      result = audio.play();
+    } catch (error) {
+      reportPlaybackError(error, audio, { retainOwnership: true });
+      throw error;
+    }
+    if (result && typeof result.then === "function") {
+      Promise.resolve(result).catch(error => reportPlaybackError(error, audio, { retainOwnership: true }));
+    }
   }
 
   function setVolume(audio, nextVolume) {
@@ -78,6 +148,7 @@ export function createHTMLAudioAdapter({
     if (!audio || !Number.isFinite(nextVolume) || nextVolume < 0 || nextVolume > 1) {
       throw new TypeError("Audio voice volume must be between 0 and 1");
     }
+    if (!active.has(audio) || voiceStates.get(audio) !== "active") return;
     active.set(audio, nextVolume);
     audio.volume = nextVolume * volume;
   }
@@ -93,17 +164,35 @@ export function createHTMLAudioAdapter({
   }
 
   function destroy() {
+    // Close new work immediately, but retain voices whose native teardown fails
+    // so a later destroy() call can retry them.
     destroyed = true;
     const errors = [];
     for (const audio of [...active.keys()]) {
       let failed = false;
-      try { audio.pause(); } catch (error) { errors.push(error); failed = true; }
+      try {
+        audio.pause();
+      } catch (error) {
+        errors.push(error);
+        failed = true;
+      }
       try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
-      try { audio.src = ""; } catch (error) { errors.push(error); failed = true; }
-      if (!failed) active.delete(audio);
+      try {
+        audio.src = "";
+      } catch (error) {
+        errors.push(error);
+        failed = true;
+      }
+      detachEndedHandler(audio);
+      if (!failed) {
+        active.delete(audio);
+        voiceStates.set(audio, "stopped");
+      }
     }
     if (errors.length === 1) throw errors[0];
-    if (errors.length > 1) throw new AggregateError(errors, "One or more HTMLAudio voices could not be destroyed");
+    if (errors.length > 1) {
+      throw new AggregateError(errors, "One or more HTMLAudio voices could not be destroyed");
+    }
   }
 
   return Object.freeze({ play, pause, resume, stop, setVolume, setMasterVolume, destroy });
