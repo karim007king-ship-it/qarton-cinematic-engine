@@ -124,10 +124,20 @@
     return "data:audio/wav;base64," + btoa(binary);
   }
 
+  let htmlAudioPausedByLifecycle = false;
+  let webAudioSuspendedByLifecycle = false;
+  let webAudioWasPlayingAtHide = false;
+
   function pauseHTMLAudioForBackground(source) {
     if (!htmlAudio || htmlAudio.paused) return;
     try {
       htmlAudio.pause();
+      htmlAudioPausedByLifecycle = true;
+      report.htmlAudio = {
+        paused: true,
+        interruptedWhilePlaying: true,
+        note: "Paused by page lifecycle; tap the HTMLAudio control to resume."
+      };
       report.events.push({ type: "html-audio-background-pause", source, at: new Date().toISOString() });
       refreshReport();
     } catch (error) {
@@ -326,6 +336,17 @@
   function suspendAudioForBackground(source) {
     pauseHTMLAudioForBackground(source);
     if (!audioContext || audioContext.state === "closed" || audioContext.state === "suspended") return;
+    webAudioWasPlayingAtHide = Boolean(report.audio && report.audio.sampleEnded === false);
+    webAudioSuspendedByLifecycle = true;
+    if (report.audio) {
+      report.audio.interruptedWhilePlaying = webAudioWasPlayingAtHide;
+      report.audio.note = webAudioWasPlayingAtHide
+        ? "The active sample was suspended by the page lifecycle."
+        : "No active sample was playing when the page was backgrounded.";
+    }
+    if (!webAudioWasPlayingAtHide) {
+      report.events.push({ type: "audio-sample-not-playing-at-background", source, at: new Date().toISOString() });
+    }
     report.events.push({ type: "audio-suspend-request", source, state: audioContext.state, at: new Date().toISOString() });
     try {
       audioContext.suspend().then(() => {
@@ -343,7 +364,25 @@
 
   document.addEventListener("visibilitychange", () => {
     report.events.push({ type: "visibilitychange", state: document.visibilityState, audioContextState: audioContext ? audioContext.state : "not-created", at: new Date().toISOString() });
-    if (document.visibilityState === "hidden") suspendAudioForBackground("visibilitychange");
+    if (document.visibilityState === "hidden") {
+      suspendAudioForBackground("visibilitychange");
+    } else {
+      const messages = [];
+      if (webAudioSuspendedByLifecycle && audioContext && audioContext.state === "suspended") {
+        if (webAudioWasPlayingAtHide) {
+          messages.push("Web Audio was interrupted and remains suspended. Tap Test Web Audio to resume; playback is never restarted automatically.");
+          report.events.push({ type: "audio-resume-required", api: "Web Audio", interruptedWhilePlaying: true, at: new Date().toISOString() });
+        } else {
+          messages.push("Web Audio is suspended, but the sample had already ended before backgrounding. Repeat the test and switch apps while the tone is still playing.");
+          report.events.push({ type: "audio-test-inconclusive", api: "Web Audio", reason: "sample-ended-before-background", at: new Date().toISOString() });
+        }
+      }
+      if (htmlAudioPausedByLifecycle && htmlAudio && htmlAudio.paused) {
+        messages.push("HTMLAudio was paused in the background. Tap Pause / resume HTMLAudio to resume it.");
+        report.events.push({ type: "audio-resume-required", api: "HTMLAudio", interruptedWhilePlaying: true, at: new Date().toISOString() });
+      }
+      if (messages.length) audioStatus.textContent = messages.join(" ");
+    }
     refreshReport();
   });
   window.addEventListener("pagehide", () => {
