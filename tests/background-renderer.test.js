@@ -262,3 +262,39 @@ test("a failed layer aborts sibling asset requests from the same render", async 
   assert.ok(siblingSignals.every(signal => signal.aborted));
   assert.equal(root.children.length, 0);
 });
+
+
+test("rerendering an active scene applies a new quality budget without dropping characters or overlays", async () => {
+  const document = new FakeDocument();
+  const root = new FakeElement("main", document);
+  const layers = [
+    ...Array.from({ length: 5 }, (_, index) => ({
+      id: `background-${index}`,
+      role: "background",
+      asset: `background-${index}`,
+      depth: index
+    })),
+    { id: "hero", role: "character", asset: "hero", depth: 0 },
+    { id: "dialogue", role: "overlay", asset: "dialogue", depth: 0 }
+  ];
+  const scene = createSceneDefinition({ id: "adaptive-live-scene", layers });
+  const renderer = new BackgroundRenderer({ root, resolveAsset: key => `/${key}.webp` });
+
+  assert.equal(await renderer.render(scene, resolveQualityProfile({ quality: "high" })), true);
+  assert.equal(root.children.length, 7);
+
+  assert.equal(await renderer.render(scene, resolveQualityProfile({ quality: "low" })), true);
+  assert.deepEqual(root.children.map(node => node.dataset.layerId), [
+    "background-0",
+    "background-1",
+    "hero",
+    "dialogue"
+  ]);
+
+  assert.equal(await renderer.render(scene, resolveQualityProfile({ quality: "medium" })), true);
+  assert.equal(root.children.length, 6);
+  assert.equal(root.children.at(-2).dataset.layerId, "hero");
+  assert.equal(root.children.at(-1).dataset.layerId, "dialogue");
+
+  renderer.destroy();
+});
