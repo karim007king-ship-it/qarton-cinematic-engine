@@ -86,6 +86,9 @@ export function createHTMLAudioAdapter({
     // One-shot voices release their registry entry as soon as playback ends.
     if (options.loop !== true && typeof audio.addEventListener === "function") {
       const onEnded = () => {
+        // A queued ended event may arrive after stop() detached the listener.
+        // Do not notify the cue owner for a voice that is no longer active.
+        if (!active.has(audio)) return;
         active.delete(audio);
         voiceStates.set(audio, "ended");
         detachEndedHandler(audio);
