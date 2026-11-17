@@ -446,3 +446,32 @@ test("runtime keeps the director frozen when an audio voice rejects page-hide pa
   await runtime.destroy();
   await director.destroy();
 });
+
+
+test("runtime isolates host pause and resume callback failures from activity state", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const target = new LifecycleTarget("visible");
+  const errors = [];
+  const runtime = createCinematicRuntime({
+    root,
+    loadAsset: key => key,
+    renderScene: () => document.createElement("div"),
+    lifecycleTarget: target,
+    onPause: () => { throw new Error("host pause callback failed"); },
+    onResume: () => { throw new Error("host resume callback failed"); },
+    onLifecycleError: (error, context) => errors.push([error.message, context.phase])
+  });
+
+  target.visibilityState = "hidden";
+  target.dispatch("visibilitychange");
+  assert.equal(runtime.isActive(), false);
+  target.visibilityState = "visible";
+  target.dispatch("visibilitychange");
+  assert.equal(runtime.isActive(), true);
+  assert.deepEqual(errors, [
+    ["host pause callback failed", "pause"],
+    ["host resume callback failed", "resume"]
+  ]);
+  await runtime.destroy();
+});
