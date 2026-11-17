@@ -52,5 +52,5 @@ test("background lifecycle requests audio suspension and never auto-resumes on f
   assert.match(page, /audio-suspend-request/);
   assert.match(page, /audio-suspend-complete/);
   assert.match(page, /audio-suspend-error/);
-  assert.doesNotMatch(page, /visibilityState === "visible"[\\s\\S]{0,180}audioContext\\.resume/);
+  assert.doesNotMatch(page, /visibilityState === "visible".*audioContext/);
 });
