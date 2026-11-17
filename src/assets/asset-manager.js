@@ -134,7 +134,16 @@ export class AssetManager {
     // enter while teardown is in progress. Existing callers may still receive
     // their resolved value, but late completions cannot repopulate the cache.
     this.#destroyed = true;
+    // Abort active loaders as well as invalidating their cache writes. This
+    // prevents network/decode work from continuing after terminal teardown.
+    const pendingEntries = [...this.#pending.values()];
     this.clear();
+    for (const entry of pendingEntries) {
+      if (!entry.controller.signal.aborted) {
+        const reason = Object.assign(new Error("AssetManager has been destroyed"), { name: "AbortError" });
+        entry.controller.abort(reason);
+      }
+    }
     this.#loader = null;
   }
 }
