@@ -39,7 +39,11 @@ export function createAdaptivePerformanceMonitor({
       while (pendingNotifications.length > 0) {
         const notification = pendingNotifications[0];
         onProfileChange(notification.next, notification.previous);
-        pendingNotifications.shift();
+        // A callback may reset the monitor and enqueue fresh notifications.
+        // Remove only the notification that was just delivered, not whatever
+        // happens to be first after a re-entrant reset.
+        const deliveredIndex = pendingNotifications.indexOf(notification);
+        if (deliveredIndex !== -1) pendingNotifications.splice(deliveredIndex, 1);
       }
     } finally {
       notifying = false;
@@ -108,6 +112,9 @@ export function createAdaptivePerformanceMonitor({
     if (!nextDevice || typeof nextDevice !== "object" || Array.isArray(nextDevice)) {
       throw new TypeError("Adaptive performance device hints must be an object");
     }
+    // A reset starts a new measurement epoch; stale callbacks from the prior
+    // device/profile must never be delivered after the reset.
+    pendingNotifications.length = 0;
     device = nextDevice;
     locked = device.reducedMotion === true || device.saveData === true;
     profile = Object.freeze(resolveQualityProfile(device));
