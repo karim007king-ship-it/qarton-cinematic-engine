@@ -58,3 +58,52 @@ test("pause during asynchronous character sampling prevents audio and event disp
   assert.deepEqual(delivered, ["opening"]);
   await director.destroy();
 });
+
+
+test("rewind does not replay audio until character sampling succeeds", async () => {
+  const played = [];
+  const stopped = [];
+  const delivered = [];
+  let failNextSample = false;
+  const stage = {
+    mount: async () => true,
+    update: async () => {
+      if (failNextSample) {
+        failNextSample = false;
+        throw new Error("rewound character sample failed");
+      }
+    },
+    unmount: () => {},
+    destroy: () => {}
+  };
+  const { createAudioCueController } = await import("../src/audio/audio-cue-controller.js");
+  const audio = createAudioCueController({
+    cues: [
+      { id: "early", atMs: 50, asset: "early" },
+      { id: "middle", atMs: 250, asset: "middle" }
+    ],
+    play: asset => { played.push(asset); return asset; },
+    stop: voice => stopped.push(voice)
+  });
+  const director = createCinematicDirector({
+    characterStage: stage,
+    audio,
+    timeline: createTimeline([{ id: "rewound-event", atMs: 100, type: "story" }]),
+    onEvent: event => delivered.push(event.id)
+  });
+
+  await director.mount();
+  await director.update(300);
+  assert.deepEqual(played, ["early", "middle"]);
+
+  failNextSample = true;
+  await assert.rejects(director.update(100), /rewound character sample failed/);
+  assert.deepEqual(stopped, ["early", "middle"]);
+  assert.deepEqual(played, ["early", "middle"]);
+  assert.deepEqual(delivered, []);
+
+  await director.update(100);
+  assert.deepEqual(played, ["early", "middle", "early"]);
+  assert.deepEqual(delivered, ["rewound-event"]);
+  await director.destroy();
+});
