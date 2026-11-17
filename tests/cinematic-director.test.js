@@ -549,3 +549,43 @@ test("director commits paused state when an active audio voice fails to pause", 
   assert.equal((await director.update(20000)).timeMs, 100);
   await director.destroy();
 });
+
+
+test("director pauses at the audio cursor after a character frame fails and preserves pending events", async () => {
+  let failCharacter = true;
+  const delivered = [];
+  const played = [];
+  const stage = {
+    mount: async () => true,
+    update: async () => {
+      if (failCharacter) throw new Error("character update failed");
+    },
+    unmount: () => {},
+    destroy: () => {}
+  };
+  const audio = createAudioCueController({
+    cues: [{ id: "impact", atMs: 50, asset: "impact" }],
+    play: asset => { played.push(asset); return asset; }
+  });
+  const director = createCinematicDirector({
+    characterStage: stage,
+    audio,
+    timeline: createTimeline([{ id: "story-beat", atMs: 50, type: "story" }]),
+    onEvent: event => delivered.push(event.id)
+  });
+
+  await director.mount();
+  await assert.rejects(director.update(100), /character update failed/);
+  assert.equal(audio.getState().cursor, 100);
+  assert.doesNotThrow(() => director.pause());
+  assert.equal(director.getState().timeMs, 100);
+  assert.equal(director.getState().paused, true);
+
+  failCharacter = false;
+  director.resume();
+  const resumed = await director.update(20000);
+  assert.equal(resumed.timeMs, 100);
+  assert.deepEqual(played, ["impact"], "audio cues already fired before the failure must not replay");
+  assert.deepEqual(delivered, ["story-beat"], "events from the interrupted frame must remain pending");
+  await director.destroy();
+});
