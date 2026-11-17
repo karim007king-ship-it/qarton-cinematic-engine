@@ -617,3 +617,34 @@ test("director keeps failed scene callbacks pending when page lifecycle pauses t
   assert.deepEqual(delivered, ["delivered", "retry", "retry"]);
   await director.destroy();
 });
+
+
+test("director retries an audio pause failure while keeping the cinematic clock frozen", async () => {
+  const pauseCalls = [];
+  let fail = true;
+  const audio = {
+    update: () => {},
+    pause: timeMs => {
+      pauseCalls.push(timeMs);
+      if (fail) throw new Error("audio pause failed");
+    },
+    resume: () => {},
+    stopAll: () => {},
+    destroy: () => {}
+  };
+  const director = createCinematicDirector({ audio });
+  await director.mount();
+  await director.update(125);
+
+  assert.throws(() => director.pause(), /audio pause failed/);
+  assert.deepEqual(director.getState(), {
+    mounted: true, paused: true, destroyed: false, timeMs: 125
+  });
+  assert.equal((await director.update(10000)).timeMs, 125);
+
+  fail = false;
+  assert.equal(director.pause(), false);
+  assert.deepEqual(pauseCalls, [125, 125]);
+  assert.equal(director.getState().paused, true);
+  await director.destroy();
+});
