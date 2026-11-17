@@ -81,6 +81,28 @@ test("clear removes rendered nodes and invalidates in-flight renders", async () 
   assert.equal(root.dataset.qartonSceneId, undefined);
 });
 
+test("clear releases a render when host asset resolvers ignore AbortSignal", async () => {
+  const { root, scene, profile } = fixture();
+  const signals = [];
+  const renderer = new BackgroundRenderer({
+    root,
+    resolveAsset: (_key, _layer, { signal }) => {
+      signals.push(signal);
+      return new Promise(() => {});
+    }
+  });
+
+  const pending = renderer.render(scene, profile);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(signals.length, 3);
+  renderer.clear();
+
+  assert.ok(signals.every(signal => signal.aborted));
+  assert.equal(await pending, false);
+  assert.equal(root.children.length, 0);
+  renderer.destroy();
+});
+
 test("renderer validates injected dependencies", () => {
   assert.throws(() => new BackgroundRenderer({ root: {}, resolveAsset: () => "/x" }), /DOM root/);
   const { root } = fixture();
