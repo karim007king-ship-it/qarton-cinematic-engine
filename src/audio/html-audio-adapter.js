@@ -23,6 +23,27 @@ export function createHTMLAudioAdapter({
   let destroyed = false;
   const active = new Map();
 
+  function releaseFailedPlayback(audio) {
+    // A failed play() must not leave a silent voice registered indefinitely.
+    // Keep ownership only when pause itself fails, so destroy() can retry it.
+    try {
+      audio.pause();
+      try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
+      active.delete(audio);
+    } catch {
+      // Retain the voice for a later stop()/destroy() cleanup attempt.
+    }
+  }
+
+  function reportPlaybackError(error, asset, audio) {
+    if (active.has(audio)) releaseFailedPlayback(audio);
+    try {
+      onPlaybackError(error, { asset, audio });
+    } catch {
+      // Error reporting must not create an unhandled rejection of its own.
+    }
+  }
+
   function play(asset, options = {}) {
     if (destroyed) throw new Error("HTMLAudio adapter has been destroyed");
     const url = resolveAsset(asset);
@@ -42,9 +63,15 @@ export function createHTMLAudioAdapter({
     audio.preload = "auto";
     audio.volume = baseVolume * volume;
     active.set(audio, baseVolume);
-    const result = audio.play();
-    if (result && typeof result.catch === "function") {
-      result.catch(error => onPlaybackError(error, { asset, audio }));
+    let result;
+    try {
+      result = audio.play();
+    } catch (error) {
+      reportPlaybackError(error, asset, audio);
+      throw error;
+    }
+    if (result && typeof result.then === "function") {
+      Promise.resolve(result).catch(error => reportPlaybackError(error, asset, audio));
     }
     return audio;
   }
