@@ -255,3 +255,34 @@ test("runtime without a lifecycle target keeps manual lifecycle control and no p
   await runtime.destroy();
   assert.deepEqual(events, ["pause"]);
 });
+
+test("runtime ignores background frame samples and starts a fresh adaptive window on resume", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const target = new LifecycleTarget("visible");
+  const runtime = createCinematicRuntime({
+    root,
+    loadAsset: key => key,
+    renderScene: () => document.createElement("div"),
+    lifecycleTarget: target
+  });
+
+  assert.equal(runtime.isActive(), true);
+  runtime.recordFrame(16);
+  target.visibilityState = "hidden";
+  target.dispatch("visibilitychange");
+  assert.equal(runtime.isActive(), false);
+  const skipped = runtime.recordFrame(1000);
+  assert.equal(skipped.skipped, true);
+  assert.equal(skipped.evaluated, false);
+  assert.equal(skipped.averageFps, null);
+
+  target.visibilityState = "visible";
+  target.dispatch("visibilitychange");
+  assert.equal(runtime.isActive(), true);
+  const firstForegroundFrame = runtime.recordFrame(16);
+  assert.equal(firstForegroundFrame.skipped, undefined);
+  assert.equal(firstForegroundFrame.evaluated, false);
+
+  await runtime.destroy();
+});
