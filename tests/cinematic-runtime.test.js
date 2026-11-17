@@ -152,3 +152,106 @@ test("runtime pauses the host before releasing scene and asset resources", async
   assert.equal(childrenAtPause, 1);
   assert.equal(root.children.length, 0);
 });
+
+class LifecycleTarget {
+  constructor(visibilityState = "visible") {
+    this.visibilityState = visibilityState;
+    this.listeners = new Map();
+  }
+  addEventListener(type, listener) {
+    const set = this.listeners.get(type) ?? new Set();
+    set.add(listener);
+    this.listeners.set(type, set);
+  }
+  removeEventListener(type, listener) {
+    this.listeners.get(type)?.delete(listener);
+  }
+  dispatch(type) {
+    for (const listener of this.listeners.get(type) ?? []) listener({ type });
+  }
+  listenerCount() {
+    return [...this.listeners.values()].reduce((count, set) => count + set.size, 0);
+  }
+}
+
+test("runtime automatically bridges an injected page lifecycle target to its activity gate", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const target = new LifecycleTarget("visible");
+  const events = [];
+  const runtime = createCinematicRuntime({
+    root,
+    loadAsset: key => key,
+    renderScene: () => document.createElement("div"),
+    lifecycleTarget: target,
+    onPause: () => events.push("pause"),
+    onResume: () => events.push("resume")
+  });
+
+  assert.deepEqual(events, []);
+  assert.equal(runtime.pageLifecycleState.started, true);
+  assert.equal(runtime.pageLifecycleState.active, true);
+  assert.equal(target.listenerCount(), 3);
+
+  target.visibilityState = "hidden";
+  target.dispatch("visibilitychange");
+  target.dispatch("pagehide");
+  assert.deepEqual(events, ["pause"]);
+
+  target.visibilityState = "visible";
+  target.dispatch("pageshow");
+  assert.deepEqual(events, ["pause", "resume"]);
+
+  await runtime.destroy();
+  assert.equal(target.listenerCount(), 0);
+  assert.deepEqual(events, ["pause", "resume", "pause"]);
+});
+
+test("runtime lifecycle integration respects initially hidden pages and can be restarted", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const target = new LifecycleTarget("hidden");
+  const events = [];
+  const runtime = createCinematicRuntime({
+    root,
+    loadAsset: key => key,
+    renderScene: () => document.createElement("div"),
+    lifecycleTarget: target,
+    onPause: () => events.push("pause"),
+    onResume: () => events.push("resume")
+  });
+
+  assert.deepEqual(events, ["pause"]);
+  assert.equal(runtime.pageLifecycleState.active, false);
+  assert.equal(runtime.stopPageLifecycle(), true);
+  assert.equal(target.listenerCount(), 0);
+  assert.equal(runtime.startPageLifecycle(), true);
+  assert.equal(target.listenerCount(), 3);
+  target.visibilityState = "visible";
+  assert.equal(runtime.syncPageLifecycle(), true);
+  assert.deepEqual(events, ["pause", "resume"]);
+
+  await runtime.destroy();
+  assert.equal(target.listenerCount(), 0);
+  assert.deepEqual(events, ["pause", "resume", "pause"]);
+});
+
+test("runtime without a lifecycle target keeps manual lifecycle control and no page listeners", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const events = [];
+  const runtime = createCinematicRuntime({
+    root,
+    loadAsset: key => key,
+    renderScene: () => document.createElement("div"),
+    onPause: () => events.push("pause")
+  });
+
+  assert.equal(runtime.pageLifecycleState, null);
+  assert.equal(runtime.startPageLifecycle(), false);
+  assert.equal(runtime.stopPageLifecycle(), false);
+  assert.equal(runtime.syncPageLifecycle(), false);
+  runtime.setActive(false);
+  await runtime.destroy();
+  assert.deepEqual(events, ["pause"]);
+});
