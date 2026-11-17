@@ -72,8 +72,11 @@ export class AssetManager {
     const entry = { controller, promise: null };
     const loaderPromise = Promise.resolve()
       .then(() => {
-        if (controller.signal.aborted) {
-          throw controller.signal.reason ?? Object.assign(new Error("Asset load was cancelled"), { name: "AbortError" });
+        if (this.#destroyed || controller.signal.aborted) {
+          throw controller.signal.reason ?? Object.assign(new Error("AssetManager has been destroyed"), { name: "AbortError" });
+        }
+        if (typeof loader !== "function") {
+          throw Object.assign(new Error("AssetManager has been destroyed"), { name: "AbortError" });
         }
         return loader(normalizedKey, metadata, { signal: controller.signal });
       });
@@ -101,6 +104,7 @@ export class AssetManager {
 
   /** Resolve a group of keys concurrently; duplicate keys are loaded once. */
   preload(keys) {
+    if (this.#destroyed) return Promise.reject(new Error("AssetManager has been destroyed"));
     if (!Array.isArray(keys)) return Promise.reject(new TypeError("preload expects an array of asset keys"));
     const normalizedKeys = keys.map(key => typeof key === "string" ? key.trim() : key);
     return Promise.all([...new Set(normalizedKeys)].map(key => this.load(key)));
