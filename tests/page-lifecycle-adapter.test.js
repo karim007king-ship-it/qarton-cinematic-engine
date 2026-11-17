@@ -139,3 +139,28 @@ test("stop remains retryable when a host EventTarget refuses listener removal", 
   assert.equal(adapter.getState().started, false);
   assert.equal(target.listenerCount(), 0);
 });
+
+
+test("page lifecycle adapter listens to document visibility and window page events separately", () => {
+  const documentTarget = createTarget("visible");
+  const windowTarget = createTarget();
+  const events = [];
+  const adapter = createPageLifecycleAdapter({
+    target: documentTarget,
+    pageTarget: windowTarget,
+    setActive: active => events.push(active)
+  });
+  adapter.start();
+  assert.equal(documentTarget.listenerCount(), 1);
+  assert.equal(windowTarget.listenerCount(), 2);
+
+  windowTarget.dispatch("pagehide");
+  windowTarget.dispatch("pageshow");
+  documentTarget.visibilityState = "hidden";
+  documentTarget.dispatch("visibilitychange");
+
+  assert.deepEqual(events, [true, false, true, false]);
+  adapter.stop();
+  assert.equal(documentTarget.listenerCount(), 0);
+  assert.equal(windowTarget.listenerCount(), 0);
+});
