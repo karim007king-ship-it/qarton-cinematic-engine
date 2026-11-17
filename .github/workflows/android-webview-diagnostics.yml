@@ -1,0 +1,85 @@
+name: Build QARTON Android WebView Diagnostics APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/android-webview-diagnostics]
+  pull_request:
+    branches: [main]
+    paths:
+      - "examples/android-webview-diagnostics.html"
+      - "examples/android-webview-host/**"
+      - ".github/workflows/android-webview-diagnostics.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-diagnostics-apk:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools"
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Install isolated Capacitor host dependencies
+        working-directory: examples/android-webview-host
+        run: npm install --no-audit --no-fund
+
+      - name: Package the exact diagnostics page
+        working-directory: examples/android-webview-host
+        run: |
+          set -euo pipefail
+          mkdir -p www
+          cp ../android-webview-diagnostics.html www/index.html
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import crypto from 'node:crypto';
+          const source = fs.readFileSync('../android-webview-diagnostics.html');
+          const packaged = fs.readFileSync('www/index.html');
+          const hash = value => crypto.createHash('sha256').update(value).digest('hex');
+          if (!source.equals(packaged)) throw new Error('Packaged diagnostics page differs from the reviewed source.');
+          if (packaged.length < 10000) throw new Error('Diagnostics page is unexpectedly small.');
+          for (const marker of ['Android WebView diagnostics', 'Test HTMLAudio (tap)', 'Test Web Audio (tap)', 'visibilitychange', 'pagehide', 'pageshow']) {
+            if (!packaged.toString('utf8').includes(marker)) throw new Error('Missing diagnostics marker: ' + marker);
+          }
+          console.log('PASS: exact diagnostics page packaged (' + packaged.length + ' bytes, SHA-256 ' + hash(packaged) + ').');
+          NODE
+
+      - name: Generate Android project
+        working-directory: examples/android-webview-host
+        run: npx cap add android
+
+      - name: Sync Capacitor
+        working-directory: examples/android-webview-host
+        run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: examples/android-webview-host/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload diagnostics APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: qarton-android-webview-diagnostics
+          path: examples/android-webview-host/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14

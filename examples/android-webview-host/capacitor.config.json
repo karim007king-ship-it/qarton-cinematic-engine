@@ -1,0 +1,6 @@
+{
+  "appId": "com.qarton.webviewdiagnostics",
+  "appName": "QARTON WebView Diagnostics",
+  "webDir": "www",
+  "bundledWebRuntime": false
+}

@@ -1,0 +1,122 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { readFile } from "node:fs/promises";
+
+const page = await readFile(new URL("../examples/android-webview-diagnostics.html", import.meta.url), "utf8");
+
+test("Android WebView diagnostics stay standalone and gesture-gate audio", () => {
+  assert.match(page, /<!doctype html>/i);
+  assert.match(page, /AbortController/);
+  assert.match(page, /Image\.decode\(\)/);
+  assert.match(page, /Web Animations API/);
+  assert.match(page, /Page Visibility API/);
+  assert.match(page, /visibilitychange/);
+  assert.match(page, /pagehide/);
+  assert.match(page, /pageshow/);
+  assert.match(page, /addEventListener\("click", async \(\) => \{/);
+  assert.match(page, /audioContext\.resume\(\)/);
+  assert.doesNotMatch(page, /autoplay\s*=/i);
+  assert.doesNotMatch(page, /setInterval\s*\(/);
+});
+
+test("diagnostics report failures without assuming optional APIs exist", () => {
+  assert.match(page, /typeof HTMLImageElement\.prototype\.decode === "function"/);
+  assert.match(page, /typeof Element\.prototype\.animate === "function"/);
+  assert.match(page, /window\.AudioContext \|\| window\.webkitAudioContext/);
+  assert.match(page, /navigator\.clipboard\.writeText/);
+});
+
+test("diagnostics collect bounded frame-pacing metrics without claiming a benchmark", () => {
+  assert.match(page, /sampleDurationMs/);
+  assert.match(page, /averageFps/);
+  assert.match(page, /p95FrameMs/);
+  assert.match(page, /framesOver25MsRatio/);
+  assert.match(page, /Foreground-only rough measurement/);
+  assert.match(page, /timestamp - startedAt >= 1200/);
+});
+
+test("audio lifecycle and optional resource hints are observable without autoplay", () => {
+  assert.match(page, /audio-context-statechange/);
+  assert.match(page, /audio-sample-ended/);
+  assert.match(page, /audio-sample-started/);
+  assert.match(page, /const sampleDurationSeconds = 8/);
+  assert.match(page, /oscillator\.stop\(audioContext\.currentTime \+ sampleDurationSeconds\)/);
+  assert.match(page, /Eight-second Web Audio sample started/);
+  assert.match(page, /audioContextState/);
+  assert.match(page, /deviceMemoryGb/);
+  assert.match(page, /usedJSHeapSize/);
+  assert.match(page, /not native Android RAM or GPU-memory measurements/);
+  assert.match(page, /AudioContext did not enter running state/);
+});
+
+test("background lifecycle requests audio suspension and never auto-resumes on foreground", () => {
+  assert.match(page, /suspendAudioForBackground\("visibilitychange"\)/);
+  assert.match(page, /suspendAudioForBackground\("pagehide"\)/);
+  assert.match(page, /audio-suspend-request/);
+  assert.match(page, /audio-suspend-complete/);
+  assert.match(page, /audio-suspend-error/);
+  assert.match(page, /audioContext\.suspend\(\)/);
+  const backgroundPause = page.match(/function pauseHTMLAudioForBackground\(source\) \{[\s\S]*?\n  \}/);
+  assert.ok(backgroundPause, "HTMLAudio background pause handler must exist");
+  assert.match(backgroundPause[0], /htmlAudio\.pause\(\)/);
+  assert.doesNotMatch(backgroundPause[0], /htmlAudio\.play\(\)/);
+  assert.match(page, /const context = audioContext;[\s\S]*?context\.addEventListener\("statechange"/);
+  const visibilitychange = page.match(/document\.addEventListener\("visibilitychange",[\s\S]*?\n  \}\);/);
+  assert.ok(visibilitychange, "diagnostics must observe visibility changes");
+  assert.doesNotMatch(visibilitychange[0], /audioContext\.resume\(|htmlAudio\.play\(/);
+});
+
+
+test("foreground return explains suspended audio and marks an ended-sample run inconclusive", () => {
+  assert.match(page, /audio-resume-required/);
+  assert.match(page, /audio-test-inconclusive/);
+  assert.match(page, /sample-ended-before-background/);
+  assert.match(page, /interruptedWhilePlaying/);
+  assert.match(page, /Tap Test Web Audio to resume/);
+  assert.match(page, /switch apps while the tone is still playing/);
+  assert.match(page, /htmlAudioPausedByLifecycle/);
+  const visibilitychange = page.match(/document\.addEventListener\("visibilitychange",[\s\S]*?\n  \}\);/);
+  assert.ok(visibilitychange, "diagnostics must observe foreground return");
+  assert.match(visibilitychange[0], /document\.visibilityState === "hidden"/);
+  assert.match(visibilitychange[0], /audio-resume-required/);
+  assert.match(visibilitychange[0], /audio-test-inconclusive/);
+  assert.doesNotMatch(visibilitychange[0], /audioContext\.resume\(|htmlAudio\.play\(/);
+});
+
+test("HTMLAudio diagnostics require a tap and expose play, pause and resume", () => {
+  assert.match(page, /id="html-audio"/);
+  assert.match(page, /id="html-audio-toggle"/);
+  assert.match(page, /new Audio\(createToneWavDataUrl\(\)\)/);
+  assert.match(page, /await htmlAudio\.play\(\)/);
+  assert.match(page, /htmlAudio\.pause\(\)/);
+  assert.match(page, /html-audio-play-resolved/);
+  assert.match(page, /\["play", "playing", "pause", "ended", "error"\]/);
+  assert.match(page, /type: "html-audio-" \+ eventName/);
+  assert.match(page, /data:audio\/wav;base64,/);
+  assert.match(page, /Math\.floor\(sampleRate \* 5\)/, "HTMLAudio sample must remain long enough for a manual pause/resume check");
+});
+
+test("background lifecycle pauses HTMLAudio without automatic foreground resume", () => {
+  assert.match(page, /pauseHTMLAudioForBackground\(source\)/);
+  assert.match(page, /pauseHTMLAudioForBackground\(source\);/);
+  const pageshow = page.match(/window\.addEventListener\("pageshow",[\s\S]*?\n  \}\);/);
+  assert.ok(pageshow, "diagnostics must observe pageshow");
+  assert.doesNotMatch(pageshow[0], /htmlAudio\.play\(\)/);
+  assert.doesNotMatch(pageshow[0], /audioContext\.resume\(\)/);
+});
+
+
+test("diagnostic inline script has valid JavaScript syntax", () => {
+  const match = page.match(/<script>([\s\S]*?)<\/script>/i);
+  assert.ok(match, "diagnostic page must contain an inline script");
+  const checked = spawnSync(process.execPath, ["--check", "--input-type=module"], {
+    input: match[1],
+    encoding: "utf8"
+  });
+  assert.equal(
+    checked.status,
+    0,
+    [checked.stdout, checked.stderr].filter(Boolean).join("\n") || "diagnostic script syntax check failed"
+  );
+});

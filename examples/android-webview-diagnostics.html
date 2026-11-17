@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>QARTON — Android WebView Diagnostics</title>
+  <style>
+    :root { color-scheme: dark; font: 15px/1.5 system-ui, sans-serif; background: #101014; color: #f4f0e8; }
+    body { margin: 0; padding: max(16px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom)); }
+    main { max-width: 760px; margin: auto; }
+    h1 { color: #e7c77f; font-size: 1.45rem; }
+    p, small { color: #bdb6aa; }
+    .panel { border: 1px solid #51432e; border-radius: 10px; padding: 12px; margin: 12px 0; background: #19181b; }
+    .item { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid #343137; }
+    .item:last-child { border-bottom: 0; }
+    .value { text-align: right; overflow-wrap: anywhere; }
+    .ok { color: #8fd5a4; } .warn { color: #f0c477; } .bad { color: #ff8c82; }
+    button { border: 1px solid #8e6b2f; border-radius: 8px; padding: 10px 13px; margin: 4px 6px 4px 0; background: #292117; color: white; font: inherit; }
+    button:disabled { opacity: .55; }
+    #motion-probe { width: 34px; height: 34px; border-radius: 50%; background: #c49a50; transition: transform 180ms ease; }
+    #motion-probe.move { transform: translateX(110px); }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; color: #d8d0c3; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>QARTON Cinematic Engine</h1>
+  <h2>Android WebView diagnostics</h2>
+  <p>Open this page inside the target Android WebView. Run the checks, then test audio using the explicit user-gesture button. This page reports browser capabilities; it does not certify a device or change WebView settings.</p>
+  <section class="panel">
+    <div id="summary" role="status">Ready — run diagnostics.</div>
+    <div id="results" aria-live="polite"></div>
+  </section>
+  <section class="panel">
+    <h3>Interaction checks</h3>
+    <button id="run" type="button">Run compatibility checks</button>
+    <button id="audio" type="button">Test Web Audio (tap)</button>
+    <button id="html-audio" type="button">Test HTMLAudio (tap)</button>
+    <button id="html-audio-toggle" type="button" disabled>Pause / resume HTMLAudio</button>
+    <button id="copy" type="button">Copy report</button>
+    <div id="motion-probe" aria-hidden="true"></div>
+    <p id="audio-status">Audio has not been tested. Playback is never started automatically.</p>
+  </section>
+  <section class="panel">
+    <h3>Raw report</h3>
+    <pre id="report">No report yet.</pre>
+  </section>
+</main>
+<script>
+(() => {
+  "use strict";
+  const results = document.querySelector("#results");
+  const summary = document.querySelector("#summary");
+  const reportNode = document.querySelector("#report");
+  const audioStatus = document.querySelector("#audio-status");
+  const report = { createdAt: new Date().toISOString(), userAgent: navigator.userAgent, checks: {}, events: [] };
+  let audioContext = null;
+  let htmlAudio = null;
+
+  function record(name, supported, detail = "") {
+    report.checks[name] = { supported: Boolean(supported), detail: String(detail) };
+    const row = document.createElement("div");
+    row.className = "item";
+    const label = document.createElement("span");
+    label.textContent = name;
+    const value = document.createElement("strong");
+    value.className = supported ? "value ok" : "value warn";
+    value.textContent = supported ? "Available" : "Unavailable";
+    if (detail) value.title = String(detail);
+    row.append(label, value);
+    results.appendChild(row);
+  }
+
+  function refreshReport() {
+    report.updatedAt = new Date().toISOString();
+    report.visibilityState = document.visibilityState;
+    report.viewport = { width: innerWidth, height: innerHeight, devicePixelRatio: devicePixelRatio || 1 };
+    report.environment = {
+      hardwareConcurrency: Number.isFinite(navigator.hardwareConcurrency) ? navigator.hardwareConcurrency : null,
+      deviceMemoryGb: Number.isFinite(navigator.deviceMemory) ? navigator.deviceMemory : null,
+      jsHeap: performance.memory ? {
+        usedBytes: Number.isFinite(performance.memory.usedJSHeapSize) ? performance.memory.usedJSHeapSize : null,
+        totalBytes: Number.isFinite(performance.memory.totalJSHeapSize) ? performance.memory.totalJSHeapSize : null,
+        limitBytes: Number.isFinite(performance.memory.jsHeapSizeLimit) ? performance.memory.jsHeapSizeLimit : null
+      } : null,
+      note: "Optional browser hints only; not native Android RAM or GPU-memory measurements."
+    };
+    report.audioContextState = audioContext ? audioContext.state : "not-created";
+    report.htmlAudioState = htmlAudio ? { paused: htmlAudio.paused, ended: htmlAudio.ended, readyState: htmlAudio.readyState, currentTime: Number(htmlAudio.currentTime.toFixed(2)) } : "not-created";
+    reportNode.textContent = JSON.stringify(report, null, 2);
+  }
+
+  function createToneWavDataUrl() {
+    const sampleRate = 8000;
+    const sampleCount = Math.floor(sampleRate * 5);
+    const buffer = new ArrayBuffer(44 + sampleCount * 2);
+    const view = new DataView(buffer);
+    const writeAscii = (offset, value) => {
+      for (let index = 0; index < value.length; index += 1) view.setUint8(offset + index, value.charCodeAt(index));
+    };
+    writeAscii(0, "RIFF");
+    view.setUint32(4, 36 + sampleCount * 2, true);
+    writeAscii(8, "WAVE");
+    writeAscii(12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeAscii(36, "data");
+    view.setUint32(40, sampleCount * 2, true);
+    for (let index = 0; index < sampleCount; index += 1) {
+      const sample = Math.sin(2 * Math.PI * 440 * index / sampleRate) * 0.14;
+      view.setInt16(44 + index * 2, Math.round(sample * 32767), true);
+    }
+    const bytes = new Uint8Array(buffer);
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+    }
+    return "data:audio/wav;base64," + btoa(binary);
+  }
+
+  let htmlAudioPausedByLifecycle = false;
+  let webAudioSuspendedByLifecycle = false;
+  let webAudioWasPlayingAtHide = false;
+
+  function pauseHTMLAudioForBackground(source) {
+    if (!htmlAudio || htmlAudio.paused) return;
+    try {
+      htmlAudio.pause();
+      htmlAudioPausedByLifecycle = true;
+      report.htmlAudio = {
+        paused: true,
+        interruptedWhilePlaying: true,
+        note: "Paused by page lifecycle; tap the HTMLAudio control to resume."
+      };
+      report.events.push({ type: "html-audio-background-pause", source, at: new Date().toISOString() });
+      refreshReport();
+    } catch (error) {
+      report.events.push({ type: "html-audio-background-pause-error", source, message: error.message, at: new Date().toISOString() });
+      refreshReport();
+    }
+  }
+
+
+  async function runChecks() {
+    results.replaceChildren();
+    summary.textContent = "Running feature and rendering checks…";
+    const ua = navigator.userAgent;
+    record("Android user agent", /Android/i.test(ua), ua);
+    record("Android WebView marker", /; wv\)|Version\/\d+\.\d+ Chrome\//i.test(ua), "Some embedded WebViews omit the wv marker.");
+    record("ES modules / Promise", typeof Promise === "function" && "noModule" in HTMLScriptElement.prototype);
+    record("AbortController", typeof AbortController === "function");
+    record("requestAnimationFrame", typeof requestAnimationFrame === "function");
+    record("Page Visibility API", typeof document.visibilityState === "string" && "hidden" in document);
+    record("matchMedia", typeof matchMedia === "function");
+    record("Web Animations API", typeof Element.prototype.animate === "function");
+    record("Image.decode()", typeof HTMLImageElement.prototype.decode === "function");
+    record("Canvas 2D", Boolean(document.createElement("canvas").getContext("2d")));
+    record("CSS transition", "transition" in document.documentElement.style);
+    record("CSS filter", "filter" in document.documentElement.style);
+    record("HTMLAudio", typeof Audio === "function", typeof document.createElement("audio").canPlayType === "function" ? "canPlayType available" : "limited media element");
+    record("Web Audio", typeof (window.AudioContext || window.webkitAudioContext) === "function");
+    record("Reduced motion query", typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").media !== "not all");
+    try {
+      const controller = new AbortController();
+      let aborted = false;
+      controller.signal.addEventListener("abort", () => { aborted = true; }, { once: true });
+      controller.abort();
+      record("AbortSignal event delivery", aborted);
+    } catch (error) { record("AbortSignal event delivery", false, error.message); }
+    try {
+      const image = new Image();
+      image.src = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="red"/></svg>');
+      if (typeof image.decode === "function") {
+        await image.decode();
+        record("Inline SVG image decode", image.naturalWidth === 2 && image.naturalHeight === 2);
+      } else {
+        await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; });
+        record("Inline SVG image load fallback", image.naturalWidth === 2 && image.naturalHeight === 2);
+      }
+    } catch (error) { record("Inline SVG image decode", false, error.message); }
+    try {
+      const probe = document.querySelector("#motion-probe");
+      probe.classList.add("move");
+      await new Promise(resolve => setTimeout(resolve, 220));
+      const moved = getComputedStyle(probe).transform !== "none";
+      probe.classList.remove("move");
+      record("CSS transform transition execution", moved);
+    } catch (error) { record("CSS transform transition execution", false, error.message); }
+    try {
+      const samples = [];
+      let previous = null;
+      const startedAt = performance.now();
+      await new Promise(resolve => {
+        function sample(timestamp) {
+          if (previous !== null) samples.push(timestamp - previous);
+          previous = timestamp;
+          if (timestamp - startedAt >= 1200) resolve();
+          else requestAnimationFrame(sample);
+        }
+        requestAnimationFrame(sample);
+      });
+      const sorted = [...samples].sort((a, b) => a - b);
+      const averageFrameMs = samples.reduce((sum, value) => sum + value, 0) / Math.max(1, samples.length);
+      const percentile95 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))] || 0;
+      const droppedFrameRatio = samples.filter(value => value > (1000 / 60) * 1.5).length / Math.max(1, samples.length);
+      report.performance = {
+        sampleDurationMs: Math.round(performance.now() - startedAt),
+        frameCount: samples.length,
+        averageFps: averageFrameMs > 0 ? Number((1000 / averageFrameMs).toFixed(1)) : null,
+        p95FrameMs: Number(percentile95.toFixed(2)),
+        framesOver25MsRatio: Number(droppedFrameRatio.toFixed(3)),
+        note: "Foreground-only rough measurement; repeat under representative scene load."
+      };
+      record("requestAnimationFrame sampling", samples.length >= 10, samples.length + " frames / " + (report.performance.averageFps ?? "n/a") + " average FPS");
+    } catch (error) {
+      record("requestAnimationFrame sampling", false, error.message);
+      report.performance = { error: error.message };
+    }
+    const supported = Object.values(report.checks).filter(item => item.supported).length;
+    const total = Object.keys(report.checks).length;
+    summary.textContent = "Checks completed: " + supported + "/" + total + " available. Review warnings against your target device.";
+    refreshReport();
+  }
+
+  document.querySelector("#run").addEventListener("click", () => {
+    runChecks().catch(error => {
+      summary.textContent = "Diagnostics failed: " + error.message;
+      report.events.push({ type: "diagnostics-error", message: error.message });
+      refreshReport();
+    });
+  });
+
+  document.querySelector("#audio").addEventListener("click", async () => {
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) throw new Error("Web Audio API is unavailable");
+      if (!audioContext || audioContext.state === "closed") {
+        audioContext = new AudioContextClass();
+        const context = audioContext;
+        context.addEventListener("statechange", () => {
+          report.events.push({ type: "audio-context-statechange", state: context.state, at: new Date().toISOString() });
+          report.audioContextState = context.state;
+          refreshReport();
+        });
+      }
+      report.events.push({ type: "audio-resume-request", previousState: audioContext.state, at: new Date().toISOString() });
+      if (audioContext.state !== "running") await audioContext.resume();
+      if (audioContext.state !== "running") throw new Error("AudioContext did not enter running state: " + audioContext.state);
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.value = 440;
+      const sampleDurationSeconds = 8;
+      gain.gain.setValueAtTime(0.0001, audioContext.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.035, audioContext.currentTime + 0.04);
+      gain.gain.setValueAtTime(0.035, audioContext.currentTime + sampleDurationSeconds - 0.35);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + sampleDurationSeconds);
+      oscillator.connect(gain).connect(audioContext.destination);
+      oscillator.addEventListener("ended", () => {
+        report.events.push({ type: "audio-sample-ended", at: new Date().toISOString() });
+        if (report.audio) report.audio.sampleEnded = true;
+        refreshReport();
+      }, { once: true });
+      oscillator.start();
+      oscillator.stop(audioContext.currentTime + sampleDurationSeconds);
+      audioStatus.textContent = "Eight-second Web Audio sample started. Background the app while it is playing. Context state: " + audioContext.state;
+      report.audio = { api: "Web Audio", state: audioContext.state, sampleRate: audioContext.sampleRate, sampleEnded: false };
+      report.events.push({ type: "audio-sample-started", at: new Date().toISOString() });
+    } catch (error) {
+      audioStatus.textContent = "Audio test failed: " + error.message;
+      report.audio = { error: error.message };
+    }
+    refreshReport();
+  });
+
+
+  document.querySelector("#html-audio").addEventListener("click", async () => {
+    try {
+      if (!htmlAudio) {
+        htmlAudio = new Audio(createToneWavDataUrl());
+        htmlAudio.preload = "auto";
+        for (const eventName of ["play", "playing", "pause", "ended", "error"]) {
+          htmlAudio.addEventListener(eventName, () => {
+            report.events.push({ type: "html-audio-" + eventName, paused: htmlAudio.paused, ended: htmlAudio.ended, at: new Date().toISOString() });
+            const toggle = document.querySelector("#html-audio-toggle");
+            toggle.disabled = false;
+            toggle.textContent = htmlAudio.ended ? "Play HTMLAudio again" : htmlAudio.paused ? "Resume HTMLAudio" : "Pause HTMLAudio";
+            refreshReport();
+          });
+        }
+      }
+      if (htmlAudio.ended) htmlAudio.currentTime = 0;
+      await htmlAudio.play();
+      report.events.push({ type: "html-audio-play-resolved", at: new Date().toISOString() });
+      audioStatus.textContent = "HTMLAudio sample started from a user gesture. Use Pause / resume to test the media element.";
+    } catch (error) {
+      audioStatus.textContent = "HTMLAudio test failed: " + error.message;
+      report.htmlAudio = { error: error.message };
+    }
+    refreshReport();
+  });
+
+  document.querySelector("#html-audio-toggle").addEventListener("click", async () => {
+    if (!htmlAudio) return;
+    try {
+      if (htmlAudio.paused) {
+        if (htmlAudio.ended) htmlAudio.currentTime = 0;
+        await htmlAudio.play();
+        report.events.push({ type: "html-audio-resume-resolved", at: new Date().toISOString() });
+      } else {
+        htmlAudio.pause();
+      }
+    } catch (error) {
+      audioStatus.textContent = "HTMLAudio pause/resume failed: " + error.message;
+      report.events.push({ type: "html-audio-toggle-error", message: error.message, at: new Date().toISOString() });
+    }
+    refreshReport();
+  });
+
+  document.querySelector("#copy").addEventListener("click", async () => {
+    refreshReport();
+    try {
+      await navigator.clipboard.writeText(reportNode.textContent);
+      summary.textContent = "Report copied to clipboard.";
+    } catch {
+      summary.textContent = "Clipboard API unavailable. Select and copy the raw report manually.";
+    }
+  });
+
+  function suspendAudioForBackground(source) {
+    pauseHTMLAudioForBackground(source);
+    if (!audioContext || audioContext.state === "closed" || audioContext.state === "suspended") return;
+    webAudioWasPlayingAtHide = Boolean(report.audio && report.audio.sampleEnded === false);
+    webAudioSuspendedByLifecycle = true;
+    if (report.audio) {
+      report.audio.interruptedWhilePlaying = webAudioWasPlayingAtHide;
+      report.audio.note = webAudioWasPlayingAtHide
+        ? "The active sample was suspended by the page lifecycle."
+        : "No active sample was playing when the page was backgrounded.";
+    }
+    if (!webAudioWasPlayingAtHide) {
+      report.events.push({ type: "audio-sample-not-playing-at-background", source, at: new Date().toISOString() });
+    }
+    report.events.push({ type: "audio-suspend-request", source, state: audioContext.state, at: new Date().toISOString() });
+    try {
+      audioContext.suspend().then(() => {
+        report.events.push({ type: "audio-suspend-complete", source, state: audioContext.state, at: new Date().toISOString() });
+        refreshReport();
+      }).catch(error => {
+        report.events.push({ type: "audio-suspend-error", source, message: error.message, at: new Date().toISOString() });
+        refreshReport();
+      });
+    } catch (error) {
+      report.events.push({ type: "audio-suspend-error", source, message: error.message, at: new Date().toISOString() });
+      refreshReport();
+    }
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    report.events.push({ type: "visibilitychange", state: document.visibilityState, audioContextState: audioContext ? audioContext.state : "not-created", at: new Date().toISOString() });
+    if (document.visibilityState === "hidden") {
+      suspendAudioForBackground("visibilitychange");
+    } else {
+      const messages = [];
+      if (webAudioSuspendedByLifecycle && audioContext && audioContext.state === "suspended") {
+        if (webAudioWasPlayingAtHide) {
+          messages.push("Web Audio was interrupted and remains suspended. Tap Test Web Audio to resume; playback is never restarted automatically.");
+          report.events.push({ type: "audio-resume-required", api: "Web Audio", interruptedWhilePlaying: true, at: new Date().toISOString() });
+        } else {
+          messages.push("Web Audio is suspended, but the sample had already ended before backgrounding. Repeat the test and switch apps while the tone is still playing.");
+          report.events.push({ type: "audio-test-inconclusive", api: "Web Audio", reason: "sample-ended-before-background", at: new Date().toISOString() });
+        }
+      }
+      if (htmlAudioPausedByLifecycle && htmlAudio && htmlAudio.paused) {
+        messages.push("HTMLAudio was paused in the background. Tap Pause / resume HTMLAudio to resume it.");
+        report.events.push({ type: "audio-resume-required", api: "HTMLAudio", interruptedWhilePlaying: true, at: new Date().toISOString() });
+      }
+      if (messages.length) audioStatus.textContent = messages.join(" ");
+    }
+    refreshReport();
+  });
+  window.addEventListener("pagehide", () => {
+    report.events.push({ type: "pagehide", at: new Date().toISOString() });
+    suspendAudioForBackground("pagehide");
+    refreshReport();
+  });
+  window.addEventListener("pageshow", event => {
+    report.events.push({ type: "pageshow", persisted: event.persisted, at: new Date().toISOString() });
+    refreshReport();
+  });
+  refreshReport();
+})();
+</script>
+</body>
+</html>
