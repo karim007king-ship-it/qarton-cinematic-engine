@@ -154,3 +154,211 @@ test("HTMLAudio contains exceptions thrown by playback error reporting", async (
   await Promise.resolve();
   assert.deepEqual(reported, ["decode failed"]);
 });
+
+
+test("synchronous play failure releases the allocated voice and reports the error", () => {
+  const failure = new Error("synchronous media failure");
+  const audio = fakeAudio();
+  let reported;
+  let paused = 0;
+  audio.play = () => { throw failure; };
+  audio.pause = () => { paused += 1; audio.paused = true; };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/broken.mp3",
+    createAudio: () => audio,
+    onPlaybackError: error => { reported = error; }
+  });
+
+  assert.throws(() => adapter.play("broken"), error => error === failure);
+  assert.equal(reported, failure);
+  assert.equal(paused, 1);
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.equal(paused, 1);
+});
+
+test("asynchronous play rejection is reported once and remains owned for teardown", async () => {
+  const failure = new Error("autoplay denied");
+  const audio = fakeAudio();
+  let reported = 0;
+  let paused = 0;
+  audio.play = () => Promise.reject(failure);
+  audio.pause = () => { paused += 1; audio.paused = true; };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/blocked.mp3",
+    createAudio: () => audio,
+    onPlaybackError: (error, context) => {
+      assert.equal(error, failure);
+      assert.equal(context.audio, audio);
+      reported += 1;
+    }
+  });
+
+  adapter.play("blocked");
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(reported, 1);
+  assert.equal(paused, 1);
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.equal(paused, 2);
+});
+
+test("failed asynchronous playback cleanup remains retryable", async () => {
+  const audio = fakeAudio();
+  const failure = new Error("play rejected");
+  let pauseFails = true;
+  let pauseCalls = 0;
+  audio.play = () => Promise.reject(failure);
+  audio.pause = () => {
+    pauseCalls += 1;
+    if (pauseFails) throw new Error("pause unavailable");
+  };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/retry.mp3",
+    createAudio: () => audio
+  });
+
+  adapter.play("retry");
+  await Promise.resolve();
+  await Promise.resolve();
+  pauseFails = false;
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.equal(pauseCalls, 2);
+});
+
+test("naturally ended one-shot voices are released without teardown pause", () => {
+  const listeners = new Map();
+  let pauseCalls = 0;
+  const audio = {
+    ...fakeAudio(),
+    addEventListener(type, handler) { listeners.set(type, handler); },
+    removeEventListener(type, handler) {
+      if (listeners.get(type) === handler) listeners.delete(type);
+    },
+    pause() { pauseCalls += 1; this.paused = true; }
+  };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/effect.mp3",
+    createAudio: () => audio
+  });
+
+  adapter.play("effect");
+  assert.equal(listeners.has("ended"), true);
+  listeners.get("ended")();
+  assert.equal(listeners.has("ended"), false);
+  adapter.destroy();
+  assert.equal(pauseCalls, 0);
+});
+
+test("looping voices remain owned until explicit stop", () => {
+  const listeners = new Map();
+  const audio = {
+    ...fakeAudio(),
+    addEventListener(type, handler) { listeners.set(type, handler); },
+    removeEventListener(type, handler) {
+      if (listeners.get(type) === handler) listeners.delete(type);
+    }
+  };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/music.mp3",
+    createAudio: () => audio
+  });
+
+  adapter.play("music", { loop: true });
+  assert.equal(listeners.has("ended"), false);
+  adapter.stop(audio);
+  assert.equal(listeners.size, 0);
+});
+
+test("volume updates do not resurrect naturally ended voices", () => {
+  const listeners = new Map();
+  let pauseCalls = 0;
+  let volumeWrites = 0;
+  const audio = {
+    paused: true,
+    set volume(value) { this._volume = value; volumeWrites += 1; },
+    get volume() { return this._volume; },
+    play() { this.paused = false; return Promise.resolve(); },
+    pause() { pauseCalls += 1; this.paused = true; },
+    addEventListener(type, handler) { listeners.set(type, handler); },
+    removeEventListener(type, handler) {
+      if (listeners.get(type) === handler) listeners.delete(type);
+    }
+  };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/effect.mp3",
+    createAudio: () => audio
+  });
+
+  adapter.play("effect");
+  listeners.get("ended")();
+  const writesAfterEnd = volumeWrites;
+  adapter.setVolume(audio, 0.3);
+  adapter.setMasterVolume(0.2);
+  assert.equal(volumeWrites, writesAfterEnd);
+  adapter.destroy();
+  assert.equal(pauseCalls, 0);
+});
+
+test("initial play rejection after stop is ignored", async () => {
+  let rejectPlay;
+  const errors = [];
+  const audio = fakeAudio();
+  audio.play = () => new Promise((_resolve, reject) => { rejectPlay = reject; });
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/impact.mp3",
+    createAudio: () => audio,
+    onPlaybackError: error => errors.push(error.message)
+  });
+
+  const voice = adapter.play("impact");
+  adapter.stop(voice);
+  rejectPlay(new Error("late initial play rejection"));
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(errors, []);
+});
+
+test("resume rejection after stop is ignored", async () => {
+  let rejectResume;
+  const errors = [];
+  const audio = fakeAudio();
+  let playCount = 0;
+  audio.play = () => {
+    playCount += 1;
+    if (playCount === 1) return Promise.resolve();
+    return new Promise((_resolve, reject) => { rejectResume = reject; });
+  };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/theme.mp3",
+    createAudio: () => audio,
+    onPlaybackError: error => errors.push(error.message)
+  });
+
+  const voice = adapter.play("theme");
+  adapter.pause(voice);
+  adapter.resume(voice);
+  adapter.stop(voice);
+  rejectResume(new Error("late resume rejection"));
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(errors, []);
+});
+
+test("playback error callback exceptions are contained", async () => {
+  const reported = [];
+  const audio = fakeAudio();
+  audio.play = () => Promise.reject(new Error("decode failed"));
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/voice.mp3",
+    createAudio: () => audio,
+    onPlaybackError: error => {
+      reported.push(error.message);
+      throw new Error("reporting failed");
+    }
+  });
+
+  adapter.play("voice");
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(reported, ["decode failed"]);
+});
