@@ -232,9 +232,10 @@
       if (!AudioContextClass) throw new Error("Web Audio API is unavailable");
       if (!audioContext || audioContext.state === "closed") {
         audioContext = new AudioContextClass();
-        audioContext.addEventListener("statechange", () => {
-          report.events.push({ type: "audio-context-statechange", state: audioContext.state, at: new Date().toISOString() });
-          report.audioContextState = audioContext.state;
+        const context = audioContext;
+        context.addEventListener("statechange", () => {
+          report.events.push({ type: "audio-context-statechange", state: context.state, at: new Date().toISOString() });
+          report.audioContextState = context.state;
           refreshReport();
         });
       }
@@ -334,6 +335,7 @@
       });
     } catch (error) {
       report.events.push({ type: "audio-suspend-error", source, message: error.message, at: new Date().toISOString() });
+      refreshReport();
     }
   }
 
