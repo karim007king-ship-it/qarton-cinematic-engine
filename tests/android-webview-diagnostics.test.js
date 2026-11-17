@@ -54,3 +54,23 @@ test("background lifecycle requests audio suspension and never auto-resumes on f
   assert.match(page, /audio-suspend-error/);
   assert.doesNotMatch(page, /visibilityState === "visible".*audioContext/);
 });
+
+
+test("HTMLAudio diagnostics require a tap and expose play, pause and resume", () => {
+  assert.match(page, /id="html-audio"/);
+  assert.match(page, /id="html-audio-toggle"/);
+  assert.match(page, /new Audio\(createToneWavDataUrl\(\)\)/);
+  assert.match(page, /await htmlAudio\.play\(\)/);
+  assert.match(page, /htmlAudio\.pause\(\)/);
+  assert.match(page, /html-audio-play-resolved/);
+  assert.match(page, /html-audio-ended/);
+  assert.match(page, /data:audio\/wav;base64,/);
+});
+
+test("background lifecycle pauses HTMLAudio without automatic foreground resume", () => {
+  assert.match(page, /pauseHTMLAudioForBackground\(source\)/);
+  assert.match(page, /pauseHTMLAudioForBackground\(source\);/);
+  const pageshow = page.match(/window\.addEventListener\("pageshow",[\s\S]*?\n  \}\);/);
+  assert.ok(pageshow, "diagnostics must observe pageshow");
+  assert.doesNotMatch(pageshow[0], /htmlAudio\.play\(\)/);
+});
