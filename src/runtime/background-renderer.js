@@ -1,5 +1,24 @@
 import { buildLayerPlan } from "../scene/layer-plan.js";
 
+function raceWithAbort(promise, signal) {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => signal.removeEventListener("abort", onAbort);
+    const onAbort = () => {
+      cleanup();
+      reject(signal.reason ?? Object.assign(new Error("Background render was cancelled"), { name: "AbortError" }));
+    };
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+    Promise.resolve(promise).then(
+      value => { cleanup(); resolve(value); },
+      error => { cleanup(); reject(error); }
+    );
+  });
+}
+
 /**
  * DOM renderer for scene layers.
  * The host supplies both the mount element and asset resolver; importing this
@@ -101,7 +120,7 @@ export class BackgroundRenderer {
     });
 
     try {
-      await Promise.all(Array.from(fragment.children, wrapper => {
+      await raceWithAbort(Promise.all(Array.from(fragment.children, wrapper => {
         const image = wrapper.children[0];
         if (typeof image.decode === "function") return image.decode();
         if (image.complete) {
@@ -112,7 +131,7 @@ export class BackgroundRenderer {
           image.onload = () => resolve();
           image.onerror = () => reject(new Error(`Image failed to load: ${image.src}`));
         });
-      }));
+      })), controller.signal);
     } catch (error) {
       if (token !== this.#renderToken) return false;
       controller.abort(error);
