@@ -113,7 +113,7 @@ export function createAdaptivePerformanceMonitor({
     stableCount = 0;
     stableDirection = null;
     lastFps = null;
-    return getMetrics();
+    return Object.freeze({ averageFps: lastFps, pendingFrames: frames.length, stableWindows: stableCount });
   }
 
   function reset(nextDevice = device) {
