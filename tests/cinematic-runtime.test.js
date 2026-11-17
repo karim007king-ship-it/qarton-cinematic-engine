@@ -572,6 +572,11 @@ test("runtime ignores late page events when lifecycle listener removal fails dur
   // The remaining listener is harmless even though the activity gate is closed.
   assert.doesNotThrow(() => target.dispatch("pagehide"));
 
+  // A destroyed runtime must not attach new listeners or resynchronize activity.
+  assert.equal(runtime.startPageLifecycle(), false);
+  assert.equal(runtime.syncPageLifecycle(), false);
+  assert.equal(target.listenerCount(), 1);
+
   target.removeEventListener = originalRemove;
   await runtime.destroy();
   assert.equal(target.listenerCount(), 0);
