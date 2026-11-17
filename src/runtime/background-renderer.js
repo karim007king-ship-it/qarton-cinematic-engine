@@ -56,6 +56,9 @@ export class BackgroundRenderer {
       // A newer render or clear() owns the root now; stale failures must not
       // escape as errors from work that can no longer be committed.
       if (token !== this.#renderToken) return false;
+      // Stop sibling layer requests when one layer fails. Promise.all rejects
+      // early, but the other resolvers may still be consuming network/memory.
+      controller.abort(error);
       if (this.#renderController === controller) this.#renderController = null;
       throw error;
     }
@@ -112,6 +115,7 @@ export class BackgroundRenderer {
       }));
     } catch (error) {
       if (token !== this.#renderToken) return false;
+      controller.abort(error);
       if (this.#renderController === controller) this.#renderController = null;
       throw error;
     }
