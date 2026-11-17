@@ -334,6 +334,66 @@
 
   await show(0);
   frameId = requestAnimationFrame(tick);
+
+  // Optional automated real-browser smoke path used by CI:
+  // /examples/browser-smoke.html?smoke=1
+  if (new URLSearchParams(location.search).get("smoke") === "1") {
+    try {
+      const assertSceneOwnership = expectedId => {
+        const mounted = stage.querySelectorAll("[data-qarton-scene-id]");
+        if (mounted.length !== 1) {
+          throw new Error(`Expected exactly one mounted scene, found ${mounted.length}`);
+        }
+        if (mounted[0].dataset.qartonSceneId !== expectedId) {
+          throw new Error(`Expected scene ${expectedId}, found ${mounted[0].dataset.qartonSceneId}`);
+        }
+        if (characterRoot.querySelectorAll(".qarton-character").length !== 2) {
+          throw new Error("Character count changed during scene transition");
+        }
+      };
+
+      // Exercise the same lifecycle events emitted when a browser tab is
+      // backgrounded and restored; the director clock and audio must follow.
+      window.dispatchEvent(new Event("pagehide"));
+      if (runtime.isActive() || !director.getState().paused) {
+        throw new Error("Page hide did not pause the cinematic director");
+      }
+      window.dispatchEvent(new Event("pageshow"));
+      if (!runtime.isActive() || director.getState().paused) {
+        throw new Error("Page show did not resume the cinematic director");
+      }
+
+      for (const index of [1, 0, 1, 0]) {
+        await show(index);
+        assertSceneOwnership(scenes[index].id);
+      }
+      await Promise.all([
+        ...stage.querySelectorAll("[data-qarton-scene-id] img"),
+        ...characterRoot.querySelectorAll("img")
+      ].map(image => image.decode()));
+
+      document.querySelector("#destroy").click();
+      const deadline = performance.now() + 8000;
+      while (!status.textContent.startsWith("Destroyed:")
+        && !status.textContent.startsWith("Cleanup completed with")
+        && performance.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+      if (!status.textContent.startsWith("Destroyed:")) {
+        throw new Error(status.textContent || "Runtime cleanup did not finish");
+      }
+      if (stage.querySelectorAll("[data-qarton-scene-id]").length !== 0) {
+        throw new Error("Scene wrappers remain mounted after runtime destruction");
+      }
+      if (characterRoot.querySelectorAll(".qarton-character").length !== 0) {
+        throw new Error("Character elements remain mounted after runtime destruction");
+      }
+      document.documentElement.dataset.smokeResult = "passed";
+    } catch (error) {
+      document.documentElement.dataset.smokeResult = "failed";
+      status.textContent = `Browser smoke failed: ${error.message}`;
+    }
+  }
 </script>
 </body>
 </html>
