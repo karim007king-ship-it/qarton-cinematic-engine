@@ -25,13 +25,13 @@ This repository includes a standalone, dependency-free diagnostics page at
 - Web Animations API availability, CSS transition execution, transform/filter.
 - Image.decode() or the image-load fallback, including inline SVG decoding.
 - Canvas 2D, HTMLAudio capability and Web Audio API availability.
-- Web Audio resume/playback initiated from a tap.
+- Web Audio resume/playback initiated from a tap, AudioContext state changes, and sample completion.\n- Optional hardware concurrency, device-memory and JS-heap hints when exposed by the browser; these are not native RAM or GPU measurements.
 - Page visibility and page lifecycle events, plus viewport and device-pixel ratio.\n- A short foreground requestAnimationFrame sample: average FPS, p95 frame interval, and proportion of intervals above 25 ms.
 
 A capability being present does not prove that every engine feature behaves
 correctly under load. In particular, this page does not benchmark GPU memory,
 long-running animation stability, audio focus interruptions, or the host app's
-native lifecycle callbacks. Those require a device-specific integration test. The frame sample is a quick diagnostic, not a controlled benchmark; run it under the actual scene workload and compare repeated reports.
+native lifecycle callbacks. Those require a device-specific integration test. The frame sample is a quick diagnostic, not a controlled benchmark; run it under the actual scene workload and compare repeated reports. AudioContext is never resumed automatically after backgrounding; tap the audio test again to verify foreground recovery.
 
 ## Evidence boundary
 
