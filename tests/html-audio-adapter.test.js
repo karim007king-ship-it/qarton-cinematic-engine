@@ -89,3 +89,24 @@ test("HTMLAudio destroy attempts every voice and retries transient pause failure
   assert.throws(() => adapter.setVolume(made[0], 0.5), /destroyed/);
   assert.throws(() => adapter.play("late"), /destroyed/);
 });
+
+
+test("HTMLAudio ignores a playback rejection that arrives after the voice was stopped", async () => {
+  let rejectPlayback;
+  const errors = [];
+  const audio = fakeAudio();
+  audio.play = () => new Promise((_resolve, reject) => { rejectPlayback = reject; });
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/late.mp3",
+    createAudio: () => audio,
+    onPlaybackError: error => errors.push(error)
+  });
+
+  const voice = adapter.play("late");
+  adapter.stop(voice);
+  rejectPlayback(new Error("late playback rejection"));
+  await Promise.resolve();
+
+  assert.deepEqual(errors, []);
+  assert.equal(voice.paused, true);
+});
