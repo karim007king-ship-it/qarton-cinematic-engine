@@ -6,11 +6,13 @@ const PROFILES = Object.freeze({
 
 /** Resolve a stable rendering profile from injected device hints. No browser globals. */
 export function resolveQualityProfile(device = {}) {
-  const requested = device.quality;
-  if (requested && Object.hasOwn(PROFILES, requested)) return { ...PROFILES[requested], reason: "manual" };
+  // Accessibility and data-saving constraints take precedence over a requested
+  // quality tier; callers must not be able to opt into expensive motion here.
   if (device.reducedMotion === true || device.saveData === true) {
     return { ...PROFILES.low, reason: device.reducedMotion ? "reduced-motion" : "save-data" };
   }
+  const requested = device.quality;
+  if (requested && Object.hasOwn(PROFILES, requested)) return { ...PROFILES[requested], reason: "manual" };
   const cores = finiteOr(device.hardwareConcurrency, 4);
   const memory = finiteOr(device.deviceMemory, 4);
   const fps = finiteOr(device.averageFps, 60);
