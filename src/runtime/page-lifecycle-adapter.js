@@ -69,7 +69,6 @@ export function createPageLifecycleAdapter({ target, setActive } = {}) {
 
   function stop() {
     if (!started) return false;
-    started = false;
     const errors = [];
     for (const [type, listener] of listeners) {
       try {
@@ -78,10 +77,13 @@ export function createPageLifecycleAdapter({ target, setActive } = {}) {
         errors.push(error);
       }
     }
+    // Keep the adapter retryable if even one listener could not be detached.
+    // removeEventListener is idempotent, so retrying the complete set is safe.
     if (errors.length === 1) throw errors[0];
     if (errors.length > 1) {
       throw new AggregateError(errors, "Page lifecycle listeners could not all be removed");
     }
+    started = false;
     return true;
   }
 
