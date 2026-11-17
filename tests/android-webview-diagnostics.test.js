@@ -26,4 +26,11 @@ test("diagnostics report failures without assuming optional APIs exist", () => {
   assert.match(page, /navigator\.clipboard\.writeText/);
 });
 
-test("diagnostics collect bounded frame-pacing metrics without claiming a benchmark", () => {\n  assert.match(page, /sampleDurationMs/);\n  assert.match(page, /averageFps/);\n  assert.match(page, /p95FrameMs/);\n  assert.match(page, /framesOver25MsRatio/);\n  assert.match(page, /Foreground-only rough measurement/);\n  assert.match(page, /timestamp - startedAt >= 1200/);\n});\n
+test("diagnostics collect bounded frame-pacing metrics without claiming a benchmark", () => {
+  assert.match(page, /sampleDurationMs/);
+  assert.match(page, /averageFps/);
+  assert.match(page, /p95FrameMs/);
+  assert.match(page, /framesOver25MsRatio/);
+  assert.match(page, /Foreground-only rough measurement/);
+  assert.match(page, /timestamp - startedAt >= 1200/);
+});
