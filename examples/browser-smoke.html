@@ -398,15 +398,36 @@
         }
       };
 
+      // Install a deterministic looping voice so this smoke path verifies
+      // the full lifecycle bridge, not only the director's paused flag.
+      const lifecycleAudioCalls = [];
+      audioCues = createAudioCueController({
+        cues: [{ id: "lifecycle-loop", atMs: 0, asset: "smoke-loop", loop: true }],
+        play: () => ({ id: "smoke-loop" }),
+        pauseVoice: voice => lifecycleAudioCalls.push(["pause", voice.id]),
+        resumeVoice: voice => lifecycleAudioCalls.push(["resume", voice.id]),
+        stop: () => {}
+      });
+      await director.update(Math.max(0, director.getState().timeMs));
+
       // Exercise the same lifecycle events emitted when a browser tab is
-      // backgrounded and restored; the director clock and audio must follow.
+      // backgrounded and restored; the director clock and active audio voice
+      // must follow together.
       window.dispatchEvent(new Event("pagehide"));
       if (runtime.isActive() || !director.getState().paused) {
         throw new Error("Page hide did not pause the cinematic director");
       }
+      if (JSON.stringify(lifecycleAudioCalls) !== JSON.stringify([["pause", "smoke-loop"]])) {
+        throw new Error("Page hide did not pause the active audio voice");
+      }
       window.dispatchEvent(new Event("pageshow"));
       if (!runtime.isActive() || director.getState().paused) {
         throw new Error("Page show did not resume the cinematic director");
+      }
+      if (JSON.stringify(lifecycleAudioCalls) !== JSON.stringify([
+        ["pause", "smoke-loop"], ["resume", "smoke-loop"]
+      ])) {
+        throw new Error("Page show did not resume the active audio voice");
       }
 
       for (const index of [1, 0, 1, 0]) {
