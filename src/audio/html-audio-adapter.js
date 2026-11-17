@@ -22,6 +22,13 @@ export function createHTMLAudioAdapter({
   let volume = masterVolume;
   let destroyed = false;
   const active = new Map();
+  const assets = new WeakMap();
+
+  function reportPlaybackError(error, audio) {
+    if (!active.has(audio)) return;
+    try { onPlaybackError(error, { asset: assets.get(audio), audio }); }
+    catch { /* error reporting must not create an unhandled rejection */ }
+  }
 
   function play(asset, options = {}) {
     if (destroyed) throw new Error("HTMLAudio adapter has been destroyed");
@@ -31,8 +38,6 @@ export function createHTMLAudioAdapter({
     if (!Number.isFinite(baseVolume) || baseVolume < 0 || baseVolume > 1) {
       throw new TypeError("Audio voice volume must be between 0 and 1");
     }
-    // Validate all caller-controlled options before allocating a native media
-    // element; invalid cue metadata must not leave an unreachable audio object.
     const audio = createAudio();
     if (!audio || typeof audio.play !== "function" || typeof audio.pause !== "function") {
       throw new TypeError("createAudio() must return an HTMLAudio-like object");
@@ -42,10 +47,9 @@ export function createHTMLAudioAdapter({
     audio.preload = "auto";
     audio.volume = baseVolume * volume;
     active.set(audio, baseVolume);
+    assets.set(audio, asset);
     const result = audio.play();
-    if (result && typeof result.catch === "function") {
-      result.catch(error => onPlaybackError(error, { asset, audio }));
-    }
+    if (result && typeof result.catch === "function") result.catch(error => reportPlaybackError(error, audio));
     return audio;
   }
 
@@ -54,6 +58,19 @@ export function createHTMLAudioAdapter({
     audio.pause();
     try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
     active.delete(audio);
+  }
+
+  function pause(audio) {
+    if (destroyed) throw new Error("HTMLAudio adapter has been destroyed");
+    if (!audio || !active.has(audio)) return;
+    audio.pause();
+  }
+
+  function resume(audio) {
+    if (destroyed) throw new Error("HTMLAudio adapter has been destroyed");
+    if (!audio || !active.has(audio)) return;
+    const result = audio.play();
+    if (result && typeof result.catch === "function") result.catch(error => reportPlaybackError(error, audio));
   }
 
   function setVolume(audio, nextVolume) {
@@ -76,32 +93,18 @@ export function createHTMLAudioAdapter({
   }
 
   function destroy() {
-    // Prevent new playback immediately, but retain voices whose teardown fails
-    // so a later destroy() can retry them.
     destroyed = true;
     const errors = [];
     for (const audio of [...active.keys()]) {
       let failed = false;
-      try {
-        audio.pause();
-      } catch (error) {
-        errors.push(error);
-        failed = true;
-      }
+      try { audio.pause(); } catch (error) { errors.push(error); failed = true; }
       try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
-      try {
-        audio.src = "";
-      } catch (error) {
-        errors.push(error);
-        failed = true;
-      }
+      try { audio.src = ""; } catch (error) { errors.push(error); failed = true; }
       if (!failed) active.delete(audio);
     }
     if (errors.length === 1) throw errors[0];
-    if (errors.length > 1) {
-      throw new AggregateError(errors, "One or more HTMLAudio voices could not be destroyed");
-    }
+    if (errors.length > 1) throw new AggregateError(errors, "One or more HTMLAudio voices could not be destroyed");
   }
 
-  return Object.freeze({ play, stop, setVolume, setMasterVolume, destroy });
+  return Object.freeze({ play, pause, resume, stop, setVolume, setMasterVolume, destroy });
 }
