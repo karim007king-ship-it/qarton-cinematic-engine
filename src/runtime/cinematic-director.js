@@ -202,8 +202,8 @@ export function createCinematicDirector({
     audio?.resume(timeMs);
     if (audio) audioTimeMs = timeMs;
     lifecycleVersion += 1;
+    if (timeMs > lastTimeMs) eventCursorMs = timeMs;
     lastTimeMs = timeMs;
-    eventCursorMs = timeMs;
     paused = false;
     rebaseClockOnResume = rebaseHostClock;
     onResume(timeMs);
