@@ -68,6 +68,22 @@ test("background lifecycle requests audio suspension and never auto-resumes on f
 });
 
 
+test("foreground return explains suspended audio and marks an ended-sample run inconclusive", () => {
+  assert.match(page, /audio-resume-required/);
+  assert.match(page, /audio-test-inconclusive/);
+  assert.match(page, /sample-ended-before-background/);
+  assert.match(page, /interruptedWhilePlaying/);
+  assert.match(page, /Tap Test Web Audio to resume/);
+  assert.match(page, /switch apps while the tone is still playing/);
+  assert.match(page, /htmlAudioPausedByLifecycle/);
+  const visibilitychange = page.match(/document\.addEventListener\("visibilitychange",[\s\S]*?\n  \}\);/);
+  assert.ok(visibilitychange, "diagnostics must observe foreground return");
+  assert.match(visibilitychange[0], /document\.visibilityState === "hidden"/);
+  assert.match(visibilitychange[0], /audio-resume-required/);
+  assert.match(visibilitychange[0], /audio-test-inconclusive/);
+  assert.doesNotMatch(visibilitychange[0], /audioContext\.resume\(|htmlAudio\.play\(/);
+});
+
 test("HTMLAudio diagnostics require a tap and expose play, pause and resume", () => {
   assert.match(page, /id="html-audio"/);
   assert.match(page, /id="html-audio-toggle"/);
