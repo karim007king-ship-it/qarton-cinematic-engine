@@ -46,7 +46,12 @@ export function createHTMLAudioAdapter({
     assets.set(audio, asset);
     const result = audio.play();
     if (result && typeof result.catch === "function") {
-      result.catch(error => onPlaybackError(error, { asset, audio }));
+      result.catch(error => {
+        // A stopped voice is no longer owned by this adapter; ignore late
+        // playback failures instead of reporting an obsolete cue.
+        if (!active.has(audio)) return;
+        try { onPlaybackError(error, { asset, audio }); } catch { /* reporting must not create an unhandled rejection */ }
+      });
     }
     return audio;
   }
