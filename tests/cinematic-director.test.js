@@ -479,3 +479,47 @@ test("unmount invalidates an in-flight director frame before it dispatches timel
   assert.equal(director.getState().timeMs, -1);
   await director.destroy();
 });
+
+
+test("director rebases raw host timestamps after background pause and freezes the shared clock", async () => {
+  const audio = audioSpy();
+  const characterTimes = [];
+  const director = createCinematicDirector({
+    characterStage: {
+      mount: async () => true,
+      update: async time => characterTimes.push(time),
+      unmount: () => {},
+      destroy: () => {}
+    },
+    audio
+  });
+
+  await director.mount();
+  await director.update(100);
+  director.pause();
+  assert.equal((await director.update(10000)).paused, true);
+  director.resume();
+  const resumed = await director.update(20000);
+  assert.equal(resumed.timeMs, 100);
+  const next = await director.update(20100);
+  assert.equal(next.timeMs, 200);
+  assert.deepEqual(characterTimes, [100, 100, 200]);
+  assert.deepEqual(audio.calls, [
+    ["update", 100], ["pause", 100], ["resume", 100], ["update", 100], ["update", 200]
+  ]);
+  await director.destroy();
+});
+
+test("director resumes from logical zero when the page was hidden before its first frame", async () => {
+  const audio = audioSpy();
+  const director = createCinematicDirector({ audio });
+  await director.mount();
+  director.pause();
+  director.resume();
+  const result = await director.update(8000);
+  assert.equal(result.timeMs, 0);
+  assert.deepEqual(audio.calls, [
+    ["pause", -1], ["resume", -1], ["update", 0]
+  ]);
+  await director.destroy();
+});
