@@ -23,6 +23,7 @@ export function createHTMLAudioAdapter({
   let destroyed = false;
   const active = new Map();
   const endedHandlers = new Map();
+  const voiceStates = new WeakMap();
 
   function detachEndedHandler(audio) {
     const handler = endedHandlers.get(audio);
@@ -50,9 +51,11 @@ export function createHTMLAudioAdapter({
     audio.preload = "auto";
     audio.volume = baseVolume * volume;
     active.set(audio, baseVolume);
+    voiceStates.set(audio, "active");
     if (options.loop !== true && typeof audio.addEventListener === "function") {
       const onEnded = () => {
         active.delete(audio);
+        voiceStates.set(audio, "ended");
         detachEndedHandler(audio);
       };
       try {
@@ -74,6 +77,7 @@ export function createHTMLAudioAdapter({
     audio.pause();
     try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
     active.delete(audio);
+    voiceStates.set(audio, "stopped");
     detachEndedHandler(audio);
   }
 
@@ -82,6 +86,7 @@ export function createHTMLAudioAdapter({
     if (!audio || !Number.isFinite(nextVolume) || nextVolume < 0 || nextVolume > 1) {
       throw new TypeError("Audio voice volume must be between 0 and 1");
     }
+    if (voiceStates.get(audio) === "ended" || voiceStates.get(audio) === "stopped") return;
     active.set(audio, nextVolume);
     audio.volume = nextVolume * volume;
   }
@@ -117,7 +122,10 @@ export function createHTMLAudioAdapter({
         failed = true;
       }
       detachEndedHandler(audio);
-      if (!failed) active.delete(audio);
+      if (!failed) {
+        active.delete(audio);
+        voiceStates.set(audio, "stopped");
+      }
     }
     if (errors.length === 1) throw errors[0];
     if (errors.length > 1) {
