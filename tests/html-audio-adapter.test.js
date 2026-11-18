@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHTMLAudioAdapter } from "../src/audio/html-audio-adapter.js";
+import { createAudioCueController } from "../src/audio/audio-cue-controller.js";
+import { createCinematicDirector } from "../src/runtime/cinematic-director.js";
 
 function fakeAudio() {
   return {
