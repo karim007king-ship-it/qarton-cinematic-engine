@@ -767,3 +767,24 @@ test("director rejects reentrant destroy from an event callback instead of deadl
   await director.destroy();
   assert.equal(director.getState().destroyed, true);
 });
+
+
+test("director rejects destroy after an event callback resumes from an await", async () => {
+  let director;
+  director = createCinematicDirector({
+    timeline: createTimeline([{ id: "deferred-destroy", atMs: 0, type: "story" }]),
+    onEvent: async () => {
+      await Promise.resolve();
+      await director.destroy();
+    }
+  });
+
+  await director.mount();
+  await assert.rejects(
+    director.update(0),
+    /Cannot destroy the cinematic director inside onEvent; defer destroy until the update settles/
+  );
+  assert.equal(director.getState().destroyed, false);
+  await director.destroy();
+  assert.equal(director.getState().destroyed, true);
+});
