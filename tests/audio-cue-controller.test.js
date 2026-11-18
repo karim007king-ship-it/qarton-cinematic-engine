@@ -300,3 +300,68 @@ test("looping cues do not receive a one-shot completion callback", () => {
   assert.equal(controller.getState().activeVoices, 1);
   controller.destroy();
 });
+
+
+test("master volume attempts every active voice and keeps failed updates retryable", () => {
+  const calls = [];
+  const failure = new Error("first voice volume update failed");
+  let fail = true;
+  const controller = createAudioCueController({
+    cues: [
+      { id: "music", atMs: 0, asset: "music", volume: 0.8 },
+      { id: "ambience", atMs: 0, asset: "ambience", volume: 0.5 },
+      { id: "impact", atMs: 0, asset: "impact", volume: 0.25 }
+    ],
+    play: (_asset, options) => options.id,
+    setVolume: (voice, volume) => {
+      calls.push([voice, volume]);
+      if (voice === "music" && fail) throw failure;
+    }
+  });
+
+  controller.update(0);
+  assert.throws(() => controller.setMasterVolume(0.4), error => error === failure);
+  assert.deepEqual(calls, [
+    ["music", 0.32],
+    ["ambience", 0.2],
+    ["impact", 0.1]
+  ]);
+  assert.equal(controller.getState().volume, 0.4);
+
+  fail = false;
+  assert.equal(controller.setMasterVolume(0.4), 0.4);
+  assert.deepEqual(calls.slice(3), [
+    ["music", 0.32],
+    ["ambience", 0.2],
+    ["impact", 0.1]
+  ]);
+  controller.destroy();
+});
+
+test("master volume aggregates multiple adapter failures after attempting all voices", () => {
+  const calls = [];
+  const first = new Error("music volume failed");
+  const second = new Error("ambience volume failed");
+  const controller = createAudioCueController({
+    cues: [
+      { id: "music", atMs: 0, asset: "music" },
+      { id: "ambience", atMs: 0, asset: "ambience" },
+      { id: "effect", atMs: 0, asset: "effect" }
+    ],
+    play: (_asset, options) => options.id,
+    setVolume: voice => {
+      calls.push(voice);
+      if (voice === "music") throw first;
+      if (voice === "ambience") throw second;
+    }
+  });
+
+  controller.update(0);
+  assert.throws(() => controller.setMasterVolume(0.7), error => {
+    assert.ok(error instanceof AggregateError);
+    assert.deepEqual(error.errors, [first, second]);
+    return true;
+  });
+  assert.deepEqual(calls, ["music", "ambience", "effect"]);
+  controller.destroy();
+});
