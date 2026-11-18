@@ -54,16 +54,23 @@ test("skip aborts the active stage and prevents the game intro from starting", a
   assert.equal(gameCalls, 0);
 });
 
-test("cancel between stages prevents the next stage", async () => {
+test("cancel aborts the active stage and prevents later stages", async () => {
+  let receivedSignal;
   let gameCalls = 0;
   const sequence = createIntroSequence({
-    playBrandIntro: async () => {},
+    playBrandIntro: ({ signal }) => {
+      receivedSignal = signal;
+      return new Promise(() => {});
+    },
     playGameIntro: async () => { gameCalls += 1; }
   });
 
-  assert.equal(await sequence.start(), "completed");
-  assert.equal(sequence.cancel(), "completed");
-  assert.equal(gameCalls, 1);
+  const running = sequence.start();
+  await Promise.resolve();
+  assert.equal(sequence.cancel(), "cancelled");
+  assert.equal(await running, "cancelled");
+  assert.equal(receivedSignal.aborted, true);
+  assert.equal(gameCalls, 0);
 });
 
 test("stage failures are surfaced and leave the sequence failed", async () => {
