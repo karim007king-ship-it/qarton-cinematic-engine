@@ -206,9 +206,11 @@ test("clear rejects new transitions until its cleanup snapshot is complete", asy
   let releaseMount;
   const events = [];
   const manager = new SceneTransitionManager({
-    mount: scene => new Promise(resolve => {
-      releaseMount = () => resolve({ id: scene.id });
-    }),
+    mount: scene => scene.id === "pending"
+      ? new Promise(resolve => {
+        releaseMount = () => resolve({ id: scene.id });
+      })
+      : Promise.resolve({ id: scene.id }),
     crossfade: async ({ to }) => { events.push(`crossfade:${to.id}`); },
     unmount: async handle => { events.push(`unmount:${handle.id}`); }
   });
