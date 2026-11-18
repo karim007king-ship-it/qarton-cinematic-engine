@@ -49,7 +49,7 @@
 
   function record(message) {
     const line = new Date().toISOString() + "  " + message;
-    log.textContent = (log.textContent + line + "\\n").slice(-16000);
+    log.textContent = (log.textContent + line + "\n").slice(-16000);
     log.scrollTop = log.scrollHeight;
   }
 
