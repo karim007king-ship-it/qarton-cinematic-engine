@@ -16,7 +16,12 @@ function snapshot(value, seen = new WeakMap()) {
   const copy = Object.create(prototype);
   seen.set(value, copy);
   for (const key of Object.keys(value)) {
-    copy[key] = snapshot(value[key], seen);
+    Object.defineProperty(copy, key, {
+      value: snapshot(value[key], seen),
+      enumerable: true,
+      configurable: true,
+      writable: true
+    });
   }
   return Object.freeze(copy);
 }
