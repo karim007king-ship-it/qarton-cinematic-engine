@@ -200,3 +200,34 @@ test("destroy can be retried after a transient scene cleanup failure", async () 
   assert.equal(attempts, 2);
   await assert.rejects(manager.transitionTo({ id: "late" }, {}), /destroyed/);
 });
+
+
+test("clear rejects new transitions until its cleanup snapshot is complete", async () => {
+  let releaseMount;
+  const events = [];
+  const manager = new SceneTransitionManager({
+    mount: scene => new Promise(resolve => {
+      releaseMount = () => resolve({ id: scene.id });
+    }),
+    crossfade: async ({ to }) => { events.push(`crossfade:${to.id}`); },
+    unmount: async handle => { events.push(`unmount:${handle.id}`); }
+  });
+
+  const pending = manager.transitionTo({ id: "pending" }, {});
+  await Promise.resolve();
+  const clearing = manager.clear();
+
+  await assert.rejects(
+    manager.transitionTo({ id: "racing" }, {}),
+    /is clearing/
+  );
+
+  releaseMount();
+  assert.equal(await pending, false);
+  await clearing;
+  assert.deepEqual(events, ["unmount:pending"]);
+  assert.equal(manager.current, null);
+
+  assert.equal(await manager.transitionTo({ id: "after-clear" }, {}), true);
+  assert.equal(manager.current.id, "after-clear");
+});
