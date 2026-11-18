@@ -47,6 +47,24 @@ test("timeline snapshots and freezes nested JSON-like payload data", () => {
   assert.throws(() => { timeline.events[0].payload.tags.push("late"); }, TypeError);
 });
 
+test("timeline preserves cycles and shared references in payload snapshots", () => {
+  const shared = { label: "shared" };
+  const source = { first: shared, second: shared };
+  source.self = source;
+
+  const timeline = createTimeline([
+    { id: "cyclic", atMs: 0, type: "metadata", payload: source }
+  ]);
+  const payload = timeline.events[0].payload;
+
+  assert.notEqual(payload, source);
+  assert.equal(payload.self, payload);
+  assert.equal(payload.first, payload.second);
+  assert.notEqual(payload.first, shared);
+  assert.equal(Object.isFrozen(payload), true);
+  assert.equal(Object.isFrozen(payload.first), true);
+});
+
 test("timeline safely snapshots an own __proto__ payload key", () => {
   const source = JSON.parse('{"__proto__":{"polluted":true},"safe":1}');
   const timeline = createTimeline([
