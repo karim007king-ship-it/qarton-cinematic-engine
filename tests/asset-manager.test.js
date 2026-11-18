@@ -380,3 +380,25 @@ test("an already-aborted consumer does not start an asset request", async () => 
   assert.equal(calls, 0);
   assert.equal(manager.pendingCount, 0);
 });
+
+
+test("aborting the last consumer after release aborts the detached loader", async () => {
+  let loaderSignal;
+  const manager = new AssetManager({
+    loader: (_key, _metadata, { signal }) => {
+      loaderSignal = signal;
+      return new Promise(() => {});
+    }
+  });
+  const controller = new AbortController();
+  const pending = manager.load("detached-release", null, { signal: controller.signal });
+  await Promise.resolve();
+  assert.equal(manager.release("detached-release"), true);
+  assert.equal(manager.pendingCount, 0);
+  assert.equal(loaderSignal.aborted, false);
+
+  controller.abort();
+  await assert.rejects(pending, { name: "AbortError" });
+  assert.equal(loaderSignal.aborted, true);
+  assert.equal(manager.pendingCount, 0);
+});
