@@ -45,16 +45,24 @@ export function createAudioCueController({
   let destroyed = false;
   let volume = masterVolume;
   const voices = new Map();
+  // Track host lifecycle success per voice so retries only target unfinished work.
+  const pausedVoices = new Set();
   const firedIds = new Set();
 
   function assertAlive() {
     if (destroyed) throw new Error("Audio cue controller has been destroyed");
   }
 
-  function invokeForVoices(adapter, message) {
+  function invokeForVoices(adapter, message, { onlyPaused = false, markPaused = false } = {}) {
     const errors = [];
-    for (const voice of voices.values()) {
-      try { adapter(voice); } catch (error) { errors.push(error); }
+    for (const [id, voice] of voices) {
+      if (onlyPaused && !pausedVoices.has(id)) continue;
+      if (markPaused && pausedVoices.has(id)) continue;
+      try {
+        adapter(voice);
+        if (markPaused) pausedVoices.add(id);
+        else if (onlyPaused) pausedVoices.delete(id);
+      } catch (error) { errors.push(error); }
     }
     if (errors.length === 1) throw errors[0];
     if (errors.length > 1) throw new AggregateError(errors, message);
@@ -82,7 +90,10 @@ export function createAudioCueController({
           endedBeforeRegistration = true;
           return;
         }
-        if (voices.get(cue.id) === voice) voices.delete(cue.id);
+        if (voices.get(cue.id) === voice) {
+          voices.delete(cue.id);
+          pausedVoices.delete(cue.id);
+        }
       };
       voice = play(cue.asset, {
         id: cue.id, channel: cue.channel, loop: cue.loop, volume: cue.volume * volume,
@@ -102,15 +113,10 @@ export function createAudioCueController({
       throw new TypeError("Pause time must be finite and not earlier than the audio cursor");
     }
     if (Number.isFinite(timeMs) && timeMs >= cursor) cursor = timeMs;
-    // A previous pause may have failed for one or more voices. Keep the
-    // controller paused, but retry every voice so a failed host pause can be
-    // recovered without requiring an unrelated resume/pause cycle.
-    if (paused) {
-      invokeForVoices(pauseVoice, "One or more audio voices could not be paused");
-      return;
-    }
-    paused = true;
-    invokeForVoices(pauseVoice, "One or more audio voices could not be paused");
+    // Keep the controller paused while retrying only voices whose host
+    // pause has not yet succeeded; already-paused voices need no duplicate call.
+    if (!paused) paused = true;
+    invokeForVoices(pauseVoice, "One or more audio voices could not be paused", { markPaused: true });
   }
 
   function resume(timeMs = cursor) {
@@ -121,7 +127,7 @@ export function createAudioCueController({
     // Resume is a lifecycle transition, not a repeated play command. Avoid
     // calling host adapters when the controller is already active.
     if (!paused) return;
-    invokeForVoices(resumeVoice, "One or more audio voices could not be resumed");
+    invokeForVoices(resumeVoice, "One or more audio voices could not be resumed", { onlyPaused: true });
     // Advancing the cursor skips cues that elapsed while playback was paused.
     for (const cue of normalized) if (cue.atMs <= timeMs) firedIds.add(cue.id);
     cursor = timeMs;
@@ -154,7 +160,7 @@ export function createAudioCueController({
   function stopVoices() {
     const errors = [];
     for (const [id, voice] of voices) {
-      try { stop(voice); voices.delete(id); } catch (error) { errors.push(error); }
+      try { stop(voice); voices.delete(id); pausedVoices.delete(id); } catch (error) { errors.push(error); }
     }
     if (errors.length === 1) throw errors[0];
     if (errors.length > 1) throw new AggregateError(errors, "One or more audio voices could not be stopped");

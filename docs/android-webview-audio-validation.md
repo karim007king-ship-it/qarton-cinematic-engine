@@ -19,6 +19,10 @@ This checklist is for the host application that integrates QARTON Cinematic Engi
 - Start/resume Web Audio from a real user gesture. Do not assume returning from background grants autoplay permission.
 - Route playback errors to a visible diagnostic callback; do not swallow them silently.
 
+## Asynchronous resume rejection
+
+HTMLAudio `play()` may reject asynchronously after the synchronous `resume()` call has returned. The adapter reports this through `onPlaybackError`; this is distinct from a synchronous adapter exception. When the adapter is owned by a `CinematicDirector`, the host integration should route a resume rejection back into the director's paused lifecycle (for example, call `director.pause()` from the error callback when the active scene is still mounted), show an explicit retry control, and retry from a real user gesture. Do not call the adapter directly behind the director's back, because that would leave the director and audio cue controller with different lifecycle state. Verify this wiring in the host application before claiming automatic resume recovery.
+
 ## Device test sequence
 
 1. **Fresh start**
