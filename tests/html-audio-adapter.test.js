@@ -484,3 +484,35 @@ test("destroy retains ownership when ended-listener removal fails during native 
   assert.equal(pauseCalls, 2);
   assert.equal(listeners.has("ended"), false);
 });
+
+
+test("stop retains voice ownership when ended-listener removal fails", () => {
+  const listeners = new Map();
+  let failRemove = true;
+  let pauseCalls = 0;
+  const audio = {
+    ...fakeAudio(),
+    addEventListener(type, handler) { listeners.set(type, handler); },
+    removeEventListener(type, handler) {
+      if (failRemove) throw new Error("listener removal failed");
+      if (listeners.get(type) === handler) listeners.delete(type);
+    },
+    pause() { pauseCalls += 1; this.paused = true; }
+  };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/effect.mp3",
+    createAudio: () => audio
+  });
+  const voice = adapter.play("effect");
+  const endedHandler = listeners.get("ended");
+
+  assert.throws(() => adapter.stop(voice), /ended listener/);
+  endedHandler();
+  assert.equal(listeners.has("ended"), true);
+
+  failRemove = false;
+  assert.doesNotThrow(() => adapter.stop(voice));
+  assert.equal(pauseCalls, 2);
+  assert.equal(listeners.has("ended"), false);
+  adapter.destroy();
+});
