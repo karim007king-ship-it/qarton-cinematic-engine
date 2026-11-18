@@ -410,6 +410,28 @@ test("director drives real character stage and audio cues from the same timeline
 });
 
 
+test("destroy can be awaited from an async timeline event callback without deadlocking", async () => {
+  let director;
+  director = createCinematicDirector({
+    timeline: createTimeline([{ id: "close-scene", atMs: 0, type: "scene" }]),
+    onEvent: async () => {
+      await director.destroy();
+    }
+  });
+
+  await director.mount();
+  const update = director.update(0);
+  let timeout;
+  const completed = await Promise.race([
+    update.then(() => true),
+    new Promise(resolve => { timeout = setTimeout(() => resolve(false), 250); })
+  ]);
+  clearTimeout(timeout);
+
+  assert.equal(completed, true, "destroy awaited by an event callback must not wait on that callback's frame queue");
+  assert.equal(director.getState().destroyed, true);
+});
+
 test("concurrent director updates serialize frame sampling and timeline event delivery", async () => {
   const audio = audioSpy();
   const characterTimes = [];
