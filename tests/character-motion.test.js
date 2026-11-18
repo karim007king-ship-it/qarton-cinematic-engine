@@ -79,6 +79,25 @@ test("timeline safely snapshots an own __proto__ payload key", () => {
   assert.equal(payload.polluted, undefined);
 });
 
+
+test("timeline rejects mutable non-JSON payload objects and unsupported primitives", () => {
+  const unsupported = [
+    new Date(0),
+    new Map([["key", "value"]]),
+    new Set(["value"]),
+    new Uint8Array([1, 2]),
+    () => "mutable closure",
+    Symbol("unsupported"),
+    1n
+  ];
+
+  for (const value of unsupported) {
+    assert.throws(() => createTimeline([
+      { id: "unsupported", atMs: 0, type: "metadata", payload: { value } }
+    ]), /JSON-like values|arrays and plain objects/);
+  }
+});
+
 test("character controller samples movement and expression without DOM dependencies", () => {
   const path = createMotionPath([{ x: 5, y: 10 }, { x: 105, y: 10 }]);
   const character = createCharacterController({
