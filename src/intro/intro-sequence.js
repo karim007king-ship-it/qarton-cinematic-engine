@@ -64,22 +64,33 @@ export function createIntroSequence({
     if (runPromise) return runPromise;
     if (state !== "idle") return Promise.resolve(state);
 
-    // Publish the shared promise before observers can re-enter start().
-    // Deferring the runner by one microtask guarantees every caller, including
-    // an onStageChange callback, receives the same in-flight promise.
-    runPromise = Promise.resolve().then(async () => {
+    // Publish the shared promise before stage observers can re-enter start(),
+    // while keeping the first stage's existing synchronous start semantics.
+    let resolveRun;
+    let rejectRun;
+    runPromise = new Promise((resolve, reject) => {
+      resolveRun = resolve;
+      rejectRun = reject;
+    });
+    (async () => {
       try {
-        if (!await runStage("brand", playBrandIntro)) return state;
-        if (!await runStage("game", playGameIntro)) return state;
+        if (!await runStage("brand", playBrandIntro)) {
+          resolveRun(state);
+          return;
+        }
+        if (!await runStage("game", playGameIntro)) {
+          resolveRun(state);
+          return;
+        }
         if (!TERMINAL_STATES.has(state)) setState("completed");
-        return state;
+        resolveRun(state);
       } catch (error) {
         if (!TERMINAL_STATES.has(state)) setState("failed");
-        throw error;
+        rejectRun(error);
       } finally {
         activeController = null;
       }
-    });
+    })();
     return runPromise;
   }
 
