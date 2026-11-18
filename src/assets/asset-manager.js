@@ -1,3 +1,5 @@
+import { assertSafeAssetUrl } from "./asset-url.js";
+
 /**
  * Small, host-agnostic asset URL manager.
  * The host supplies the loader (fetch, bundler manifest, native bridge, etc.).
@@ -19,22 +21,6 @@ function raceWithAbort(promise, signal) {
       error => { cleanup(); reject(error); }
     );
   });
-}
-
-function assertSafeAssetUrl(value, key) {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new TypeError(`Asset loader returned no URL for "${key}"`);
-  }
-  const url = value.trim();
-  const hasControlCharacter = [...url].some(character => {
-    const code = character.charCodeAt(0);
-    return code <= 31 || code === 127;
-  });
-  if (hasControlCharacter || url.includes("\\") || url.startsWith("//") ||
-      /^(?:javascript|vbscript|file):/i.test(url)) {
-    throw new TypeError(`Asset loader returned an unsafe URL for "${key}"`);
-  }
-  return url;
 }
 
 export class AssetManager {
