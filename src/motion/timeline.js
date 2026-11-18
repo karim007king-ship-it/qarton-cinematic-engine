@@ -1,6 +1,12 @@
 /** Clone and freeze JSON-like event data so caller mutations cannot alter a timeline. */
 function snapshot(value, seen = new WeakMap()) {
-  if (value === null || typeof value === "string" || typeof value === "boolean" || typeof value === "number") return value;
+  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      throw new TypeError("Timeline payload numbers must be finite JSON values");
+    }
+    return value;
+  }
   if (typeof value !== "object") {
     throw new TypeError("Timeline payload must contain only JSON-like values");
   }
@@ -9,7 +15,13 @@ function snapshot(value, seen = new WeakMap()) {
   if (Array.isArray(value)) {
     const copy = [];
     seen.set(value, copy);
-    for (const item of value) copy.push(snapshot(item, seen));
+    for (let index = 0; index < value.length; index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      if (!descriptor || !Object.hasOwn(descriptor, "value")) {
+        throw new TypeError("Timeline arrays must be dense data arrays without accessors");
+      }
+      copy.push(snapshot(descriptor.value, seen));
+    }
     return Object.freeze(copy);
   }
 
@@ -21,8 +33,12 @@ function snapshot(value, seen = new WeakMap()) {
   const copy = Object.create(prototype);
   seen.set(value, copy);
   for (const key of Object.keys(value)) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor || !Object.hasOwn(descriptor, "value")) {
+      throw new TypeError("Timeline payload objects must use data properties, not accessors");
+    }
     Object.defineProperty(copy, key, {
-      value: snapshot(value[key], seen),
+      value: snapshot(descriptor.value, seen),
       enumerable: true,
       configurable: true,
       writable: true
