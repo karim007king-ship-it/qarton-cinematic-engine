@@ -72,25 +72,20 @@ export function createIntroSequence({
       resolveRun = resolve;
       rejectRun = reject;
     });
-    (async () => {
+    const runner = (async () => {
       try {
-        if (!await runStage("brand", playBrandIntro)) {
-          resolveRun(state);
-          return;
-        }
-        if (!await runStage("game", playGameIntro)) {
-          resolveRun(state);
-          return;
-        }
+        if (!await runStage("brand", playBrandIntro)) return state;
+        if (!await runStage("game", playGameIntro)) return state;
         if (!TERMINAL_STATES.has(state)) setState("completed");
-        resolveRun(state);
+        return state;
       } catch (error) {
         if (!TERMINAL_STATES.has(state)) setState("failed");
-        rejectRun(error);
+        throw error;
       } finally {
         activeController = null;
       }
     })();
+    runner.then(resolveRun, rejectRun);
     return runPromise;
   }
 
