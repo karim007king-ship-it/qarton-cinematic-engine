@@ -291,3 +291,23 @@ test("concurrent clear calls share one cleanup pass and one release", async () =
   assert.equal(manager.current, null);
   await manager.destroy();
 });
+
+test("destroy ignores an invalidated pending mount rejection after releasing owned scenes", async () => {
+  let rejectMount;
+  const events = [];
+  const manager = new SceneTransitionManager({
+    mount: () => new Promise((_resolve, reject) => { rejectMount = reject; }),
+    crossfade: async () => true,
+    unmount: async handle => { events.push(`unmount:${handle.id}`); }
+  });
+
+  const pending = manager.transitionTo({ id: "aborted-mount" }, {});
+  await Promise.resolve();
+  const destroying = manager.destroy();
+  rejectMount(Object.assign(new Error("render asset aborted"), { name: "AbortError" }));
+
+  await assert.rejects(pending, { name: "AbortError" });
+  await destroying;
+  assert.deepEqual(events, []);
+  assert.equal(manager.current, null);
+});
