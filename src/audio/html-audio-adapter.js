@@ -45,13 +45,21 @@ export function createHTMLAudioAdapter({
     }
   }
 
-  function releaseFailedPlayback(audio, { retainOwnership = false } = {}) {
+  function releaseFailedPlayback(audio, { retainOwnership = false, clearSource = false } = {}) {
     try {
       audio.pause();
       // A rejected resume must preserve the playhead so a later user-gesture
       // retry continues from the suspended position instead of restarting.
       if (!retainOwnership) {
         try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
+        if (clearSource) {
+          try {
+            audio.src = "";
+          } catch {
+            voiceStates.set(audio, "stopping");
+            return;
+          }
+        }
         if (!detachEndedHandler(audio)) {
           voiceStates.set(audio, "stopping");
           return;
@@ -64,11 +72,11 @@ export function createHTMLAudioAdapter({
     }
   }
 
-  function reportPlaybackError(error, audio, { retainOwnership = false } = {}) {
+  function reportPlaybackError(error, audio, { retainOwnership = false, clearSource = false } = {}) {
     // A stopped or naturally ended voice is stale; its late Promise rejection
     // must not report an error or touch a resource the adapter no longer owns.
     if (!active.has(audio)) return;
-    releaseFailedPlayback(audio, { retainOwnership });
+    releaseFailedPlayback(audio, { retainOwnership, clearSource });
     try { onPlaybackError(error, { asset: assets.get(audio), audio }); }
     catch { /* error reporting must not create an unhandled rejection */ }
   }
@@ -101,7 +109,10 @@ export function createHTMLAudioAdapter({
       audio.preload = "auto";
       audio.volume = baseVolume * volume;
     } catch (error) {
-      reportPlaybackError(error, audio);
+      // Setup may have assigned src before a later native setter failed.
+      // Clear that source before releasing ownership; if clearing fails,
+      // retain the voice so destroy() can retry the native cleanup.
+      reportPlaybackError(error, audio, { clearSource: true });
       throw error;
     }
 
