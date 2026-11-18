@@ -145,7 +145,39 @@ try {
   }
 
   assert.equal(result, "passed", `Chromium showcase smoke failed. Page status: ${status}`);
-  process.stdout.write("Chromium smoke passed: image decoding, repeated scene transitions, stable character count, and DOM cleanup.\n");
+
+  await send("Page.navigate", {
+    url: `http://127.0.0.1:${httpPort}/examples/android-webview-audio.html?smoke=1`
+  }, sessionId);
+  let diagnosticReady = false;
+  let diagnosticLog = "";
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const evaluated = await send("Runtime.evaluate", {
+      expression: 'document.querySelector("#log")?.textContent ?? ""',
+      returnByValue: true
+    }, sessionId);
+    diagnosticLog = evaluated.result?.value ?? "";
+    if (diagnosticLog.includes("environment userAgent=")
+      && diagnosticLog.includes("WAV support=")) {
+      diagnosticReady = true;
+      break;
+    }
+    await delay(100);
+  }
+  assert.ok(diagnosticReady, `Android diagnostics page failed to initialize. Log: ${diagnosticLog}`);
+
+  await send("Runtime.evaluate", {
+    expression: 'document.querySelector("#reset")?.click()',
+    returnByValue: true
+  }, sessionId);
+  const resetResult = await send("Runtime.evaluate", {
+    expression: '({ status: document.querySelector("#status")?.textContent, log: document.querySelector("#log")?.textContent })',
+    returnByValue: true
+  }, sessionId);
+  const diagnosticState = resetResult.result?.value;
+  assert.ok(diagnosticState?.status?.includes("Test reset"), `Android diagnostics reset failed. State: ${JSON.stringify(diagnosticState)}`);
+  assert.ok(diagnosticState.log.includes("environment userAgent="), "Reset should reinitialize the diagnostic environment");
+  process.stdout.write("Chromium smoke passed: showcase rendering/cleanup and Android diagnostic page initialization/reset.\\n");
 } finally {
   try { socket?.close(); } catch {}
   if (browser && browser.exitCode === null) {
