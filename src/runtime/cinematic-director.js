@@ -290,7 +290,13 @@ export function createCinematicDirector({
       // await the full frame queue: an async onEvent callback may itself await
       // destroy(), which would otherwise deadlock against that same queue.
       // Timeline callbacks are invalidated by lifecycleVersion after they settle.
-      await stageUpdatePromise;
+      // A failed frame is reported to its update() caller, but it must not
+      // prevent teardown of the stage or audio resources it was using.
+      try {
+        await stageUpdatePromise;
+      } catch {
+        // The frame promise retains its rejection for the original caller.
+      }
       // Attempt every owned subsystem even if another subsystem fails.
       for (const cleanup of [
         () => characterStage?.destroy(),
