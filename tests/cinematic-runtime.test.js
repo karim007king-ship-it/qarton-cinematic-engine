@@ -591,3 +591,36 @@ test("runtime attempts every cleanup after multiple failures and retries retaine
   assert.equal(target.listenerCount(), 0);
   assert.equal(root.children.length, 0);
 });
+
+test("runtime aborts never-settling render assets before waiting for scene teardown", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let markLoaderStarted;
+  const loaderStarted = new Promise(resolve => { markLoaderStarted = resolve; });
+  let observedSignal;
+  const runtime = createCinematicRuntime({
+    root,
+    loadAsset: (_key, _metadata, { signal }) => {
+      observedSignal = signal;
+      markLoaderStarted();
+      // Simulate a host decoder/network loader that ignores AbortSignal.
+      return new Promise(() => {});
+    },
+    renderScene: async (_scene, _profile, { assets }) => {
+      await assets.load("never-settles");
+      return document.createElement("div");
+    }
+  });
+
+  const pendingTransition = runtime.transitionTo({ id: "asset-blocked-scene" });
+  await loaderStarted;
+  assert.equal(observedSignal.aborted, false);
+
+  const destroying = runtime.destroy();
+  await assert.rejects(pendingTransition, { name: "AbortError" });
+  await destroying;
+
+  assert.equal(observedSignal.aborted, true);
+  assert.equal(root.children.length, 0);
+  await assert.rejects(runtime.loadAsset("after-destroy"), /destroyed/);
+});
