@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHTMLAudioAdapter } from "../src/audio/html-audio-adapter.js";
+import { createAudioCueController } from "../src/audio/audio-cue-controller.js";
+import { createCinematicDirector } from "../src/runtime/cinematic-director.js";
 
 function fakeAudio() {
   return {
@@ -750,4 +752,55 @@ test("HTMLAudio retains a setup-failed voice when source clearing fails so destr
   assert.doesNotThrow(() => adapter.destroy());
   assert.equal(source, "");
   assert.equal(pauseCalls, 2);
+});
+
+
+test("an asynchronous HTMLAudio resume rejection returns the cinematic director to paused state", async () => {
+  const errors = [];
+  let playCalls = 0;
+  let director;
+  const audio = fakeAudio();
+  audio.play = () => {
+    playCalls += 1;
+    audio.paused = false;
+    if (playCalls === 2) return Promise.reject(new Error("autoplay denied on resume"));
+    return Promise.resolve();
+  };
+
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/theme.mp3",
+    createAudio: () => audio,
+    onPlaybackError: error => {
+      errors.push(error.message);
+      // The host routes asynchronous adapter errors back through the owner
+      // of the shared clock instead of mutating the audio adapter directly.
+      if (director && !director.getState().paused) director.pause();
+    }
+  });
+  const controller = createAudioCueController({
+    cues: [{ id: "theme", atMs: 0, asset: "theme", loop: true }],
+    play: (asset, options) => adapter.play(asset, options),
+    stop: voice => adapter.stop(voice),
+    pauseVoice: voice => adapter.pause(voice),
+    resumeVoice: voice => adapter.resume(voice),
+    setVolume: (voice, volume) => adapter.setVolume(voice, volume)
+  });
+  director = createCinematicDirector({ audio: controller });
+
+  await director.mount();
+  await director.update(0);
+  director.pause(0);
+  assert.equal(audio.paused, true);
+
+  director.resume(0);
+  assert.equal(director.getState().paused, false);
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  assert.deepEqual(errors, ["autoplay denied on resume"]);
+  assert.equal(director.getState().paused, true,
+    "the shared director must return to paused state after async playback rejection");
+  assert.equal(audio.paused, true);
+
+  await director.destroy();
+  adapter.destroy();
 });
