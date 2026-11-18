@@ -133,9 +133,15 @@ export class SceneTransitionManager {
       // own a cancellable adapter must cancel its active visual transition before
       // calling destroy(); the composed CinematicRuntime enforces that ordering.
       const transitions = await Promise.allSettled([...this.#pendingTransitions]);
-      const errors = transitions
-        .filter(result => result.status === "rejected")
-        .map(result => result.reason);
+      // During destroy(), pending transitions are intentionally invalidated.
+      // Their operation failures (including AbortError from cancelled asset
+      // loads) are not teardown failures; owned handles are still released
+      // below, and genuine unmount failures remain reportable.
+      const errors = this.#destroyed
+        ? []
+        : transitions
+          .filter(result => result.status === "rejected")
+          .map(result => result.reason);
 
       const releases = await Promise.allSettled(
         [...this.#ownedHandles].map(handle => this.#release(handle))
