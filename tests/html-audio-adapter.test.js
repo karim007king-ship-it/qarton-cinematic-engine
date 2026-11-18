@@ -564,3 +564,74 @@ test("HTMLAudio skips ended listeners when the host cannot remove them", () => {
   assert.equal(audio.paused, true);
   assert.doesNotThrow(() => adapter.destroy());
 });
+
+
+test("HTMLAudio master volume attempts every active voice and allows failed writes to be retried", () => {
+  const calls = [];
+  let failFirst = true;
+  const made = [];
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: key => `/${key}.mp3`,
+    createAudio: () => {
+      const audio = fakeAudio();
+      const id = made.length === 0 ? "music" : "ambience";
+      let currentVolume = 1;
+      Object.defineProperty(audio, "volume", {
+        get: () => currentVolume,
+        set: value => {
+          calls.push([id, value]);
+          if (id === "music" && failFirst) throw new Error("music volume write failed");
+          currentVolume = value;
+        }
+      });
+      made.push(audio);
+      return audio;
+    }
+  });
+
+  adapter.play("music", { volume: 0.8 });
+  adapter.play("ambience", { volume: 0.5 });
+  assert.throws(() => adapter.setMasterVolume(0.25), /music volume write failed/);
+  assert.deepEqual(calls, [["music", 0.2], ["ambience", 0.125]]);
+
+  failFirst = false;
+  assert.equal(adapter.setMasterVolume(0.25), 0.25);
+  assert.deepEqual(calls.slice(2), [["music", 0.2], ["ambience", 0.125]]);
+  assert.equal(made[0].volume, 0.2);
+  assert.equal(made[1].volume, 0.125);
+  adapter.destroy();
+});
+
+test("HTMLAudio master volume aggregates multiple voice write failures", () => {
+  const calls = [];
+  const first = new Error("music volume failed");
+  const second = new Error("ambience volume failed");
+  const made = [];
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: key => `/${key}.mp3`,
+    createAudio: () => {
+      const audio = fakeAudio();
+      const id = made.length === 0 ? "music" : made.length === 1 ? "ambience" : "effect";
+      Object.defineProperty(audio, "volume", {
+        get: () => 1,
+        set: () => {
+          calls.push(id);
+          if (id === "music") throw first;
+          if (id === "ambience") throw second;
+        }
+      });
+      made.push(audio);
+      return audio;
+    }
+  });
+  adapter.play("music");
+  adapter.play("ambience");
+  adapter.play("effect");
+  assert.throws(() => adapter.setMasterVolume(0.6), error => {
+    assert.ok(error instanceof AggregateError);
+    assert.deepEqual(error.errors, [first, second]);
+    return true;
+  });
+  assert.deepEqual(calls, ["music", "ambience", "effect"]);
+  adapter.destroy();
+});
