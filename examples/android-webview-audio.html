@@ -164,13 +164,25 @@
   });
 
   buttons.reset.addEventListener("click", () => {
-    try { lifecycle?.stop(); } catch (error) { record("lifecycle cleanup error: " + error.message); }
-    try { adapter?.destroy(); } catch (error) { record("audio cleanup error: " + error.message); }
+    try {
+      lifecycle?.stop();
+      lifecycle = null;
+    } catch (error) {
+      setStatus("Reset blocked: lifecycle cleanup failed. Retry Reset; resources remain owned. " + error.message);
+      return;
+    }
+
+    try {
+      adapter?.destroy();
+      adapter = null;
+    } catch (error) {
+      setStatus("Reset blocked: audio cleanup failed. Retry Reset; audio resources remain owned. " + error.message);
+      return;
+    }
+
     voice = null;
     if (audioUrl) URL.revokeObjectURL(audioUrl);
     audioUrl = null;
-    lifecycle = null;
-    adapter = null;
     log.textContent = "";
     initialize();
     setStatus("Test reset. Start playback using the button.");
