@@ -516,3 +516,32 @@ test("stop retains voice ownership when ended-listener removal fails", () => {
   assert.equal(listeners.has("ended"), false);
   adapter.destroy();
 });
+
+
+test("synchronous playback failure retains ownership if ended-listener cleanup fails", () => {
+  const listeners = new Map();
+  let failRemove = true;
+  let pauseCalls = 0;
+  const failure = new Error("synchronous play failed");
+  const audio = {
+    ...fakeAudio(),
+    play() { throw failure; },
+    pause() { pauseCalls += 1; this.paused = true; },
+    addEventListener(type, handler) { listeners.set(type, handler); },
+    removeEventListener(type, handler) {
+      if (failRemove) throw new Error("listener removal failed");
+      if (listeners.get(type) === handler) listeners.delete(type);
+    }
+  };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/broken.mp3",
+    createAudio: () => audio
+  });
+
+  assert.throws(() => adapter.play("broken"), error => error === failure);
+  assert.equal(listeners.has("ended"), true);
+  failRemove = false;
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.equal(pauseCalls, 2);
+  assert.equal(listeners.has("ended"), false);
+});
