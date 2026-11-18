@@ -28,6 +28,94 @@ test("timeline sorts events stably and returns the forward time window", () => {
   ]), /unique id/);
 });
 
+test("timeline snapshots mutable event targets as immutable data", () => {
+  const source = { character: { id: "hero" }, layers: ["foreground"] };
+  const timeline = createTimeline([
+    { id: "targeted", atMs: 10, type: "expression", target: source }
+  ]);
+
+  source.character.id = "villain";
+  source.layers.push("background");
+  assert.deepEqual(timeline.events[0].target, {
+    character: { id: "hero" },
+    layers: ["foreground"]
+  });
+  assert.equal(Object.isFrozen(timeline.events[0].target), true);
+  assert.equal(Object.isFrozen(timeline.events[0].target.character), true);
+  assert.equal(Object.isFrozen(timeline.events[0].target.layers), true);
+  assert.throws(() => { timeline.events[0].target.character.id = "changed"; }, TypeError);
+});
+
+test("timeline snapshots and freezes nested JSON-like payload data", () => {
+  const source = { camera: { zoom: 1.2 }, tags: ["opening", "impact"] };
+  const timeline = createTimeline([
+    { id: "scene", atMs: 10, type: "camera", payload: source }
+  ]);
+
+  source.camera.zoom = 9;
+  source.tags.push("mutated");
+  assert.deepEqual(timeline.events[0].payload, {
+    camera: { zoom: 1.2 },
+    tags: ["opening", "impact"]
+  });
+  assert.equal(Object.isFrozen(timeline.events[0].payload), true);
+  assert.equal(Object.isFrozen(timeline.events[0].payload.camera), true);
+  assert.equal(Object.isFrozen(timeline.events[0].payload.tags), true);
+  assert.throws(() => { timeline.events[0].payload.camera.zoom = 2; }, TypeError);
+  assert.throws(() => { timeline.events[0].payload.tags.push("late"); }, TypeError);
+});
+
+test("timeline preserves cycles and shared references in payload snapshots", () => {
+  const shared = { label: "shared" };
+  const source = { first: shared, second: shared };
+  source.self = source;
+
+  const timeline = createTimeline([
+    { id: "cyclic", atMs: 0, type: "metadata", payload: source }
+  ]);
+  const payload = timeline.events[0].payload;
+
+  assert.notEqual(payload, source);
+  assert.equal(payload.self, payload);
+  assert.equal(payload.first, payload.second);
+  assert.notEqual(payload.first, shared);
+  assert.equal(Object.isFrozen(payload), true);
+  assert.equal(Object.isFrozen(payload.first), true);
+});
+
+test("timeline safely snapshots an own __proto__ payload key", () => {
+  const source = JSON.parse('{"__proto__":{"polluted":true},"safe":1}');
+  const timeline = createTimeline([
+    { id: "prototype-key", atMs: 0, type: "metadata", payload: source }
+  ]);
+  const payload = timeline.events[0].payload;
+
+  assert.equal(Object.getPrototypeOf(payload), Object.prototype);
+  assert.equal(Object.hasOwn(payload, "__proto__"), true);
+  assert.deepEqual(payload.__proto__, { polluted: true });
+  assert.equal(Object.isFrozen(payload.__proto__), true);
+  assert.equal(payload.polluted, undefined);
+});
+
+
+test("timeline rejects mutable non-JSON payload objects and unsupported primitives", () => {
+  const unsupported = [
+    new Date(0),
+    new Map([["key", "value"]]),
+    new Set(["value"]),
+    new Uint8Array([1, 2]),
+    () => "mutable closure",
+    Symbol("unsupported"),
+    1n
+  ];
+
+  for (const value of unsupported) {
+    assert.throws(() => createTimeline([
+      { id: "unsupported", atMs: 0, type: "metadata", payload: { value } }
+    ]), /JSON-like values|arrays and plain objects/);
+  }
+});
+
 test("character controller samples movement and expression without DOM dependencies", () => {
   const path = createMotionPath([{ x: 5, y: 10 }, { x: 105, y: 10 }]);
   const character = createCharacterController({

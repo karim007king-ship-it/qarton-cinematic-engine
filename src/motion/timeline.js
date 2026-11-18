@@ -1,3 +1,36 @@
+/** Clone and freeze JSON-like event data so caller mutations cannot alter a timeline. */
+function snapshot(value, seen = new WeakMap()) {
+  if (value === null || typeof value === "string" || typeof value === "boolean" || typeof value === "number") return value;
+  if (typeof value !== "object") {
+    throw new TypeError("Timeline payload must contain only JSON-like values");
+  }
+  if (seen.has(value)) return seen.get(value);
+
+  if (Array.isArray(value)) {
+    const copy = [];
+    seen.set(value, copy);
+    for (const item of value) copy.push(snapshot(item, seen));
+    return Object.freeze(copy);
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new TypeError("Timeline payload must contain only arrays and plain objects");
+  }
+
+  const copy = Object.create(prototype);
+  seen.set(value, copy);
+  for (const key of Object.keys(value)) {
+    Object.defineProperty(copy, key, {
+      value: snapshot(value[key], seen),
+      enumerable: true,
+      configurable: true,
+      writable: true
+    });
+  }
+  return Object.freeze(copy);
+}
+
 /** Build an immutable, deterministically ordered event timeline. */
 export function createTimeline(events) {
   if (!Array.isArray(events)) throw new TypeError("Timeline events must be an array");
@@ -18,8 +51,8 @@ export function createTimeline(events) {
       id: event.id,
       atMs: event.atMs,
       type: event.type,
-      target: event.target ?? null,
-      payload: event.payload === undefined ? null : event.payload,
+      target: event.target == null ? null : snapshot(event.target),
+      payload: event.payload === undefined ? null : snapshot(event.payload),
       order: index
     });
   }).sort((a, b) => a.atMs - b.atMs || a.order - b.order)

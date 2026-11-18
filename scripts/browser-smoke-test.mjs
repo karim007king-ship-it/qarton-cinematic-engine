@@ -42,6 +42,7 @@ function findChrome() {
 const delay = ms => new Promise(resolveDelay => setTimeout(resolveDelay, ms));
 const profile = await mkdtemp(resolve(tmpdir(), "qarton-chrome-"));
 let browser;
+let browserStderr = "";
 let socket;
 let nextId = 0;
 const pending = new Map();
@@ -72,11 +73,13 @@ try {
     "--remote-allow-origins=*",
     `--user-data-dir=${profile}`,
     "about:blank"
-  ], { stdio: "ignore", detached: process.platform !== "win32" });
+  ], { stdio: ["ignore", "ignore", "pipe"], detached: process.platform !== "win32" });
+  browser.stderr.setEncoding("utf8");
+  browser.stderr.on("data", chunk => { browserStderr = (browserStderr + chunk).slice(-4000); });
 
   const activePortFile = resolve(profile, "DevToolsActivePort");
   let portInfo;
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  for (let attempt = 0; attempt < 300; attempt += 1) {
     try {
       portInfo = (await readFile(activePortFile, "utf8")).trim().split("\n");
       break;
@@ -85,7 +88,7 @@ try {
       await delay(100);
     }
   }
-  assert.ok(portInfo?.[0] && portInfo?.[1], "Chrome DevTools endpoint did not become ready");
+  assert.ok(portInfo?.[0] && portInfo?.[1], `Chrome DevTools endpoint did not become ready${browserStderr ? `; Chrome stderr: ${browserStderr}` : ""}`);
   const debugPort = Number(portInfo[0]);
   const browserSocket = new WebSocket(`ws://127.0.0.1:${debugPort}${portInfo[1]}`);
   socket = browserSocket;

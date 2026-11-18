@@ -45,13 +45,21 @@ export function createHTMLAudioAdapter({
     }
   }
 
-  function releaseFailedPlayback(audio, { retainOwnership = false } = {}) {
+  function releaseFailedPlayback(audio, { retainOwnership = false, clearSource = false } = {}) {
     try {
       audio.pause();
       // A rejected resume must preserve the playhead so a later user-gesture
       // retry continues from the suspended position instead of restarting.
       if (!retainOwnership) {
         try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
+        if (clearSource) {
+          try {
+            audio.src = "";
+          } catch {
+            voiceStates.set(audio, "stopping");
+            return;
+          }
+        }
         if (!detachEndedHandler(audio)) {
           voiceStates.set(audio, "stopping");
           return;
@@ -64,11 +72,11 @@ export function createHTMLAudioAdapter({
     }
   }
 
-  function reportPlaybackError(error, audio, { retainOwnership = false } = {}) {
+  function reportPlaybackError(error, audio, { retainOwnership = false, clearSource = false } = {}) {
     // A stopped or naturally ended voice is stale; its late Promise rejection
     // must not report an error or touch a resource the adapter no longer owns.
     if (!active.has(audio)) return;
-    releaseFailedPlayback(audio, { retainOwnership });
+    releaseFailedPlayback(audio, { retainOwnership, clearSource });
     try { onPlaybackError(error, { asset: assets.get(audio), audio }); }
     catch { /* error reporting must not create an unhandled rejection */ }
   }
@@ -88,13 +96,25 @@ export function createHTMLAudioAdapter({
       throw new TypeError("createAudio() must return an HTMLAudio-like object");
     }
 
-    audio.src = url;
-    audio.loop = options.loop === true;
-    audio.preload = "auto";
-    audio.volume = baseVolume * volume;
+    // Register ownership before touching native media setters: WebView
+    // implementations may throw while assigning src, loop, preload or volume.
+    // If setup fails, the normal failure path can pause and release the element,
+    // or retain it for a later destroy() retry when native cleanup also fails.
     active.set(audio, baseVolume);
     assets.set(audio, asset);
     voiceStates.set(audio, "active");
+    try {
+      audio.src = url;
+      audio.loop = options.loop === true;
+      audio.preload = "auto";
+      audio.volume = baseVolume * volume;
+    } catch (error) {
+      // Setup may have assigned src before a later native setter failed.
+      // Clear that source before releasing ownership; if clearing fails,
+      // retain the voice so destroy() can retry the native cleanup.
+      reportPlaybackError(error, audio, { clearSource: true });
+      throw error;
+    }
 
     // One-shot voices release their registry entry as soon as playback ends.
     if (options.loop !== true
@@ -184,7 +204,18 @@ export function createHTMLAudioAdapter({
       throw new TypeError("Master volume must be between 0 and 1");
     }
     volume = nextVolume;
-    for (const [audio, baseVolume] of active) audio.volume = baseVolume * volume;
+    const errors = [];
+    for (const [audio, baseVolume] of active) {
+      try {
+        audio.volume = baseVolume * volume;
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1) {
+      throw new AggregateError(errors, "One or more HTMLAudio voices could not update master volume");
+    }
     return volume;
   }
 
