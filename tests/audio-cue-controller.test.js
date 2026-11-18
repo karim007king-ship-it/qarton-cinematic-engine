@@ -201,7 +201,7 @@ test("voice lifecycle attempts every voice and leaves failed resume retryable", 
   assert.deepEqual(calls, [
     ["pause", "a"], ["pause", "b"],
     ["resume", "a"], ["resume", "b"],
-    ["resume", "a"], ["resume", "b"]
+    ["resume", "a"]
   ]);
 });
 
@@ -226,7 +226,7 @@ test("pause retries voices that failed to suspend on the first attempt", () => {
   fail = false;
   assert.doesNotThrow(() => controller.pause(0));
   assert.equal(controller.getState().paused, true);
-  assert.deepEqual(calls, ["music", "ambience", "music", "ambience"]);
+  assert.deepEqual(calls, ["music", "ambience", "music"]);
 });
 
 
@@ -380,5 +380,45 @@ test("resume is idempotent while the audio controller is already active", () => 
   assert.deepEqual(controller.getState(), {
     cursor: 0, paused: false, destroyed: false, volume: 1, activeVoices: 1
   });
+  controller.destroy();
+});
+
+
+test("pause and resume retries only voices whose previous lifecycle transition failed", () => {
+  const calls = [];
+  let failPause = true;
+  let failResume = true;
+  const controller = createAudioCueController({
+    cues: [
+      { id: "music", atMs: 0, asset: "music", loop: true },
+      { id: "ambience", atMs: 0, asset: "ambience", loop: true }
+    ],
+    play: (_asset, options) => options.id,
+    pauseVoice: voice => {
+      calls.push(["pause", voice]);
+      if (voice === "music" && failPause) throw new Error("music pause failed");
+    },
+    resumeVoice: voice => {
+      calls.push(["resume", voice]);
+      if (voice === "music" && failResume) throw new Error("music resume failed");
+    }
+  });
+
+  controller.update(0);
+  assert.throws(() => controller.pause(0), /music pause failed/);
+  assert.throws(() => controller.resume(0), /music resume failed/);
+  assert.deepEqual(calls, [
+    ["pause", "music"], ["pause", "ambience"],
+    ["resume", "ambience"], ["resume", "music"]
+  ]);
+
+  failPause = false;
+  controller.pause(0);
+  assert.deepEqual(calls.slice(4), [["pause", "music"]]);
+
+  failResume = false;
+  controller.resume(0);
+  assert.deepEqual(calls.slice(5), [["resume", "music"], ["resume", "ambience"]]);
+  assert.equal(controller.getState().paused, false);
   controller.destroy();
 });
