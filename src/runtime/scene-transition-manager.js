@@ -14,6 +14,7 @@ export class SceneTransitionManager {
   #ownedHandles = new Set();
   #releaseInFlight = new Map();
   #destroyPromise = null;
+  #clearPromise = null;
   #pendingTransitions = new Set();
 
   constructor({ mount, crossfade, unmount, duration = 350 } = {}) {
@@ -60,6 +61,7 @@ export class SceneTransitionManager {
    */
   transitionTo(scene, profile, { duration = this.#duration } = {}) {
     if (this.#destroyed) return Promise.reject(new Error("SceneTransitionManager has been destroyed"));
+    if (this.#clearPromise) return Promise.reject(new Error("SceneTransitionManager is clearing scenes"));
     if (!Number.isFinite(duration) || duration < 0) {
       return Promise.reject(new TypeError("Transition duration must be a non-negative finite number"));
     }
@@ -118,29 +120,40 @@ export class SceneTransitionManager {
   }
 
   /** Invalidate pending work and attempt to release every owned scene. */
-  async clear() {
+  clear() {
+    if (this.#clearPromise) return this.#clearPromise;
     this.#generation += 1;
     this.#current = null;
 
-    // Let invalidated transitions finish their rollback first. Hosts that
-    // own a cancellable adapter must cancel its active visual transition before
-    // calling destroy(); the composed CinematicRuntime enforces that ordering.
-    const transitions = await Promise.allSettled([...this.#pendingTransitions]);
-    const errors = transitions
-      .filter(result => result.status === "rejected")
-      .map(result => result.reason);
+    // Reject new transitions until this cleanup pass has finished. Otherwise
+    // a scene mounted after the pending-transition snapshot could escape the
+    // release snapshot and become current after clear() has already resolved.
+    const operation = (async () => {
+      // Let invalidated transitions finish their rollback first. Hosts that
+      // own a cancellable adapter must cancel its active visual transition before
+      // calling destroy(); the composed CinematicRuntime enforces that ordering.
+      const transitions = await Promise.allSettled([...this.#pendingTransitions]);
+      const errors = transitions
+        .filter(result => result.status === "rejected")
+        .map(result => result.reason);
 
-    const releases = await Promise.allSettled(
-      [...this.#ownedHandles].map(handle => this.#release(handle))
-    );
-    errors.push(...releases
-      .filter(result => result.status === "rejected")
-      .map(result => result.reason));
+      const releases = await Promise.allSettled(
+        [...this.#ownedHandles].map(handle => this.#release(handle))
+      );
+      errors.push(...releases
+        .filter(result => result.status === "rejected")
+        .map(result => result.reason));
 
-    if (errors.length === 1) throw errors[0];
-    if (errors.length > 1) {
-      throw new AggregateError(errors, "One or more scene transitions or handles could not be cleaned up");
-    }
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) {
+        throw new AggregateError(errors, "One or more scene transitions or handles could not be cleaned up");
+      }
+    })();
+    const tracked = operation.finally(() => {
+      if (this.#clearPromise === tracked) this.#clearPromise = null;
+    });
+    this.#clearPromise = tracked;
+    return tracked;
   }
 
   /** Invalidate pending work and release all scenes; failed cleanup is retryable. */
