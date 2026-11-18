@@ -335,3 +335,20 @@ test("destroy settles a pending sprite update when the resolver never resolves",
   assert.equal(observedSignal.aborted, true);
   assert.equal(root.children.length, 0);
 });
+
+
+test("renderer rejects unsafe resolved sprite URLs and leaves no mounted node", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: () => "javascript:alert(1)"
+  });
+
+  await assert.rejects(renderer.mount({
+    id: "hero",
+    sprites: { default: "hero" }
+  }), /unsafe URL/);
+  assert.equal(root.children.length, 0);
+  renderer.destroy();
+});
