@@ -143,3 +143,19 @@ test("skip from the stage observer prevents host playback from starting", async 
   assert.equal(sequence.state, "skipped");
   assert.equal(brandCalls, 0);
 });
+
+test("reentrant start from the stage observer shares the published run promise", async () => {
+  let sequence;
+  let reentrantStart;
+  sequence = createIntroSequence({
+    playBrandIntro: async () => {},
+    playGameIntro: async () => {},
+    onStageChange: state => {
+      if (state === "brand") reentrantStart = sequence.start();
+    }
+  });
+
+  const first = sequence.start();
+  assert.equal(await first, "completed");
+  assert.equal(reentrantStart, first);
+});
