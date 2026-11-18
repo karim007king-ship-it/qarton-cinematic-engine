@@ -280,6 +280,9 @@ test("concurrent clear calls share one cleanup pass and one release", async () =
   const firstClear = manager.clear();
   const secondClear = manager.clear();
   assert.equal(secondClear, firstClear);
+  // clear() yields while awaiting the pending-transition snapshot before it
+  // starts releasing handles; allow that continuation to reach unmount().
+  await Promise.resolve();
   assert.equal(unmountCalls, 1);
 
   release();
