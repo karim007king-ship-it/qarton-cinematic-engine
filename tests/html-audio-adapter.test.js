@@ -692,3 +692,62 @@ test("HTMLAudio setup failure retains ownership when native pause cleanup fails"
   assert.equal(pauseCalls, 2);
   assert.equal(audio.src, "");
 });
+
+
+test("HTMLAudio setup failure clears a source assigned before a later setter throws", () => {
+  const audio = fakeAudio();
+  let source = "";
+  let pauseCalls = 0;
+  Object.defineProperty(audio, "src", {
+    configurable: true,
+    get: () => source,
+    set: value => { source = value; }
+  });
+  Object.defineProperty(audio, "loop", {
+    configurable: true,
+    set() { throw new Error("native loop setter failed"); }
+  });
+  audio.pause = () => { pauseCalls += 1; audio.paused = true; };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/partially-configured.mp3",
+    createAudio: () => audio
+  });
+
+  assert.throws(() => adapter.play("partial"), /native loop setter failed/);
+  assert.equal(pauseCalls, 1);
+  assert.equal(source, "");
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.equal(pauseCalls, 1);
+});
+
+test("HTMLAudio retains a setup-failed voice when source clearing fails so destroy can retry", () => {
+  const audio = fakeAudio();
+  let source = "";
+  let sourceClearFails = true;
+  let pauseCalls = 0;
+  Object.defineProperty(audio, "src", {
+    configurable: true,
+    get: () => source,
+    set: value => {
+      if (value === "" && sourceClearFails) throw new Error("native source clear failed");
+      source = value;
+    }
+  });
+  Object.defineProperty(audio, "loop", {
+    configurable: true,
+    set() { throw new Error("native loop setter failed"); }
+  });
+  audio.pause = () => { pauseCalls += 1; audio.paused = true; };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/retry-source-clear.mp3",
+    createAudio: () => audio
+  });
+
+  assert.throws(() => adapter.play("retry-source-clear"), /native loop setter failed/);
+  assert.equal(source, "/retry-source-clear.mp3");
+  assert.equal(pauseCalls, 1);
+  sourceClearFails = false;
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.equal(source, "");
+  assert.equal(pauseCalls, 2);
+});
