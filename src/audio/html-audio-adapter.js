@@ -134,6 +134,7 @@ export function createHTMLAudioAdapter({
       detachEndedHandler(audio);
       return;
     }
+    voiceStates.set(audio, "stopping");
     audio.pause();
     try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
     if (!detachEndedHandler(audio)) {
@@ -192,6 +193,9 @@ export function createHTMLAudioAdapter({
     const errors = [];
     for (const audio of [...active.keys()]) {
       let failed = false;
+      // Mark before invoking native methods: a queued ended callback must not
+      // release ownership while teardown is in progress.
+      voiceStates.set(audio, "destroying");
       try {
         audio.pause();
       } catch (error) {
