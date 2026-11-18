@@ -52,9 +52,12 @@ export function createHTMLAudioAdapter({
       // retry continues from the suspended position instead of restarting.
       if (!retainOwnership) {
         try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
+        if (!detachEndedHandler(audio)) {
+          voiceStates.set(audio, "stopping");
+          return;
+        }
         active.delete(audio);
         voiceStates.set(audio, "stopped");
-        detachEndedHandler(audio);
       }
     } catch {
       // Keep ownership so stop()/destroy() can retry native media cleanup.
