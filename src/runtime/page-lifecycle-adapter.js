@@ -67,9 +67,17 @@ export function createPageLifecycleAdapter({ target, pageTarget = target, setAct
       return true;
     } catch (error) {
       acceptingEvents = false;
+      let cleanupFailed = false;
       for (const [eventTarget, type, listener] of attached.reverse()) {
-        try { eventTarget.removeEventListener(type, listener); } catch {}
+        try {
+          eventTarget.removeEventListener(type, listener);
+        } catch {
+          cleanupFailed = true;
+        }
       }
+      // Keep stop() available when a partially attached listener could not be
+      // detached during rollback. It remains inert until cleanup is retried.
+      started = cleanupFailed;
       throw error;
     }
   }
