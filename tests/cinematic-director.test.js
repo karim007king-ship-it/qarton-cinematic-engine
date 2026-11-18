@@ -747,3 +747,23 @@ test("director destroy waits for an active update before destroying owned resour
   await destroying;
   assert.deepEqual(calls, [["audio update", 100], "stage destroy", "audio destroy"]);
 });
+
+
+test("director rejects reentrant destroy from an event callback instead of deadlocking the update queue", async () => {
+  let director;
+  director = createCinematicDirector({
+    timeline: createTimeline([{ id: "final-beat", atMs: 0, type: "story" }]),
+    onEvent: async () => {
+      await director.destroy();
+    }
+  });
+
+  await director.mount();
+  await assert.rejects(
+    director.update(0),
+    /Cannot destroy the cinematic director inside onEvent; defer destroy until the update settles/
+  );
+  assert.equal(director.getState().destroyed, false);
+  await director.destroy();
+  assert.equal(director.getState().destroyed, true);
+});
