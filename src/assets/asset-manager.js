@@ -114,8 +114,11 @@ export class AssetManager {
         reject(reason);
         // One scene leaving must not cancel a shared request still needed by
         // another consumer. Abort the underlying loader only when nobody waits.
-        if (!entry.settled && entry.consumers.size === 0 && this.#pending.get(key) === entry) {
-          this.#pending.delete(key);
+        if (!entry.settled && entry.consumers.size === 0) {
+          // The entry may have been detached by release() or clear(). Its
+          // remaining consumers still own the request, so the final consumer
+          // leaving must abort it even when it is no longer in #pending.
+          if (this.#pending.get(key) === entry) this.#pending.delete(key);
           entry.controller.abort(reason);
         }
       };
