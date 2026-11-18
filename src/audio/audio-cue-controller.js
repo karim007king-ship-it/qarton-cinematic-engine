@@ -131,9 +131,19 @@ export function createAudioCueController({
       throw new TypeError("Master volume must be between 0 and 1");
     }
     volume = nextVolume;
+    const errors = [];
     for (const [id, voice] of voices) {
       const cue = normalized.find(item => item.id === id);
-      if (voice != null) setVolume(voice, cue.volume * volume);
+      if (voice == null) continue;
+      try {
+        setVolume(voice, cue.volume * volume);
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1) {
+      throw new AggregateError(errors, "One or more active audio voices could not update volume");
     }
     return volume;
   }
