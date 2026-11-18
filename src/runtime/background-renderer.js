@@ -1,3 +1,4 @@
+import { assertSafeAssetUrl } from "../assets/asset-url.js";
 import { buildLayerPlan } from "../scene/layer-plan.js";
 
 function raceWithAbort(promise, signal) {
@@ -66,10 +67,7 @@ export class BackgroundRenderer {
     try {
       assets = await raceWithAbort(Promise.all(plan.map(async layer => {
         const url = await this.#resolveAsset(layer.asset, layer, { signal: controller.signal });
-        if (typeof url !== "string" || !url.trim()) {
-          throw new TypeError(`Asset resolver returned no URL for "${layer.asset}"`);
-        }
-        return url;
+        return assertSafeAssetUrl(url, layer.asset);
       })), controller.signal);
     } catch (error) {
       // A newer render or clear() owns the root now; stale failures must not
