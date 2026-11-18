@@ -569,6 +569,7 @@ test("HTMLAudio skips ended listeners when the host cannot remove them", () => {
 test("HTMLAudio master volume attempts every active voice and allows failed writes to be retried", () => {
   const calls = [];
   let failFirst = true;
+  let enforceFailures = false;
   const made = [];
   const adapter = createHTMLAudioAdapter({
     resolveAsset: key => `/${key}.mp3`,
@@ -580,7 +581,7 @@ test("HTMLAudio master volume attempts every active voice and allows failed writ
         get: () => currentVolume,
         set: value => {
           calls.push([id, value]);
-          if (id === "music" && failFirst) throw new Error("music volume write failed");
+          if (enforceFailures && id === "music" && failFirst) throw new Error("music volume write failed");
           currentVolume = value;
         }
       });
@@ -591,6 +592,8 @@ test("HTMLAudio master volume attempts every active voice and allows failed writ
 
   adapter.play("music", { volume: 0.8 });
   adapter.play("ambience", { volume: 0.5 });
+  calls.length = 0;
+  enforceFailures = true;
   assert.throws(() => adapter.setMasterVolume(0.25), /music volume write failed/);
   assert.deepEqual(calls, [["music", 0.2], ["ambience", 0.125]]);
 
@@ -604,6 +607,7 @@ test("HTMLAudio master volume attempts every active voice and allows failed writ
 
 test("HTMLAudio master volume aggregates multiple voice write failures", () => {
   const calls = [];
+  let enforceFailures = false;
   const first = new Error("music volume failed");
   const second = new Error("ambience volume failed");
   const made = [];
@@ -616,8 +620,8 @@ test("HTMLAudio master volume aggregates multiple voice write failures", () => {
         get: () => 1,
         set: () => {
           calls.push(id);
-          if (id === "music") throw first;
-          if (id === "ambience") throw second;
+          if (enforceFailures && id === "music") throw first;
+          if (enforceFailures && id === "ambience") throw second;
         }
       });
       made.push(audio);
@@ -627,6 +631,8 @@ test("HTMLAudio master volume aggregates multiple voice write failures", () => {
   adapter.play("music");
   adapter.play("ambience");
   adapter.play("effect");
+  calls.length = 0;
+  enforceFailures = true;
   assert.throws(() => adapter.setMasterVolume(0.6), error => {
     assert.ok(error instanceof AggregateError);
     assert.deepEqual(error.errors, [first, second]);
