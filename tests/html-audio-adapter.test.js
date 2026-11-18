@@ -545,3 +545,22 @@ test("synchronous playback failure retains ownership if ended-listener cleanup f
   assert.equal(pauseCalls, 2);
   assert.equal(listeners.has("ended"), false);
 });
+
+
+test("HTMLAudio skips ended listeners when the host cannot remove them", () => {
+  let addCalls = 0;
+  const audio = {
+    ...fakeAudio(),
+    addEventListener() { addCalls += 1; }
+  };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/limited-host.mp3",
+    createAudio: () => audio
+  });
+
+  const voice = adapter.play("limited-host");
+  assert.equal(addCalls, 0);
+  assert.doesNotThrow(() => adapter.stop(voice));
+  assert.equal(audio.paused, true);
+  assert.doesNotThrow(() => adapter.destroy());
+});
