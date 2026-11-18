@@ -22,7 +22,8 @@
     "./character/stage": "./src/character/character-stage.js",
     "./runtime/director": "./src/runtime/cinematic-director.js",
     "./camera": "./src/camera/camera-track.js",
-    "./runtime/page-lifecycle": "./src/runtime/page-lifecycle-adapter.js"
+    "./runtime/page-lifecycle": "./src/runtime/page-lifecycle-adapter.js",
+    "./intro": "./src/intro/intro-sequence.js"
   },
   "scripts": {
     "test": "node --test tests/*.test.js",
