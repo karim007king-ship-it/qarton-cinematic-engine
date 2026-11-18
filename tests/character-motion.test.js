@@ -185,3 +185,47 @@ test("character controller snapshots mutable motion paths and rejects overflowin
     }]
   }), /valid startMs/);
 });
+
+
+test("timeline rejects non-finite numbers, accessors and sparse arrays in JSON-like payloads", () => {
+  for (const value of [NaN, Infinity, -Infinity]) {
+    assert.throws(() => createTimeline([
+      { id: "non-finite", atMs: 0, type: "metadata", payload: { value } }
+    ]), /finite JSON values/);
+  }
+
+  let getterCalls = 0;
+  const accessorPayload = {};
+  Object.defineProperty(accessorPayload, "value", {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      return "unstable";
+    }
+  });
+  assert.throws(() => createTimeline([
+    { id: "accessor", atMs: 0, type: "metadata", payload: accessorPayload }
+  ]), /data properties, not accessors/);
+  assert.equal(getterCalls, 0, "snapshotting must not execute caller getters");
+
+  const accessorArray = [];
+  Object.defineProperty(accessorArray, "0", {
+    enumerable: true,
+    configurable: true,
+    get() {
+      getterCalls += 1;
+      return "unstable";
+    }
+  });
+  accessorArray.length = 1;
+  assert.throws(() => createTimeline([
+    { id: "array-accessor", atMs: 0, type: "metadata", payload: accessorArray }
+  ]), /dense data arrays without accessors/);
+  assert.equal(getterCalls, 0, "array accessors must not execute during snapshotting");
+
+  const sparseArray = [];
+  sparseArray.length = 1;
+  assert.throws(() => createTimeline([
+    { id: "sparse", atMs: 0, type: "metadata", payload: sparseArray }
+  ]), /dense data arrays without accessors/);
+});
