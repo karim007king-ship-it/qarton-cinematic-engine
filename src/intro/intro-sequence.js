@@ -82,8 +82,11 @@ export function createIntroSequence({
       setState(nextState);
       return state;
     }
-    setState(nextState);
+    // Commit the terminal state and abort the active stage before notifying
+    // observers. An observer exception must never prevent cancellation.
+    state = nextState;
     activeController?.abort();
+    onStageChange(state);
     return state;
   }
 
