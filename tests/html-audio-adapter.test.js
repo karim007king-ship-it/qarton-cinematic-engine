@@ -575,6 +575,7 @@ test("HTMLAudio master volume attempts every voice and retries a failed native s
 
   adapter.play("first");
   adapter.play("second");
+  calls.length = 0;
   failFirst = true;
   assert.throws(() => adapter.setMasterVolume(0.5), /native volume setter failed/);
   assert.deepEqual(calls, [["first", 0.5], ["second", 0.5]]);
