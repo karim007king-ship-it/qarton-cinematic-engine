@@ -641,3 +641,54 @@ test("HTMLAudio master volume aggregates multiple voice write failures", () => {
   assert.deepEqual(calls, ["music", "ambience", "effect"]);
   adapter.destroy();
 });
+
+
+test("HTMLAudio setup setter failures release the allocated native voice", () => {
+  const failure = new Error("native src assignment failed");
+  const audio = fakeAudio();
+  let pauseCalls = 0;
+  let reported;
+  Object.defineProperty(audio, "src", {
+    configurable: true,
+    set() { throw failure; }
+  });
+  audio.pause = () => { pauseCalls += 1; audio.paused = true; };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/broken-setup.mp3",
+    createAudio: () => audio,
+    onPlaybackError: error => { reported = error; }
+  });
+
+  assert.throws(() => adapter.play("broken-setup"), error => error === failure);
+  assert.equal(pauseCalls, 1);
+  assert.equal(reported, failure);
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.equal(pauseCalls, 1);
+});
+
+test("HTMLAudio setup failure retains ownership when native pause cleanup fails", () => {
+  const failure = new Error("native volume assignment failed");
+  const audio = fakeAudio();
+  let pauseFails = true;
+  let pauseCalls = 0;
+  Object.defineProperty(audio, "volume", {
+    configurable: true,
+    set() { throw failure; }
+  });
+  audio.pause = () => {
+    pauseCalls += 1;
+    if (pauseFails) throw new Error("native pause unavailable");
+    audio.paused = true;
+  };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/retry-setup.mp3",
+    createAudio: () => audio
+  });
+
+  assert.throws(() => adapter.play("retry-setup"), error => error === failure);
+  assert.equal(pauseCalls, 1);
+  pauseFails = false;
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.equal(pauseCalls, 2);
+  assert.equal(audio.src, "");
+});
