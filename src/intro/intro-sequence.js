@@ -79,7 +79,12 @@ export function createIntroSequence({
         if (!TERMINAL_STATES.has(state)) setState("completed");
         return state;
       } catch (error) {
-        if (!TERMINAL_STATES.has(state)) setState("failed");
+        if (!TERMINAL_STATES.has(state)) {
+          // Preserve the operational failure if a diagnostic observer also
+          // throws while being notified about the failed state.
+          state = "failed";
+          try { onStageChange(state); } catch { /* do not mask the original failure */ }
+        }
         throw error;
       } finally {
         activeController = null;
