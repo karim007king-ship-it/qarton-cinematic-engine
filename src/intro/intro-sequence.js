@@ -64,7 +64,10 @@ export function createIntroSequence({
     if (runPromise) return runPromise;
     if (state !== "idle") return Promise.resolve(state);
 
-    runPromise = (async () => {
+    // Publish the shared promise before observers can re-enter start().
+    // Deferring the runner by one microtask guarantees every caller, including
+    // an onStageChange callback, receives the same in-flight promise.
+    runPromise = Promise.resolve().then(async () => {
       try {
         if (!await runStage("brand", playBrandIntro)) return state;
         if (!await runStage("game", playGameIntro)) return state;
@@ -76,7 +79,7 @@ export function createIntroSequence({
       } finally {
         activeController = null;
       }
-    })();
+    });
     return runPromise;
   }
 
