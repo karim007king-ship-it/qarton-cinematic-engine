@@ -159,3 +159,17 @@ test("reentrant start from the stage observer shares the published run promise",
   assert.equal(await first, "completed");
   assert.equal(reentrantStart, first);
 });
+
+test("failure observer errors do not mask the original stage failure", async () => {
+  const original = new Error("brand playback failed");
+  const sequence = createIntroSequence({
+    playBrandIntro: async () => { throw original; },
+    playGameIntro: async () => {},
+    onStageChange: state => {
+      if (state === "failed") throw new Error("failure observer failed");
+    }
+  });
+
+  await assert.rejects(sequence.start(), error => error === original);
+  assert.equal(sequence.state, "failed");
+});
