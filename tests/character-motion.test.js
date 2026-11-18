@@ -28,6 +28,24 @@ test("timeline sorts events stably and returns the forward time window", () => {
   ]), /unique id/);
 });
 
+test("timeline snapshots mutable event targets as immutable data", () => {
+  const source = { character: { id: "hero" }, layers: ["foreground"] };
+  const timeline = createTimeline([
+    { id: "targeted", atMs: 10, type: "expression", target: source }
+  ]);
+
+  source.character.id = "villain";
+  source.layers.push("background");
+  assert.deepEqual(timeline.events[0].target, {
+    character: { id: "hero" },
+    layers: ["foreground"]
+  });
+  assert.equal(Object.isFrozen(timeline.events[0].target), true);
+  assert.equal(Object.isFrozen(timeline.events[0].target.character), true);
+  assert.equal(Object.isFrozen(timeline.events[0].target.layers), true);
+  assert.throws(() => { timeline.events[0].target.character.id = "changed"; }, TypeError);
+});
+
 test("timeline snapshots and freezes nested JSON-like payload data", () => {
   const source = { camera: { zoom: 1.2 }, tags: ["opening", "impact"] };
   const timeline = createTimeline([
