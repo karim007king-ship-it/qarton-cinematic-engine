@@ -33,7 +33,6 @@ export function createIntroSequence({
 
     const controller = new AbortController();
     activeController = controller;
-    setState(name);
 
     let removeAbortListener = () => {};
     const aborted = new Promise(resolve => {
@@ -44,6 +43,7 @@ export function createIntroSequence({
     });
 
     try {
+      setState(name);
       const result = await Promise.race([
         Promise.resolve().then(() => play({ signal: controller.signal, stage: name }))
           .then(() => true),
