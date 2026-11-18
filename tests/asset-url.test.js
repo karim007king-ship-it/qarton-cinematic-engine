@@ -20,6 +20,7 @@ test("rejects executable, local-file, protocol-relative and malformed URLs", () 
     "VbScRiPt:alert(1)",
     "file:///etc/passwd",
     "//cdn.example.test/hero.webp",
+    "/assets\\hero.webp",
     "\\\\cdn.example.test\\hero.webp",
     "/assets/hero\n.webp",
     "  "
