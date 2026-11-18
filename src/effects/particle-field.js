@@ -1,3 +1,5 @@
+const MAX_PARTICLES = 10_000;
+
 function createRandom(seed) {
   let state = seed >>> 0 || 1;
   return () => {
@@ -9,6 +11,8 @@ function createRandom(seed) {
 /**
  * Create a deterministic, time-sampled particle field.
  * The host renderer owns drawing and frame scheduling.
+ * A hard ceiling prevents accidental unbounded allocations when no quality
+ * profile is supplied; lower device-specific budgets can still be injected.
  */
 export function createParticleField({
   count = 24,
@@ -21,10 +25,10 @@ export function createParticleField({
   gravity = 0,
   profile
 } = {}) {
-  if (!Number.isInteger(count) || count < 0 || !Number.isFinite(seed)
+  if (!Number.isInteger(count) || count < 0 || count > MAX_PARTICLES || !Number.isFinite(seed)
     || ![width, height, lifetimeMs, speedMin, speedMax, gravity].every(Number.isFinite)
     || width <= 0 || height <= 0 || lifetimeMs <= 0 || speedMin < 0 || speedMax < speedMin) {
-    throw new TypeError("Particle field configuration is invalid");
+    throw new TypeError(`Particle field configuration is invalid (count must be between 0 and ${MAX_PARTICLES})`);
   }
   const profileBudget = profile?.maxParticles ?? profile?.particleBudget;
   const budget = Number.isInteger(profileBudget) && profileBudget >= 0
