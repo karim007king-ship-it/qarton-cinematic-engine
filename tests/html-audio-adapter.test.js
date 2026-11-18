@@ -650,7 +650,7 @@ test("HTMLAudio setup setter failures release the allocated native voice", () =>
   let reported;
   Object.defineProperty(audio, "src", {
     configurable: true,
-    set() { throw failure; }
+    set(value) { if (value !== "") throw failure; }
   });
   audio.pause = () => { pauseCalls += 1; audio.paused = true; };
   const adapter = createHTMLAudioAdapter({
