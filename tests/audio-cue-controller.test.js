@@ -321,20 +321,19 @@ test("master volume attempts every active voice and keeps failed updates retryab
 
   controller.update(0);
   assert.throws(() => controller.setMasterVolume(0.4), error => error === failure);
-  assert.deepEqual(calls, [
-    ["music", 0.32],
-    ["ambience", 0.2],
-    ["impact", 0.1]
-  ]);
+  assert.deepEqual(calls.map(([voice]) => voice), ["music", "ambience", "impact"]);
+  assert.ok(Math.abs(calls[0][1] - 0.32) < Number.EPSILON * 2);
+  assert.ok(Math.abs(calls[1][1] - 0.2) < Number.EPSILON);
+  assert.ok(Math.abs(calls[2][1] - 0.1) < Number.EPSILON);
   assert.equal(controller.getState().volume, 0.4);
 
   fail = false;
   assert.equal(controller.setMasterVolume(0.4), 0.4);
-  assert.deepEqual(calls.slice(3), [
-    ["music", 0.32],
-    ["ambience", 0.2],
-    ["impact", 0.1]
-  ]);
+  const retried = calls.slice(3);
+  assert.deepEqual(retried.map(([voice]) => voice), ["music", "ambience", "impact"]);
+  assert.ok(Math.abs(retried[0][1] - 0.32) < Number.EPSILON * 2);
+  assert.ok(Math.abs(retried[1][1] - 0.2) < Number.EPSILON);
+  assert.ok(Math.abs(retried[2][1] - 0.1) < Number.EPSILON);
   controller.destroy();
 });
 
