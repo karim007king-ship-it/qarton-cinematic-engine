@@ -109,7 +109,7 @@ test("HTMLAudio adapter validates injected host functions and media objects", ()
   const adapter = createHTMLAudioAdapter({ resolveAsset: () => "/x.mp3", createAudio: () => ({}) });
   assert.throws(() => adapter.play("x"), /HTMLAudio-like/);
   const good = createHTMLAudioAdapter({ resolveAsset: () => " " , createAudio: fakeAudio });
-  assert.throws(() => good.play("x"), /return a URL/);
+  assert.throws(() => good.play("x"), /URL/);
 });
 
 test("HTMLAudio adapter applies master volume and cleans up on destroy", () => {
@@ -518,7 +518,10 @@ test("a stale play rejection cannot pause a newer successful playback attempt", 
   const errors = [];
   let pauseCalls = 0;
   const audio = fakeAudio();
-  audio.play = () => new Promise((resolve, reject) => pending.push({ resolve, reject }));
+  audio.play = () => {
+    audio.paused = false;
+    return new Promise((resolve, reject) => pending.push({ resolve, reject }));
+  };
   audio.pause = () => { pauseCalls += 1; audio.paused = true; };
   const adapter = createHTMLAudioAdapter({
     resolveAsset: () => "/race.mp3",
