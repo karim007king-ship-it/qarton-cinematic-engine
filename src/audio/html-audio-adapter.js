@@ -75,13 +75,30 @@ export function createHTMLAudioAdapter({
       throw new TypeError("createAudio() must return an HTMLAudio-like object");
     }
 
-    audio.src = url;
-    audio.loop = options.loop === true;
-    audio.preload = "auto";
-    audio.volume = baseVolume * volume;
+    // Register ownership before touching native media properties. Some WebView
+    // implementations can throw from a setter after the Audio object is created.
     active.set(audio, baseVolume);
     assets.set(audio, asset);
     voiceStates.set(audio, "active");
+    try {
+      audio.src = url;
+      audio.loop = options.loop === true;
+      audio.preload = "auto";
+      audio.volume = baseVolume * volume;
+    } catch (error) {
+      // Roll back a partially configured voice. If native cleanup itself fails,
+      // keep ownership so destroy() can retry instead of orphaning the element.
+      let cleanupFailed = false;
+      try { audio.pause(); } catch { cleanupFailed = true; }
+      try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
+      try { audio.src = ""; } catch { cleanupFailed = true; }
+      if (!cleanupFailed) {
+        active.delete(audio);
+        voiceStates.set(audio, "stopped");
+        detachEndedHandler(audio);
+      }
+      throw error;
+    }
 
     // One-shot voices release their registry entry as soon as playback ends.
     if (options.loop !== true && typeof audio.addEventListener === "function") {

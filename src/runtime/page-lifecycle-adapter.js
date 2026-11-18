@@ -64,8 +64,23 @@ export function createPageLifecycleAdapter({ target, pageTarget = target, setAct
       started = true;
       return true;
     } catch (error) {
+      const cleanupErrors = [];
       for (const [eventTarget, type, listener] of attached.reverse()) {
-        try { eventTarget.removeEventListener(type, listener); } catch {}
+        try {
+          eventTarget.removeEventListener(type, listener);
+        } catch (cleanupError) {
+          cleanupErrors.push(cleanupError);
+        }
+      }
+      // A partial rollback still owns the listeners that could not be removed.
+      // Mark the adapter started so stop() can retry the complete listener set.
+      if (cleanupErrors.length > 0) {
+        started = true;
+        throw new AggregateError(
+          [error, ...cleanupErrors],
+          "Page lifecycle start failed and listener rollback was incomplete",
+          { cause: error }
+        );
       }
       throw error;
     }

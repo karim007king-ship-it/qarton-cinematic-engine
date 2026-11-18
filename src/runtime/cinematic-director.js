@@ -49,6 +49,7 @@ export function createCinematicDirector({
   const deliveredEventIds = new Set();
   let destroyPromise = null;
   let updateQueue = Promise.resolve();
+  let stageUpdatePromise = null;
 
   function assertAlive() {
     if (destroyed) throw new Error("Cinematic director has been destroyed");
@@ -123,7 +124,15 @@ export function createCinematicDirector({
     // Queued frames prevent overlapping updates from racing the same timeline.
     audio?.update(timelineTimeMs);
     if (audio) audioTimeMs = timelineTimeMs;
-    if (characterStage) await characterStage.update(timelineTimeMs);
+    if (characterStage) {
+      const stageUpdate = Promise.resolve(characterStage.update(timelineTimeMs));
+      stageUpdatePromise = stageUpdate;
+      try {
+        await stageUpdate;
+      } finally {
+        if (stageUpdatePromise === stageUpdate) stageUpdatePromise = null;
+      }
+    }
     if (destroyed || !mounted || version !== lifecycleVersion) {
       return Object.freeze({ timeMs: lastTimeMs, events: Object.freeze([]), paused });
     }
@@ -276,6 +285,12 @@ export function createCinematicDirector({
 
     destroyPromise = (async () => {
       const errors = [];
+      // Invalidate queued frames immediately above, then let an active
+      // character-stage update settle before releasing its resources. Do not
+      // await the full frame queue: an async onEvent callback may itself await
+      // destroy(), which would otherwise deadlock against that same queue.
+      // Timeline callbacks are invalidated by lifecycleVersion after they settle.
+      await stageUpdatePromise;
       // Attempt every owned subsystem even if another subsystem fails.
       for (const cleanup of [
         () => characterStage?.destroy(),

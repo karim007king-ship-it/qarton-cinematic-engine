@@ -540,3 +540,44 @@ test("runtime forwards adaptive quality transitions to the host with previous an
 
   await runtime.destroy();
 });
+
+
+test("runtime ignores late page events when lifecycle listener removal fails during destroy", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const target = new LifecycleTarget("visible");
+  const originalRemove = target.removeEventListener.bind(target);
+  let failPageHideRemoval = true;
+  target.removeEventListener = (type, listener) => {
+    if (type === "pagehide" && failPageHideRemoval) {
+      failPageHideRemoval = false;
+      throw new Error("pagehide listener removal failed");
+    }
+    originalRemove(type, listener);
+  };
+  const runtime = createCinematicRuntime({
+    root,
+    loadAsset: key => key,
+    renderScene: () => document.createElement("div"),
+    lifecycleTarget: target
+  });
+
+  await assert.rejects(runtime.destroy(), error => {
+    assert.match(error.message, /pagehide listener removal failed/);
+    return true;
+  });
+  assert.equal(target.listenerCount(), 1);
+  assert.equal(runtime.isActive(), false);
+
+  // The remaining listener is harmless even though the activity gate is closed.
+  assert.doesNotThrow(() => target.dispatch("pagehide"));
+
+  // A destroyed runtime must not attach new listeners or resynchronize activity.
+  assert.equal(runtime.startPageLifecycle(), false);
+  assert.equal(runtime.syncPageLifecycle(), false);
+  assert.equal(target.listenerCount(), 1);
+
+  target.removeEventListener = originalRemove;
+  await runtime.destroy();
+  assert.equal(target.listenerCount(), 0);
+});

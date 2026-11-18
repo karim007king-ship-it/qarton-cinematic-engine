@@ -72,20 +72,34 @@ try {
     "--remote-allow-origins=*",
     `--user-data-dir=${profile}`,
     "about:blank"
-  ], { stdio: "ignore", detached: process.platform !== "win32" });
+  ], { stdio: ["ignore", "ignore", "pipe"], detached: process.platform !== "win32" });
+  const chromeDiagnostics = [];
+  browser.stderr.setEncoding("utf8");
+  browser.stderr.on("data", chunk => {
+    // Keep startup failures diagnosable without allowing unbounded log growth.
+    chromeDiagnostics.push(chunk);
+    while (chromeDiagnostics.join("").length > 12000) chromeDiagnostics.shift();
+  });
 
   const activePortFile = resolve(profile, "DevToolsActivePort");
   let portInfo;
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  // Chrome can take longer to initialize on a cold or heavily loaded CI runner.
+  // Allow up to 30 seconds, while still failing promptly if the process exits.
+  for (let attempt = 0; attempt < 300; attempt += 1) {
     try {
       portInfo = (await readFile(activePortFile, "utf8")).trim().split("\n");
       break;
     } catch {
-      if (browser.exitCode !== null) throw new Error("Chrome exited before opening its DevTools endpoint");
+      if (browser.exitCode !== null) {
+        throw new Error(`Chrome exited before opening its DevTools endpoint. ${chromeDiagnostics.join("").slice(-4000)}`);
+      }
       await delay(100);
     }
   }
-  assert.ok(portInfo?.[0] && portInfo?.[1], "Chrome DevTools endpoint did not become ready");
+  assert.ok(
+    portInfo?.[0] && portInfo?.[1],
+    `Chrome DevTools endpoint did not become ready within 30 seconds. ${chromeDiagnostics.join("").slice(-4000)}`
+  );
   const debugPort = Number(portInfo[0]);
   const browserSocket = new WebSocket(`ws://127.0.0.1:${debugPort}${portInfo[1]}`);
   socket = browserSocket;
@@ -131,7 +145,39 @@ try {
   }
 
   assert.equal(result, "passed", `Chromium showcase smoke failed. Page status: ${status}`);
-  process.stdout.write("Chromium smoke passed: image decoding, repeated scene transitions, stable character count, and DOM cleanup.\n");
+
+  await send("Page.navigate", {
+    url: `http://127.0.0.1:${httpPort}/examples/android-webview-audio.html?smoke=1`
+  }, sessionId);
+  let diagnosticReady = false;
+  let diagnosticLog = "";
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const evaluated = await send("Runtime.evaluate", {
+      expression: 'document.querySelector("#log")?.textContent ?? ""',
+      returnByValue: true
+    }, sessionId);
+    diagnosticLog = evaluated.result?.value ?? "";
+    if (diagnosticLog.includes("environment userAgent=")
+      && diagnosticLog.includes("WAV support=")) {
+      diagnosticReady = true;
+      break;
+    }
+    await delay(100);
+  }
+  assert.ok(diagnosticReady, `Android diagnostics page failed to initialize. Log: ${diagnosticLog}`);
+
+  await send("Runtime.evaluate", {
+    expression: 'document.querySelector("#reset")?.click()',
+    returnByValue: true
+  }, sessionId);
+  const resetResult = await send("Runtime.evaluate", {
+    expression: '({ status: document.querySelector("#status")?.textContent, log: document.querySelector("#log")?.textContent })',
+    returnByValue: true
+  }, sessionId);
+  const diagnosticState = resetResult.result?.value;
+  assert.ok(diagnosticState?.status?.includes("Test reset"), `Android diagnostics reset failed. State: ${JSON.stringify(diagnosticState)}`);
+  assert.ok(diagnosticState.log.includes("environment userAgent="), "Reset should reinitialize the diagnostic environment");
+  process.stdout.write("Chromium smoke passed: showcase rendering/cleanup and Android diagnostic page initialization/reset.\\n");
 } finally {
   try { socket?.close(); } catch {}
   if (browser && browser.exitCode === null) {

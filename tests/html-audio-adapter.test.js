@@ -36,6 +36,63 @@ test("HTMLAudio validates voice volume before allocating a media object", () => 
   assert.equal(allocations, 0);
 });
 
+test("HTMLAudio rolls back a voice when native property setup fails", () => {
+  const failure = new Error("volume setter failed");
+  const audio = fakeAudio();
+  let source = "";
+  let pauseCalls = 0;
+  Object.defineProperty(audio, "src", {
+    get: () => source,
+    set: value => { source = value; }
+  });
+  Object.defineProperty(audio, "volume", {
+    get: () => 1,
+    set: () => { throw failure; }
+  });
+  audio.pause = () => { pauseCalls += 1; audio.paused = true; };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/partially-configured.mp3",
+    createAudio: () => audio
+  });
+
+  assert.throws(() => adapter.play("partial"), error => error === failure);
+  assert.equal(pauseCalls, 1);
+  assert.equal(source, "");
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.equal(pauseCalls, 1, "successfully rolled-back voices must not remain registered");
+});
+
+test("HTMLAudio retains a partially configured voice when rollback fails", () => {
+  const failure = new Error("preload setter failed");
+  const audio = fakeAudio();
+  let source = "";
+  let pauseFails = true;
+  let pauseCalls = 0;
+  Object.defineProperty(audio, "src", {
+    get: () => source,
+    set: value => { source = value; }
+  });
+  Object.defineProperty(audio, "preload", {
+    set: () => { throw failure; }
+  });
+  audio.pause = () => {
+    pauseCalls += 1;
+    if (pauseFails) throw new Error("native pause unavailable");
+    audio.paused = true;
+  };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/retry-setup.mp3",
+    createAudio: () => audio
+  });
+
+  assert.throws(() => adapter.play("retry-setup"), error => error === failure);
+  assert.equal(pauseCalls, 1);
+  pauseFails = false;
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.equal(pauseCalls, 2, "destroy must retry cleanup for the retained native element");
+  assert.equal(source, "");
+});
+
 test("HTMLAudio adapter validates injected host functions and media objects", () => {
   assert.throws(() => createHTMLAudioAdapter({}), /requires resolveAsset/);
   const adapter = createHTMLAudioAdapter({ resolveAsset: () => "/x.mp3", createAudio: () => ({}) });

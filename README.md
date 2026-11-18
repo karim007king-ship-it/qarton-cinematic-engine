@@ -69,7 +69,7 @@ npm test
 
 ## اختبار Android WebView
 
-خطة اختبار الصوت ودورة حياة الصفحة على جهاز فعلي موجودة في [دليل Android WebView](./docs/android-webview-audio-validation.md). نجاح CI أو Chromium headless لا يُعد بديلاً عن هذا الاختبار.
+خطة اختبار الصوت ودورة حياة الصفحة على جهاز فعلي موجودة في [دليل Android WebView](./docs/android-webview-audio-validation.md). أضفنا صفحة اختبار مستقلة [Android WebView Audio Check](./examples/android-webview-audio.html) تستخدم محول HTMLAudio الحقيقي وتولّد نغمة محلية، وتعرض أحداث visibility/page lifecycle وأخطاء التشغيل. يمكن فتحها داخل WebView المضيف أو متصفح الهاتف قبل اختبار تكامل اللعبة. نجاح CI أو Chromium headless لا يُعد بديلاً عن هذا الاختبار.
 
 ## مبادئ هندسية
 1. لا تعديل مباشر على ملفات لعبة قرطاج من هذا المستودع.

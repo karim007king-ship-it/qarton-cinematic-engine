@@ -88,6 +88,41 @@ test("sync retries a failed host callback without committing stale activity stat
   assert.deepEqual(events, [false, false]);
 });
 
+test("startup rollback retains ownership when a listener cannot be removed", () => {
+  const target = createTarget("visible");
+  const originalRemove = target.removeEventListener.bind(target);
+  const hostFailure = new Error("initial host sync failed");
+  let failRemoval = true;
+  let failSync = true;
+  target.removeEventListener = (type, listener) => {
+    if (failRemoval && type === "pagehide") {
+      failRemoval = false;
+      throw new Error("pagehide removal failed");
+    }
+    originalRemove(type, listener);
+  };
+  const adapter = createPageLifecycleAdapter({
+    target,
+    setActive: () => {
+      if (failSync) throw hostFailure;
+    }
+  });
+
+  assert.throws(() => adapter.start(), error => (
+    error instanceof AggregateError && error.errors[0] === hostFailure
+  ));
+  assert.deepEqual(adapter.getState(), { started: true, active: null });
+  assert.equal(target.listenerCount(), 1);
+
+  assert.equal(adapter.stop(), true);
+  assert.equal(target.listenerCount(), 0);
+  failSync = false;
+  assert.equal(adapter.start(), true);
+  assert.equal(target.listenerCount(), 3);
+  adapter.stop();
+  assert.equal(target.listenerCount(), 0);
+});
+
 test("stop removes all listeners and later lifecycle events no longer call the host", () => {
   const target = createTarget("visible");
   const events = [];
