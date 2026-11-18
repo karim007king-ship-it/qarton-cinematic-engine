@@ -45,8 +45,12 @@ export function createIntroSequence({
     try {
       setState(name);
       const result = await Promise.race([
-        Promise.resolve().then(() => play({ signal: controller.signal, stage: name }))
-          .then(() => true),
+        Promise.resolve().then(() => {
+          // An observer may synchronously skip/cancel while the stage state
+          // is being announced. Do not start host playback after that abort.
+          if (controller.signal.aborted) return;
+          return play({ signal: controller.signal, stage: name });
+        }).then(() => !controller.signal.aborted),
         aborted
       ]);
       return result && !controller.signal.aborted && !TERMINAL_STATES.has(state);
