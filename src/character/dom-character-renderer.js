@@ -1,3 +1,4 @@
+import { assertSafeAssetUrl } from "../assets/asset-url.js";
 /**
  * Optional DOM sprite adapter for character-controller snapshots.
  * Sprite asset resolution is injected so the engine stays independent of
@@ -103,10 +104,8 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     // superseded expressions and teardown release every waiting update/mount.
     const pending = raceWithAbort(resolved, controller.signal).then(url => {
       if (destroyed || !records.has(record.element) || version !== record.assetVersion) return false;
-      if (typeof url !== "string" || !url.trim()) {
-        throw new TypeError(`resolveSprite() returned an invalid URL for "${key}"`);
-      }
-      record.image.src = url;
+      const safeUrl = assertSafeAssetUrl(url, key);
+      record.image.src = safeUrl;
       record.image.alt = `${record.id} — ${expression}`;
       record.assetKey = key;
       return true;
