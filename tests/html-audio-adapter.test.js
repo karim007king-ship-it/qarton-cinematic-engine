@@ -26,6 +26,17 @@ test("HTMLAudio adapter creates voices and supports stop and volume", () => {
   assert.equal(voice.paused, true);
 });
 
+
+test("HTMLAudio rejects unsafe resolved URLs before allocating a media object", () => {
+  let allocations = 0;
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "javascript:alert(1)",
+    createAudio: () => { allocations += 1; return fakeAudio(); }
+  });
+  assert.throws(() => adapter.play("unsafe"), /unsafe URL/);
+  assert.equal(allocations, 0);
+});
+
 test("HTMLAudio validates voice volume before allocating a media object", () => {
   let allocations = 0;
   const adapter = createHTMLAudioAdapter({
