@@ -542,3 +542,49 @@ test("a stale play rejection cannot pause a newer successful playback attempt", 
   assert.deepEqual(errors, []);
   adapter.destroy();
 });
+
+
+test("HTMLAudio master volume attempts every voice and retries a failed native setter", () => {
+  const made = [];
+  const calls = [];
+  let failFirst = true;
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: key => `/${key}.mp3`,
+    createAudio: () => {
+      const audio = fakeAudio();
+      if (made.length === 0) {
+        let currentVolume = 1;
+        Object.defineProperty(audio, "volume", {
+          get: () => currentVolume,
+          set: value => {
+            calls.push(["first", value]);
+            if (failFirst) throw new Error("native volume setter failed");
+            currentVolume = value;
+          }
+        });
+      } else {
+        Object.defineProperty(audio, "volume", {
+          get() { return this._volume ?? 1; },
+          set(value) { calls.push(["second", value]); this._volume = value; }
+        });
+      }
+      made.push(audio);
+      return audio;
+    }
+  });
+
+  adapter.play("first");
+  adapter.play("second");
+  assert.throws(() => adapter.setMasterVolume(0.5), /native volume setter failed/);
+  assert.deepEqual(calls, [["first", 0.5], ["second", 0.5]]);
+  assert.equal(made[1].volume, 0.5);
+
+  failFirst = false;
+  assert.equal(adapter.setMasterVolume(0.5), 0.5);
+  assert.deepEqual(calls, [
+    ["first", 0.5], ["second", 0.5],
+    ["first", 0.5], ["second", 0.5]
+  ]);
+  assert.equal(made[0].volume, 0.5);
+  adapter.destroy();
+});
