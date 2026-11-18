@@ -11,8 +11,13 @@ export function assertSafeAssetUrl(value, key = "asset") {
     const code = character.charCodeAt(0);
     return code <= 31 || code === 127;
   });
-  if (hasControlCharacter || url.includes("\\") || url.startsWith("//") ||
-      /^(?:javascript|vbscript|file):/i.test(url)) {
+  const scheme = url.match(/^([a-z][a-z\\d+.-]*):/i)?.[1]?.toLowerCase();
+  const hasAllowedScheme = !scheme ||
+    scheme === "blob" ||
+    scheme === "data" ||
+    ((scheme === "http" || scheme === "https") && /^https?:\\/\\//i.test(url));
+
+  if (hasControlCharacter || url.includes("\\\\") || url.startsWith("//") || !hasAllowedScheme) {
     throw new TypeError(`Asset resolver returned an unsafe URL for "${key}"`);
   }
   return url;
