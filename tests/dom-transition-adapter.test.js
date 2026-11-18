@@ -293,3 +293,29 @@ test("destroy retains DOM handles after removal failure and retries cleanup", as
   assert.equal(root.children.length, 0);
   await assert.rejects(adapter.mount({ id: "after-destroy" }, {}), /destroyed/);
 });
+
+test("destroy cancels a transition while its rendering-frame request is pending", async () => {
+  let releaseFrame;
+  let waitCalls = 0;
+  const { root, adapter } = setup({
+    nextFrame: () => new Promise(resolve => { releaseFrame = resolve; }),
+    wait: async () => { waitCalls += 1; }
+  });
+  const oldScene = await adapter.mount({ id: "old" }, {});
+  await adapter.crossfade({ from: null, to: oldScene, duration: 0 });
+  const nextScene = await adapter.mount({ id: "next" }, {});
+
+  const pending = adapter.crossfade({ from: oldScene, to: nextScene, duration: 100 });
+  for (let i = 0; i < 8 && !releaseFrame; i += 1) await Promise.resolve();
+  assert.equal(typeof releaseFrame, "function");
+
+  adapter.destroy();
+  assert.equal(await pending, false);
+  assert.equal(root.children.length, 0);
+  assert.equal(waitCalls, 0);
+
+  // A late frame callback after cancellation must be harmless.
+  releaseFrame();
+  await Promise.resolve();
+  assert.equal(root.children.length, 0);
+});
