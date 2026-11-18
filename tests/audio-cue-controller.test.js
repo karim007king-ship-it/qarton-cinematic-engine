@@ -300,3 +300,34 @@ test("looping cues do not receive a one-shot completion callback", () => {
   assert.equal(controller.getState().activeVoices, 1);
   controller.destroy();
 });
+
+
+test("volume changes attempt every active voice and allow failed voices to be retried", () => {
+  const calls = [];
+  const failure = new Error("music volume update failed");
+  let failMusic = true;
+  const controller = createAudioCueController({
+    cues: [
+      { id: "music", atMs: 0, asset: "music", volume: 0.5 },
+      { id: "ambience", atMs: 0, asset: "ambience", volume: 0.8 }
+    ],
+    play: (_asset, options) => options.id,
+    setVolume: (voice, volume) => {
+      calls.push([voice, volume]);
+      if (voice === "music" && failMusic) throw failure;
+    }
+  });
+
+  controller.update(0);
+  assert.throws(() => controller.setMasterVolume(0.5), error => error === failure);
+  assert.deepEqual(calls, [["music", 0.25], ["ambience", 0.4]]);
+  assert.equal(controller.getState().volume, 0.5);
+
+  failMusic = false;
+  assert.equal(controller.setMasterVolume(0.5), 0.5);
+  assert.deepEqual(calls, [
+    ["music", 0.25], ["ambience", 0.4],
+    ["music", 0.25], ["ambience", 0.4]
+  ]);
+  controller.destroy();
+});
