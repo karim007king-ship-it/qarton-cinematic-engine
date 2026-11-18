@@ -48,6 +48,7 @@ export function createCinematicDirector({
   let audioPausePending = false;
   const deliveredEventIds = new Set();
   let destroyPromise = null;
+  let invokingEventCallback = false;
   let updateQueue = Promise.resolve();
 
   function assertAlive() {
@@ -136,7 +137,14 @@ export function createCinematicDirector({
     for (const event of events) {
       if (destroyed || !mounted || version !== lifecycleVersion) break;
       if (deliveredEventIds.has(event.id)) continue;
-      await onEvent(event, timelineTimeMs);
+      let callbackResult;
+      invokingEventCallback = true;
+      try {
+        callbackResult = onEvent(event, timelineTimeMs);
+      } finally {
+        invokingEventCallback = false;
+      }
+      await callbackResult;
       if (destroyed || !mounted || version !== lifecycleVersion) break;
       deliveredEventIds.add(event.id);
       dispatchedEvents.push(event);
@@ -259,6 +267,11 @@ export function createCinematicDirector({
   }
 
   function destroy() {
+    // Awaiting destroy from onEvent would deadlock: the active update is
+    // waiting for that callback while destroy waits for the update queue.
+    if (invokingEventCallback) {
+      throw new Error("Cannot destroy the cinematic director inside onEvent; defer destroy until the update settles");
+    }
     if (destroyPromise) return destroyPromise;
     if (!destroyed) {
       destroyed = true;
