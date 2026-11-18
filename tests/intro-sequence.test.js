@@ -126,3 +126,20 @@ test("stage observer failure during stage entry still releases the active contro
   await assert.rejects(sequence.start(), /brand observer failed/);
   assert.equal(sequence.state, "failed");
 });
+
+
+test("skip from the stage observer prevents host playback from starting", async () => {
+  let sequence;
+  let brandCalls = 0;
+  sequence = createIntroSequence({
+    playBrandIntro: async () => { brandCalls += 1; },
+    playGameIntro: async () => {},
+    onStageChange: state => {
+      if (state === "brand") sequence.skip();
+    }
+  });
+
+  assert.equal(await sequence.start(), "skipped");
+  assert.equal(sequence.state, "skipped");
+  assert.equal(brandCalls, 0);
+});
