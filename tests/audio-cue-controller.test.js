@@ -364,3 +364,21 @@ test("master volume aggregates multiple adapter failures after attempting all vo
   assert.deepEqual(calls, ["music", "ambience", "effect"]);
   controller.destroy();
 });
+
+
+test("resume is idempotent while the audio controller is already active", () => {
+  const calls = [];
+  const controller = createAudioCueController({
+    cues: [{ id: "music", atMs: 0, asset: "music", loop: true }],
+    play: (_asset, options) => options.id,
+    resumeVoice: voice => calls.push(voice)
+  });
+
+  controller.update(0);
+  assert.doesNotThrow(() => controller.resume(0));
+  assert.deepEqual(calls, [], "an already-active controller must not resume host voices again");
+  assert.deepEqual(controller.getState(), {
+    cursor: 0, paused: false, destroyed: false, volume: 1, activeVoices: 1
+  });
+  controller.destroy();
+});
