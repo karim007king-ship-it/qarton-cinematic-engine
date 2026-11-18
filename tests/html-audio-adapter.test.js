@@ -471,7 +471,7 @@ test("destroy retains ownership when ended-listener removal fails during native 
   adapter.play("effect");
   const endedHandler = listeners.get("ended");
 
-  assert.throws(() => adapter.destroy(), /native pause failed/);
+  assert.throws(() => adapter.destroy(), error => error instanceof AggregateError && error.errors.some(item => item.message === "native pause failed"));
   assert.equal(listeners.has("ended"), true);
 
   // A queued native event must not discard the voice while destroy is retryable.
