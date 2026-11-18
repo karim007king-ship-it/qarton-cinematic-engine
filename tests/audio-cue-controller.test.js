@@ -406,19 +406,18 @@ test("pause and resume retries only voices whose previous lifecycle transition f
 
   controller.update(0);
   assert.throws(() => controller.pause(0), /music pause failed/);
-  assert.throws(() => controller.resume(0), /music resume failed/);
-  assert.deepEqual(calls, [
-    ["pause", "music"], ["pause", "ambience"],
-    ["resume", "ambience"], ["resume", "music"]
-  ]);
+  assert.deepEqual(calls, [["pause", "music"], ["pause", "ambience"]]);
 
   failPause = false;
   controller.pause(0);
-  assert.deepEqual(calls.slice(4), [["pause", "music"]]);
+  assert.deepEqual(calls.slice(2), [["pause", "music"]]);
+
+  assert.throws(() => controller.resume(0), /music resume failed/);
+  assert.deepEqual(calls.slice(3), [["resume", "music"], ["resume", "ambience"]]);
 
   failResume = false;
   controller.resume(0);
-  assert.deepEqual(calls.slice(5), [["resume", "music"], ["resume", "ambience"]]);
+  assert.deepEqual(calls.slice(5), [["resume", "music"]]);
   assert.equal(controller.getState().paused, false);
   controller.destroy();
 });
