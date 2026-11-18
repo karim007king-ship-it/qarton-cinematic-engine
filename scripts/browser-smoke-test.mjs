@@ -87,7 +87,7 @@ try {
   // Allow up to 30 seconds, while still failing promptly if the process exits.
   for (let attempt = 0; attempt < 300; attempt += 1) {
     try {
-      portInfo = (await readFile(activePortFile, "utf8")).trim().split("\\n");
+      portInfo = (await readFile(activePortFile, "utf8")).trim().split("\n");
       break;
     } catch {
       if (browser.exitCode !== null) {
