@@ -444,3 +444,43 @@ test("one-shot ended event notifies the cue owner and detaches its listener", ()
   assert.equal(listeners.has("ended"), false);
   adapter.destroy();
 });
+
+
+test("destroy retains ownership when ended-listener removal fails during native teardown", () => {
+  const listeners = new Map();
+  let failPause = true;
+  let failRemove = true;
+  let pauseCalls = 0;
+  const audio = {
+    ...fakeAudio(),
+    addEventListener(type, handler) { listeners.set(type, handler); },
+    removeEventListener(type, handler) {
+      if (failRemove) throw new Error("listener removal failed");
+      if (listeners.get(type) === handler) listeners.delete(type);
+    },
+    pause() {
+      pauseCalls += 1;
+      if (failPause) throw new Error("native pause failed");
+      this.paused = true;
+    }
+  };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/effect.mp3",
+    createAudio: () => audio
+  });
+  adapter.play("effect");
+  const endedHandler = listeners.get("ended");
+
+  assert.throws(() => adapter.destroy(), /native pause failed/);
+  assert.equal(listeners.has("ended"), true);
+
+  // A queued native event must not discard the voice while destroy is retryable.
+  endedHandler();
+  assert.equal(listeners.has("ended"), true);
+
+  failPause = false;
+  failRemove = false;
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.equal(pauseCalls, 2);
+  assert.equal(listeners.has("ended"), false);
+});
