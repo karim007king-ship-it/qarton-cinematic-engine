@@ -540,3 +540,54 @@ test("runtime forwards adaptive quality transitions to the host with previous an
 
   await runtime.destroy();
 });
+
+test("runtime attempts every cleanup after multiple failures and retries retained resources", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const target = new LifecycleTarget("visible");
+  const originalRemoveChild = root.removeChild.bind(root);
+  let failListenerRemoval = true;
+  let failDOMRemoval = true;
+
+  const originalRemoveListener = target.removeEventListener.bind(target);
+  target.removeEventListener = (type, listener) => {
+    if (failListenerRemoval) {
+      failListenerRemoval = false;
+      throw new Error("lifecycle listener cleanup failed");
+    }
+    originalRemoveListener(type, listener);
+  };
+
+  const runtime = createCinematicRuntime({
+    root,
+    loadAsset: key => key,
+    renderScene: () => document.createElement("div"),
+    lifecycleTarget: target
+  });
+  await runtime.transitionTo({ id: "multi-resource-cleanup" });
+
+  root.removeChild = child => {
+    if (failDOMRemoval) {
+      failDOMRemoval = false;
+      throw new Error("scene DOM cleanup failed");
+    }
+    originalRemoveChild(child);
+  };
+
+  await assert.rejects(runtime.destroy(), error => {
+    assert.ok(error instanceof AggregateError);
+    assert.ok(error.errors.some(item => /lifecycle listener cleanup failed/.test(item.message)));
+    assert.ok(error.errors.some(item => /scene DOM cleanup failed/.test(item.message)));
+    return true;
+  });
+
+  // The runtime continued teardown after both failures. Scene release got a
+  // second chance in the same destroy pass; the failed page listener remains
+  // inert and owned until the next destroy() retries detachment.
+  assert.equal(root.children.length, 0);
+  assert.equal(target.listenerCount(), 1);
+
+  await runtime.destroy();
+  assert.equal(target.listenerCount(), 0);
+  assert.equal(root.children.length, 0);
+});
