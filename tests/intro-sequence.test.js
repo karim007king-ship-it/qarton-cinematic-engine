@@ -87,3 +87,25 @@ test("required stage adapters are validated", () => {
   assert.throws(() => createIntroSequence({}), /playBrandIntro/);
   assert.throws(() => createIntroSequence({ playBrandIntro() {} }), /playGameIntro/);
 });
+
+
+test("skip still aborts the active stage when the stage observer throws", async () => {
+  let receivedSignal;
+  const sequence = createIntroSequence({
+    playBrandIntro: ({ signal }) => {
+      receivedSignal = signal;
+      return new Promise(() => {});
+    },
+    playGameIntro: async () => {},
+    onStageChange: state => {
+      if (state === "skipped") throw new Error("observer failed");
+    }
+  });
+
+  const running = sequence.start();
+  await Promise.resolve();
+  assert.throws(() => sequence.skip(), /observer failed/);
+  assert.equal(receivedSignal.aborted, true);
+  assert.equal(await running, "skipped");
+  assert.equal(sequence.state, "skipped");
+});
