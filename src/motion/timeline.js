@@ -1,6 +1,9 @@
 /** Clone and freeze JSON-like event data so caller mutations cannot alter a timeline. */
 function snapshot(value, seen = new WeakMap()) {
-  if (value === null || typeof value !== "object") return value;
+  if (value === null || typeof value === "string" || typeof value === "boolean" || typeof value === "number") return value;
+  if (typeof value !== "object") {
+    throw new TypeError("Timeline payload must contain only JSON-like values");
+  }
   if (seen.has(value)) return seen.get(value);
 
   if (Array.isArray(value)) {
@@ -11,7 +14,9 @@ function snapshot(value, seen = new WeakMap()) {
   }
 
   const prototype = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) return value;
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new TypeError("Timeline payload must contain only arrays and plain objects");
+  }
 
   const copy = Object.create(prototype);
   seen.set(value, copy);
