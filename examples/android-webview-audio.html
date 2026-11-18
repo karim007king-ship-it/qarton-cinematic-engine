@@ -109,7 +109,7 @@
       target: document,
       pageTarget: window,
       setActive: active => {
-        record("engine lifecycle active=" + active);
+        record("engine lifecycle active=" + active + "; playhead=" + (voice ? voice.currentTime.toFixed(2) + "s" : "n/a"));
         if (!voice) return;
         if (active) {
           // Automatic resume may be denied by browser policy. The Resume button
@@ -121,7 +121,10 @@
       }
     });
     lifecycle.start();
-    record("initialized; visibilityState=" + document.visibilityState);
+    record("environment userAgent=" + navigator.userAgent);
+    record("environment visibilityState=" + document.visibilityState
+      + "; Audio=" + typeof Audio
+      + "; WAV support=" + (typeof Audio === "function" ? new Audio().canPlayType("audio/wav") : "unavailable"));
     updateButtons();
   }
 
