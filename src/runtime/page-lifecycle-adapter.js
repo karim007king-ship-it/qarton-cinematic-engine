@@ -17,6 +17,7 @@ export function createPageLifecycleAdapter({ target, pageTarget = target, setAct
   }
 
   let started = false;
+  let acceptingEvents = false;
   let active = null;
 
   function apply(nextActive) {
@@ -33,15 +34,15 @@ export function createPageLifecycleAdapter({ target, pageTarget = target, setAct
   }
 
   function handleVisibilityChange() {
-    sync();
+    if (acceptingEvents) sync();
   }
 
   function handlePageHide() {
-    apply(false);
+    if (acceptingEvents) apply(false);
   }
 
   function handlePageShow() {
-    sync();
+    if (acceptingEvents) sync();
   }
 
   // visibilitychange belongs to Document; pagehide/pageshow belong to Window.
@@ -61,9 +62,11 @@ export function createPageLifecycleAdapter({ target, pageTarget = target, setAct
         attached.push([eventTarget, type, listener]);
       }
       sync();
+      acceptingEvents = true;
       started = true;
       return true;
     } catch (error) {
+      acceptingEvents = false;
       for (const [eventTarget, type, listener] of attached.reverse()) {
         try { eventTarget.removeEventListener(type, listener); } catch {}
       }
@@ -73,6 +76,10 @@ export function createPageLifecycleAdapter({ target, pageTarget = target, setAct
 
   function stop() {
     if (!started) return false;
+    // Disable callbacks before detaching. If a host EventTarget refuses one
+    // removal, its retained listener must not call into an already-destroyed
+    // runtime while stop() remains retryable.
+    acceptingEvents = false;
     const errors = [];
     for (const [eventTarget, type, listener] of listeners) {
       try {

@@ -129,12 +129,23 @@ test("stop remains retryable when a host EventTarget refuses listener removal", 
     }
     originalRemove(type, listener);
   };
-  const adapter = createPageLifecycleAdapter({ target, setActive() {} });
+  const events = [];
+  const adapter = createPageLifecycleAdapter({
+    target,
+    setActive: active => events.push(active)
+  });
   adapter.start();
 
   assert.throws(() => adapter.stop(), /remove blocked/);
   assert.equal(adapter.getState().started, true);
   assert.equal(target.listenerCount(), 1);
+
+  // A listener that could not be detached must be inert while stop is retried.
+  target.visibilityState = "hidden";
+  target.dispatch("visibilitychange");
+  target.dispatch("pagehide");
+  assert.deepEqual(events, [true]);
+
   assert.equal(adapter.stop(), true);
   assert.equal(adapter.getState().started, false);
   assert.equal(target.listenerCount(), 0);
