@@ -38,24 +38,32 @@ export class AssetManager {
   }
 
   /**
-   * Load an asset once. Concurrent requests for the same key share one promise.
+   * Load an asset once. Concurrent requests share the underlying loader, while
+   * each caller may cancel its own wait with options.signal. The shared loader
+   * is aborted only after every consumer has cancelled or manager.cancel() runs.
    * Optional metadata is passed to the loader on the first request only.
    */
-  load(key, metadata) {
+  load(key, metadata, { signal } = {}) {
     if (this.#destroyed) {
       return Promise.reject(new Error("AssetManager has been destroyed"));
     }
     if (typeof key !== "string" || !key.trim()) {
       return Promise.reject(new TypeError("Asset key must be a non-empty string"));
     }
+    if (signal != null && (typeof signal.addEventListener !== "function" || typeof signal.removeEventListener !== "function")) {
+      return Promise.reject(new TypeError("Asset load signal must be an AbortSignal"));
+    }
+    if (signal?.aborted) {
+      return Promise.reject(signal.reason ?? Object.assign(new Error("Asset load was cancelled"), { name: "AbortError" }));
+    }
     const normalizedKey = key.trim();
     if (this.#cache.has(normalizedKey)) return Promise.resolve(this.#cache.get(normalizedKey));
-    if (this.#pending.has(normalizedKey)) return this.#pending.get(normalizedKey).promise;
+    if (this.#pending.has(normalizedKey)) return this.#subscribe(this.#pending.get(normalizedKey), normalizedKey, signal);
 
     const generation = this.#generation;
     const loader = this.#loader;
     const controller = new AbortController();
-    const entry = { controller, promise: null };
+    const entry = { controller, promise: null, consumers: new Set(), settled: false };
     const loaderPromise = Promise.resolve()
       .then(() => {
         if (this.#destroyed || controller.signal.aborted) {
@@ -80,12 +88,43 @@ export class AssetManager {
         return safeUrl;
       })
       .finally(() => {
+        entry.settled = true;
         if (this.#pending.get(normalizedKey) === entry) this.#pending.delete(normalizedKey);
       });
 
     entry.promise = request;
     this.#pending.set(normalizedKey, entry);
-    return request;
+    return this.#subscribe(entry, normalizedKey, signal);
+  }
+
+  #subscribe(entry, key, signal) {
+    const consumer = {};
+    entry.consumers.add(consumer);
+    return new Promise((resolve, reject) => {
+      let finished = false;
+      const cleanup = () => {
+        if (finished) return;
+        finished = true;
+        signal?.removeEventListener("abort", onAbort);
+        entry.consumers.delete(consumer);
+      };
+      const onAbort = () => {
+        const reason = signal.reason ?? Object.assign(new Error("Asset load was cancelled"), { name: "AbortError" });
+        cleanup();
+        reject(reason);
+        // One scene leaving must not cancel a shared request still needed by
+        // another consumer. Abort the underlying loader only when nobody waits.
+        if (!entry.settled && entry.consumers.size === 0 && this.#pending.get(key) === entry) {
+          this.#pending.delete(key);
+          entry.controller.abort(reason);
+        }
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      entry.promise.then(
+        value => { cleanup(); resolve(value); },
+        error => { cleanup(); reject(error); }
+      );
+    });
   }
 
   /** Resolve a group of keys concurrently; duplicate keys are loaded once. */
