@@ -105,8 +105,11 @@ export function createCinematicRuntime({
         () => pageLifecycle?.stop(),
         () => activity.destroy(),
         () => dom.destroy(),
-        () => scenes.destroy(),
-        () => assets.destroy()
+        // Abort render-time asset requests before scenes.destroy() waits for
+        // pending mounts to settle. AssetManager races loaders against abort,
+        // including host loaders that ignore AbortSignal or never resolve.
+        () => assets.destroy(),
+        () => scenes.destroy()
       ]) {
         try { await cleanup(); } catch (error) { errors.push(error); }
       }
