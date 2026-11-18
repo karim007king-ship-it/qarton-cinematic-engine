@@ -98,7 +98,7 @@ export function createHTMLAudioAdapter({
       const onEnded = () => {
         // A queued ended event may arrive after stop() detached the listener.
         // Do not notify the cue owner for a voice that is no longer active.
-        if (!active.has(audio) || voiceStates.get(audio) === "destroying") return;
+        if (!active.has(audio) || (voiceStates.get(audio) === "destroying" || voiceStates.get(audio) === "stopping")) return;
         active.delete(audio);
         voiceStates.set(audio, "ended");
         detachEndedHandler(audio, { alreadyFired: true });
@@ -133,9 +133,12 @@ export function createHTMLAudioAdapter({
     }
     audio.pause();
     try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
+    if (!detachEndedHandler(audio)) {
+      voiceStates.set(audio, "stopping");
+      throw new Error("HTMLAudio ended listener could not be detached");
+    }
     active.delete(audio);
     voiceStates.set(audio, "stopped");
-    detachEndedHandler(audio);
   }
 
   function pause(audio) {
