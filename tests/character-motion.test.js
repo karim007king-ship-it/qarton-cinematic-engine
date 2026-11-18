@@ -47,6 +47,20 @@ test("timeline snapshots and freezes nested JSON-like payload data", () => {
   assert.throws(() => { timeline.events[0].payload.tags.push("late"); }, TypeError);
 });
 
+test("timeline safely snapshots an own __proto__ payload key", () => {
+  const source = JSON.parse('{"__proto__":{"polluted":true},"safe":1}');
+  const timeline = createTimeline([
+    { id: "prototype-key", atMs: 0, type: "metadata", payload: source }
+  ]);
+  const payload = timeline.events[0].payload;
+
+  assert.equal(Object.getPrototypeOf(payload), Object.prototype);
+  assert.equal(Object.hasOwn(payload, "__proto__"), true);
+  assert.deepEqual(payload.__proto__, { polluted: true });
+  assert.equal(Object.isFrozen(payload.__proto__), true);
+  assert.equal(payload.polluted, undefined);
+});
+
 test("character controller samples movement and expression without DOM dependencies", () => {
   const path = createMotionPath([{ x: 5, y: 10 }, { x: 105, y: 10 }]);
   const character = createCharacterController({
