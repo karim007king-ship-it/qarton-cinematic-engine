@@ -4,7 +4,7 @@
  */
 export function assertSafeAssetUrl(value, key = "asset") {
   if (typeof value !== "string" || !value.trim()) {
-    throw new TypeError(\`Asset resolver returned no URL for "\${key}"\`);
+    throw new TypeError("Asset resolver returned no URL for \"" + key + "\"");
   }
   const url = value.trim();
   const hasControlCharacter = [...url].some(character => {
@@ -18,7 +18,7 @@ export function assertSafeAssetUrl(value, key = "asset") {
     ((scheme === "http" || scheme === "https") && /^https?:\/\//i.test(url));
 
   if (hasControlCharacter || url.includes("\\") || url.startsWith("//") || !hasAllowedScheme) {
-    throw new TypeError(\`Asset resolver returned an unsafe URL for "\${key}"\`);
+    throw new TypeError("Asset resolver returned an unsafe URL for \"" + key + "\"");
   }
   return url;
 }
