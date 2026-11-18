@@ -175,3 +175,36 @@ test("page lifecycle adapter listens to document visibility and window page even
   assert.equal(documentTarget.listenerCount(), 0);
   assert.equal(windowTarget.listenerCount(), 0);
 });
+
+test("failed start retains retryable ownership when rollback cannot detach a listener", () => {
+  const target = createTarget("hidden");
+  const originalRemove = target.removeEventListener.bind(target);
+  let failCallback = true;
+  let failRemoval = true;
+  target.removeEventListener = (type, listener) => {
+    if (failRemoval && type === "visibilitychange") {
+      failRemoval = false;
+      throw new Error("rollback removal blocked");
+    }
+    originalRemove(type, listener);
+  };
+  const adapter = createPageLifecycleAdapter({
+    target,
+    setActive: () => {
+      if (failCallback) throw new Error("initial lifecycle sync failed");
+    }
+  });
+
+  assert.throws(() => adapter.start(), /initial lifecycle sync failed/);
+  assert.equal(adapter.getState().started, true);
+  assert.equal(target.listenerCount(), 1);
+
+  // The retained callback is inert while its failed rollback is pending.
+  target.visibilityState = "visible";
+  target.dispatch("visibilitychange");
+  assert.equal(adapter.getState().active, null);
+
+  assert.equal(adapter.stop(), true);
+  assert.equal(adapter.getState().started, false);
+  assert.equal(target.listenerCount(), 0);
+});
