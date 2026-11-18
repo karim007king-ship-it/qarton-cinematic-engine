@@ -51,7 +51,7 @@ export function createTimeline(events) {
       id: event.id,
       atMs: event.atMs,
       type: event.type,
-      target: event.target ?? null,
+      target: event.target == null ? null : snapshot(event.target),
       payload: event.payload === undefined ? null : snapshot(event.payload),
       order: index
     });
