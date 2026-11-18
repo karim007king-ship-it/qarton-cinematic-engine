@@ -13,35 +13,19 @@ test("parallax offset scales with depth and clamps extreme movement", () => {
 test("parallax calculation remains finite for extreme values and zero intensity", () => {
   const extreme = Number.MAX_VALUE;
   assert.deepEqual(computeParallaxOffset({
-    cameraX: extreme,
-    cameraY: -extreme,
-    depth: extreme,
-    intensity: 0,
-    maxOffset: extreme
+    cameraX: extreme, cameraY: -extreme, depth: extreme, intensity: 0, maxOffset: extreme
   }), { x: 0, y: 0 });
-
   assert.deepEqual(computeParallaxOffset({
-    cameraX: extreme,
-    cameraY: -extreme,
-    depth: extreme,
-    maxOffset: 50
+    cameraX: extreme, cameraY: -extreme, depth: extreme, maxOffset: 50
   }), { x: -50, y: 50 });
-
   const reordered = computeParallaxOffset({
-    cameraX: extreme,
-    depth: extreme,
-    intensity: Number.MIN_VALUE,
-    maxOffset: extreme
+    cameraX: extreme, depth: extreme, intensity: Number.MIN_VALUE, maxOffset: extreme
   });
   assert.ok(Number.isFinite(reordered.x));
   assert.ok(reordered.x < 0);
   assert.ok(reordered.x > -extreme);
-
   const fractional = computeParallaxOffset({
-    cameraX: 0.8,
-    depth: 0.8,
-    intensity: 0.7,
-    maxOffset: 0.5
+    cameraX: 0.8, depth: 0.8, intensity: 0.7, maxOffset: 0.5
   });
   assert.ok(Math.abs(fractional.x + 0.448) < 1e-12);
   assert.equal(fractional.y, 0);
@@ -57,22 +41,14 @@ test("camera shake is deterministic and decays to zero", () => {
 
 test("camera shake rejects finite inputs whose phase overflows and keeps extreme amplitudes finite", () => {
   assert.throws(() => sampleCameraShake({
-    timeMs: Number.MAX_VALUE / 2,
-    durationMs: Number.MAX_VALUE,
-    frequencyHz: Number.MAX_VALUE,
-    amplitude: 1
+    timeMs: Number.MAX_VALUE / 2, durationMs: Number.MAX_VALUE,
+    frequencyHz: Number.MAX_VALUE, amplitude: 1
   }), /phase calculation/);
   assert.throws(() => sampleCameraShake({
-    timeMs: 1,
-    durationMs: 1000,
-    frequencyHz: 0,
-    seed: Number.MAX_VALUE,
-    amplitude: 1
+    timeMs: 1, durationMs: 1000, frequencyHz: 0, seed: Number.MAX_VALUE, amplitude: 1
   }), /phase calculation/);
   const extremeAmplitude = sampleCameraShake({
-    timeMs: 1,
-    durationMs: 1000,
-    amplitude: Number.MAX_VALUE
+    timeMs: 1, durationMs: 1000, amplitude: Number.MAX_VALUE
   });
   assert.ok(Object.values(extremeAmplitude).every(Number.isFinite));
 });
@@ -89,27 +65,29 @@ test("particle field is deterministic and respects adaptive particle budgets", (
   assert.throws(() => createParticleField({ count: -1, width: 100, height: 100 }), /invalid/);
 });
 
+test("particle field enforces a hard allocation ceiling without a quality profile", () => {
+  const atLimit = createParticleField({ count: 10_000, width: 100, height: 100 });
+  assert.equal(atLimit.count, 10_000);
+  assert.throws(
+    () => createParticleField({ count: 10_001, width: 100, height: 100 }),
+    /count must be between 0 and 10000/
+  );
+  assert.throws(
+    () => createParticleField({ count: Number.MAX_SAFE_INTEGER, width: 100, height: 100 }),
+    /count must be between 0 and 10000/
+  );
+});
+
 test("particle field safely wraps very large timestamps and rejects non-finite derived positions", () => {
   const stable = createParticleField({
-    count: 3,
-    width: 100,
-    height: 100,
-    lifetimeMs: 3000,
-    speedMin: 0,
-    speedMax: 0
+    count: 3, width: 100, height: 100, lifetimeMs: 3000, speedMin: 0, speedMax: 0
   });
   assert.ok(stable.sample(Number.MAX_VALUE).every(particle =>
     Number.isFinite(particle.x) && Number.isFinite(particle.y)
   ));
-
   const unstable = createParticleField({
-    count: 1,
-    width: 100,
-    height: 100,
-    lifetimeMs: Number.MAX_VALUE,
-    speedMin: 0,
-    speedMax: 0,
-    gravity: Number.MAX_VALUE
+    count: 1, width: 100, height: 100, lifetimeMs: Number.MAX_VALUE,
+    speedMin: 0, speedMax: 0, gravity: Number.MAX_VALUE
   });
   assert.throws(() => unstable.sample(Number.MAX_VALUE), /position exceeded/);
 });
