@@ -1,3 +1,26 @@
+/** Clone and freeze JSON-like event data so caller mutations cannot alter a timeline. */
+function snapshot(value, seen = new WeakMap()) {
+  if (value === null || typeof value !== "object") return value;
+  if (seen.has(value)) return seen.get(value);
+
+  if (Array.isArray(value)) {
+    const copy = [];
+    seen.set(value, copy);
+    for (const item of value) copy.push(snapshot(item, seen));
+    return Object.freeze(copy);
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return value;
+
+  const copy = Object.create(prototype);
+  seen.set(value, copy);
+  for (const key of Object.keys(value)) {
+    copy[key] = snapshot(value[key], seen);
+  }
+  return Object.freeze(copy);
+}
+
 /** Build an immutable, deterministically ordered event timeline. */
 export function createTimeline(events) {
   if (!Array.isArray(events)) throw new TypeError("Timeline events must be an array");
@@ -19,7 +42,7 @@ export function createTimeline(events) {
       atMs: event.atMs,
       type: event.type,
       target: event.target ?? null,
-      payload: event.payload === undefined ? null : event.payload,
+      payload: event.payload === undefined ? null : snapshot(event.payload),
       order: index
     });
   }).sort((a, b) => a.atMs - b.atMs || a.order - b.order)
