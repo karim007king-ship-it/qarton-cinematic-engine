@@ -88,13 +88,22 @@ export function createHTMLAudioAdapter({
       throw new TypeError("createAudio() must return an HTMLAudio-like object");
     }
 
-    audio.src = url;
-    audio.loop = options.loop === true;
-    audio.preload = "auto";
-    audio.volume = baseVolume * volume;
+    // Register ownership before touching native media setters: WebView
+    // implementations may throw while assigning src, loop, preload or volume.
+    // If setup fails, the normal failure path can pause and release the element,
+    // or retain it for a later destroy() retry when native cleanup also fails.
     active.set(audio, baseVolume);
     assets.set(audio, asset);
     voiceStates.set(audio, "active");
+    try {
+      audio.src = url;
+      audio.loop = options.loop === true;
+      audio.preload = "auto";
+      audio.volume = baseVolume * volume;
+    } catch (error) {
+      reportPlaybackError(error, audio);
+      throw error;
+    }
 
     // One-shot voices release their registry entry as soon as playback ends.
     if (options.loop !== true
