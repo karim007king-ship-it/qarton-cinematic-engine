@@ -19,6 +19,18 @@ This checklist is for the host application that integrates QARTON Cinematic Engi
 - Start/resume Web Audio from a real user gesture. Do not assume returning from background grants autoplay permission.
 - Route playback errors to a visible diagnostic callback; do not swallow them silently.
 
+## Standalone diagnostic harness
+
+Open `examples/android-webview-audio.html` from the repository in the Android WebView host (or the phone browser for an initial comparison). It generates a short local WAV tone and uses the production `createHTMLAudioAdapter` plus `createPageLifecycleAdapter`; no remote audio asset is required.
+
+- Tap **Start loop** once to satisfy the user-gesture requirement.
+- Switch apps, open the notification shade, and return. The log records document/window lifecycle events and adapter pause/resume behavior.
+- If automatic resume is rejected, tap **Resume (gesture)** and verify the existing voice resumes without creating another voice.
+- Test screen lock separately; some Android/WebView versions do not deliver identical lifecycle events.
+- Use **Stop** to release the voice. **Reset test** recreates the adapters and local audio URL.
+
+This harness validates HTMLAudio and page lifecycle behavior only. It does not instantiate the host app's full director, prove native Android audio-focus handling, or replace the scene-clock/teardown checks below.
+
 ## Device test sequence
 
 1. **Fresh start**
