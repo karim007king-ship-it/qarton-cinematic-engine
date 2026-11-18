@@ -118,6 +118,9 @@ export function createAudioCueController({
     if (!Number.isFinite(timeMs) || timeMs < cursor) {
       throw new TypeError("Resume time must be finite and not earlier than the audio cursor");
     }
+    // Resume is a lifecycle transition, not a repeated play command. Avoid
+    // calling host adapters when the controller is already active.
+    if (!paused) return;
     invokeForVoices(resumeVoice, "One or more audio voices could not be resumed");
     // Advancing the cursor skips cues that elapsed while playback was paused.
     for (const cue of normalized) if (cue.atMs <= timeMs) firedIds.add(cue.id);
