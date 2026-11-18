@@ -718,3 +718,32 @@ test("director retries failed audio suspension while remaining paused on the sam
   assert.deepEqual(calls.at(-1), ["resume", 125]);
   await director.destroy();
 });
+
+test("director destroy waits for an active update before destroying owned resources", async () => {
+  let resolveUpdate;
+  const calls = [];
+  const stage = {
+    mount: async () => true,
+    update: () => new Promise(resolve => { resolveUpdate = resolve; }),
+    unmount: () => {},
+    destroy: () => { calls.push("stage destroy"); }
+  };
+  const audio = {
+    update: time => calls.push(["audio update", time]),
+    pause: () => {},
+    resume: () => {},
+    stopAll: () => {},
+    destroy: () => { calls.push("audio destroy"); }
+  };
+  const director = createCinematicDirector({ characterStage: stage, audio });
+  await director.mount();
+  const frame = director.update(100);
+  await Promise.resolve();
+  const destroying = director.destroy();
+  await Promise.resolve();
+  assert.deepEqual(calls, [["audio update", 100]]);
+  resolveUpdate();
+  await frame;
+  await destroying;
+  assert.deepEqual(calls, [["audio update", 100], "stage destroy", "audio destroy"]);
+});
