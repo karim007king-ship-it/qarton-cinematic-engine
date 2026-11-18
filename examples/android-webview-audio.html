@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111318">
+  <title>QARTON — Android WebView Audio Check</title>
+  <style>
+    :root { color-scheme: dark; font: 16px system-ui, sans-serif; background: #111318; color: #f4f0e8; }
+    body { margin: 0; padding: 18px; }
+    main { max-width: 760px; margin: auto; }
+    h1 { color: #e6c27a; font-size: 1.45rem; }
+    p, li { line-height: 1.5; color: #c9c4bb; }
+    .controls { display: flex; flex-wrap: wrap; gap: 9px; margin: 16px 0; }
+    button { border: 1px solid #8e6b2f; border-radius: 8px; padding: 11px 14px; background: #292117; color: white; font: inherit; }
+    button:disabled { opacity: .45; }
+    #status { padding: 12px; border: 1px solid #66502d; border-radius: 8px; color: #f1d18e; overflow-wrap: anywhere; }
+    #log { min-height: 180px; max-height: 42vh; overflow: auto; padding: 12px; border-radius: 8px; background: #090b0e; color: #d4dbe5; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.55 ui-monospace, monospace; }
+    .note { font-size: .9rem; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>QARTON Cinematic Engine — Android WebView Check</h1>
+  <p>This page uses the engine's real HTMLAudio adapter and document/window lifecycle listeners. The test tone is generated locally; no network audio or external media is used.</p>
+  <p id="status" role="status">Preparing local test audio…</p>
+  <div class="controls">
+    <button id="start" type="button">Start loop (gesture)</button>
+    <button id="pause" type="button" disabled>Pause</button>
+    <button id="resume" type="button" disabled>Resume (gesture)</button>
+    <button id="stop" type="button" disabled>Stop</button>
+    <button id="reset" type="button">Reset test</button>
+  </div>
+  <p class="note">Test sequence: start the loop, switch apps or open the notification shade, return, then use Resume if autoplay is blocked. Repeat with screen lock. Watch the event log for visibilitychange, pagehide/pageshow, media errors and playback state.</p>
+  <pre id="log" aria-live="polite"></pre>
+</main>
+<script type="module">
+  import { createHTMLAudioAdapter } from "../src/audio/html-audio-adapter.js";
+  import { createPageLifecycleAdapter } from "../src/runtime/page-lifecycle-adapter.js";
+
+  const status = document.querySelector("#status");
+  const log = document.querySelector("#log");
+  const buttons = Object.fromEntries(["start", "pause", "resume", "stop", "reset"].map(id => [id, document.querySelector("#" + id)]));
+  let audioUrl = null;
+  let adapter = null;
+  let lifecycle = null;
+  let voice = null;
+  let destroyed = false;
+
+  function record(message) {
+    const line = new Date().toISOString() + "  " + message;
+    log.textContent = (log.textContent + line + "\\n").slice(-16000);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function setStatus(message) {
+    status.textContent = message;
+    record(message);
+  }
+
+  function makeTestWavUrl() {
+    const sampleRate = 44100;
+    const seconds = 0.8;
+    const samples = Math.floor(sampleRate * seconds);
+    const buffer = new ArrayBuffer(44 + samples * 2);
+    const view = new DataView(buffer);
+    const write = (offset, value) => {
+      for (let i = 0; i < value.length; i += 1) view.setUint8(offset + i, value.charCodeAt(i));
+    };
+    write(0, "RIFF");
+    view.setUint32(4, 36 + samples * 2, true);
+    write(8, "WAVE");
+    write(12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    write(36, "data");
+    view.setUint32(40, samples * 2, true);
+    for (let i = 0; i < samples; i += 1) {
+      const fade = Math.min(1, i / 500, (samples - i) / 500);
+      const sample = Math.sin(2 * Math.PI * 440 * i / sampleRate) * fade * 0.16;
+      view.setInt16(44 + i * 2, Math.round(sample * 32767), true);
+    }
+    return URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
+  }
+
+  function updateButtons() {
+    buttons.start.disabled = destroyed || Boolean(voice);
+    buttons.pause.disabled = destroyed || !voice;
+    buttons.resume.disabled = destroyed || !voice;
+    buttons.stop.disabled = destroyed || !voice;
+  }
+
+  function initialize() {
+    destroyed = false;
+    audioUrl = makeTestWavUrl();
+    adapter = createHTMLAudioAdapter({
+      resolveAsset: () => audioUrl,
+      onPlaybackError: (error, context) => {
+        setStatus("Playback error: " + (error?.name || "Error") + " — " + (error?.message || "unknown"));
+        record("adapter playback error; asset=" + context.asset);
+      }
+    });
+    lifecycle = createPageLifecycleAdapter({
+      target: document,
+      pageTarget: window,
+      setActive: active => {
+        record("engine lifecycle active=" + active);
+        if (!voice) return;
+        if (active) {
+          // Automatic resume may be denied by browser policy. The Resume button
+          // retries from a fresh user gesture without creating a second voice.
+          adapter.resume(voice);
+        } else {
+          adapter.pause(voice);
+        }
+      }
+    });
+    lifecycle.start();
+    record("initialized; visibilityState=" + document.visibilityState);
+    updateButtons();
+  }
+
+  buttons.start.addEventListener("click", () => {
+    if (!adapter || destroyed || voice) return;
+    try {
+      voice = adapter.play("local-test-tone", { loop: true, volume: 0.35 });
+      for (const type of ["playing", "pause", "waiting", "stalled", "error"]) {
+        voice.addEventListener(type, () => record("media event: " + type + (voice?.error ? " code=" + voice.error.code : "")));
+      }
+      setStatus("Loop started. Switch apps or lock the screen to test lifecycle handling.");
+    } catch (error) {
+      setStatus("Start failed: " + error.name + " — " + error.message);
+    }
+    updateButtons();
+  });
+
+  buttons.pause.addEventListener("click", () => {
+    try { adapter?.pause(voice); setStatus("Paused by user."); }
+    catch (error) { setStatus("Pause failed: " + error.message); }
+  });
+
+  buttons.resume.addEventListener("click", () => {
+    try { adapter?.resume(voice); setStatus("Resume requested from a user gesture."); }
+    catch (error) { setStatus("Resume failed: " + error.name + " — " + error.message); }
+  });
+
+  buttons.stop.addEventListener("click", () => {
+    try {
+      adapter?.stop(voice);
+      voice = null;
+      setStatus("Voice stopped and released.");
+    } catch (error) {
+      setStatus("Stop failed: " + error.message);
+    }
+    updateButtons();
+  });
+
+  buttons.reset.addEventListener("click", () => {
+    try { lifecycle?.stop(); } catch (error) { record("lifecycle cleanup error: " + error.message); }
+    try { adapter?.destroy(); } catch (error) { record("audio cleanup error: " + error.message); }
+    voice = null;
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
+    audioUrl = null;
+    lifecycle = null;
+    adapter = null;
+    log.textContent = "";
+    initialize();
+    setStatus("Test reset. Start playback using the button.");
+  });
+
+  for (const type of ["visibilitychange"]) {
+    document.addEventListener(type, () => record("document " + type + "; state=" + document.visibilityState));
+  }
+  for (const type of ["pagehide", "pageshow", "focus", "blur"]) {
+    window.addEventListener(type, event => record("window " + type + (event.persisted === undefined ? "" : "; persisted=" + event.persisted)));
+  }
+
+  window.addEventListener("beforeunload", () => {
+    try { lifecycle?.stop(); } catch {}
+    try { adapter?.destroy(); } catch {}
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
+  });
+
+  initialize();
+</script>
+</body>
+</html>
