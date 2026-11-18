@@ -33,7 +33,6 @@ export function createIntroSequence({
 
     const controller = new AbortController();
     activeController = controller;
-    setState(name);
 
     let removeAbortListener = () => {};
     const aborted = new Promise(resolve => {
@@ -44,9 +43,14 @@ export function createIntroSequence({
     });
 
     try {
+      setState(name);
       const result = await Promise.race([
-        Promise.resolve().then(() => play({ signal: controller.signal, stage: name }))
-          .then(() => true),
+        Promise.resolve().then(() => {
+          // An observer may synchronously skip/cancel while the stage state
+          // is being announced. Do not start host playback after that abort.
+          if (controller.signal.aborted) return;
+          return play({ signal: controller.signal, stage: name });
+        }).then(() => !controller.signal.aborted),
         aborted
       ]);
       return result && !controller.signal.aborted && !TERMINAL_STATES.has(state);
@@ -60,19 +64,33 @@ export function createIntroSequence({
     if (runPromise) return runPromise;
     if (state !== "idle") return Promise.resolve(state);
 
-    runPromise = (async () => {
+    // Publish the shared promise before stage observers can re-enter start(),
+    // while keeping the first stage's existing synchronous start semantics.
+    let resolveRun;
+    let rejectRun;
+    runPromise = new Promise((resolve, reject) => {
+      resolveRun = resolve;
+      rejectRun = reject;
+    });
+    const runner = (async () => {
       try {
         if (!await runStage("brand", playBrandIntro)) return state;
         if (!await runStage("game", playGameIntro)) return state;
         if (!TERMINAL_STATES.has(state)) setState("completed");
         return state;
       } catch (error) {
-        if (!TERMINAL_STATES.has(state)) setState("failed");
+        if (!TERMINAL_STATES.has(state)) {
+          // Preserve the operational failure if a diagnostic observer also
+          // throws while being notified about the failed state.
+          state = "failed";
+          try { onStageChange(state); } catch { /* do not mask the original failure */ }
+        }
         throw error;
       } finally {
         activeController = null;
       }
     })();
+    runner.then(resolveRun, rejectRun);
     return runPromise;
   }
 
@@ -82,8 +100,11 @@ export function createIntroSequence({
       setState(nextState);
       return state;
     }
-    setState(nextState);
+    // Commit the terminal state and abort the active stage before notifying
+    // observers. An observer exception must never prevent cancellation.
+    state = nextState;
     activeController?.abort();
+    onStageChange(state);
     return state;
   }
 

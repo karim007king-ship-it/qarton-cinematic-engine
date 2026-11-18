@@ -209,7 +209,13 @@ export function createHTMLAudioAdapter({
       throw new TypeError("Master volume must be between 0 and 1");
     }
     volume = nextVolume;
-    for (const [audio, baseVolume] of active) audio.volume = baseVolume * volume;
+    const errors = [];
+    for (const [audio, baseVolume] of active) {
+      try { audio.volume = baseVolume * volume; }
+      catch (error) { errors.push(error); }
+    }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1) throw new AggregateError(errors, "One or more HTMLAudio voices could not change volume");
     return volume;
   }
 

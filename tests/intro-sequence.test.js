@@ -87,3 +87,89 @@ test("required stage adapters are validated", () => {
   assert.throws(() => createIntroSequence({}), /playBrandIntro/);
   assert.throws(() => createIntroSequence({ playBrandIntro() {} }), /playGameIntro/);
 });
+
+
+test("skip still aborts the active stage when the stage observer throws", async () => {
+  let receivedSignal;
+  const sequence = createIntroSequence({
+    playBrandIntro: ({ signal }) => {
+      receivedSignal = signal;
+      return new Promise(() => {});
+    },
+    playGameIntro: async () => {},
+    onStageChange: state => {
+      if (state === "skipped") throw new Error("observer failed");
+    }
+  });
+
+  const running = sequence.start();
+  await Promise.resolve();
+  assert.throws(() => sequence.skip(), /observer failed/);
+  assert.equal(receivedSignal.aborted, true);
+  assert.equal(await running, "skipped");
+  assert.equal(sequence.state, "skipped");
+});
+
+
+test("stage observer failure during stage entry still releases the active controller", async () => {
+  let brandCalls = 0;
+  const sequence = createIntroSequence({
+    playBrandIntro: async () => {},
+    playGameIntro: async () => {},
+    onStageChange: state => {
+      if (state === "brand" && ++brandCalls === 1) {
+        throw new Error("brand observer failed");
+      }
+    }
+  });
+
+  await assert.rejects(sequence.start(), /brand observer failed/);
+  assert.equal(sequence.state, "failed");
+});
+
+
+test("skip from the stage observer prevents host playback from starting", async () => {
+  let sequence;
+  let brandCalls = 0;
+  sequence = createIntroSequence({
+    playBrandIntro: async () => { brandCalls += 1; },
+    playGameIntro: async () => {},
+    onStageChange: state => {
+      if (state === "brand") sequence.skip();
+    }
+  });
+
+  assert.equal(await sequence.start(), "skipped");
+  assert.equal(sequence.state, "skipped");
+  assert.equal(brandCalls, 0);
+});
+
+test("reentrant start from the stage observer shares the published run promise", async () => {
+  let sequence;
+  let reentrantStart;
+  sequence = createIntroSequence({
+    playBrandIntro: async () => {},
+    playGameIntro: async () => {},
+    onStageChange: state => {
+      if (state === "brand") reentrantStart = sequence.start();
+    }
+  });
+
+  const first = sequence.start();
+  assert.equal(await first, "completed");
+  assert.equal(reentrantStart, first);
+});
+
+test("failure observer errors do not mask the original stage failure", async () => {
+  const original = new Error("brand playback failed");
+  const sequence = createIntroSequence({
+    playBrandIntro: async () => { throw original; },
+    playGameIntro: async () => {},
+    onStageChange: state => {
+      if (state === "failed") throw new Error("failure observer failed");
+    }
+  });
+
+  await assert.rejects(sequence.start(), error => error === original);
+  assert.equal(sequence.state, "failed");
+});
