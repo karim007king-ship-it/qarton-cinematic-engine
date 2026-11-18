@@ -28,6 +28,25 @@ test("timeline sorts events stably and returns the forward time window", () => {
   ]), /unique id/);
 });
 
+test("timeline snapshots and freezes nested JSON-like payload data", () => {
+  const source = { camera: { zoom: 1.2 }, tags: ["opening", "impact"] };
+  const timeline = createTimeline([
+    { id: "scene", atMs: 10, type: "camera", payload: source }
+  ]);
+
+  source.camera.zoom = 9;
+  source.tags.push("mutated");
+  assert.deepEqual(timeline.events[0].payload, {
+    camera: { zoom: 1.2 },
+    tags: ["opening", "impact"]
+  });
+  assert.equal(Object.isFrozen(timeline.events[0].payload), true);
+  assert.equal(Object.isFrozen(timeline.events[0].payload.camera), true);
+  assert.equal(Object.isFrozen(timeline.events[0].payload.tags), true);
+  assert.throws(() => { timeline.events[0].payload.camera.zoom = 2; }, TypeError);
+  assert.throws(() => { timeline.events[0].payload.tags.push("late"); }, TypeError);
+});
+
 test("character controller samples movement and expression without DOM dependencies", () => {
   const path = createMotionPath([{ x: 5, y: 10 }, { x: 105, y: 10 }]);
   const character = createCharacterController({
