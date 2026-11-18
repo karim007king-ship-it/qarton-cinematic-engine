@@ -27,12 +27,22 @@ export function createHTMLAudioAdapter({
   const endedHandlers = new Map();
   const voiceStates = new WeakMap();
 
-  function detachEndedHandler(audio) {
+  function detachEndedHandler(audio, { alreadyFired = false } = {}) {
     const handler = endedHandlers.get(audio);
-    if (!handler) return;
-    try { audio.removeEventListener?.("ended", handler); }
-    catch { /* listener cleanup is best-effort on minimal media hosts */ }
-    endedHandlers.delete(audio);
+    if (!handler) return true;
+    if (typeof audio.removeEventListener !== "function") {
+      if (alreadyFired) endedHandlers.delete(audio);
+      return alreadyFired;
+    }
+    try {
+      audio.removeEventListener("ended", handler);
+      endedHandlers.delete(audio);
+      return true;
+    } catch {
+      // Keep the handler reference so destroy()/stop() can retry native cleanup.
+      if (alreadyFired) endedHandlers.delete(audio);
+      return false;
+    }
   }
 
   function releaseFailedPlayback(audio, { retainOwnership = false } = {}) {
@@ -88,10 +98,10 @@ export function createHTMLAudioAdapter({
       const onEnded = () => {
         // A queued ended event may arrive after stop() detached the listener.
         // Do not notify the cue owner for a voice that is no longer active.
-        if (!active.has(audio)) return;
+        if (!active.has(audio) || voiceStates.get(audio) === "destroying") return;
         active.delete(audio);
         voiceStates.set(audio, "ended");
-        detachEndedHandler(audio);
+        detachEndedHandler(audio, { alreadyFired: true });
         try { options.onEnded?.(audio); } catch { /* completion observers must not break media cleanup */ }
       };
       try {
@@ -189,10 +199,17 @@ export function createHTMLAudioAdapter({
         errors.push(error);
         failed = true;
       }
-      detachEndedHandler(audio);
+      if (!detachEndedHandler(audio)) {
+        errors.push(new Error("HTMLAudio ended listener could not be detached"));
+        failed = true;
+      }
       if (!failed) {
         active.delete(audio);
         voiceStates.set(audio, "stopped");
+      } else {
+        // A late ended event must not release ownership while native teardown
+        // is incomplete; a later destroy() call remains responsible for retry.
+        voiceStates.set(audio, "destroying");
       }
     }
     if (errors.length === 1) throw errors[0];
