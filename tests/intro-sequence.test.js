@@ -109,3 +109,20 @@ test("skip still aborts the active stage when the stage observer throws", async 
   assert.equal(await running, "skipped");
   assert.equal(sequence.state, "skipped");
 });
+
+
+test("stage observer failure during stage entry still releases the active controller", async () => {
+  let brandCalls = 0;
+  const sequence = createIntroSequence({
+    playBrandIntro: async () => {},
+    playGameIntro: async () => {},
+    onStageChange: state => {
+      if (state === "brand" && ++brandCalls === 1) {
+        throw new Error("brand observer failed");
+      }
+    }
+  });
+
+  await assert.rejects(sequence.start(), /brand observer failed/);
+  assert.equal(sequence.state, "failed");
+});
