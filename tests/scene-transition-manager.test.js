@@ -233,3 +233,61 @@ test("clear rejects new transitions until its cleanup snapshot is complete", asy
   assert.equal(await manager.transitionTo({ id: "after-clear" }, {}), true);
   assert.equal(manager.current.id, "after-clear");
 });
+
+
+test("rapid out-of-order mounts only allow the newest request to commit", async () => {
+  const resolvers = new Map();
+  const events = [];
+  const manager = new SceneTransitionManager({
+    mount: scene => new Promise(resolve => { resolvers.set(scene.id, resolve); }),
+    crossfade: async ({ to }) => { events.push(`crossfade:${to.id}`); return true; },
+    unmount: async handle => { events.push(`unmount:${handle.id}`); }
+  });
+
+  const first = manager.transitionTo({ id: "first" }, {});
+  const second = manager.transitionTo({ id: "second" }, {});
+  const third = manager.transitionTo({ id: "third" }, {});
+
+  resolvers.get("third")({ id: "third" });
+  assert.equal(await third, true);
+  resolvers.get("second")({ id: "second" });
+  assert.equal(await second, false);
+  resolvers.get("first")({ id: "first" });
+  assert.equal(await first, false);
+
+  assert.equal(manager.current.id, "third");
+  assert.deepEqual(events, [
+    "crossfade:third",
+    "unmount:second",
+    "unmount:first"
+  ]);
+  await manager.destroy();
+});
+
+test("concurrent clear calls share one cleanup pass and one release", async () => {
+  let release;
+  let unmountCalls = 0;
+  const manager = new SceneTransitionManager({
+    mount: async scene => ({ id: scene.id }),
+    crossfade: async () => true,
+    unmount: () => {
+      unmountCalls += 1;
+      return new Promise(resolve => { release = resolve; });
+    }
+  });
+
+  await manager.transitionTo({ id: "shared-clear" }, {});
+  const firstClear = manager.clear();
+  const secondClear = manager.clear();
+  assert.equal(secondClear, firstClear);
+  // clear() yields while awaiting the pending-transition snapshot before it
+  // starts releasing handles; allow that continuation to reach unmount().
+  await Promise.resolve();
+  assert.equal(unmountCalls, 1);
+
+  release();
+  await Promise.all([firstClear, secondClear]);
+  assert.equal(unmountCalls, 1);
+  assert.equal(manager.current, null);
+  await manager.destroy();
+});
