@@ -547,7 +547,7 @@ test("a stale play rejection cannot pause a newer successful playback attempt", 
 test("HTMLAudio master volume attempts every voice and retries a failed native setter", () => {
   const made = [];
   const calls = [];
-  let failFirst = true;
+  let failFirst = false;
   const adapter = createHTMLAudioAdapter({
     resolveAsset: key => `/${key}.mp3`,
     createAudio: () => {
@@ -575,6 +575,7 @@ test("HTMLAudio master volume attempts every voice and retries a failed native s
 
   adapter.play("first");
   adapter.play("second");
+  failFirst = true;
   assert.throws(() => adapter.setMasterVolume(0.5), /native volume setter failed/);
   assert.deepEqual(calls, [["first", 0.5], ["second", 0.5]]);
   assert.equal(made[1].volume, 0.5);
