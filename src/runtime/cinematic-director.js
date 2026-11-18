@@ -276,6 +276,9 @@ export function createCinematicDirector({
 
     destroyPromise = (async () => {
       const errors = [];
+      // A frame may already be sampling characters or dispatching callbacks.
+      // Wait for the serialized update queue before releasing its resources.
+      await updateQueue;
       // Attempt every owned subsystem even if another subsystem fails.
       for (const cleanup of [
         () => characterStage?.destroy(),
