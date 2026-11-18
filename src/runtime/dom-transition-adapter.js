@@ -180,8 +180,11 @@ export function createDOMTransitionAdapter({
     try {
       // Establish the initial styles in a distinct rendering frame before
       // enabling transitions and applying their target values.
-      await nextFrame();
-      if (!isCurrent()) return false;
+      const frameOutcome = await Promise.race([
+        Promise.resolve().then(() => nextFrame()).then(() => "frame"),
+        cancelled.then(() => "cancelled")
+      ]);
+      if (frameOutcome === "cancelled" || !isCurrent()) return false;
       const ms = requestedDuration;
       const transitionStyle = `opacity ${ms}ms ease-in-out, filter ${ms}ms ease-in-out`;
       if (from) from.style.transition = transitionStyle;
