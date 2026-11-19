@@ -974,7 +974,7 @@ test("director and HTMLAudio adapter release every resource across repeated scen
 });
 
 
-test("director destroy waits for an active async event callback before releasing resources", async () => {
+test("host-requested destroy waits for an active async event callback before releasing resources", async () => {
   let releaseEvent;
   let notifyEventStarted;
   const eventStarted = new Promise(resolve => { notifyEventStarted = resolve; });
@@ -1013,7 +1013,7 @@ test("director destroy waits for an active async event callback before releasing
   await director.mount();
   const frame = director.update(0);
   await eventStarted;
-  const destroying = director.destroy();
+  const destroying = director.requestDestroy();
 
   await Promise.resolve();
   assert.deepEqual(calls, ["event active-event started"],
