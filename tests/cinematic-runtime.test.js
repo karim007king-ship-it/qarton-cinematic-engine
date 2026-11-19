@@ -658,13 +658,16 @@ test("runtime remains reachable when initial page lifecycle synchronization fail
   });
 
   assert.deepEqual(lifecycleErrors, [["initial pause callback failed", "pause"]]);
-  assert.equal(runtime.pageLifecycleState.started, false);
-  assert.equal(target.listenerCount(), 0);
+  // Runtime isolates host callback errors: the lifecycle adapter remains
+  // started, while the activity gate still commits the hidden-page state.
+  assert.equal(runtime.pageLifecycleState.started, true);
+  assert.equal(runtime.isActive(), false);
+  assert.equal(target.listenerCount(), 3);
 
   target.visibilityState = "visible";
-  assert.equal(runtime.startPageLifecycle(), true);
+  for (const listener of listeners.get("visibilitychange") ?? []) listener({ type: "visibilitychange" });
+  assert.equal(runtime.isActive(), true);
   assert.equal(runtime.pageLifecycleState.started, true);
-  assert.equal(target.listenerCount(), 3);
 
   await runtime.destroy();
   assert.equal(target.listenerCount(), 0);
