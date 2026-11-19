@@ -941,3 +941,50 @@ test("director remount ignores a late play rejection from the previous scene gen
   await director.destroy();
   adapter.destroy();
 });
+
+
+test("late playback rejection is ignored once native voice teardown has started", async () => {
+  let rejectResume;
+  let pauseCalls = 0;
+  let failDestroyPause = true;
+  const errors = [];
+  const audio = fakeAudio();
+  audio.play = () => new Promise((_resolve, reject) => { rejectResume = reject; });
+  audio.pause = () => {
+    pauseCalls += 1;
+    if (failDestroyPause) throw new Error("native pause failed during destroy");
+    audio.paused = true;
+  };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/late-resume.mp3",
+    createAudio: () => audio,
+    onPlaybackError: error => errors.push(error.message)
+  });
+
+  const voice = adapter.play("theme", { loop: true });
+  // Replace the initial pending play with a resolved play, then start a
+  // separate pending resume whose rejection races with destroy().
+  rejectResume(new Error("initial play rejection"));
+  await Promise.resolve();
+  await Promise.resolve();
+  errors.length = 0;
+  failDestroyPause = false;
+  adapter.pause(voice);
+  audio.play = () => new Promise((_resolve, reject) => { rejectResume = reject; });
+  adapter.resume(voice);
+
+  failDestroyPause = true;
+  assert.throws(() => adapter.destroy(), /native pause failed during destroy/);
+  const pausesAtDestroy = pauseCalls;
+  rejectResume(new Error("late resume rejection"));
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.deepEqual(errors, [],
+    "a rejection from a voice already owned by teardown must not be reported as a live playback error");
+  assert.equal(pauseCalls, pausesAtDestroy,
+    "late rejection must not invoke native pause while destroy owns cleanup");
+
+  failDestroyPause = false;
+  assert.doesNotThrow(() => adapter.destroy());
+});
