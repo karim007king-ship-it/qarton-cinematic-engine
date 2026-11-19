@@ -251,6 +251,7 @@ test("partial listener attachment rollback can be stopped and started again with
   assert.equal(target.listenerCount(), 0);
   assert.equal(adapter.getState().started, false);
 
+  target.visibilityState = "visible";
   assert.equal(adapter.start(), true);
   assert.equal(target.listenerCount(), 3);
   target.visibilityState = "hidden";
