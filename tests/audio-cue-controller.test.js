@@ -421,3 +421,25 @@ test("pause and resume retries only voices whose previous lifecycle transition f
   assert.equal(controller.getState().paused, false);
   controller.destroy();
 });
+
+
+test("a voice allocated by a reentrant play hook is stopped when teardown begins", () => {
+  const stopped = [];
+  let controller;
+  const allocatedVoice = { id: "late-voice" };
+  controller = createAudioCueController({
+    cues: [{ id: "music", atMs: 0, asset: "theme", loop: true }],
+    play: () => {
+      controller.destroy();
+      return allocatedVoice;
+    },
+    stop: voice => stopped.push(voice)
+  });
+
+  assert.throws(() => controller.update(0), /destroyed/);
+  assert.deepEqual(stopped, [allocatedVoice],
+    "the voice returned after reentrant destroy must not escape controller cleanup");
+  assert.deepEqual(controller.getState(), {
+    cursor: -1, paused: false, destroyed: true, volume: 1, activeVoices: 0
+  });
+});
