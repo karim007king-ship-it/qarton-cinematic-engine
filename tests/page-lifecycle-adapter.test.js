@@ -171,7 +171,6 @@ test("stop remains retryable when a host EventTarget refuses listener removal", 
   assert.equal(target.listenerCount(), 0);
 });
 
-
 test("page lifecycle adapter listens to document visibility and window page events separately", () => {
   const documentTarget = createTarget("visible");
   const windowTarget = createTarget();
@@ -194,4 +193,22 @@ test("page lifecycle adapter listens to document visibility and window page even
   adapter.stop();
   assert.equal(documentTarget.listenerCount(), 0);
   assert.equal(windowTarget.listenerCount(), 0);
+});
+
+test("reentrant stop during initial synchronization cannot be undone by start", () => {
+  const target = createTarget("visible");
+  let adapter;
+  let nestedStartResult = null;
+  adapter = createPageLifecycleAdapter({
+    target,
+    setActive: () => {
+      assert.equal(adapter.stop(), true);
+      nestedStartResult = adapter.start();
+    }
+  });
+
+  assert.equal(adapter.start(), false);
+  assert.equal(nestedStartResult, false, "start must reject re-entry during initial synchronization");
+  assert.deepEqual(adapter.getState(), { started: false, active: true });
+  assert.equal(target.listenerCount(), 0);
 });
