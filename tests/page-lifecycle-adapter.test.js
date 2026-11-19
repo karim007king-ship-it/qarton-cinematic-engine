@@ -208,3 +208,55 @@ test("failed start retains retryable ownership when rollback cannot detach a lis
   assert.equal(adapter.getState().started, false);
   assert.equal(target.listenerCount(), 0);
 });
+
+
+test("partial listener attachment rollback can be stopped and started again without duplicates", () => {
+  const target = createTarget("visible");
+  const originalAdd = target.addEventListener.bind(target);
+  const originalRemove = target.removeEventListener.bind(target);
+  let failSecondAdd = true;
+  let failRollbackOnce = true;
+  target.addEventListener = (type, listener) => {
+    if (failSecondAdd && type === "pagehide") {
+      failSecondAdd = false;
+      throw new Error("pagehide attachment blocked");
+    }
+    originalAdd(type, listener);
+  };
+  target.removeEventListener = (type, listener) => {
+    if (failRollbackOnce && type === "visibilitychange") {
+      failRollbackOnce = false;
+      throw new Error("rollback detach blocked");
+    }
+    originalRemove(type, listener);
+  };
+
+  const events = [];
+  const adapter = createPageLifecycleAdapter({
+    target,
+    setActive: active => events.push(active)
+  });
+
+  assert.throws(() => adapter.start(), /pagehide attachment blocked/);
+  assert.equal(target.listenerCount(), 1);
+  assert.deepEqual(adapter.getState(), { started: true, active: null });
+
+  // Failed rollback leaves one inert listener owned by the adapter.
+  target.visibilityState = "hidden";
+  target.dispatch("visibilitychange");
+  assert.deepEqual(events, []);
+
+  // Clear the retained listener before retrying startup.
+  assert.equal(adapter.stop(), true);
+  assert.equal(target.listenerCount(), 0);
+  assert.equal(adapter.getState().started, false);
+
+  assert.equal(adapter.start(), true);
+  assert.equal(target.listenerCount(), 3);
+  target.visibilityState = "hidden";
+  target.dispatch("visibilitychange");
+  assert.deepEqual(events, [true, false]);
+
+  assert.equal(adapter.stop(), true);
+  assert.equal(target.listenerCount(), 0);
+});
