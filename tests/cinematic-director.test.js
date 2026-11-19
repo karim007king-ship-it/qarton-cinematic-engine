@@ -972,3 +972,61 @@ test("director and HTMLAudio adapter release every resource across repeated scen
   assert.ok(voices.every(voice => voice.paused), "all native voices remain stopped after final destroy");
   assert.ok(voices.every(voice => voice.listeners.size === 0), "no ended listeners remain after final destroy");
 });
+
+
+test("director destroy waits for an active async event callback before releasing resources", async () => {
+  let releaseEvent;
+  let notifyEventStarted;
+  const eventStarted = new Promise(resolve => { notifyEventStarted = resolve; });
+  const eventGate = new Promise(resolve => { releaseEvent = resolve; });
+  const calls = [];
+  const stage = {
+    mount: async () => true,
+    update: async () => {},
+    unmount: () => {},
+    destroy: () => { calls.push("stage destroy"); }
+  };
+  const audio = {
+    update: () => {},
+    pause: () => {},
+    resume: () => {},
+    stopAll: () => {},
+    destroy: () => { calls.push("audio destroy"); }
+  };
+  const director = createCinematicDirector({
+    characterStage: stage,
+    audio,
+    timeline: createTimeline([
+      { id: "active-event", atMs: 0, type: "story" },
+      { id: "must-not-run", atMs: 0, type: "story" }
+    ]),
+    onEvent: async event => {
+      calls.push(`event ${event.id} started`);
+      if (event.id === "active-event") {
+        notifyEventStarted();
+        await eventGate;
+        calls.push("event callback settled");
+      }
+    }
+  });
+
+  await director.mount();
+  const frame = director.update(0);
+  await eventStarted;
+  const destroying = director.destroy();
+
+  await Promise.resolve();
+  assert.deepEqual(calls, ["event active-event started"],
+    "destroy must not release stage or audio while an event callback is pending");
+  releaseEvent();
+  await frame;
+  await destroying;
+
+  assert.deepEqual(calls, [
+    "event active-event started",
+    "event callback settled",
+    "stage destroy",
+    "audio destroy"
+  ], "teardown must follow callback settlement and later events must not dispatch");
+  assert.equal(director.getState().destroyed, true);
+});
