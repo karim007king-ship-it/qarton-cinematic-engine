@@ -988,3 +988,32 @@ test("late playback rejection is ignored once native voice teardown has started"
   failDestroyPause = false;
   assert.doesNotThrow(() => adapter.destroy());
 });
+
+
+test("reentrant destroy from a native pause event does not repeat HTMLAudio teardown", () => {
+  const audio = fakeAudio();
+  let adapter;
+  let pauseCalls = 0;
+  const listeners = new Map();
+  audio.addEventListener = (type, handler) => listeners.set(type, handler);
+  audio.removeEventListener = (type, handler) => {
+    if (listeners.get(type) === handler) listeners.delete(type);
+  };
+  audio.pause = () => {
+    pauseCalls += 1;
+    audio.paused = true;
+    adapter.destroy();
+  };
+  adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/reentrant-destroy.mp3",
+    createAudio: () => audio
+  });
+
+  adapter.play("reentrant-destroy", { loop: true });
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.equal(pauseCalls, 1, "nested destroy must leave cleanup to the outer teardown");
+  assert.equal(audio.src, "");
+  assert.equal(listeners.size, 0);
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.equal(pauseCalls, 1, "completed teardown must remain idempotent");
+});
