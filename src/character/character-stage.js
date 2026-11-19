@@ -25,6 +25,7 @@ export function createCharacterStage({
   let lifecycleVersion = 0;
   let destroyed = false;
   let lastTimeMs = -1;
+  let rewindInProgress = false;
   let updateQueue = Promise.resolve();
   const deliveredEventIds = new Set();
 
@@ -122,7 +123,12 @@ export function createCharacterStage({
 
     const version = lifecycleVersion;
     const rewound = timeMs < lastTimeMs;
-    if (rewound) deliveredEventIds.clear();
+    // A failed rewind update may be retried (or adjusted) before it commits.
+    // Clear the prior playback epoch only once for that in-progress seek.
+    if (rewound && !rewindInProgress) {
+      deliveredEventIds.clear();
+      rewindInProgress = true;
+    }
 
     const updates = [];
     for (const record of records.values()) {
@@ -148,6 +154,7 @@ export function createCharacterStage({
     }
     if (destroyed || !mounted || version !== lifecycleVersion) return false;
     lastTimeMs = timeMs;
+    rewindInProgress = false;
     return true;
   }
 
@@ -168,6 +175,7 @@ export function createCharacterStage({
     // Commit the released lifecycle state before calling DOM/host adapters.
     mounted = false;
     lastTimeMs = -1;
+    rewindInProgress = false;
     deliveredEventIds.clear();
 
     let firstError;
@@ -192,6 +200,7 @@ export function createCharacterStage({
       destroyed = true;
       mounted = false;
       lastTimeMs = -1;
+      rewindInProgress = false;
       deliveredEventIds.clear();
     }
     // The renderer retains handles whose DOM removal failed; allow teardown retry.
