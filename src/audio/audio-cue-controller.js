@@ -145,6 +145,9 @@ export function createAudioCueController({
     // calling host adapters when the controller is already active.
     if (!paused) return;
     invokeForVoices(resumeVoice, "One or more audio voices could not be resumed", { onlyPaused: true });
+    // A resume hook can synchronously destroy the controller. Do not commit
+    // the remainder of a lifecycle transition after teardown has taken ownership.
+    if (destroyed) return;
     // Advancing the cursor skips cues that elapsed while playback was paused.
     for (const cue of normalized) if (cue.atMs <= timeMs) firedIds.add(cue.id);
     cursor = timeMs;
