@@ -446,3 +446,35 @@ test("character stage retries failed async timeline callbacks without replaying 
   assert.deepEqual(events, ["first", "second", "second", "third"]);
   stage.destroy();
 });
+
+
+test("rewind retries do not replay events already delivered during the same seek", async () => {
+  const events = [];
+  let failSecond = true;
+  const timeline = createTimeline([
+    { id: "first", atMs: 100, type: "dialogue" },
+    { id: "second", atMs: 200, type: "dialogue" },
+    { id: "third", atMs: 300, type: "dialogue" }
+  ]);
+  const { stage } = fixture({
+    timeline,
+    onEvent: async event => {
+      events.push(event.id);
+      if (event.id === "second" && failSecond) {
+        failSecond = false;
+        throw new Error("rewound dialogue callback failed");
+      }
+    }
+  });
+
+  await stage.mount();
+  await stage.update(500);
+  events.length = 0;
+
+  await assert.rejects(stage.update(250), /rewound dialogue callback failed/);
+  assert.deepEqual(events, ["first", "second"]);
+  assert.equal(await stage.update(250), true);
+  assert.deepEqual(events, ["first", "second", "second"]);
+
+  stage.destroy();
+});
