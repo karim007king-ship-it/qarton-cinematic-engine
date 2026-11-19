@@ -443,3 +443,24 @@ test("a voice allocated by a reentrant play hook is stopped when teardown begins
     cursor: -1, paused: false, destroyed: true, volume: 1, activeVoices: 0
   });
 });
+
+
+test("reentrant destroy from a host stop hook does not stop the same voice twice", () => {
+  const stopped = [];
+  let controller;
+  controller = createAudioCueController({
+    cues: [{ id: "music", atMs: 0, asset: "theme", loop: true }],
+    play: () => ({ id: "music" }),
+    stop: voice => {
+      stopped.push(voice);
+      controller.destroy();
+    }
+  });
+
+  controller.update(0);
+  assert.doesNotThrow(() => controller.destroy());
+  assert.equal(stopped.length, 1,
+    "nested destroy must leave the active stop operation to its outer teardown");
+  assert.equal(controller.getState().destroyed, true);
+  assert.equal(controller.getState().activeVoices, 0);
+});
