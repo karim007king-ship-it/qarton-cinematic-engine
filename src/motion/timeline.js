@@ -1,5 +1,5 @@
 /** Clone and freeze JSON-like event data so caller mutations cannot alter a timeline. */
-function snapshot(value, seen = new WeakMap()) {
+function snapshot(value, seen = new WeakMap(), ancestors = new WeakSet()) {
   if (value === null || typeof value === "string" || typeof value === "boolean") return value;
   if (typeof value === "number") {
     if (!Number.isFinite(value)) {
@@ -10,41 +10,51 @@ function snapshot(value, seen = new WeakMap()) {
   if (typeof value !== "object") {
     throw new TypeError("Timeline payload must contain only JSON-like values");
   }
+  if (ancestors.has(value)) {
+    throw new TypeError("Timeline payload must not contain cyclic references");
+  }
+  // Repeated references are safe and retain their shared identity in the
+  // snapshot; only a reference to an ancestor is a true cycle.
   if (seen.has(value)) return seen.get(value);
 
-  if (Array.isArray(value)) {
-    const copy = [];
-    seen.set(value, copy);
-    for (let index = 0; index < value.length; index += 1) {
-      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
-      if (!descriptor || !Object.hasOwn(descriptor, "value")) {
-        throw new TypeError("Timeline arrays must be dense data arrays without accessors");
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value)) {
+      const copy = [];
+      seen.set(value, copy);
+      for (let index = 0; index < value.length; index += 1) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+        if (!descriptor || !Object.hasOwn(descriptor, "value")) {
+          throw new TypeError("Timeline arrays must be dense data arrays without accessors");
+        }
+        copy.push(snapshot(descriptor.value, seen, ancestors));
       }
-      copy.push(snapshot(descriptor.value, seen));
+      return Object.freeze(copy);
+    }
+
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new TypeError("Timeline payload must contain only arrays and plain objects");
+    }
+
+    const copy = Object.create(prototype);
+    seen.set(value, copy);
+    for (const key of Object.keys(value)) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !Object.hasOwn(descriptor, "value")) {
+        throw new TypeError("Timeline payload objects must use data properties, not accessors");
+      }
+      Object.defineProperty(copy, key, {
+        value: snapshot(descriptor.value, seen, ancestors),
+        enumerable: true,
+        configurable: true,
+        writable: true
+      });
     }
     return Object.freeze(copy);
+  } finally {
+    ancestors.delete(value);
   }
-
-  const prototype = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) {
-    throw new TypeError("Timeline payload must contain only arrays and plain objects");
-  }
-
-  const copy = Object.create(prototype);
-  seen.set(value, copy);
-  for (const key of Object.keys(value)) {
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    if (!descriptor || !Object.hasOwn(descriptor, "value")) {
-      throw new TypeError("Timeline payload objects must use data properties, not accessors");
-    }
-    Object.defineProperty(copy, key, {
-      value: snapshot(descriptor.value, seen),
-      enumerable: true,
-      configurable: true,
-      writable: true
-    });
-  }
-  return Object.freeze(copy);
 }
 
 /** Build an immutable, deterministically ordered event timeline. */
