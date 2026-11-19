@@ -200,6 +200,7 @@ export function createCharacterStage({
       destroyed = true;
       mounted = false;
       lastTimeMs = -1;
+      rewindInProgress = false;
       deliveredEventIds.clear();
     }
     // The renderer retains handles whose DOM removal failed; allow teardown retry.
