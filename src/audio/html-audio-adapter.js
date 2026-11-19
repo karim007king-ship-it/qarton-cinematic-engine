@@ -72,12 +72,12 @@ export function createHTMLAudioAdapter({
     }
   }
 
-  function reportPlaybackError(error, audio, { retainOwnership = false, clearSource = false } = {}) {
+  function reportPlaybackError(error, audio, { retainOwnership = false, clearSource = false, phase = "play" } = {}) {
     // A stopped or naturally ended voice is stale; its late Promise rejection
     // must not report an error or touch a resource the adapter no longer owns.
     if (!active.has(audio)) return;
     releaseFailedPlayback(audio, { retainOwnership, clearSource });
-    try { onPlaybackError(error, { asset: assets.get(audio), audio }); }
+    try { onPlaybackError(error, { asset: assets.get(audio), audio, phase }); }
     catch { /* error reporting must not create an unhandled rejection */ }
   }
 
@@ -112,7 +112,7 @@ export function createHTMLAudioAdapter({
       // Setup may have assigned src before a later native setter failed.
       // Clear that source before releasing ownership; if clearing fails,
       // retain the voice so destroy() can retry the native cleanup.
-      reportPlaybackError(error, audio, { clearSource: true });
+      reportPlaybackError(error, audio, { clearSource: true, phase: "setup" });
       throw error;
     }
 
@@ -145,7 +145,7 @@ export function createHTMLAudioAdapter({
       throw error;
     }
     if (result && typeof result.then === "function") {
-      Promise.resolve(result).catch(error => reportPlaybackError(error, audio, { retainOwnership: true }));
+      Promise.resolve(result).catch(error => reportPlaybackError(error, audio, { retainOwnership: true, phase: "play" }));
     }
     return audio;
   }
@@ -180,11 +180,11 @@ export function createHTMLAudioAdapter({
     try {
       result = audio.play();
     } catch (error) {
-      reportPlaybackError(error, audio, { retainOwnership: true });
+      reportPlaybackError(error, audio, { retainOwnership: true, phase: "resume" });
       throw error;
     }
     if (result && typeof result.then === "function") {
-      Promise.resolve(result).catch(error => reportPlaybackError(error, audio, { retainOwnership: true }));
+      Promise.resolve(result).catch(error => reportPlaybackError(error, audio, { retainOwnership: true, phase: "resume" }));
     }
   }
 
