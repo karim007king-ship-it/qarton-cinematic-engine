@@ -818,3 +818,72 @@ test("director rewind resets and replays real audio cues on the same timeline as
   await director.destroy();
   assert.deepEqual(stopped, ["opening", "impact", "opening", "impact"]);
 });
+
+
+test("director unmount and remount releases old audio voices and restarts scene cues from zero", async () => {
+  const voices = [];
+  const played = [];
+  const adapter = (await import("../src/audio/html-audio-adapter.js")).createHTMLAudioAdapter({
+    resolveAsset: key => `/${key}.mp3`,
+    createAudio: () => {
+      const listeners = new Map();
+      const audio = {
+        paused: true,
+        play() { this.paused = false; return Promise.resolve(); },
+        pause() { this.paused = true; },
+        addEventListener(type, handler) { listeners.set(type, handler); },
+        removeEventListener(type, handler) {
+          if (listeners.get(type) === handler) listeners.delete(type);
+        },
+        listeners
+      };
+      voices.push(audio);
+      return audio;
+    }
+  });
+  const audio = createAudioCueController({
+    cues: [
+      { id: "theme", atMs: 0, asset: "theme", loop: true },
+      { id: "impact", atMs: 80, asset: "impact" }
+    ],
+    play: (asset, options) => {
+      played.push(options.id);
+      return adapter.play(asset, options);
+    },
+    stop: voice => adapter.stop(voice),
+    pauseVoice: voice => adapter.pause(voice),
+    resumeVoice: voice => adapter.resume(voice),
+    setVolume: (voice, volume) => adapter.setVolume(voice, volume)
+  });
+  const director = createCinematicDirector({ audio });
+
+  await director.mount();
+  await director.update(100);
+  assert.deepEqual(played, ["theme", "impact"]);
+  assert.equal(audio.getState().activeVoices, 2);
+  const oldVoices = [...voices];
+  const staleEnded = oldVoices[1].listeners.get("ended");
+
+  director.unmount();
+  assert.equal(audio.getState().cursor, -1);
+  assert.equal(audio.getState().activeVoices, 0);
+  assert.ok(oldVoices.every(voice => voice.paused));
+  assert.ok(oldVoices.every(voice => voice.listeners.size === 0));
+
+  // Simulate a native ended event already queued before listener removal.
+  staleEnded();
+  assert.equal(audio.getState().activeVoices, 0);
+
+  await director.mount();
+  await director.update(80);
+  assert.deepEqual(played, ["theme", "impact", "theme", "impact"]);
+  assert.equal(audio.getState().cursor, 80);
+  assert.equal(audio.getState().activeVoices, 2);
+  assert.equal(voices.length, 4);
+  assert.ok(voices.slice(2).every(voice => !voice.paused));
+
+  await director.destroy();
+  adapter.destroy();
+  assert.ok(voices.every(voice => voice.paused));
+  assert.ok(voices.every(voice => voice.listeners.size === 0));
+});
