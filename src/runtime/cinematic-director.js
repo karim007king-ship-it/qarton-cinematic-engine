@@ -48,6 +48,7 @@ export function createCinematicDirector({
   let audioPausePending = false;
   const deliveredEventIds = new Set();
   let destroyPromise = null;
+  let destroyCompleted = false;
   let invokingEventCallback = false;
   let updateQueue = Promise.resolve();
 
@@ -273,6 +274,7 @@ export function createCinematicDirector({
   // onEvent itself: that callback is part of the queue being drained.
   function requestDestroy() {
     if (destroyPromise) return destroyPromise;
+    if (destroyCompleted) return Promise.resolve();
     if (!destroyed) {
       destroyed = true;
       lifecycleVersion += 1;
@@ -316,9 +318,12 @@ export function createCinematicDirector({
       if (errors.length > 1) {
         throw new AggregateError(errors, "One or more cinematic director resources could not be destroyed");
       }
-    })().finally(() => {
-      // Keep the director closed, but permit another teardown attempt after failure.
+      destroyCompleted = true;
+    })().catch(error => {
+      // A failed cleanup remains retryable; successful cleanup is permanently
+      // idempotent and must not call subsystem destroy hooks a second time.
       destroyPromise = null;
+      throw error;
     });
     return destroyPromise;
   }
