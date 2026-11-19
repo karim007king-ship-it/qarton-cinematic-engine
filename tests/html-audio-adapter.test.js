@@ -804,3 +804,55 @@ test("an asynchronous HTMLAudio resume rejection returns the cinematic director 
   await director.destroy();
   adapter.destroy();
 });
+
+
+test("HTMLAudio repeated scene cycles release every one-shot listener and ignore stale events", () => {
+  const voices = [];
+  let endedNotifications = 0;
+  let pauseCalls = 0;
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: key => `/${key}.mp3`,
+    createAudio: () => {
+      const listeners = new Map();
+      const audio = {
+        paused: true,
+        play() { this.paused = false; return Promise.resolve(); },
+        pause() { pauseCalls += 1; this.paused = true; },
+        addEventListener(type, handler) { listeners.set(type, handler); },
+        removeEventListener(type, handler) {
+          if (listeners.get(type) === handler) listeners.delete(type);
+        }
+      };
+      audio.listeners = listeners;
+      voices.push(audio);
+      return audio;
+    }
+  });
+
+  for (let index = 0; index < 25; index += 1) {
+    const voice = adapter.play(`scene-${index}`, {
+      onEnded: () => { endedNotifications += 1; }
+    });
+    const staleHandler = voice.listeners.get("ended");
+    assert.equal(voice.listeners.size, 1);
+
+    if (index % 2 === 0) {
+      staleHandler();
+      assert.equal(endedNotifications, (index / 2) + 1);
+    } else {
+      adapter.stop(voice);
+      staleHandler();
+      assert.equal(endedNotifications, Math.floor(index / 2) + 1);
+    }
+
+    assert.equal(voice.listeners.size, 0, `voice ${index} must detach its ended listener`);
+  }
+
+  assert.equal(voices.length, 25);
+  assert.equal(endedNotifications, 13);
+  assert.equal(pauseCalls, 12);
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.equal(voices.reduce((total, voice) => total + voice.listeners.size, 0), 0);
+  assert.equal(pauseCalls, 12, "destroy must not pause voices already ended or stopped");
+});
