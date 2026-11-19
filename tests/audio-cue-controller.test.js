@@ -553,3 +553,58 @@ test("reentrant stopAll from a host stop hook does not recurse or commit a neste
   assert.equal(controller.getState().activeVoices, 0);
   controller.destroy();
 });
+
+
+test("reentrant destroy during resume stops further host lifecycle callbacks", () => {
+  const resumed = [];
+  const stopped = [];
+  let controller;
+  controller = createAudioCueController({
+    cues: [
+      { id: "music", atMs: 0, asset: "music", loop: true },
+      { id: "ambience", atMs: 0, asset: "ambience", loop: true }
+    ],
+    play: (_asset, options) => ({ id: options.id }),
+    pauseVoice: () => {},
+    resumeVoice: voice => {
+      resumed.push(voice.id);
+      if (voice.id === "music") controller.destroy();
+    },
+    stop: voice => stopped.push(voice.id)
+  });
+
+  controller.update(0);
+  controller.pause(0);
+  assert.doesNotThrow(() => controller.resume(0));
+  assert.deepEqual(resumed, ["music"],
+    "a resume hook that destroys the controller must prevent later voices from resuming");
+  assert.deepEqual(stopped, ["music", "ambience"]);
+  assert.equal(controller.getState().destroyed, true);
+  assert.equal(controller.getState().activeVoices, 0);
+});
+
+
+test("reentrant destroy during volume update stops further host callbacks", () => {
+  const volumeCalls = [];
+  const stopped = [];
+  let controller;
+  controller = createAudioCueController({
+    cues: [
+      { id: "music", atMs: 0, asset: "music", loop: true },
+      { id: "ambience", atMs: 0, asset: "ambience", loop: true }
+    ],
+    play: (_asset, options) => ({ id: options.id }),
+    setVolume: voice => {
+      volumeCalls.push(voice.id);
+      if (voice.id === "music") controller.destroy();
+    },
+    stop: voice => stopped.push(voice.id)
+  });
+
+  controller.update(0);
+  assert.doesNotThrow(() => controller.setMasterVolume(0.5));
+  assert.deepEqual(volumeCalls, ["music"],
+    "a volume hook that destroys the controller must end the update pass");
+  assert.deepEqual(stopped, ["music", "ambience"]);
+  assert.equal(controller.getState().activeVoices, 0);
+});
