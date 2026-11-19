@@ -489,3 +489,25 @@ test("reentrant stop during cleanup of a late-allocated voice does not recurse",
     cursor: -1, paused: false, destroyed: true, volume: 1, activeVoices: 0
   });
 });
+
+
+test("reentrant stopAll from a host stop hook does not recurse or commit a nested reset", () => {
+  const stopped = [];
+  let controller;
+  controller = createAudioCueController({
+    cues: [{ id: "music", atMs: 0, asset: "music", loop: true }],
+    play: () => ({ id: "music" }),
+    stop: voice => {
+      stopped.push(voice);
+      controller.stopAll({ reset: true });
+    }
+  });
+
+  controller.update(0);
+  assert.doesNotThrow(() => controller.stopAll());
+  assert.equal(stopped.length, 1, "the active voice must be stopped exactly once");
+  assert.equal(controller.getState().cursor, 0,
+    "a nested stopAll must not commit its reset while the outer cleanup owns the pass");
+  assert.equal(controller.getState().activeVoices, 0);
+  controller.destroy();
+});
