@@ -1030,3 +1030,30 @@ test("host-requested destroy waits for an active async event callback before rel
   ], "teardown must follow callback settlement and later events must not dispatch");
   assert.equal(director.getState().destroyed, true);
 });
+
+test("successful director destroy is idempotent across repeated calls", async () => {
+  const calls = [];
+  const director = createCinematicDirector({
+    characterStage: {
+      mount: async () => true,
+      update: async () => {},
+      unmount: () => {},
+      destroy: () => { calls.push("stage"); }
+    },
+    audio: {
+      update: () => {},
+      pause: () => {},
+      resume: () => {},
+      stopAll: () => {},
+      destroy: () => { calls.push("audio"); }
+    }
+  });
+
+  await director.mount();
+  await director.destroy();
+  await director.destroy();
+  await director.requestDestroy();
+
+  assert.deepEqual(calls, ["stage", "audio"],
+    "successful teardown must release each owned subsystem exactly once");
+});
