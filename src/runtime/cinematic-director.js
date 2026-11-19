@@ -137,14 +137,15 @@ export function createCinematicDirector({
     for (const event of events) {
       if (destroyed || !mounted || version !== lifecycleVersion) break;
       if (deliveredEventIds.has(event.id)) continue;
-      let callbackResult;
       invokingEventCallback = true;
       try {
-        callbackResult = onEvent(event, timelineTimeMs);
+        // Keep the re-entrancy guard active for the full async callback.
+        // Otherwise an awaited callback can call destroy() after its first
+        // suspension and deadlock against the update queue it is running in.
+        await onEvent(event, timelineTimeMs);
       } finally {
         invokingEventCallback = false;
       }
-      await callbackResult;
       if (destroyed || !mounted || version !== lifecycleVersion) break;
       deliveredEventIds.add(event.id);
       dispatchedEvents.push(event);
