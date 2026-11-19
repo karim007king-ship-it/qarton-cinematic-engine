@@ -580,6 +580,8 @@ test("reentrant destroy during resume stops further host lifecycle callbacks", (
     "a resume hook that destroys the controller must prevent later voices from resuming");
   assert.deepEqual(stopped, ["music", "ambience"]);
   assert.equal(controller.getState().destroyed, true);
+  assert.equal(controller.getState().paused, true,
+    "resume must not overwrite lifecycle state after a host callback destroys the controller");
   assert.equal(controller.getState().activeVoices, 0);
 });
 
