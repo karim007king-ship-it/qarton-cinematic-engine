@@ -99,6 +99,14 @@ export function createAudioCueController({
         id: cue.id, channel: cue.channel, loop: cue.loop, volume: cue.volume * volume,
         onEnded: cue.loop ? undefined : onEnded
       });
+      // A host play hook can synchronously trigger teardown (for example,
+      // when scene ownership changes during allocation). Register its returned
+      // voice long enough for destroy cleanup, then stop processing this frame.
+      if (destroyed) {
+        if (voice != null && !endedBeforeRegistration) voices.set(cue.id, voice);
+        stopVoices();
+        assertAlive();
+      }
       if (voice != null && !endedBeforeRegistration) voices.set(cue.id, voice);
       firedIds.add(cue.id);
       fired.push(cue.id);
