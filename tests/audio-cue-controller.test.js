@@ -491,6 +491,44 @@ test("reentrant stop during cleanup of a late-allocated voice does not recurse",
 });
 
 
+
+test("reentrant update from a host stop hook cannot allocate voices during stop cleanup", () => {
+  const stopped = [];
+  const played = [];
+  let controller;
+  controller = createAudioCueController({
+    cues: [
+      { id: "music", atMs: 0, asset: "music", loop: true },
+      { id: "impact", atMs: 100, asset: "impact" }
+    ],
+    play: (_asset, options) => {
+      played.push(options.id);
+      return { id: options.id };
+    },
+    stop: voice => {
+      stopped.push(voice.id);
+      assert.throws(
+        () => controller.update(100),
+        /Cannot update audio timeline while voices are being stopped/
+      );
+    }
+  });
+
+  controller.update(0);
+  assert.doesNotThrow(() => controller.stopAll());
+  assert.deepEqual(played, ["music"],
+    "a nested update must not allocate a new cue while the stop pass owns voice cleanup");
+  assert.deepEqual(stopped, ["music"]);
+  assert.deepEqual(controller.getState(), {
+    cursor: 0, paused: false, destroyed: false, volume: 1, activeVoices: 0
+  });
+
+  assert.deepEqual(controller.update(100), ["impact"],
+    "normal timeline updates remain available after cleanup completes");
+  assert.deepEqual(played, ["music", "impact"]);
+  controller.destroy();
+});
+
 test("reentrant stopAll from a host stop hook does not recurse or commit a nested reset", () => {
   const stopped = [];
   let controller;
