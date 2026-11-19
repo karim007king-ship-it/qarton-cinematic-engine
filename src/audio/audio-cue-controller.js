@@ -72,6 +72,7 @@ export function createAudioCueController({
 
   function update(timeMs) {
     assertAlive();
+    if (stopInProgress) throw new Error("Cannot update audio timeline while voices are being stopped");
     if (!Number.isFinite(timeMs) || timeMs < 0 || timeMs < cursor) {
       throw new TypeError("Audio timeline time must be finite, non-negative and monotonic");
     }
