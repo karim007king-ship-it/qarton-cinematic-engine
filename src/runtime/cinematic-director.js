@@ -267,12 +267,11 @@ export function createCinematicDirector({
     if (failed) throw firstError;
   }
 
-  function destroy() {
-    // Awaiting destroy from onEvent would deadlock: the active update is
-    // waiting for that callback while destroy waits for the update queue.
-    if (invokingEventCallback) {
-      throw new Error("Cannot destroy the cinematic director inside onEvent; defer destroy until the update settles");
-    }
+  // Host-owned teardown may be requested while an async event callback is
+  // pending. It marks the director closed immediately, then waits for the
+  // serialized update queue before releasing resources. Do not await this from
+  // onEvent itself: that callback is part of the queue being drained.
+  function requestDestroy() {
     if (destroyPromise) return destroyPromise;
     if (!destroyed) {
       destroyed = true;
@@ -324,6 +323,15 @@ export function createCinematicDirector({
     return destroyPromise;
   }
 
+  function destroy() {
+    // Awaiting destroy from onEvent would deadlock: the active update is
+    // waiting for that callback while destroy waits for the update queue.
+    if (invokingEventCallback) {
+      throw new Error("Cannot destroy the cinematic director inside onEvent; use requestDestroy from the host after the callback settles");
+    }
+    return requestDestroy();
+  }
+
   return Object.freeze({
     mount,
     update,
@@ -331,6 +339,7 @@ export function createCinematicDirector({
     resume,
     unmount,
     destroy,
+    requestDestroy,
     getState: () => Object.freeze({ mounted, paused, destroyed, timeMs: lastTimeMs })
   });
 }
