@@ -464,3 +464,28 @@ test("reentrant destroy from a host stop hook does not stop the same voice twice
   assert.equal(controller.getState().destroyed, true);
   assert.equal(controller.getState().activeVoices, 0);
 });
+
+
+test("reentrant stop during cleanup of a late-allocated voice does not recurse", () => {
+  const stopped = [];
+  let controller;
+  const allocatedVoice = { id: "late-reentrant-voice" };
+  controller = createAudioCueController({
+    cues: [{ id: "music", atMs: 0, asset: "theme", loop: true }],
+    play: () => {
+      controller.destroy();
+      return allocatedVoice;
+    },
+    stop: voice => {
+      stopped.push(voice);
+      controller.destroy();
+    }
+  });
+
+  assert.throws(() => controller.update(0), /destroyed/);
+  assert.deepEqual(stopped, [allocatedVoice],
+    "the late voice must be stopped exactly once despite reentrant teardown");
+  assert.deepEqual(controller.getState(), {
+    cursor: -1, paused: false, destroyed: true, volume: 1, activeVoices: 0
+  });
+});
