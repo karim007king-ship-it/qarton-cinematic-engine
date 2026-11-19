@@ -44,6 +44,7 @@ export function createAudioCueController({
   let paused = false;
   let destroyed = false;
   let destroyInProgress = false;
+  let stopInProgress = false;
   let volume = masterVolume;
   const voices = new Map();
   // Track host lifecycle success per voice so retries only target unfinished work.
@@ -169,19 +170,28 @@ export function createAudioCueController({
   }
 
   function stopVoices() {
-    const errors = [];
-    for (const [id, voice] of voices) {
-      try { stop(voice); voices.delete(id); pausedVoices.delete(id); } catch (error) { errors.push(error); }
+    // Host stop hooks are external code and may re-enter stopAll() or
+    // destroy(). Keep one owner for the active voice-cleanup pass.
+    if (stopInProgress) return false;
+    stopInProgress = true;
+    try {
+      const errors = [];
+      for (const [id, voice] of voices) {
+        try { stop(voice); voices.delete(id); pausedVoices.delete(id); } catch (error) { errors.push(error); }
+      }
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) throw new AggregateError(errors, "One or more audio voices could not be stopped");
+      return true;
+    } finally {
+      stopInProgress = false;
     }
-    if (errors.length === 1) throw errors[0];
-    if (errors.length > 1) throw new AggregateError(errors, "One or more audio voices could not be stopped");
   }
 
   function stopAll({ reset = false } = {}) {
     assertAlive();
     paused = false;
-    stopVoices();
-    if (reset) { cursor = -1; firedIds.clear(); }
+    const completed = stopVoices();
+    if (reset && completed) { cursor = -1; firedIds.clear(); }
   }
 
   function destroy() {
