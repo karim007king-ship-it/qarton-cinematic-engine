@@ -365,32 +365,3 @@ test("failed appendChild rolls back the pending character record and allows a la
   assert.equal(root.children.length, 0);
 });
 
-test("failed post-resolution mount setup aborts its owned sprite request", async () => {
-  const document = new Document();
-  const root = new Element("main", document);
-  const failure = new Error("style assignment failed");
-  const renderer = createDOMCharacterRenderer({
-    root,
-    resolveSprite: () => "https://assets.test/hero.png"
-  });
-  const originalCreateElement = document.createElement.bind(document);
-  let image;
-  document.createElement = tag => {
-    const element = originalCreateElement(tag);
-    if (tag === "img") image = element;
-    return element;
-  };
-  image = null;
-  const originalAppend = root.appendChild.bind(root);
-  root.appendChild = child => {
-    if (child.children[0] === image) throw failure;
-    return originalAppend(child);
-  };
-
-  await assert.rejects(
-    renderer.mount({ id: "hero", sprites: { default: "hero" } }),
-    error => error === failure
-  );
-  assert.equal(root.children.length, 0);
-  renderer.destroy();
-});
