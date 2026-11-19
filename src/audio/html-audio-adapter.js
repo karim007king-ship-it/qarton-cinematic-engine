@@ -75,7 +75,7 @@ export function createHTMLAudioAdapter({
   function reportPlaybackError(error, audio, { retainOwnership = false, clearSource = false, phase = "play" } = {}) {
     // A stopped or naturally ended voice is stale; its late Promise rejection
     // must not report an error or touch a resource the adapter no longer owns.
-    if (!active.has(audio)) return;
+    if (!active.has(audio) || voiceStates.get(audio) !== "active") return;
     releaseFailedPlayback(audio, { retainOwnership, clearSource });
     try { onPlaybackError(error, { asset: assets.get(audio), audio, phase }); }
     catch { /* error reporting must not create an unhandled rejection */ }
