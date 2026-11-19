@@ -887,3 +887,65 @@ test("director unmount and remount releases old audio voices and restarts scene 
   assert.ok(voices.every(voice => voice.paused));
   assert.ok(voices.every(voice => voice.listeners.size === 0));
 });
+
+
+test("director and HTMLAudio adapter release every resource across repeated scene remounts", async () => {
+  const voices = [];
+  const adapter = (await import("../src/audio/html-audio-adapter.js")).createHTMLAudioAdapter({
+    resolveAsset: key => `/${key}.mp3`,
+    createAudio: () => {
+      const listeners = new Map();
+      const audio = {
+        paused: true,
+        play() { this.paused = false; return Promise.resolve(); },
+        pause() { this.paused = true; },
+        addEventListener(type, handler) { listeners.set(type, handler); },
+        removeEventListener(type, handler) {
+          if (listeners.get(type) === handler) listeners.delete(type);
+        },
+        listeners
+      };
+      voices.push(audio);
+      return audio;
+    }
+  });
+  const audio = createAudioCueController({
+    cues: [
+      { id: "theme", atMs: 0, asset: "theme", loop: true },
+      { id: "impact", atMs: 25, asset: "impact" }
+    ],
+    play: (asset, options) => adapter.play(asset, options),
+    stop: voice => adapter.stop(voice),
+    pauseVoice: voice => adapter.pause(voice),
+    resumeVoice: voice => adapter.resume(voice),
+    setVolume: (voice, volume) => adapter.setVolume(voice, volume)
+  });
+  const director = createCinematicDirector({ audio });
+
+  for (let cycle = 0; cycle < 50; cycle += 1) {
+    assert.equal(await director.mount(), true, `mount cycle ${cycle}`);
+    await director.update(30);
+    assert.equal(audio.getState().activeVoices, 2, `active voices before unmount cycle ${cycle}`);
+
+    const currentVoices = voices.slice(cycle * 2, cycle * 2 + 2);
+    const staleEnded = currentVoices[1].listeners.get("ended");
+    assert.equal(currentVoices[1].listeners.size, 1);
+
+    director.unmount();
+
+    assert.equal(audio.getState().cursor, -1, `audio cursor after unmount cycle ${cycle}`);
+    assert.equal(audio.getState().activeVoices, 0, `controller voices after unmount cycle ${cycle}`);
+    assert.ok(currentVoices.every(voice => voice.paused), `native voices stopped in cycle ${cycle}`);
+    assert.ok(currentVoices.every(voice => voice.listeners.size === 0), `listeners detached in cycle ${cycle}`);
+
+    // A native event already queued before listener removal must be harmless.
+    staleEnded();
+    assert.equal(audio.getState().activeVoices, 0, `stale ended event in cycle ${cycle}`);
+  }
+
+  assert.equal(voices.length, 100, "each scene mount creates exactly two voices");
+  await director.destroy();
+  adapter.destroy();
+  assert.ok(voices.every(voice => voice.paused), "all native voices remain stopped after final destroy");
+  assert.ok(voices.every(voice => voice.listeners.size === 0), "no ended listeners remain after final destroy");
+});
