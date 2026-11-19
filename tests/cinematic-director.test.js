@@ -767,3 +767,54 @@ test("director rejects reentrant destroy from an event callback instead of deadl
   await director.destroy();
   assert.equal(director.getState().destroyed, true);
 });
+
+
+test("director rewind resets and replays real audio cues on the same timeline as scene events", async () => {
+  const played = [];
+  const stopped = [];
+  const delivered = [];
+  const audio = createAudioCueController({
+    cues: [
+      { id: "opening", atMs: 100, asset: "opening" },
+      { id: "impact", atMs: 300, asset: "impact" }
+    ],
+    play: (asset, options) => {
+      const voice = { asset, id: options.id };
+      played.push(voice);
+      return voice;
+    },
+    stop: voice => stopped.push(voice.id)
+  });
+  const director = createCinematicDirector({
+    audio,
+    timeline: createTimeline([
+      { id: "opening-beat", atMs: 100, type: "story" },
+      { id: "impact-beat", atMs: 300, type: "story" }
+    ]),
+    onEvent: event => delivered.push(event.id)
+  });
+
+  await director.mount();
+  await director.update(350);
+  assert.deepEqual(played.map(voice => voice.id), ["opening", "impact"]);
+  assert.deepEqual(delivered, ["opening-beat", "impact-beat"]);
+
+  director.pause(350);
+  director.resume(350);
+  await director.update(400);
+  assert.equal(played.length, 2, "pause/resume must not replay already-fired cues");
+
+  await director.update(50);
+  assert.deepEqual(stopped, ["opening", "impact"]);
+  assert.equal(audio.getState().cursor, 50);
+
+  await director.update(350);
+  assert.deepEqual(played.map(voice => voice.id), ["opening", "impact", "opening", "impact"]);
+  assert.deepEqual(delivered, [
+    "opening-beat", "impact-beat", "opening-beat", "impact-beat"
+  ]);
+  assert.equal(audio.getState().cursor, 350);
+
+  await director.destroy();
+  assert.deepEqual(stopped, ["opening", "impact", "opening", "impact"]);
+});
