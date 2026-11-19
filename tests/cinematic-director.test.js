@@ -1057,3 +1057,41 @@ test("successful director destroy is idempotent across repeated calls", async ()
   assert.deepEqual(calls, ["stage", "audio"],
     "successful teardown must release each owned subsystem exactly once");
 });
+
+test("director pauses again when the host reports a late asynchronous resume rejection", async () => {
+  let director;
+  let rejectResume;
+  const calls = [];
+  const audio = {
+    update: time => calls.push(["update", time]),
+    pause: time => calls.push(["pause", time]),
+    resume: time => {
+      calls.push(["resume", time]);
+      if (calls.filter(([name]) => name === "resume").length === 1) {
+        queueMicrotask(() => rejectResume?.(new Error("autoplay denied")));
+      }
+    },
+    stopAll: () => {},
+    destroy: () => {}
+  };
+  director = createCinematicDirector({ audio });
+  const rejected = new Promise(resolve => { rejectResume = error => {
+    // This is the host's onPlaybackError({ phase: "resume" }) recovery path.
+    director.pause();
+    resolve(error);
+  }; });
+
+  await director.mount();
+  await director.update(100);
+  assert.equal(director.pause(100), true);
+  assert.equal(director.resume(100), true);
+  assert.match((await rejected).message, /autoplay denied/);
+  assert.equal(director.getState().paused, true,
+    "late resume rejection must return the director to a retryable paused state");
+
+  // A later explicit user gesture can retry through the director.
+  assert.equal(director.resume(100), true);
+  assert.equal(director.getState().paused, false);
+  await director.destroy();
+});
+
