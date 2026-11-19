@@ -657,7 +657,7 @@ test("runtime remains reachable when initial page lifecycle synchronization fail
     onLifecycleError: (error, context) => lifecycleErrors.push([error.message, context.phase])
   });
 
-  assert.deepEqual(lifecycleErrors, [["initial pause callback failed", "start"]]);
+  assert.deepEqual(lifecycleErrors, [["initial pause callback failed", "pause"]]);
   assert.equal(runtime.pageLifecycleState.started, false);
   assert.equal(target.listenerCount(), 0);
 
