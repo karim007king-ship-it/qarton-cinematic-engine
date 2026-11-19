@@ -856,3 +856,63 @@ test("HTMLAudio repeated scene cycles release every one-shot listener and ignore
   assert.equal(voices.reduce((total, voice) => total + voice.listeners.size, 0), 0);
   assert.equal(pauseCalls, 12, "destroy must not pause voices already ended or stopped");
 });
+
+test("director remount ignores a late play rejection from the previous scene generation", async () => {
+  const voices = [];
+  const errors = [];
+  let rejectFirstPlay;
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/scene-theme.mp3",
+    createAudio: () => {
+      const audio = fakeAudio();
+      const generation = voices.length;
+      audio.play = () => {
+        audio.paused = false;
+        if (generation === 0) {
+          return new Promise((_resolve, reject) => { rejectFirstPlay = reject; });
+        }
+        return Promise.resolve();
+      };
+      voices.push(audio);
+      return audio;
+    },
+    onPlaybackError: error => errors.push(error.message)
+  });
+  const controller = createAudioCueController({
+    cues: [{ id: "theme", atMs: 0, asset: "theme", loop: true }],
+    play: (asset, options) => adapter.play(asset, options),
+    stop: voice => adapter.stop(voice),
+    pauseVoice: voice => adapter.pause(voice),
+    resumeVoice: voice => adapter.resume(voice),
+    setVolume: (voice, volume) => adapter.setVolume(voice, volume)
+  });
+  const director = createCinematicDirector({ audio: controller });
+
+  await director.mount();
+  await director.update(0);
+  const oldVoice = voices[0];
+  assert.equal(controller.getState().activeVoices, 1);
+
+  director.unmount();
+  assert.equal(oldVoice.paused, true);
+  assert.equal(controller.getState().activeVoices, 0);
+
+  await director.mount();
+  await director.update(0);
+  const currentVoice = voices[1];
+  assert.equal(controller.getState().activeVoices, 1);
+  assert.notEqual(currentVoice, oldVoice);
+
+  rejectFirstPlay(new Error("late rejection from previous scene"));
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.deepEqual(errors, [], "a rejected promise from an unmounted voice is stale");
+  assert.equal(oldVoice.paused, true);
+  assert.equal(currentVoice.paused, false,
+    "a stale rejection must not pause or otherwise affect the remounted scene");
+  assert.equal(controller.getState().activeVoices, 1);
+
+  await director.destroy();
+  adapter.destroy();
+});
