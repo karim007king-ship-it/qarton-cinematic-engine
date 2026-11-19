@@ -540,3 +540,32 @@ test("runtime forwards adaptive quality transitions to the host with previous an
 
   await runtime.destroy();
 });
+
+
+test("successful cinematic runtime destroy does not repeat resource cleanup", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const target = new LifecycleTarget("visible");
+  let listenerRemovals = 0;
+  const remove = target.removeEventListener.bind(target);
+  target.removeEventListener = (type, listener) => {
+    listenerRemovals += 1;
+    remove(type, listener);
+  };
+  const runtime = createCinematicRuntime({
+    root,
+    loadAsset: key => key,
+    renderScene: () => document.createElement("div"),
+    lifecycleTarget: target
+  });
+
+  await runtime.transitionTo({ id: "idempotent-runtime-destroy" });
+  await runtime.destroy();
+  const removalsAfterFirstDestroy = listenerRemovals;
+  assert.ok(removalsAfterFirstDestroy > 0);
+
+  await runtime.destroy();
+  assert.equal(listenerRemovals, removalsAfterFirstDestroy,
+    "a successful second destroy must not repeat lifecycle listener cleanup");
+  assert.equal(root.children.length, 0);
+});
