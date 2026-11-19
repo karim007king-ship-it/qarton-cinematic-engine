@@ -58,10 +58,14 @@ export function createAudioCueController({
   function invokeForVoices(adapter, message, { onlyPaused = false, markPaused = false } = {}) {
     const errors = [];
     for (const [id, voice] of voices) {
+      // A host lifecycle hook may synchronously destroy this controller.
+      // Do not invoke further hooks or mutate pause bookkeeping afterwards.
+      if (destroyed) break;
       if (onlyPaused && !pausedVoices.has(id)) continue;
       if (markPaused && pausedVoices.has(id)) continue;
       try {
         adapter(voice);
+        if (destroyed) break;
         if (markPaused) pausedVoices.add(id);
         else if (onlyPaused) pausedVoices.delete(id);
       } catch (error) { errors.push(error); }
@@ -155,6 +159,8 @@ export function createAudioCueController({
     volume = nextVolume;
     const errors = [];
     for (const [id, voice] of voices) {
+      // setVolume is host code too; a synchronous teardown must end this pass.
+      if (destroyed) break;
       const cue = normalized.find(item => item.id === id);
       if (voice == null) continue;
       try {
