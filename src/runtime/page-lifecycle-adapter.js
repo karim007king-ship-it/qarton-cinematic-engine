@@ -17,6 +17,7 @@ export function createPageLifecycleAdapter({ target, pageTarget = target, setAct
   }
 
   let started = false;
+  let starting = false;
   let active = null;
   // Track each successfully attached listener so failed startup rollback can
   // be retried through stop() if a host EventTarget refuses removal.
@@ -56,7 +57,10 @@ export function createPageLifecycleAdapter({ target, pageTarget = target, setAct
   ];
 
   function start() {
-    if (started) return false;
+    // setActive() is host code and may re-enter start() or stop(). Do not
+    // attach a second listener set while the initial synchronization runs.
+    if (started || starting) return false;
+    starting = true;
     const attachedThisAttempt = [];
     try {
       for (const entry of listeners) {
@@ -66,8 +70,10 @@ export function createPageLifecycleAdapter({ target, pageTarget = target, setAct
         attachedThisAttempt.push(entry);
       }
       sync();
-      started = true;
-      return true;
+      // A host callback may have called stop() during sync(). Reflect actual
+      // listener ownership rather than resurrecting a stopped adapter.
+      started = attachedListeners.size > 0;
+      return started;
     } catch (error) {
       const rollbackErrors = [];
       for (const entry of attachedThisAttempt.reverse()) {
@@ -89,6 +95,8 @@ export function createPageLifecycleAdapter({ target, pageTarget = target, setAct
         );
       }
       throw error;
+    } finally {
+      starting = false;
     }
   }
 
