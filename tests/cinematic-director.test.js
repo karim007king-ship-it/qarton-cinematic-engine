@@ -761,7 +761,7 @@ test("director rejects reentrant destroy from an event callback instead of deadl
   await director.mount();
   await assert.rejects(
     director.update(0),
-    /Cannot destroy the cinematic director inside onEvent; defer destroy until the update settles/
+    /Cannot destroy the cinematic director inside onEvent; use requestDestroy from the host after the callback settles/
   );
   assert.equal(director.getState().destroyed, false);
   await director.destroy();
@@ -782,7 +782,7 @@ test("director keeps the reentrant destroy guard active after an async event cal
   await director.mount();
   await assert.rejects(
     director.update(0),
-    /Cannot destroy the cinematic director inside onEvent; defer destroy until the update settles/
+    /Cannot destroy the cinematic director inside onEvent; use requestDestroy from the host after the callback settles/
   );
   assert.equal(director.getState().destroyed, false,
     "reentrant destroy must be rejected without closing the director");
