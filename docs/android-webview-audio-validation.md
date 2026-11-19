@@ -21,7 +21,7 @@ This checklist is for the host application that integrates QARTON Cinematic Engi
 
 ## Asynchronous resume rejection
 
-HTMLAudio `play()` may reject asynchronously after the synchronous `resume()` call has returned. The adapter reports this through `onPlaybackError`; this is distinct from a synchronous adapter exception. When the adapter is owned by a `CinematicDirector`, the host integration should route a resume rejection back into the director's paused lifecycle (for example, call `director.pause()` from the error callback when the active scene is still mounted), show an explicit retry control, and retry from a real user gesture. Do not call the adapter directly behind the director's back, because that would leave the director and audio cue controller with different lifecycle state. Verify this wiring in the host application before claiming automatic resume recovery.
+HTMLAudio `play()` may reject asynchronously after the synchronous `resume()` call has returned. The adapter reports this through `onPlaybackError(error, { asset, audio, phase })`; `phase` is `"play"`, `"resume"`, or `"setup"`. This is distinct from a synchronous adapter exception. When the adapter is owned by a `CinematicDirector`, the host integration should route a `phase === "resume"` rejection back into the director's paused lifecycle (for example, call `director.pause()` from the error callback when the active scene is still mounted), show an explicit retry control, and retry from a real user gesture. Do not call the adapter directly behind the director's back, because that would leave the director and audio cue controller with different lifecycle state. Verify this wiring in the host application before claiming automatic resume recovery.
 
 ## Device test sequence
 

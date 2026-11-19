@@ -43,6 +43,8 @@ export function createAudioCueController({
   let cursor = -1;
   let paused = false;
   let destroyed = false;
+  let destroyInProgress = false;
+  let stopInProgress = false;
   let volume = masterVolume;
   const voices = new Map();
   // Track host lifecycle success per voice so retries only target unfinished work.
@@ -56,10 +58,14 @@ export function createAudioCueController({
   function invokeForVoices(adapter, message, { onlyPaused = false, markPaused = false } = {}) {
     const errors = [];
     for (const [id, voice] of voices) {
+      // A host lifecycle hook may synchronously destroy this controller.
+      // Do not invoke further hooks or mutate pause bookkeeping afterwards.
+      if (destroyed) break;
       if (onlyPaused && !pausedVoices.has(id)) continue;
       if (markPaused && pausedVoices.has(id)) continue;
       try {
         adapter(voice);
+        if (destroyed) break;
         if (markPaused) pausedVoices.add(id);
         else if (onlyPaused) pausedVoices.delete(id);
       } catch (error) { errors.push(error); }
@@ -70,6 +76,7 @@ export function createAudioCueController({
 
   function update(timeMs) {
     assertAlive();
+    if (stopInProgress) throw new Error("Cannot update audio timeline while voices are being stopped");
     if (!Number.isFinite(timeMs) || timeMs < 0 || timeMs < cursor) {
       throw new TypeError("Audio timeline time must be finite, non-negative and monotonic");
     }
@@ -99,6 +106,16 @@ export function createAudioCueController({
         id: cue.id, channel: cue.channel, loop: cue.loop, volume: cue.volume * volume,
         onEnded: cue.loop ? undefined : onEnded
       });
+      // A host play hook can synchronously trigger teardown (for example,
+      // when scene ownership changes during allocation). Register its returned
+      // voice long enough for destroy cleanup, then stop processing this frame.
+      if (destroyed) {
+        if (voice != null && !endedBeforeRegistration) voices.set(cue.id, voice);
+        // Route late voice registration through the same guarded teardown
+        // path. A host stop hook may itself re-enter destroy().
+        destroy();
+        assertAlive();
+      }
       if (voice != null && !endedBeforeRegistration) voices.set(cue.id, voice);
       firedIds.add(cue.id);
       fired.push(cue.id);
@@ -128,6 +145,9 @@ export function createAudioCueController({
     // calling host adapters when the controller is already active.
     if (!paused) return;
     invokeForVoices(resumeVoice, "One or more audio voices could not be resumed", { onlyPaused: true });
+    // A resume hook can synchronously destroy the controller. Do not commit
+    // the remainder of a lifecycle transition after teardown has taken ownership.
+    if (destroyed) return;
     // Advancing the cursor skips cues that elapsed while playback was paused.
     for (const cue of normalized) if (cue.atMs <= timeMs) firedIds.add(cue.id);
     cursor = timeMs;
@@ -142,6 +162,8 @@ export function createAudioCueController({
     volume = nextVolume;
     const errors = [];
     for (const [id, voice] of voices) {
+      // setVolume is host code too; a synchronous teardown must end this pass.
+      if (destroyed) break;
       const cue = normalized.find(item => item.id === id);
       if (voice == null) continue;
       try {
@@ -158,24 +180,42 @@ export function createAudioCueController({
   }
 
   function stopVoices() {
-    const errors = [];
-    for (const [id, voice] of voices) {
-      try { stop(voice); voices.delete(id); pausedVoices.delete(id); } catch (error) { errors.push(error); }
+    // Host stop hooks are external code and may re-enter stopAll() or
+    // destroy(). Keep one owner for the active voice-cleanup pass.
+    if (stopInProgress) return false;
+    stopInProgress = true;
+    try {
+      const errors = [];
+      for (const [id, voice] of voices) {
+        try { stop(voice); voices.delete(id); pausedVoices.delete(id); } catch (error) { errors.push(error); }
+      }
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) throw new AggregateError(errors, "One or more audio voices could not be stopped");
+      return true;
+    } finally {
+      stopInProgress = false;
     }
-    if (errors.length === 1) throw errors[0];
-    if (errors.length > 1) throw new AggregateError(errors, "One or more audio voices could not be stopped");
   }
 
   function stopAll({ reset = false } = {}) {
     assertAlive();
     paused = false;
-    stopVoices();
-    if (reset) { cursor = -1; firedIds.clear(); }
+    const completed = stopVoices();
+    if (reset && completed) { cursor = -1; firedIds.clear(); }
   }
 
   function destroy() {
+    // A host stop hook may synchronously call destroy() again. Let the
+    // outer teardown retain ownership of the current voice and finish once.
+    if (destroyInProgress) return;
     destroyed = true;
-    stopVoices();
+    destroyInProgress = true;
+    try {
+      stopVoices();
+    } finally {
+      // If cleanup failed, a later external destroy() call can retry.
+      destroyInProgress = false;
+    }
   }
 
   return Object.freeze({

@@ -118,6 +118,37 @@ test("page lifecycle adapter is exported through root, runtime, and package subp
   assert.equal(packageExport, createPageLifecycleAdapter);
 });
 
+test("startup rollback retains listeners when host removal fails so stop can retry", () => {
+  const target = createTarget("hidden");
+  const originalRemove = target.removeEventListener.bind(target);
+  let failRollbackOnce = true;
+  target.removeEventListener = (type, listener) => {
+    if (failRollbackOnce && type === "pagehide") {
+      failRollbackOnce = false;
+      throw new Error("rollback removal blocked");
+    }
+    originalRemove(type, listener);
+  };
+  const adapter = createPageLifecycleAdapter({
+    target,
+    setActive: () => { throw new Error("initial lifecycle sync failed"); }
+  });
+
+  assert.throws(() => adapter.start(), error => {
+    assert.ok(error instanceof AggregateError);
+    assert.match(error.errors[0].message, /initial lifecycle sync failed/);
+    assert.match(error.errors[1].message, /rollback removal blocked/);
+    return true;
+  });
+  assert.equal(adapter.getState().started, true,
+    "partial rollback must remain tracked as an active registration");
+  assert.equal(target.listenerCount(), 1);
+
+  assert.equal(adapter.stop(), true);
+  assert.equal(adapter.getState().started, false);
+  assert.equal(target.listenerCount(), 0);
+});
+
 test("stop remains retryable when a host EventTarget refuses listener removal", () => {
   const target = createTarget("visible");
   const originalRemove = target.removeEventListener.bind(target);

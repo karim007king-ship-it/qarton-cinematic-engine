@@ -38,6 +38,7 @@ export function createCinematicRuntime({
   }
   let destroyed = false;
   let destroyPromise = null;
+  let destroyCompleted = false;
 
   function reportLifecycleError(error, phase) {
     try { onLifecycleError(error, { phase }); } catch { /* diagnostics must not break lifecycle */ }
@@ -98,6 +99,7 @@ export function createCinematicRuntime({
 
   function destroy() {
     if (destroyPromise) return destroyPromise;
+    if (destroyCompleted) return Promise.resolve();
     destroyed = true;
     destroyPromise = (async () => {
       const errors = [];
@@ -114,6 +116,7 @@ export function createCinematicRuntime({
       if (errors.length > 1) {
         throw new AggregateError(errors, "One or more cinematic runtime resources could not be destroyed");
       }
+      destroyCompleted = true;
     })().finally(() => { destroyPromise = null; });
     return destroyPromise;
   }

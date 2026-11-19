@@ -761,7 +761,7 @@ test("director rejects reentrant destroy from an event callback instead of deadl
   await director.mount();
   await assert.rejects(
     director.update(0),
-    /Cannot destroy the cinematic director inside onEvent; defer destroy until the update settles/
+    /Cannot destroy the cinematic director inside onEvent; use requestDestroy from the host after the callback settles/
   );
   assert.equal(director.getState().destroyed, false);
   await director.destroy();
@@ -782,7 +782,7 @@ test("director keeps the reentrant destroy guard active after an async event cal
   await director.mount();
   await assert.rejects(
     director.update(0),
-    /Cannot destroy the cinematic director inside onEvent; defer destroy until the update settles/
+    /Cannot destroy the cinematic director inside onEvent; use requestDestroy from the host after the callback settles/
   );
   assert.equal(director.getState().destroyed, false,
     "reentrant destroy must be rejected without closing the director");
@@ -972,3 +972,126 @@ test("director and HTMLAudio adapter release every resource across repeated scen
   assert.ok(voices.every(voice => voice.paused), "all native voices remain stopped after final destroy");
   assert.ok(voices.every(voice => voice.listeners.size === 0), "no ended listeners remain after final destroy");
 });
+
+
+test("host-requested destroy waits for an active async event callback before releasing resources", async () => {
+  let releaseEvent;
+  let notifyEventStarted;
+  const eventStarted = new Promise(resolve => { notifyEventStarted = resolve; });
+  const eventGate = new Promise(resolve => { releaseEvent = resolve; });
+  const calls = [];
+  const stage = {
+    mount: async () => true,
+    update: async () => {},
+    unmount: () => {},
+    destroy: () => { calls.push("stage destroy"); }
+  };
+  const audio = {
+    update: () => {},
+    pause: () => {},
+    resume: () => {},
+    stopAll: () => {},
+    destroy: () => { calls.push("audio destroy"); }
+  };
+  const director = createCinematicDirector({
+    characterStage: stage,
+    audio,
+    timeline: createTimeline([
+      { id: "active-event", atMs: 0, type: "story" },
+      { id: "must-not-run", atMs: 0, type: "story" }
+    ]),
+    onEvent: async event => {
+      calls.push(`event ${event.id} started`);
+      if (event.id === "active-event") {
+        notifyEventStarted();
+        await eventGate;
+        calls.push("event callback settled");
+      }
+    }
+  });
+
+  await director.mount();
+  const frame = director.update(0);
+  await eventStarted;
+  const destroying = director.requestDestroy();
+
+  await Promise.resolve();
+  assert.deepEqual(calls, ["event active-event started"],
+    "destroy must not release stage or audio while an event callback is pending");
+  releaseEvent();
+  await frame;
+  await destroying;
+
+  assert.deepEqual(calls, [
+    "event active-event started",
+    "event callback settled",
+    "stage destroy",
+    "audio destroy"
+  ], "teardown must follow callback settlement and later events must not dispatch");
+  assert.equal(director.getState().destroyed, true);
+});
+
+test("successful director destroy is idempotent across repeated calls", async () => {
+  const calls = [];
+  const director = createCinematicDirector({
+    characterStage: {
+      mount: async () => true,
+      update: async () => {},
+      unmount: () => {},
+      destroy: () => { calls.push("stage"); }
+    },
+    audio: {
+      update: () => {},
+      pause: () => {},
+      resume: () => {},
+      stopAll: () => {},
+      destroy: () => { calls.push("audio"); }
+    }
+  });
+
+  await director.mount();
+  await director.destroy();
+  await director.destroy();
+  await director.requestDestroy();
+
+  assert.deepEqual(calls, ["stage", "audio"],
+    "successful teardown must release each owned subsystem exactly once");
+});
+
+test("director pauses again when the host reports a late asynchronous resume rejection", async () => {
+  let director;
+  let rejectResume;
+  const calls = [];
+  const audio = {
+    update: time => calls.push(["update", time]),
+    pause: time => calls.push(["pause", time]),
+    resume: time => {
+      calls.push(["resume", time]);
+      if (calls.filter(([name]) => name === "resume").length === 1) {
+        queueMicrotask(() => rejectResume?.(new Error("autoplay denied")));
+      }
+    },
+    stopAll: () => {},
+    destroy: () => {}
+  };
+  director = createCinematicDirector({ audio });
+  const rejected = new Promise(resolve => { rejectResume = error => {
+    // This is the host's onPlaybackError({ phase: "resume" }) recovery path.
+    director.pause();
+    resolve(error);
+  }; });
+
+  await director.mount();
+  await director.update(100);
+  assert.equal(director.pause(100), true);
+  assert.equal(director.resume(100), true);
+  assert.match((await rejected).message, /autoplay denied/);
+  assert.equal(director.getState().paused, true,
+    "late resume rejection must return the director to a retryable paused state");
+
+  // A later explicit user gesture can retry through the director.
+  assert.equal(director.resume(100), true);
+  assert.equal(director.getState().paused, false);
+  await director.destroy();
+});
+

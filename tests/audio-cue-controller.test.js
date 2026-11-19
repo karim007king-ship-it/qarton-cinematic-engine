@@ -421,3 +421,192 @@ test("pause and resume retries only voices whose previous lifecycle transition f
   assert.equal(controller.getState().paused, false);
   controller.destroy();
 });
+
+
+test("a voice allocated by a reentrant play hook is stopped when teardown begins", () => {
+  const stopped = [];
+  let controller;
+  const allocatedVoice = { id: "late-voice" };
+  controller = createAudioCueController({
+    cues: [{ id: "music", atMs: 0, asset: "theme", loop: true }],
+    play: () => {
+      controller.destroy();
+      return allocatedVoice;
+    },
+    stop: voice => stopped.push(voice)
+  });
+
+  assert.throws(() => controller.update(0), /destroyed/);
+  assert.deepEqual(stopped, [allocatedVoice],
+    "the voice returned after reentrant destroy must not escape controller cleanup");
+  assert.deepEqual(controller.getState(), {
+    cursor: -1, paused: false, destroyed: true, volume: 1, activeVoices: 0
+  });
+});
+
+
+test("reentrant destroy from a host stop hook does not stop the same voice twice", () => {
+  const stopped = [];
+  let controller;
+  controller = createAudioCueController({
+    cues: [{ id: "music", atMs: 0, asset: "theme", loop: true }],
+    play: () => ({ id: "music" }),
+    stop: voice => {
+      stopped.push(voice);
+      controller.destroy();
+    }
+  });
+
+  controller.update(0);
+  assert.doesNotThrow(() => controller.destroy());
+  assert.equal(stopped.length, 1,
+    "nested destroy must leave the active stop operation to its outer teardown");
+  assert.equal(controller.getState().destroyed, true);
+  assert.equal(controller.getState().activeVoices, 0);
+});
+
+
+test("reentrant stop during cleanup of a late-allocated voice does not recurse", () => {
+  const stopped = [];
+  let controller;
+  const allocatedVoice = { id: "late-reentrant-voice" };
+  controller = createAudioCueController({
+    cues: [{ id: "music", atMs: 0, asset: "theme", loop: true }],
+    play: () => {
+      controller.destroy();
+      return allocatedVoice;
+    },
+    stop: voice => {
+      stopped.push(voice);
+      controller.destroy();
+    }
+  });
+
+  assert.throws(() => controller.update(0), /destroyed/);
+  assert.deepEqual(stopped, [allocatedVoice],
+    "the late voice must be stopped exactly once despite reentrant teardown");
+  assert.deepEqual(controller.getState(), {
+    cursor: -1, paused: false, destroyed: true, volume: 1, activeVoices: 0
+  });
+});
+
+
+
+test("reentrant update from a host stop hook cannot allocate voices during stop cleanup", () => {
+  const stopped = [];
+  const played = [];
+  let controller;
+  controller = createAudioCueController({
+    cues: [
+      { id: "music", atMs: 0, asset: "music", loop: true },
+      { id: "impact", atMs: 100, asset: "impact" }
+    ],
+    play: (_asset, options) => {
+      played.push(options.id);
+      return { id: options.id };
+    },
+    stop: voice => {
+      stopped.push(voice.id);
+      // The regression concerns the stopAll pass for the original music voice.
+      // destroy() later stops the impact voice after the timeline update.
+      if (voice.id === "music") {
+        assert.throws(
+          () => controller.update(100),
+          /Cannot update audio timeline while voices are being stopped/
+        );
+      }
+    }
+  });
+
+  controller.update(0);
+  assert.doesNotThrow(() => controller.stopAll());
+  assert.deepEqual(played, ["music"],
+    "a nested update must not allocate a new cue while the stop pass owns voice cleanup");
+  assert.deepEqual(stopped, ["music"]);
+  assert.deepEqual(controller.getState(), {
+    cursor: 0, paused: false, destroyed: false, volume: 1, activeVoices: 0
+  });
+
+  assert.deepEqual(controller.update(100), ["impact"],
+    "normal timeline updates remain available after cleanup completes");
+  assert.deepEqual(played, ["music", "impact"]);
+  controller.destroy();
+});
+
+test("reentrant stopAll from a host stop hook does not recurse or commit a nested reset", () => {
+  const stopped = [];
+  let controller;
+  controller = createAudioCueController({
+    cues: [{ id: "music", atMs: 0, asset: "music", loop: true }],
+    play: () => ({ id: "music" }),
+    stop: voice => {
+      stopped.push(voice);
+      controller.stopAll({ reset: true });
+    }
+  });
+
+  controller.update(0);
+  assert.doesNotThrow(() => controller.stopAll());
+  assert.equal(stopped.length, 1, "the active voice must be stopped exactly once");
+  assert.equal(controller.getState().cursor, 0,
+    "a nested stopAll must not commit its reset while the outer cleanup owns the pass");
+  assert.equal(controller.getState().activeVoices, 0);
+  controller.destroy();
+});
+
+
+test("reentrant destroy during resume stops further host lifecycle callbacks", () => {
+  const resumed = [];
+  const stopped = [];
+  let controller;
+  controller = createAudioCueController({
+    cues: [
+      { id: "music", atMs: 0, asset: "music", loop: true },
+      { id: "ambience", atMs: 0, asset: "ambience", loop: true }
+    ],
+    play: (_asset, options) => ({ id: options.id }),
+    pauseVoice: () => {},
+    resumeVoice: voice => {
+      resumed.push(voice.id);
+      if (voice.id === "music") controller.destroy();
+    },
+    stop: voice => stopped.push(voice.id)
+  });
+
+  controller.update(0);
+  controller.pause(0);
+  assert.doesNotThrow(() => controller.resume(0));
+  assert.deepEqual(resumed, ["music"],
+    "a resume hook that destroys the controller must prevent later voices from resuming");
+  assert.deepEqual(stopped, ["music", "ambience"]);
+  assert.equal(controller.getState().destroyed, true);
+  assert.equal(controller.getState().paused, true,
+    "resume must not overwrite lifecycle state after a host callback destroys the controller");
+  assert.equal(controller.getState().activeVoices, 0);
+});
+
+
+test("reentrant destroy during volume update stops further host callbacks", () => {
+  const volumeCalls = [];
+  const stopped = [];
+  let controller;
+  controller = createAudioCueController({
+    cues: [
+      { id: "music", atMs: 0, asset: "music", loop: true },
+      { id: "ambience", atMs: 0, asset: "ambience", loop: true }
+    ],
+    play: (_asset, options) => ({ id: options.id }),
+    setVolume: voice => {
+      volumeCalls.push(voice.id);
+      if (voice.id === "music") controller.destroy();
+    },
+    stop: voice => stopped.push(voice.id)
+  });
+
+  controller.update(0);
+  assert.doesNotThrow(() => controller.setMasterVolume(0.5));
+  assert.deepEqual(volumeCalls, ["music"],
+    "a volume hook that destroys the controller must end the update pass");
+  assert.deepEqual(stopped, ["music", "ambience"]);
+  assert.equal(controller.getState().activeVoices, 0);
+});

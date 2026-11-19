@@ -18,6 +18,9 @@ export function createPageLifecycleAdapter({ target, pageTarget = target, setAct
 
   let started = false;
   let active = null;
+  // Track each successfully attached listener so failed startup rollback can
+  // be retried through stop() if a host EventTarget refuses removal.
+  const attachedListeners = new Set();
 
   function apply(nextActive) {
     if (active === nextActive) return false;
@@ -54,40 +57,60 @@ export function createPageLifecycleAdapter({ target, pageTarget = target, setAct
 
   function start() {
     if (started) return false;
-    const attached = [];
+    const attachedThisAttempt = [];
     try {
-      for (const [eventTarget, type, listener] of listeners) {
+      for (const entry of listeners) {
+        const [eventTarget, type, listener] = entry;
         eventTarget.addEventListener(type, listener);
-        attached.push([eventTarget, type, listener]);
+        attachedListeners.add(entry);
+        attachedThisAttempt.push(entry);
       }
       sync();
       started = true;
       return true;
     } catch (error) {
-      for (const [eventTarget, type, listener] of attached.reverse()) {
-        try { eventTarget.removeEventListener(type, listener); } catch {}
+      const rollbackErrors = [];
+      for (const entry of attachedThisAttempt.reverse()) {
+        const [eventTarget, type, listener] = entry;
+        try {
+          eventTarget.removeEventListener(type, listener);
+          attachedListeners.delete(entry);
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError);
+        }
+      }
+      // A partial rollback is still an active registration that stop() must
+      // be able to finish. Do not lose ownership just because start() failed.
+      started = attachedListeners.size > 0;
+      if (rollbackErrors.length > 0) {
+        throw new AggregateError(
+          [error, ...rollbackErrors],
+          "Page lifecycle startup failed and listener rollback was incomplete"
+        );
       }
       throw error;
     }
   }
 
   function stop() {
-    if (!started) return false;
+    if (!started && attachedListeners.size === 0) return false;
     const errors = [];
-    for (const [eventTarget, type, listener] of listeners) {
+    for (const entry of listeners) {
+      if (!attachedListeners.has(entry)) continue;
+      const [eventTarget, type, listener] = entry;
       try {
         eventTarget.removeEventListener(type, listener);
+        attachedListeners.delete(entry);
       } catch (error) {
         errors.push(error);
       }
     }
-    // Keep the adapter retryable if even one listener could not be detached.
-    // removeEventListener is idempotent, so retrying the complete set is safe.
+    // Keep only listeners that the host refused to remove so stop() can retry.
+    started = attachedListeners.size > 0;
     if (errors.length === 1) throw errors[0];
     if (errors.length > 1) {
       throw new AggregateError(errors, "Page lifecycle listeners could not all be removed");
     }
-    started = false;
     return true;
   }
 

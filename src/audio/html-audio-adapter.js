@@ -22,6 +22,7 @@ export function createHTMLAudioAdapter({
 
   let volume = masterVolume;
   let destroyed = false;
+  let destroyInProgress = false;
   const active = new Map();
   const assets = new WeakMap();
   const endedHandlers = new Map();
@@ -72,12 +73,12 @@ export function createHTMLAudioAdapter({
     }
   }
 
-  function reportPlaybackError(error, audio, { retainOwnership = false, clearSource = false } = {}) {
+  function reportPlaybackError(error, audio, { retainOwnership = false, clearSource = false, phase = "play" } = {}) {
     // A stopped or naturally ended voice is stale; its late Promise rejection
     // must not report an error or touch a resource the adapter no longer owns.
-    if (!active.has(audio)) return;
+    if (!active.has(audio) || voiceStates.get(audio) !== "active") return;
     releaseFailedPlayback(audio, { retainOwnership, clearSource });
-    try { onPlaybackError(error, { asset: assets.get(audio), audio }); }
+    try { onPlaybackError(error, { asset: assets.get(audio), audio, phase }); }
     catch { /* error reporting must not create an unhandled rejection */ }
   }
 
@@ -112,7 +113,7 @@ export function createHTMLAudioAdapter({
       // Setup may have assigned src before a later native setter failed.
       // Clear that source before releasing ownership; if clearing fails,
       // retain the voice so destroy() can retry the native cleanup.
-      reportPlaybackError(error, audio, { clearSource: true });
+      reportPlaybackError(error, audio, { clearSource: true, phase: "setup" });
       throw error;
     }
 
@@ -145,7 +146,7 @@ export function createHTMLAudioAdapter({
       throw error;
     }
     if (result && typeof result.then === "function") {
-      Promise.resolve(result).catch(error => reportPlaybackError(error, audio, { retainOwnership: true }));
+      Promise.resolve(result).catch(error => reportPlaybackError(error, audio, { retainOwnership: true, phase: "play" }));
     }
     return audio;
   }
@@ -180,11 +181,11 @@ export function createHTMLAudioAdapter({
     try {
       result = audio.play();
     } catch (error) {
-      reportPlaybackError(error, audio, { retainOwnership: true });
+      reportPlaybackError(error, audio, { retainOwnership: true, phase: "resume" });
       throw error;
     }
     if (result && typeof result.then === "function") {
-      Promise.resolve(result).catch(error => reportPlaybackError(error, audio, { retainOwnership: true }));
+      Promise.resolve(result).catch(error => reportPlaybackError(error, audio, { retainOwnership: true, phase: "resume" }));
     }
   }
 
@@ -220,44 +221,51 @@ export function createHTMLAudioAdapter({
   }
 
   function destroy() {
-    // Close new work immediately, but retain voices whose native teardown fails
-    // so a later destroy() call can retry them.
+    // Native pause/source cleanup can synchronously dispatch host events. If
+    // one of those listeners re-enters destroy(), keep the outer pass as the
+    // sole owner of each voice and allow a later call to retry failed cleanup.
+    if (destroyInProgress) return;
     destroyed = true;
-    const errors = [];
-    for (const audio of [...active.keys()]) {
-      let failed = false;
-      // Mark before invoking native methods: a queued ended callback must not
-      // release ownership while teardown is in progress.
-      voiceStates.set(audio, "destroying");
-      try {
-        audio.pause();
-      } catch (error) {
-        errors.push(error);
-        failed = true;
-      }
-      try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
-      try {
-        audio.src = "";
-      } catch (error) {
-        errors.push(error);
-        failed = true;
-      }
-      if (!detachEndedHandler(audio)) {
-        errors.push(new Error("HTMLAudio ended listener could not be detached"));
-        failed = true;
-      }
-      if (!failed) {
-        active.delete(audio);
-        voiceStates.set(audio, "stopped");
-      } else {
-        // A late ended event must not release ownership while native teardown
-        // is incomplete; a later destroy() call remains responsible for retry.
+    destroyInProgress = true;
+    try {
+      const errors = [];
+      for (const audio of [...active.keys()]) {
+        let failed = false;
+        // Mark before invoking native methods: a queued ended callback must not
+        // release ownership while teardown is in progress.
         voiceStates.set(audio, "destroying");
+        try {
+          audio.pause();
+        } catch (error) {
+          errors.push(error);
+          failed = true;
+        }
+        try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
+        try {
+          audio.src = "";
+        } catch (error) {
+          errors.push(error);
+          failed = true;
+        }
+        if (!detachEndedHandler(audio)) {
+          errors.push(new Error("HTMLAudio ended listener could not be detached"));
+          failed = true;
+        }
+        if (!failed) {
+          active.delete(audio);
+          voiceStates.set(audio, "stopped");
+        } else {
+          // A late ended event must not release ownership while native teardown
+          // is incomplete; a later destroy() call remains responsible for retry.
+          voiceStates.set(audio, "destroying");
+        }
       }
-    }
-    if (errors.length === 1) throw errors[0];
-    if (errors.length > 1) {
-      throw new AggregateError(errors, "One or more HTMLAudio voices could not be destroyed");
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) {
+        throw new AggregateError(errors, "One or more HTMLAudio voices could not be destroyed");
+      }
+    } finally {
+      destroyInProgress = false;
     }
   }
 
