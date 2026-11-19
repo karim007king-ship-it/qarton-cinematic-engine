@@ -43,6 +43,7 @@ export function createAudioCueController({
   let cursor = -1;
   let paused = false;
   let destroyed = false;
+  let destroyInProgress = false;
   let volume = masterVolume;
   const voices = new Map();
   // Track host lifecycle success per voice so retries only target unfinished work.
@@ -182,8 +183,17 @@ export function createAudioCueController({
   }
 
   function destroy() {
+    // A host stop hook may synchronously call destroy() again. Let the
+    // outer teardown retain ownership of the current voice and finish once.
+    if (destroyInProgress) return;
     destroyed = true;
-    stopVoices();
+    destroyInProgress = true;
+    try {
+      stopVoices();
+    } finally {
+      // If cleanup failed, a later external destroy() call can retry.
+      destroyInProgress = false;
+    }
   }
 
   return Object.freeze({
