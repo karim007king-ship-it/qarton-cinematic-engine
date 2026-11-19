@@ -88,7 +88,14 @@ export function createCinematicRuntime({
   });
 
   // Opt-in only: existing hosts remain unchanged unless they inject a lifecycle target.
-  pageLifecycle?.start();
+  // A host lifecycle callback may fail during initial synchronization. Keep the
+  // runtime reachable so callers can inspect/retry the adapter or destroy all
+  // other resources instead of leaking a partially constructed runtime.
+  try {
+    pageLifecycle?.start();
+  } catch (error) {
+    reportLifecycleError(error, "start");
+  }
 
   async function transitionTo(scene, { profile = adaptive.getProfile(), duration: transitionDuration } = {}) {
     if (destroyed) throw new Error("Cinematic runtime has been destroyed");

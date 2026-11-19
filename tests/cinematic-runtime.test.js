@@ -624,3 +624,52 @@ test("runtime aborts never-settling render assets before waiting for scene teard
   assert.equal(root.children.length, 0);
   await assert.rejects(runtime.loadAsset("after-destroy"), /destroyed/);
 });
+
+test("runtime remains reachable when initial page lifecycle synchronization fails", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const listeners = new Map();
+  const target = {
+    visibilityState: "hidden",
+    addEventListener(type, listener) {
+      const entries = listeners.get(type) ?? new Set();
+      entries.add(listener);
+      listeners.set(type, entries);
+    },
+    removeEventListener(type, listener) { listeners.get(type)?.delete(listener); },
+    listenerCount() {
+      return [...listeners.values()].reduce((count, entries) => count + entries.size, 0);
+    }
+  };
+  const lifecycleErrors = [];
+  let failPause = true;
+  const runtime = createCinematicRuntime({
+    root,
+    loadAsset: key => key,
+    renderScene: () => document.createElement("div"),
+    lifecycleTarget: target,
+    onPause: () => {
+      if (failPause) {
+        failPause = false;
+        throw new Error("initial pause callback failed");
+      }
+    },
+    onLifecycleError: (error, context) => lifecycleErrors.push([error.message, context.phase])
+  });
+
+  assert.deepEqual(lifecycleErrors, [["initial pause callback failed", "pause"]]);
+  // Runtime isolates host callback errors: the lifecycle adapter remains
+  // started, while the activity gate still commits the hidden-page state.
+  assert.equal(runtime.pageLifecycleState.started, true);
+  assert.equal(runtime.isActive(), false);
+  assert.equal(target.listenerCount(), 3);
+
+  target.visibilityState = "visible";
+  for (const listener of listeners.get("visibilitychange") ?? []) listener({ type: "visibilitychange" });
+  assert.equal(runtime.isActive(), true);
+  assert.equal(runtime.pageLifecycleState.started, true);
+
+  await runtime.destroy();
+  assert.equal(target.listenerCount(), 0);
+  assert.equal(root.children.length, 0);
+});
