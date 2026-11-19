@@ -105,7 +105,9 @@ export function createAudioCueController({
       // voice long enough for destroy cleanup, then stop processing this frame.
       if (destroyed) {
         if (voice != null && !endedBeforeRegistration) voices.set(cue.id, voice);
-        stopVoices();
+        // Route late voice registration through the same guarded teardown
+        // path. A host stop hook may itself re-enter destroy().
+        destroy();
         assertAlive();
       }
       if (voice != null && !endedBeforeRegistration) voices.set(cue.id, voice);
