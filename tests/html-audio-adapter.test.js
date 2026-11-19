@@ -114,6 +114,31 @@ test("HTMLAudio adapter pauses and resumes an active voice without releasing it"
   assert.equal(playCalls, 2);
 });
 
+test("HTMLAudio playback errors identify whether play or resume was rejected", async () => {
+  const errors = [];
+  const audio = fakeAudio();
+  let playCount = 0;
+  audio.play = () => {
+    playCount += 1;
+    if (playCount === 1) return Promise.resolve();
+    return Promise.reject(new Error("resume denied"));
+  };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/theme.mp3",
+    createAudio: () => audio,
+    onPlaybackError: (error, context) => errors.push({ message: error.message, phase: context.phase })
+  });
+
+  const voice = adapter.play("theme", { loop: true });
+  adapter.pause(voice);
+  adapter.resume(voice);
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.deepEqual(errors, [{ message: "resume denied", phase: "resume" }]);
+  adapter.destroy();
+});
+
 test("HTMLAudio reports resume rejection but ignores it after the voice is stopped", async () => {
   let rejectResume;
   const errors = [];
