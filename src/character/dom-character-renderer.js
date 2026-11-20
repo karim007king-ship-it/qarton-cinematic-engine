@@ -19,8 +19,23 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       if (!Number.isFinite(state[key])) throw new TypeError(`Character state ${key} must be finite`);
     }
     if (state.scale < 0) throw new TypeError("Character scale cannot be negative");
+    const idle = state.idle ?? {};
+    const idleOffsetY = idle.offsetY ?? 0;
+    const idleScaleX = idle.scaleX ?? 1;
+    const idleScaleY = idle.scaleY ?? 1;
+    const blinkScaleY = idle.blinkScaleY ?? 1;
+    for (const [key, value] of Object.entries({
+      offsetY: idleOffsetY, scaleX: idleScaleX, scaleY: idleScaleY, blinkScaleY
+    })) {
+      if (!Number.isFinite(value)) throw new TypeError(`Character idle ${key} must be finite`);
+    }
+    if (idleScaleX < 0 || idleScaleY < 0 || blinkScaleY < 0 || blinkScaleY > 1) {
+      throw new TypeError("Character idle scales must be non-negative and blinkScaleY cannot exceed 1");
+    }
     record.element.style.transform =
-      `translate3d(${state.x}px, ${state.y}px, 0) rotate(${state.rotation}deg) scale(${state.scale})`;
+      `translate3d(${state.x}px, ${state.y + idleOffsetY}px, 0) rotate(${state.rotation}deg) scale(${state.scale * idleScaleX}, ${state.scale * idleScaleY})`;
+    record.image.style.transformOrigin = "center center";
+    record.image.style.transform = `scaleY(${blinkScaleY})`;
     record.element.style.opacity = String(Math.min(1, Math.max(0, state.opacity)));
     record.element.dataset.expression = String(state.expression ?? "neutral");
     record.element.dataset.state = String(state.state ?? "idle");
@@ -156,7 +171,8 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       scale: Number.isFinite(initialState.scale) ? initialState.scale : 1,
       rotation: Number.isFinite(initialState.rotation) ? initialState.rotation : 0,
       expression,
-      state: initialState.state ?? "idle"
+      state: initialState.state ?? "idle",
+      idle: initialState.idle
     });
     root.appendChild(element);
     return element;
