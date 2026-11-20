@@ -533,17 +533,20 @@ test("character stage selects sprite frames from the shared scene clock", async 
       hero: createSpriteFrameAnimation({
         frames: ["walk1", "walk2"],
         idleFrame: "stand",
-        frameDurationMs: 100
+        frameDurationMs: 100,
+        startTimeMs: 100
       })
     }
   });
   await stage.mount();
   assert.equal(root.children[0].children[0].src, "https://assets.test/stand.png");
   await stage.update(0);
-  assert.equal(root.children[0].children[0].src, "https://assets.test/walk1.png");
+  assert.equal(root.children[0].children[0].src, "https://assets.test/stand.png");
   await stage.update(100);
-  assert.equal(root.children[0].children[0].src, "https://assets.test/walk2.png");
+  assert.equal(root.children[0].children[0].src, "https://assets.test/walk1.png");
   await stage.update(200);
+  assert.equal(root.children[0].children[0].src, "https://assets.test/walk2.png");
+  await stage.update(300);
   assert.equal(root.children[0].children[0].src, "https://assets.test/walk1.png");
   stage.destroy();
 });
