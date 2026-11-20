@@ -37,9 +37,10 @@ export function createWalkAnimation({
     const phaseMs = ((timeMs + phaseOffsetMs) % stepPeriodMs + stepPeriodMs) % stepPeriodMs;
     const phase = (phaseMs / stepPeriodMs) * Math.PI * 2;
     const stride = Math.cos(phase) * strideScale;
+    const bounce = Math.abs(Math.sin(phase));
     return Object.freeze({
       active: true,
-      offsetY: Number((-Math.abs(Math.sin(phase)) * bobAmplitude).toFixed(6)),
+      offsetY: bounce === 0 ? 0 : Number((-bounce * bobAmplitude).toFixed(6)),
       scaleX: Number((1 + stride).toFixed(6)),
       scaleY: Number((1 - stride).toFixed(6))
     });
