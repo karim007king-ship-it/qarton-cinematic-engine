@@ -490,7 +490,7 @@ test("character stage validates optional idle animation mappings", () => {
 
 test("character stage composes optional walk and idle poses without mutating controller state", async () => {
   const { root, controller, stage } = fixture({
-    idleAnimations: { hero: createIdleAnimation({ periodMs: 2000, bobAmplitude: 2, blinkIntervalMs: 5000 }) },
+    idleAnimations: { hero: createIdleAnimation({ periodMs: 2000, bobAmplitude: 2, swayAmplitude: 0, phaseOffsetMs: 900, blinkIntervalMs: 5000 }) },
     walkAnimations: { hero: createWalkAnimation({ stepPeriodMs: 400, bobAmplitude: 3, strideScale: 0.02 }) }
   });
   await stage.mount();
