@@ -4,6 +4,7 @@ import { createCharacterStage } from "../src/character/character-stage.js";
 import { createCharacterController } from "../src/character/character-controller.js";
 import { createMotionPath } from "../src/motion/path.js";
 import { createTimeline } from "../src/motion/timeline.js";
+import { createIdleAnimation } from "../src/character/idle-animation.js";
 
 class Element {
   constructor(tag, ownerDocument) {
@@ -445,4 +446,42 @@ test("character stage retries failed async timeline callbacks without replaying 
   assert.equal(await stage.update(400), true);
   assert.deepEqual(events, ["first", "second", "second", "third"]);
   stage.destroy();
+});
+
+
+test("character stage applies optional deterministic idle animation without changing controllers", async () => {
+  const { root, controller, stage } = fixture({
+    idleAnimations: {
+      hero: createIdleAnimation({
+        periodMs: 2000,
+        bobAmplitude: 4,
+        swayAmplitude: 0.02,
+        blinkIntervalMs: 5000
+      })
+    }
+  });
+  await stage.mount();
+  await stage.update(500);
+  const character = root.children[0];
+  assert.match(character.style.transform, /translate3d\(50px, -4px, 0\)/);
+  assert.match(character.style.transform, /scale\(1\.02, 0\.99\)/);
+  assert.equal(character.children[0].style.transform, "scaleY(1)");
+  assert.equal(controller.update(500).y, 0);
+  stage.destroy();
+});
+
+test("character stage validates optional idle animation mappings", () => {
+  const { root, controller } = fixture();
+  assert.throws(() => createCharacterStage({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`,
+    characters: [{ controller, sprites: { default: "hero" } }],
+    idleAnimations: { missing: createIdleAnimation() }
+  }), /unknown character/);
+  assert.throws(() => createCharacterStage({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`,
+    characters: [{ controller, sprites: { default: "hero" } }],
+    idleAnimations: { hero: {} }
+  }), /sample\(timeMs\)/);
 });
