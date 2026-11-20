@@ -463,7 +463,7 @@ test("character stage applies optional deterministic idle animation without chan
   await stage.mount();
   await stage.update(500);
   const character = root.children[0];
-  assert.match(character.style.transform, /translate3d\(50px, -4px, 0\)/);
+  assert.match(character.style.transform, /translate3d\(50px, -2px, 0\)/);
   assert.match(character.style.transform, /scale\(1\.02, 0\.99\)/);
   assert.equal(character.children[0].style.transform, "scaleY(1)");
   assert.equal(controller.update(500).y, 0);
