@@ -208,3 +208,34 @@ test("renderer destroy retains failed elements and retries cleanup", async () =>
     id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0
   }), /destroyed/);
 });
+
+
+test("DOM character renderer applies optional idle pose and eye blink transforms", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: () => "https://assets.test/hero.png"
+  });
+  const handle = await renderer.mount({
+    id: "hero",
+    sprites: { default: "hero" },
+    initialState: {
+      x: 10, y: 20, opacity: 1, scale: 1, rotation: 0,
+      idle: { offsetY: -2, scaleX: 1.01, scaleY: 0.99, blinkScaleY: 0.08 }
+    }
+  });
+  assert.match(handle.style.transform, /translate3d\(10px, 18px, 0\)/);
+  assert.match(handle.style.transform, /scale\(1\.01, 0\.99\)/);
+  assert.equal(handle.children[0].style.transform, "scaleY(0.08)");
+  await renderer.update(handle, {
+    id: "hero", x: 10, y: 20, opacity: 1, scale: 1, rotation: 0,
+    expression: "neutral", idle: { offsetY: 0, scaleX: 1, scaleY: 1, blinkScaleY: 1 }
+  });
+  assert.equal(handle.children[0].style.transform, "scaleY(1)");
+  await assert.rejects(renderer.update(handle, {
+    id: "hero", x: 10, y: 20, opacity: 1, scale: 1, rotation: 0,
+    idle: { blinkScaleY: 1.2 }
+  }), /idle scales/);
+  renderer.destroy();
+});
