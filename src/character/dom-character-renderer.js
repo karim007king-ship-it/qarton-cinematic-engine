@@ -178,7 +178,8 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       rotation: Number.isFinite(initialState.rotation) ? initialState.rotation : 0,
       expression,
       state: initialState.state ?? "idle",
-      idle: initialState.idle
+      idle: initialState.idle,
+      walk: initialState.walk
     });
     root.appendChild(element);
     return element;
