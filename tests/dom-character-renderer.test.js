@@ -239,3 +239,27 @@ test("DOM character renderer applies optional idle pose and eye blink transforms
   }), /idle scales/);
   renderer.destroy();
 });
+
+
+test("DOM character renderer composes walk pose with the optional idle pose", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({ root, resolveSprite: () => "https://assets.test/hero.png" });
+  const handle = await renderer.mount({
+    id: "hero",
+    sprites: { default: "hero" },
+    initialState: {
+      x: 5, y: 10, opacity: 1, scale: 1, rotation: 0,
+      idle: { offsetY: -1, scaleX: 1.01, scaleY: 0.99 },
+      walk: { offsetY: -2, scaleX: 1.02, scaleY: 0.98 }
+    }
+  });
+  assert.match(handle.style.transform, /translate3d\(5px, 7px, 0\)/);
+  assert.match(handle.style.transform, /scale\(1\.0302, 0\.9702\)/);
+  await renderer.update(handle, {
+    id: "hero", x: 5, y: 10, opacity: 1, scale: 1, rotation: 0,
+    walk: { active: false, offsetY: 0, scaleX: 1, scaleY: 1 }
+  });
+  assert.match(handle.style.transform, /translate3d\(5px, 10px, 0\)/);
+  renderer.destroy();
+});
