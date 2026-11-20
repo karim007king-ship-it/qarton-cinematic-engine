@@ -453,8 +453,10 @@ test("a failed character update waits for every sibling renderer task before the
   const root = new Element("main", document);
   let releaseSlow;
   let slowStarted = false;
-  const first = createCharacterController({ id: "first" });
-  const second = createCharacterController({ id: "second" });
+  const firstBase = createCharacterController({ id: "first" });
+  const secondBase = createCharacterController({ id: "second" });
+  const first = { id: "first", update: timeMs => firstBase.update(timeMs) };
+  const second = { id: "second", update: timeMs => secondBase.update(timeMs) };
   const stage = createCharacterStage({
     root,
     resolveSprite: key => {
