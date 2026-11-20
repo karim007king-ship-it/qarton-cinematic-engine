@@ -151,8 +151,18 @@ export function createCharacterStage({
     }
 
     // Serialize frames so concurrent callers cannot dispatch the same event
-    // twice or race the renderer's per-character sprite state.
-    await Promise.all(updates);
+    // twice or race the renderer's per-character sprite state. Wait for every
+    // character update to settle before releasing this frame's queue slot:
+    // Promise.all() rejects early and would let the next frame overlap work
+    // that is still mutating a renderer or resolving a sprite.
+    const updateResults = await Promise.allSettled(updates);
+    const updateErrors = updateResults
+      .filter(result => result.status === "rejected")
+      .map(result => result.reason);
+    if (updateErrors.length === 1) throw updateErrors[0];
+    if (updateErrors.length > 1) {
+      throw new AggregateError(updateErrors, "One or more character updates failed");
+    }
     if (destroyed || !mounted || version !== lifecycleVersion) return false;
 
     if (timeline) {
