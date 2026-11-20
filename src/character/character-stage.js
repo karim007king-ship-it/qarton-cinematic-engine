@@ -11,6 +11,7 @@ export function createCharacterStage({
   characters = [],
   timeline = null,
   idleAnimations = {},
+  walkAnimations = {},
   onEvent = () => {}
 } = {}) {
   if (!Array.isArray(characters)) throw new TypeError("Characters must be an array");
@@ -20,6 +21,10 @@ export function createCharacterStage({
   if (typeof onEvent !== "function") throw new TypeError("onEvent must be a function");
   if (!idleAnimations || typeof idleAnimations !== "object" || Array.isArray(idleAnimations)) {
     throw new TypeError("idleAnimations must be a character-id-to-animation map");
+  }
+
+  if (!walkAnimations || typeof walkAnimations !== "object" || Array.isArray(walkAnimations)) {
+    throw new TypeError("walkAnimations must be a character-id-to-animation map");
   }
 
   const renderer = createDOMCharacterRenderer({ root, resolveSprite });
@@ -55,6 +60,15 @@ export function createCharacterStage({
     idleByCharacter.set(id, animation);
   }
 
+  const walkByCharacter = new Map();
+  for (const [id, animation] of Object.entries(walkAnimations)) {
+    if (!records.has(id)) throw new TypeError(`Walk animation references unknown character "${id}"`);
+    if (!animation || typeof animation.sample !== "function") {
+      throw new TypeError(`Walk animation for "${id}" must implement sample(timeMs, characterState)`);
+    }
+    walkByCharacter.set(id, animation);
+  }
+
   function releaseCompleted(completed) {
     let firstError;
     let failed = false;
@@ -76,9 +90,12 @@ export function createCharacterStage({
       for (const [id, record] of records) {
         const sampledState = record.controller.update(0);
         const idleAnimation = idleByCharacter.get(id);
-        const initialState = idleAnimation
-          ? { ...sampledState, idle: idleAnimation.sample(0) }
-          : sampledState;
+        const walkAnimation = walkByCharacter.get(id);
+        const initialState = {
+          ...sampledState,
+          ...(idleAnimation ? { idle: idleAnimation.sample(0) } : {}),
+          ...(walkAnimation ? { walk: walkAnimation.sample(0, sampledState) } : {})
+        };
         const handle = await renderer.mount({ id, sprites: record.sprites, initialState });
         if (destroyed || version !== lifecycleVersion) {
           renderer.unmount(handle);
@@ -145,9 +162,12 @@ export function createCharacterStage({
     for (const [id, record] of records) {
       const sampledState = record.controller.update(timeMs);
       const idleAnimation = idleByCharacter.get(id);
-      const renderState = idleAnimation
-        ? { ...sampledState, idle: idleAnimation.sample(timeMs) }
-        : sampledState;
+      const walkAnimation = walkByCharacter.get(id);
+      const renderState = {
+        ...sampledState,
+        ...(idleAnimation ? { idle: idleAnimation.sample(timeMs) } : {}),
+        ...(walkAnimation ? { walk: walkAnimation.sample(timeMs, sampledState) } : {})
+      };
       updates.push(renderer.update(record.handle, renderState));
     }
 
