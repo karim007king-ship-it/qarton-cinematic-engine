@@ -69,8 +69,11 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     if (failed) throw firstError;
   }
 
-  async function resolveAsset(record, expression) {
-    const key = record.sprites[expression] ?? record.sprites.default;
+  async function resolveAsset(record, expression, spriteFrame = null) {
+    if (spriteFrame !== null && (typeof spriteFrame !== "string" || !Object.hasOwn(record.sprites, spriteFrame))) {
+      throw new TypeError(`Unknown sprite frame "${spriteFrame}" for character "${record.id}"`);
+    }
+    const key = spriteFrame ?? record.sprites[expression] ?? record.sprites.default;
     if (typeof key !== "string" || !key.trim()) {
       throw new TypeError(`No sprite asset configured for expression "${expression}"`);
     }
@@ -161,7 +164,7 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     const expression = typeof initialState.expression === "string" ? initialState.expression : "neutral";
     records.set(element, record);
     try {
-      await resolveAsset(record, expression);
+      await resolveAsset(record, expression, initialState.spriteFrame ?? null);
     } catch (error) {
       records.delete(element);
       throw error;
@@ -191,7 +194,7 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     if (!record) return false;
     if (!state || state.id !== record.id) throw new TypeError("Character state id does not match mounted character");
     applyState(record, state);
-    return resolveAsset(record, String(state.expression ?? "neutral"));
+    return resolveAsset(record, String(state.expression ?? "neutral"), state.spriteFrame ?? null);
   }
 
   function unmount(handle) {
