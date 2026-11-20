@@ -89,3 +89,52 @@ test("HTMLAudio destroy attempts every voice and retries transient pause failure
   assert.throws(() => adapter.setVolume(made[0], 0.5), /destroyed/);
   assert.throws(() => adapter.play("late"), /destroyed/);
 });
+
+
+test("synchronous play failure releases the allocated voice", () => {
+  let pauses = 0;
+  const failure = new Error("WebView rejected play synchronously");
+  const audio = fakeAudio();
+  audio.play = () => { throw failure; };
+  audio.pause = () => { pauses += 1; audio.paused = true; };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/broken.mp3",
+    createAudio: () => audio
+  });
+
+  assert.throws(() => adapter.play("broken"), error => error === failure);
+  assert.equal(audio.paused, true);
+  assert.equal(pauses, 1);
+  adapter.destroy();
+  assert.equal(pauses, 1, "destroy must not revisit a successfully released failed voice");
+});
+
+test("synchronous play failure retains ownership when cleanup fails, then destroy retries", () => {
+  let pauses = 0;
+  let allowPause = false;
+  const playFailure = new Error("play failed");
+  const cleanupFailure = new Error("pause failed during rollback");
+  const audio = fakeAudio();
+  audio.play = () => { throw playFailure; };
+  audio.pause = () => {
+    pauses += 1;
+    if (!allowPause) throw cleanupFailure;
+    audio.paused = true;
+  };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/broken.mp3",
+    createAudio: () => audio
+  });
+
+  assert.throws(() => adapter.play("broken"), error => {
+    assert.ok(error instanceof AggregateError);
+    assert.deepEqual(error.errors, [playFailure, cleanupFailure]);
+    return true;
+  });
+  assert.equal(pauses, 1);
+
+  allowPause = true;
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.equal(pauses, 2);
+  assert.throws(() => adapter.play("late"), /destroyed/);
+});
