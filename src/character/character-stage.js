@@ -10,6 +10,7 @@ export function createCharacterStage({
   resolveSprite,
   characters = [],
   timeline = null,
+  idleAnimations = {},
   onEvent = () => {}
 } = {}) {
   if (!Array.isArray(characters)) throw new TypeError("Characters must be an array");
@@ -17,6 +18,9 @@ export function createCharacterStage({
     throw new TypeError("A valid timeline is required");
   }
   if (typeof onEvent !== "function") throw new TypeError("onEvent must be a function");
+  if (!idleAnimations || typeof idleAnimations !== "object" || Array.isArray(idleAnimations)) {
+    throw new TypeError("idleAnimations must be a character-id-to-animation map");
+  }
 
   const renderer = createDOMCharacterRenderer({ root, resolveSprite });
   const records = new Map();
@@ -42,6 +46,15 @@ export function createCharacterStage({
     records.set(id, { controller: entry.controller, sprites: entry.sprites, handle: null });
   }
 
+  const idleByCharacter = new Map();
+  for (const [id, animation] of Object.entries(idleAnimations)) {
+    if (!records.has(id)) throw new TypeError(`Idle animation references unknown character "${id}"`);
+    if (!animation || typeof animation.sample !== "function") {
+      throw new TypeError(`Idle animation for "${id}" must implement sample(timeMs)`);
+    }
+    idleByCharacter.set(id, animation);
+  }
+
   function releaseCompleted(completed) {
     let firstError;
     let failed = false;
@@ -61,7 +74,11 @@ export function createCharacterStage({
     const completed = [];
     try {
       for (const [id, record] of records) {
-        const initialState = record.controller.update(0);
+        const sampledState = record.controller.update(0);
+        const idleAnimation = idleByCharacter.get(id);
+        const initialState = idleAnimation
+          ? { ...sampledState, idle: idleAnimation.sample(0) }
+          : sampledState;
         const handle = await renderer.mount({ id, sprites: record.sprites, initialState });
         if (destroyed || version !== lifecycleVersion) {
           renderer.unmount(handle);
@@ -125,8 +142,13 @@ export function createCharacterStage({
     if (rewound) deliveredEventIds.clear();
 
     const updates = [];
-    for (const record of records.values()) {
-      updates.push(renderer.update(record.handle, record.controller.update(timeMs)));
+    for (const [id, record] of records) {
+      const sampledState = record.controller.update(timeMs);
+      const idleAnimation = idleByCharacter.get(id);
+      const renderState = idleAnimation
+        ? { ...sampledState, idle: idleAnimation.sample(timeMs) }
+        : sampledState;
+      updates.push(renderer.update(record.handle, renderState));
     }
 
     // Serialize frames so concurrent callers cannot dispatch the same event
