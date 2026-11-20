@@ -446,3 +446,55 @@ test("character stage retries failed async timeline callbacks without replaying 
   assert.deepEqual(events, ["first", "second", "second", "third"]);
   stage.destroy();
 });
+
+
+test("a failed character update waits for every sibling renderer task before the next frame", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let releaseSlow;
+  let slowStarted = false;
+  const first = createCharacterController({ id: "first" });
+  const second = createCharacterController({ id: "second" });
+  const stage = createCharacterStage({
+    root,
+    resolveSprite: key => {
+      if (key === "bad") return Promise.reject(new Error("first sprite failed"));
+      if (key === "slow") {
+        slowStarted = true;
+        return new Promise(resolve => { releaseSlow = resolve; });
+      }
+      return `https://assets.test/${key}.png`;
+    },
+    characters: [
+      { controller: first, sprites: { neutral: "first", default: "first" } },
+      { controller: second, sprites: { neutral: "second", default: "second" } }
+    ]
+  });
+
+  await stage.mount();
+  first.update = timeMs => ({
+    id: "first", timeMs, x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, expression: "bad"
+  });
+  second.update = timeMs => ({
+    id: "second", timeMs, x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, expression: "slow"
+  });
+
+  let settled = false;
+  const failedFrame = stage.update(100).finally(() => { settled = true; });
+  await flushMicrotasks();
+  assert.equal(slowStarted, true);
+  assert.equal(settled, false);
+
+  let nextFrameStarted = false;
+  const nextFrame = stage.update(200).then(value => {
+    nextFrameStarted = true;
+    return value;
+  });
+  await flushMicrotasks();
+  assert.equal(nextFrameStarted, false);
+
+  releaseSlow("https://assets.test/slow.png");
+  await assert.rejects(failedFrame, /first sprite failed/);
+  assert.equal(await nextFrame, true);
+  stage.destroy();
+});
