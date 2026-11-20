@@ -254,8 +254,8 @@ test("DOM character renderer composes walk pose with the optional idle pose", as
       walk: { offsetY: -2, scaleX: 1.02, scaleY: 0.98 }
     }
   });
-  assert.match(handle.style.transform, /translate3d\(5px, 7px, 0\)/);
-  assert.match(handle.style.transform, /scale\(1\.0302, 0\.9702\)/);
+  assert.match(handle.style.transform, /translate3d\(5px, 9px, 0\)/);
+  assert.match(handle.style.transform, /scale\(1\.01, 0\.99\)/);
   await renderer.update(handle, {
     id: "hero", x: 5, y: 10, opacity: 1, scale: 1, rotation: 0,
     walk: { active: false, offsetY: 0, scaleX: 1, scaleY: 1 }
