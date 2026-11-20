@@ -481,3 +481,55 @@ test("stale mount surfaces a DOM cleanup failure instead of silently swallowing 
   assert.doesNotThrow(() => stage.destroy());
   assert.equal(root.children.length, 0);
 });
+
+
+test("a failed character update waits for every sibling update before the next frame", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const path = createMotionPath([{ x: 0, y: 0 }, { x: 10, y: 0 }]);
+  const first = createCharacterController({
+    id: "first",
+    initial: { expression: "neutral" },
+    motions: [{ id: "walk", path, startMs: 0, durationMs: 1000, expression: "focused" }]
+  });
+  const second = createCharacterController({
+    id: "second",
+    initial: { expression: "neutral" },
+    motions: [{ id: "walk", path, startMs: 0, durationMs: 1000, expression: "focused" }]
+  });
+  const failure = new Error("first sprite update failed");
+  let focusedCalls = 0;
+  let releaseSlowUpdate;
+  const slowUpdate = new Promise(resolve => { releaseSlowUpdate = resolve; });
+  const stage = createCharacterStage({
+    root,
+    resolveSprite: key => {
+      if (key !== "focused") return `https://assets.test/${key}.png`;
+      focusedCalls += 1;
+      if (focusedCalls === 1) return Promise.reject(failure);
+      if (focusedCalls === 2) return slowUpdate;
+      return `https://assets.test/focused-${focusedCalls}.png`;
+    },
+    characters: [
+      { controller: first, sprites: { neutral: "neutral", focused: "focused" } },
+      { controller: second, sprites: { neutral: "neutral", focused: "focused" } }
+    ]
+  });
+
+  await stage.mount();
+  const failedFrame = stage.update(500);
+  await flushMicrotasks();
+  assert.equal(focusedCalls, 2);
+
+  const nextFrame = stage.update(600);
+  await flushMicrotasks();
+  // The rejected first update must not release the frame queue while the
+  // second character is still resolving its sprite.
+  assert.equal(focusedCalls, 2);
+
+  releaseSlowUpdate("https://assets.test/focused-second.png");
+  await assert.rejects(failedFrame, error => error === failure);
+  assert.equal(await nextFrame, true);
+  assert.equal(focusedCalls, 3);
+  stage.destroy();
+});
