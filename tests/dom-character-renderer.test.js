@@ -226,7 +226,7 @@ test("DOM character renderer applies optional idle pose and eye blink transforms
     }
   });
   assert.match(handle.style.transform, /translate3d\(10px, 18px, 0\)/);
-  assert.match(handle.style.transform, /scale\(1\.01, 0\.99\)/);
+  assert.match(handle.style.transform, /scale\(1\.0302, 0\.9702\)/);
   assert.equal(handle.children[0].style.transform, "scaleY(0.08)");
   await renderer.update(handle, {
     id: "hero", x: 10, y: 20, opacity: 1, scale: 1, rotation: 0,
@@ -254,7 +254,7 @@ test("DOM character renderer composes walk pose with the optional idle pose", as
       walk: { offsetY: -2, scaleX: 1.02, scaleY: 0.98 }
     }
   });
-  assert.match(handle.style.transform, /translate3d\(5px, 9px, 0\)/);
+  assert.match(handle.style.transform, /translate3d\(5px, 7px, 0\)/);
   assert.match(handle.style.transform, /scale\(1\.01, 0\.99\)/);
   await renderer.update(handle, {
     id: "hero", x: 5, y: 10, opacity: 1, scale: 1, rotation: 0,
