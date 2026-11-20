@@ -263,3 +263,32 @@ test("DOM character renderer composes walk pose with the optional idle pose", as
   assert.match(handle.style.transform, /translate3d\(5px, 10px, 0\)/);
   renderer.destroy();
 });
+
+
+test("DOM character renderer displays an explicitly selected sprite frame", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`
+  });
+  const handle = await renderer.mount({
+    id: "hero",
+    sprites: { default: "hero", walk1: "walk1", walk2: "walk2" },
+    initialState: {
+      x: 0, y: 0, opacity: 1, scale: 1, rotation: 0,
+      spriteFrame: "walk1"
+    }
+  });
+  assert.equal(handle.children[0].src, "https://assets.test/walk1.png");
+  await renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0,
+    spriteFrame: "walk2"
+  });
+  assert.equal(handle.children[0].src, "https://assets.test/walk2.png");
+  await assert.rejects(renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0,
+    spriteFrame: "missing"
+  }), /Unknown sprite frame/);
+  renderer.destroy();
+});
