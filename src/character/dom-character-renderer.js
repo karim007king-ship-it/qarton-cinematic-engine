@@ -24,16 +24,22 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     const idleScaleX = idle.scaleX ?? 1;
     const idleScaleY = idle.scaleY ?? 1;
     const blinkScaleY = idle.blinkScaleY ?? 1;
+    const walk = state.walk ?? {};
+    const walkOffsetY = walk.offsetY ?? 0;
+    const walkScaleX = walk.scaleX ?? 1;
+    const walkScaleY = walk.scaleY ?? 1;
     for (const [key, value] of Object.entries({
-      offsetY: idleOffsetY, scaleX: idleScaleX, scaleY: idleScaleY, blinkScaleY
+      offsetY: idleOffsetY, scaleX: idleScaleX, scaleY: idleScaleY, blinkScaleY,
+      walkOffsetY, walkScaleX, walkScaleY
     })) {
       if (!Number.isFinite(value)) throw new TypeError(`Character idle ${key} must be finite`);
     }
-    if (idleScaleX < 0 || idleScaleY < 0 || blinkScaleY < 0 || blinkScaleY > 1) {
+    if (idleScaleX < 0 || idleScaleY < 0 || blinkScaleY < 0 || blinkScaleY > 1
+      || walkScaleX < 0 || walkScaleY < 0) {
       throw new TypeError("Character idle scales must be non-negative and blinkScaleY cannot exceed 1");
     }
     record.element.style.transform =
-      `translate3d(${state.x}px, ${state.y + idleOffsetY}px, 0) rotate(${state.rotation}deg) scale(${state.scale * idleScaleX}, ${state.scale * idleScaleY})`;
+      `translate3d(${state.x}px, ${state.y + idleOffsetY + walkOffsetY}px, 0) rotate(${state.rotation}deg) scale(${state.scale * idleScaleX * walkScaleX}, ${state.scale * idleScaleY * walkScaleY})`;
     record.image.style.transformOrigin = "center center";
     record.image.style.transform = `scaleY(${blinkScaleY})`;
     record.element.style.opacity = String(Math.min(1, Math.max(0, state.opacity)));
