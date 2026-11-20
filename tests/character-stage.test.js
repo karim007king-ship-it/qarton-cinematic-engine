@@ -490,12 +490,12 @@ test("a failed character update waits for every sibling update before the next f
   const first = createCharacterController({
     id: "first",
     initial: { expression: "neutral" },
-    motions: [{ id: "walk", path, startMs: 0, durationMs: 1000, expression: "focused" }]
+    motions: [{ id: "walk", path, startMs: 1, durationMs: 1000, expression: "focused" }]
   });
   const second = createCharacterController({
     id: "second",
     initial: { expression: "neutral" },
-    motions: [{ id: "walk", path, startMs: 0, durationMs: 1000, expression: "focused" }]
+    motions: [{ id: "walk", path, startMs: 1, durationMs: 1000, expression: "focused" }]
   });
   const failure = new Error("first sprite update failed");
   let focusedCalls = 0;
@@ -518,6 +518,9 @@ test("a failed character update waits for every sibling update before the next f
 
   await stage.mount();
   const failedFrame = stage.update(500);
+  // Attach the rejection assertion immediately so Node does not report the
+  // expected failure as an unhandled rejection while sibling work is pending.
+  const failedFrameAssertion = assert.rejects(failedFrame, error => error === failure);
   await flushMicrotasks();
   assert.equal(focusedCalls, 2);
 
@@ -528,7 +531,7 @@ test("a failed character update waits for every sibling update before the next f
   assert.equal(focusedCalls, 2);
 
   releaseSlowUpdate("https://assets.test/focused-second.png");
-  await assert.rejects(failedFrame, error => error === failure);
+  await failedFrameAssertion;
   assert.equal(await nextFrame, true);
   assert.equal(focusedCalls, 3);
   stage.destroy();

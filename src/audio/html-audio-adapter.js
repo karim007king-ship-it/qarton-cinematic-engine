@@ -57,12 +57,12 @@ export function createHTMLAudioAdapter({
           try {
             audio.src = "";
           } catch {
-            voiceStates.set(audio, "stopping");
+            voiceStates.set(audio, "cleanup-pending");
             return;
           }
         }
         if (!detachEndedHandler(audio)) {
-          voiceStates.set(audio, "stopping");
+          voiceStates.set(audio, "cleanup-pending");
           return;
         }
         active.delete(audio);
@@ -124,7 +124,7 @@ export function createHTMLAudioAdapter({
       const onEnded = () => {
         // A queued ended event may arrive after stop() detached the listener.
         // Do not notify the cue owner for a voice that is no longer active.
-        if (!active.has(audio) || (voiceStates.get(audio) === "destroying" || voiceStates.get(audio) === "stopping")) return;
+        if (!active.has(audio) || (voiceStates.get(audio) === "destroying" || voiceStates.get(audio) === "stopping" || voiceStates.get(audio) === "cleanup-pending")) return;
         active.delete(audio);
         voiceStates.set(audio, "ended");
         detachEndedHandler(audio, { alreadyFired: true });

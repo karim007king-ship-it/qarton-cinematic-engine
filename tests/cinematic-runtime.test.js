@@ -569,3 +569,38 @@ test("successful cinematic runtime destroy does not repeat resource cleanup", as
     "a successful second destroy must not repeat lifecycle listener cleanup");
   assert.equal(root.children.length, 0);
 });
+
+test("runtime destroy retries DOM cleanup failures across composed adapters", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const originalRemoveChild = root.removeChild.bind(root);
+  let failuresRemaining = 2;
+  root.removeChild = child => {
+    if (failuresRemaining > 0) {
+      failuresRemaining -= 1;
+      throw new Error("transient root removal failure");
+    }
+    return originalRemoveChild(child);
+  };
+
+  const runtime = createCinematicRuntime({
+    root,
+    loadAsset: key => key,
+    renderScene: () => document.createElement("section")
+  });
+  await runtime.transitionTo({ id: "retry-destroy" });
+  assert.equal(root.children.length, 1);
+
+  await assert.rejects(runtime.destroy(), error => {
+    assert.ok(error instanceof AggregateError);
+    assert.ok(error.errors.some(item => /transient root removal failure/.test(item.message)));
+    return true;
+  });
+  assert.equal(root.children.length, 1,
+    "failed cleanup must retain the mounted scene for a later retry");
+
+  await assert.doesNotReject(runtime.destroy());
+  assert.equal(root.children.length, 0);
+  await assert.doesNotReject(runtime.destroy());
+});
+
