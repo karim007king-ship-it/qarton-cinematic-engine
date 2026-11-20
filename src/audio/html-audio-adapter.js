@@ -1,3 +1,5 @@
+import { assertSafeAssetUrl } from "../assets/asset-url.js";
+
 /**
  * Browser/Android WebView HTMLAudio adapter for createAudioCueController.
  * Audio construction is lazy and injectable, so importing this module is safe
@@ -74,8 +76,7 @@ export function createHTMLAudioAdapter({
 
   function play(asset, options = {}) {
     if (destroyed) throw new Error("HTMLAudio adapter has been destroyed");
-    const url = resolveAsset(asset);
-    if (typeof url !== "string" || !url.trim()) throw new TypeError("Audio asset resolver must return a URL");
+    const url = assertSafeAssetUrl(resolveAsset(asset), asset);
     const baseVolume = options.volume ?? 1;
     if (!Number.isFinite(baseVolume) || baseVolume < 0 || baseVolume > 1) {
       throw new TypeError("Audio voice volume must be between 0 and 1");
