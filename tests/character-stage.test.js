@@ -490,12 +490,12 @@ test("a failed character update waits for every sibling update before the next f
   const first = createCharacterController({
     id: "first",
     initial: { expression: "neutral" },
-    motions: [{ id: "walk", path, startMs: 0, durationMs: 1000, expression: "focused" }]
+    motions: [{ id: "walk", path, startMs: 1, durationMs: 1000, expression: "focused" }]
   });
   const second = createCharacterController({
     id: "second",
     initial: { expression: "neutral" },
-    motions: [{ id: "walk", path, startMs: 0, durationMs: 1000, expression: "focused" }]
+    motions: [{ id: "walk", path, startMs: 1, durationMs: 1000, expression: "focused" }]
   });
   const failure = new Error("first sprite update failed");
   let focusedCalls = 0;
