@@ -45,15 +45,20 @@ export function createCharacterStage({
   function releaseCompleted(completed) {
     let firstError;
     let failed = false;
-    for (const item of completed.reverse()) {
+    const remaining = [];
+    // Retain only handles whose release failed. A later rollback pass must
+    // not invoke unmount again for resources that were already released.
+    for (const item of [...completed].reverse()) {
       try {
         renderer.unmount(item.handle);
         if (item.record.handle === item.handle) item.record.handle = null;
       } catch (error) {
         if (!failed) firstError = error;
         failed = true;
+        remaining.push(item);
       }
     }
+    completed.splice(0, completed.length, ...remaining.reverse());
     if (failed) throw firstError;
   }
 
