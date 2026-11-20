@@ -5,6 +5,7 @@ import { createCharacterController } from "../src/character/character-controller
 import { createMotionPath } from "../src/motion/path.js";
 import { createTimeline } from "../src/motion/timeline.js";
 import { createIdleAnimation } from "../src/character/idle-animation.js";
+import { createWalkAnimation } from "../src/character/walk-animation.js";
 
 class Element {
   constructor(tag, ownerDocument) {
@@ -484,4 +485,37 @@ test("character stage validates optional idle animation mappings", () => {
     characters: [{ controller, sprites: { default: "hero" } }],
     idleAnimations: { hero: {} }
   }), /sample\(timeMs\)/);
+});
+
+
+test("character stage composes optional walk and idle poses without mutating controller state", async () => {
+  const { root, controller, stage } = fixture({
+    idleAnimations: { hero: createIdleAnimation({ periodMs: 2000, bobAmplitude: 2, blinkIntervalMs: 5000 }) },
+    walkAnimations: { hero: createWalkAnimation({ stepPeriodMs: 400, bobAmplitude: 3, strideScale: 0.02 }) }
+  });
+  await stage.mount();
+  await stage.update(100);
+  const transform = root.children[0].style.transform;
+  assert.match(transform, /translate3d\(10px, -5px, 0\)/);
+  assert.match(transform, /scale\(1\.02, 0\.98\)/);
+  assert.equal(controller.update(100).y, 0);
+  await stage.update(1200);
+  assert.match(root.children[0].style.transform, /translate3d\(100px, 0px, 0\)/);
+  stage.destroy();
+});
+
+test("character stage validates optional walk animation mappings", () => {
+  const { root, controller } = fixture();
+  assert.throws(() => createCharacterStage({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`,
+    characters: [{ controller, sprites: { default: "hero" } }],
+    walkAnimations: { missing: createWalkAnimation() }
+  }), /unknown character/);
+  assert.throws(() => createCharacterStage({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`,
+    characters: [{ controller, sprites: { default: "hero" } }],
+    walkAnimations: { hero: {} }
+  }), /sample\(timeMs, characterState\)/);
 });
