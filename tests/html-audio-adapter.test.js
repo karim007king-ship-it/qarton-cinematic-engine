@@ -1017,3 +1017,32 @@ test("reentrant destroy from a native pause event does not repeat HTMLAudio tear
   assert.doesNotThrow(() => adapter.destroy());
   assert.equal(pauseCalls, 1, "completed teardown must remain idempotent");
 });
+
+
+test("reentrant destroy from a native pause during stop does not pause or release the voice twice", () => {
+  const listeners = new Map();
+  const audio = fakeAudio();
+  let adapter;
+  let pauseCalls = 0;
+  audio.addEventListener = (type, handler) => listeners.set(type, handler);
+  audio.removeEventListener = (type, handler) => {
+    if (listeners.get(type) === handler) listeners.delete(type);
+  };
+  audio.pause = () => {
+    pauseCalls += 1;
+    audio.paused = true;
+    adapter.destroy();
+  };
+  adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/stop-reentrant-destroy.mp3",
+    createAudio: () => audio
+  });
+
+  const voice = adapter.play("effect");
+  assert.doesNotThrow(() => adapter.stop(voice));
+  assert.equal(pauseCalls, 1, "nested destroy must not pause a voice already being stopped");
+  assert.equal(audio.src, "");
+  assert.equal(listeners.size, 0);
+  assert.doesNotThrow(() => adapter.destroy());
+  assert.equal(pauseCalls, 1);
+});
