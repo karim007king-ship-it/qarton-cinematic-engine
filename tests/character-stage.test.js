@@ -6,6 +6,7 @@ import { createMotionPath } from "../src/motion/path.js";
 import { createTimeline } from "../src/motion/timeline.js";
 import { createIdleAnimation } from "../src/character/idle-animation.js";
 import { createWalkAnimation } from "../src/character/walk-animation.js";
+import { createSpriteFrameAnimation } from "../src/character/sprite-frame-animation.js";
 
 class Element {
   constructor(tag, ownerDocument) {
@@ -41,7 +42,7 @@ function fixture(options = {}) {
     stage: createCharacterStage({
       root,
       resolveSprite: key => `https://assets.test/${key}.png`,
-      characters: [{ controller, sprites: { neutral: "neutral", focused: "focused" } }],
+      characters: [{ controller, sprites: { neutral: "neutral", focused: "focused", walk1: "walk1", walk2: "walk2", stand: "stand" } }],
       ...options
     })
   };
@@ -523,4 +524,38 @@ test("character stage validates optional walk animation mappings", () => {
     characters: [{ controller, sprites: { default: "hero" } }],
     walkAnimations: { hero: {} }
   }), /sample\(timeMs, characterState\)/);
+});
+
+
+test("character stage selects sprite frames from the shared scene clock", async () => {
+  const { root, stage } = fixture({
+    spriteAnimations: {
+      hero: createSpriteFrameAnimation({
+        frames: ["walk1", "walk2"],
+        idleFrame: "stand",
+        frameDurationMs: 100
+      })
+    }
+  });
+  await stage.mount();
+  assert.equal(root.children[0].children[0].src, "https://assets.test/stand.png");
+  await stage.update(0);
+  assert.equal(root.children[0].children[0].src, "https://assets.test/walk1.png");
+  await stage.update(100);
+  assert.equal(root.children[0].children[0].src, "https://assets.test/walk2.png");
+  await stage.update(200);
+  assert.equal(root.children[0].children[0].src, "https://assets.test/walk1.png");
+  stage.destroy();
+});
+
+test("character stage rejects sprite frames missing from the character asset map", () => {
+  const { root, controller } = fixture();
+  assert.throws(() => createCharacterStage({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`,
+    characters: [{ controller, sprites: { default: "hero" } }],
+    spriteAnimations: {
+      hero: createSpriteFrameAnimation({ frames: ["walk1"] })
+    }
+  }), /not configured/);
 });
