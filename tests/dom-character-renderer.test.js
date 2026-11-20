@@ -335,3 +335,33 @@ test("destroy settles a pending sprite update when the resolver never resolves",
   assert.equal(observedSignal.aborted, true);
   assert.equal(root.children.length, 0);
 });
+
+
+test("failed appendChild rolls back the pending character record and allows a later mount", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const originalAppend = root.appendChild.bind(root);
+  let failAppend = true;
+  root.appendChild = child => {
+    if (failAppend) throw new Error("append failed");
+    return originalAppend(child);
+  };
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: () => "https://assets.test/hero.png"
+  });
+
+  await assert.rejects(
+    renderer.mount({ id: "hero", sprites: { default: "hero" } }),
+    /append failed/
+  );
+  assert.equal(root.children.length, 0);
+
+  failAppend = false;
+  const handle = await renderer.mount({ id: "hero", sprites: { default: "hero" } });
+  assert.equal(root.children.length, 1);
+  assert.equal(handle.children[0].src, "https://assets.test/hero.png");
+  renderer.destroy();
+  assert.equal(root.children.length, 0);
+});
+
