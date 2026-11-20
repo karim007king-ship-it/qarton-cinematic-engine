@@ -49,7 +49,7 @@ export function createIdleAnimation({
       const blinkProgress = blinking ? blinkPhase / blinkDurationMs : 0;
       const blinkCurve = blinking ? Math.sin(Math.PI * blinkProgress) : 0;
       return Object.freeze({
-        offsetY: -bobAmplitude * (0.5 - 0.5 * breath),
+        offsetY: -bobAmplitude * (0.5 - 0.5 * Math.cos(phase * tau)),
         scaleX: 1 + swayAmplitude * breath,
         scaleY: 1 - swayAmplitude * 0.5 * breath,
         blinkScaleY: 1 - blinkAmount * blinkCurve,
