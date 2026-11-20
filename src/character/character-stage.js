@@ -81,7 +81,8 @@ export function createCharacterStage({
     if (!animation || typeof animation.sample !== "function" || !Array.isArray(animation.frames)) {
       throw new TypeError(`Sprite animation for "${id}" must expose frames and sample(timeMs, characterState)`);
     }
-    for (const frameKey of animation.frames) {
+    const configuredFrames = [...animation.frames, ...(animation.idleFrame === null || animation.idleFrame === undefined ? [] : [animation.idleFrame])];
+    for (const frameKey of configuredFrames) {
       if (!Object.hasOwn(record.sprites, frameKey)) {
         throw new TypeError(`Sprite frame "${frameKey}" is not configured for character "${id}"`);
       }
