@@ -518,6 +518,9 @@ test("a failed character update waits for every sibling update before the next f
 
   await stage.mount();
   const failedFrame = stage.update(500);
+  // Attach the rejection assertion immediately so Node does not report the
+  // expected failure as an unhandled rejection while sibling work is pending.
+  const failedFrameAssertion = assert.rejects(failedFrame, error => error === failure);
   await flushMicrotasks();
   assert.equal(focusedCalls, 2);
 
@@ -528,7 +531,7 @@ test("a failed character update waits for every sibling update before the next f
   assert.equal(focusedCalls, 2);
 
   releaseSlowUpdate("https://assets.test/focused-second.png");
-  await assert.rejects(failedFrame, error => error === failure);
+  await failedFrameAssertion;
   assert.equal(await nextFrame, true);
   assert.equal(focusedCalls, 3);
   stage.destroy();
