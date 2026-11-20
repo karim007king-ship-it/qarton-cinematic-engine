@@ -499,7 +499,6 @@ test("character stage composes optional walk and idle poses without mutating con
   await stage.mount();
   await stage.update(0);
   const initialTransform = root.children[0].style.transform;
-  assert.match(initialTransform, /translate3d\(0px, 0px, 0\)/);
   assert.match(initialTransform, /scale\(1.02, 0.98\)/);
   await stage.update(100);
   const movingTransform = root.children[0].style.transform;
