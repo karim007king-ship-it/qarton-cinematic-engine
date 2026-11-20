@@ -59,12 +59,27 @@ export function createCharacterStage({
 
   async function performMount(version) {
     const completed = [];
+    let staleCleanupFailed = false;
     try {
       for (const [id, record] of records) {
         const initialState = record.controller.update(0);
         const handle = await renderer.mount({ id, sprites: record.sprites, initialState });
         if (destroyed || version !== lifecycleVersion) {
-          renderer.unmount(handle);
+          try {
+            renderer.unmount(handle);
+          } catch (error) {
+            staleCleanupFailed = true;
+            try {
+              releaseCompleted(completed);
+            } catch (cleanupError) {
+              throw new AggregateError(
+                [error, cleanupError],
+                "Stale character mount cleanup failed",
+                { cause: error }
+              );
+            }
+            throw error;
+          }
           releaseCompleted(completed);
           return false;
         }
@@ -86,6 +101,7 @@ export function createCharacterStage({
       }
       if (destroyed || version !== lifecycleVersion) {
         if (cleanupError) throw cleanupError;
+        if (staleCleanupFailed) throw error;
         return false;
       }
       mounted = false;

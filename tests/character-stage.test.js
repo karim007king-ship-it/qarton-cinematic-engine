@@ -446,3 +446,38 @@ test("character stage retries failed async timeline callbacks without replaying 
   assert.deepEqual(events, ["first", "second", "second", "third"]);
   stage.destroy();
 });
+
+
+test("stale mount surfaces a DOM cleanup failure instead of silently swallowing it", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const controller = createCharacterController({ id: "hero" });
+  let resolveSprite;
+  const cleanupFailure = new Error("stale mount cleanup failed");
+  const originalAppend = root.appendChild.bind(root);
+  const originalRemoveChild = root.removeChild.bind(root);
+  root.appendChild = child => {
+    child.remove = () => { throw cleanupFailure; };
+    return originalAppend(child);
+  };
+  root.removeChild = () => { throw cleanupFailure; };
+
+  const stage = createCharacterStage({
+    root,
+    resolveSprite: () => new Promise(resolve => { resolveSprite = resolve; }),
+    characters: [{ controller, sprites: { default: "hero" } }]
+  });
+
+  const pending = stage.mount();
+  await Promise.resolve();
+  stage.unmount();
+  resolveSprite("https://assets.test/hero.png");
+
+  await assert.rejects(pending, error => error === cleanupFailure);
+  assert.equal(root.children.length, 1);
+
+  root.removeChild = originalRemoveChild;
+  root.children[0].remove = function () { this.parentNode?.removeChild(this); };
+  assert.doesNotThrow(() => stage.destroy());
+  assert.equal(root.children.length, 0);
+});
