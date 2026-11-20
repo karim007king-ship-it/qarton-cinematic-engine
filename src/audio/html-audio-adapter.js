@@ -159,6 +159,9 @@ export function createHTMLAudioAdapter({
     }
     voiceStates.set(audio, "stopping");
     audio.pause();
+    // A native pause event may synchronously re-enter destroy(). Once teardown
+    // changes ownership, let that pass finish instead of releasing its handle.
+    if (voiceStates.get(audio) !== "stopping") return;
     try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
     if (!detachEndedHandler(audio)) {
       voiceStates.set(audio, "stopping");
@@ -233,12 +236,17 @@ export function createHTMLAudioAdapter({
         let failed = false;
         // Mark before invoking native methods: a queued ended callback must not
         // release ownership while teardown is in progress.
+        const stopAlreadyOwnsPause = voiceStates.get(audio) === "stopping";
         voiceStates.set(audio, "destroying");
-        try {
-          audio.pause();
-        } catch (error) {
-          errors.push(error);
-          failed = true;
+        // stop() may have entered destroy() from its native pause callback.
+        // Do not issue a second pause while that operation is already active.
+        if (!stopAlreadyOwnsPause) {
+          try {
+            audio.pause();
+          } catch (error) {
+            errors.push(error);
+            failed = true;
+          }
         }
         try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
         try {
