@@ -42,7 +42,22 @@ export function createHTMLAudioAdapter({
     audio.preload = "auto";
     audio.volume = baseVolume * volume;
     active.set(audio, baseVolume);
-    const result = audio.play();
+    let result;
+    try {
+      result = audio.play();
+    } catch (error) {
+      // Synchronous WebView/native playback failures must not leak a voice.
+      // If pause itself fails, keep ownership in active so destroy() can retry.
+      try {
+        stop(audio);
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          "HTMLAudio playback failed and its voice could not be cleaned up"
+        );
+      }
+      throw error;
+    }
     if (result && typeof result.catch === "function") {
       result.catch(error => onPlaybackError(error, { asset, audio }));
     }
