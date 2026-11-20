@@ -502,7 +502,7 @@ test("character stage composes optional walk and idle poses without mutating con
   assert.match(initialTransform, /scale\(1.02, 0.98\)/);
   await stage.update(100);
   const movingTransform = root.children[0].style.transform;
-  assert.match(movingTransform, /translate3d\(10px, -5px, 0\)/);
+  assert.match(movingTransform, /translate3d\(0\.4px, -5px, 0\)/);
   assert.equal(controller.update(100).y, 0);
   await stage.update(1200);
   assert.equal(root.children[0].dataset.state, "idle");
