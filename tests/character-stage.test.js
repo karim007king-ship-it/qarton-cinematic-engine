@@ -468,14 +468,16 @@ test("a failed character update waits for every sibling renderer task before the
       return `https://assets.test/${key}.png`;
     },
     characters: [
-      { controller: first, sprites: { neutral: "first", default: "first" } },
-      { controller: second, sprites: { neutral: "second", default: "second" } }
+      { controller: first, sprites: { neutral: "first", bad: "bad", default: "first" } },
+      { controller: second, sprites: { neutral: "second", slow: "slow", default: "second" } }
     ]
   });
 
   await stage.mount();
+  let failFirstUpdate = true;
   first.update = timeMs => ({
-    id: "first", timeMs, x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, expression: "bad"
+    id: "first", timeMs, x: 0, y: 0, opacity: 1, scale: 1, rotation: 0,
+    expression: failFirstUpdate ? "bad" : "neutral"
   });
   second.update = timeMs => ({
     id: "second", timeMs, x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, expression: "slow"
@@ -496,6 +498,7 @@ test("a failed character update waits for every sibling renderer task before the
   assert.equal(nextFrameStarted, false);
 
   releaseSlow("https://assets.test/slow.png");
+  failFirstUpdate = false;
   await assert.rejects(failedFrame, /first sprite failed/);
   assert.equal(await nextFrame, true);
   stage.destroy();
