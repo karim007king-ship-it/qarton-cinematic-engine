@@ -591,7 +591,11 @@ test("runtime destroy retries DOM cleanup failures across composed adapters", as
   await runtime.transitionTo({ id: "retry-destroy" });
   assert.equal(root.children.length, 1);
 
-  await assert.rejects(runtime.destroy(), /transient root removal failure/);
+  await assert.rejects(runtime.destroy(), error => {
+    assert.ok(error instanceof AggregateError);
+    assert.ok(error.errors.some(item => /transient root removal failure/.test(item.message)));
+    return true;
+  });
   assert.equal(root.children.length, 1,
     "failed cleanup must retain the mounted scene for a later retry");
 
