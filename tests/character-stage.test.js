@@ -490,17 +490,23 @@ test("character stage validates optional idle animation mappings", () => {
 
 test("character stage composes optional walk and idle poses without mutating controller state", async () => {
   const { root, controller, stage } = fixture({
-    idleAnimations: { hero: createIdleAnimation({ periodMs: 2000, bobAmplitude: 2, swayAmplitude: 0, phaseOffsetMs: 900, blinkIntervalMs: 5000 }) },
+    idleAnimations: { hero: createIdleAnimation({
+      periodMs: 2000, bobAmplitude: 2, swayAmplitude: 0,
+      phaseOffsetMs: 900, blinkIntervalMs: 5000
+    }) },
     walkAnimations: { hero: createWalkAnimation({ stepPeriodMs: 400, bobAmplitude: 3, strideScale: 0.02 }) }
   });
   await stage.mount();
+  await stage.update(0);
+  const initialTransform = root.children[0].style.transform;
+  assert.match(initialTransform, /translate3d\(0px, 0px, 0\)/);
+  assert.match(initialTransform, /scale\(1.02, 0.98\)/);
   await stage.update(100);
-  const transform = root.children[0].style.transform;
-  assert.match(transform, /translate3d\(10px, -5px, 0\)/);
-  assert.match(transform, /scale\(1\.02, 0\.98\)/);
+  const movingTransform = root.children[0].style.transform;
+  assert.match(movingTransform, /translate3d\(10px, -5px, 0\)/);
   assert.equal(controller.update(100).y, 0);
   await stage.update(1200);
-  assert.match(root.children[0].style.transform, /translate3d\(100px, 0px, 0\)/);
+  assert.equal(root.children[0].dataset.state, "idle");
   stage.destroy();
 });
 
