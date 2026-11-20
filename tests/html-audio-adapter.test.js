@@ -501,3 +501,33 @@ test("one-shot ended event notifies the cue owner and detaches its listener", ()
   assert.equal(listeners.has("ended"), false);
   adapter.destroy();
 });
+
+test("a stale play rejection cannot pause a newer successful playback attempt", async () => {
+  const pending = [];
+  const errors = [];
+  let pauseCalls = 0;
+  const audio = fakeAudio();
+  audio.play = () => {
+    audio.paused = false;
+    return new Promise((resolve, reject) => pending.push({ resolve, reject }));
+  };
+  audio.pause = () => { pauseCalls += 1; audio.paused = true; };
+  const adapter = createHTMLAudioAdapter({
+    resolveAsset: () => "/race.mp3",
+    createAudio: () => audio,
+    onPlaybackError: error => errors.push(error.message)
+  });
+
+  const voice = adapter.play("race");
+  adapter.pause(voice);
+  adapter.resume(voice);
+  pending[1].resolve();
+  pending[0].reject(new Error("obsolete initial attempt failed"));
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.equal(audio.paused, false, "the obsolete rejection must not pause the newer playback");
+  assert.equal(pauseCalls, 1, "only the explicit pause should pause the media element");
+  assert.deepEqual(errors, []);
+  adapter.destroy();
+});

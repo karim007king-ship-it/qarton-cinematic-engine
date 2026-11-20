@@ -368,3 +368,17 @@ test("rerendering an active scene applies a new quality budget without dropping 
 
   renderer.destroy();
 });
+
+
+test("renderer rejects unsafe resolved background URLs before mounting", async () => {
+  const { root, scene, profile } = fixture();
+  const renderer = new BackgroundRenderer({
+    root,
+    resolveAsset: key => key === "images/hero" ? "javascript:alert(1)" : `/${key}.webp`
+  });
+
+  await assert.rejects(renderer.render(scene, profile), /unsafe URL/);
+  assert.equal(root.children.length, 0);
+  assert.equal(root.dataset.qartonSceneId, undefined);
+  renderer.destroy();
+});

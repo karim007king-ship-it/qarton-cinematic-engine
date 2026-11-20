@@ -784,3 +784,39 @@ test("destroy waits for an in-flight director frame before releasing its resourc
   await destroying;
   assert.deepEqual(order, ["frame-start", "frame-end", "stage-destroy", "audio-destroy"]);
 });
+
+
+test("destroy still releases stage and audio after an in-flight character frame rejects", async () => {
+  let rejectFrame;
+  const failure = new Error("character frame failed during teardown");
+  const calls = [];
+  const director = createCinematicDirector({
+    characterStage: {
+      mount: async () => true,
+      update: () => new Promise((_resolve, reject) => { rejectFrame = reject; }),
+      unmount: () => {},
+      destroy: () => { calls.push("stage-destroy"); }
+    },
+    audio: {
+      update: () => {},
+      pause: () => {},
+      resume: () => {},
+      stopAll: () => {},
+      destroy: () => { calls.push("audio-destroy"); }
+    }
+  });
+
+  await director.mount();
+  const updating = director.update(100);
+  await Promise.resolve();
+  const destroying = director.destroy();
+
+  rejectFrame(failure);
+  await assert.rejects(updating, error => error === failure);
+  await assert.doesNotReject(destroying);
+
+  assert.deepEqual(calls, ["stage-destroy", "audio-destroy"]);
+  assert.deepEqual(director.getState(), {
+    mounted: false, paused: false, destroyed: true, timeMs: -1
+  });
+});

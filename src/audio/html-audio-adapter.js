@@ -26,6 +26,18 @@ export function createHTMLAudioAdapter({
   const assets = new WeakMap();
   const endedHandlers = new Map();
   const voiceStates = new WeakMap();
+  const playbackAttempts = new WeakMap();
+  let nextPlaybackAttempt = 0;
+
+  function beginPlaybackAttempt(audio) {
+    const attempt = ++nextPlaybackAttempt;
+    playbackAttempts.set(audio, attempt);
+    return attempt;
+  }
+
+  function isCurrentPlaybackAttempt(audio, attempt) {
+    return playbackAttempts.get(audio) === attempt;
+  }
 
   function detachEndedHandler(audio) {
     const handler = endedHandlers.get(audio);
@@ -119,15 +131,20 @@ export function createHTMLAudioAdapter({
       }
     }
 
+    const attempt = beginPlaybackAttempt(audio);
     let result;
     try {
       result = audio.play();
     } catch (error) {
-      reportPlaybackError(error, audio);
+      if (isCurrentPlaybackAttempt(audio, attempt)) reportPlaybackError(error, audio);
       throw error;
     }
     if (result && typeof result.then === "function") {
-      Promise.resolve(result).catch(error => reportPlaybackError(error, audio, { retainOwnership: true }));
+      Promise.resolve(result).catch(error => {
+        if (isCurrentPlaybackAttempt(audio, attempt)) {
+          reportPlaybackError(error, audio, { retainOwnership: true });
+        }
+      });
     }
     return audio;
   }
@@ -138,6 +155,7 @@ export function createHTMLAudioAdapter({
       detachEndedHandler(audio);
       return;
     }
+    beginPlaybackAttempt(audio);
     audio.pause();
     try { audio.currentTime = 0; } catch { /* media may not be seekable yet */ }
     active.delete(audio);
@@ -148,21 +166,29 @@ export function createHTMLAudioAdapter({
   function pause(audio) {
     if (destroyed) throw new Error("HTMLAudio adapter has been destroyed");
     if (!audio || !active.has(audio)) return;
+    beginPlaybackAttempt(audio);
     audio.pause();
   }
 
   function resume(audio) {
     if (destroyed) throw new Error("HTMLAudio adapter has been destroyed");
     if (!audio || !active.has(audio)) return;
+    const attempt = beginPlaybackAttempt(audio);
     let result;
     try {
       result = audio.play();
     } catch (error) {
-      reportPlaybackError(error, audio, { retainOwnership: true });
+      if (isCurrentPlaybackAttempt(audio, attempt)) {
+        reportPlaybackError(error, audio, { retainOwnership: true });
+      }
       throw error;
     }
     if (result && typeof result.then === "function") {
-      Promise.resolve(result).catch(error => reportPlaybackError(error, audio, { retainOwnership: true }));
+      Promise.resolve(result).catch(error => {
+        if (isCurrentPlaybackAttempt(audio, attempt)) {
+          reportPlaybackError(error, audio, { retainOwnership: true });
+        }
+      });
     }
   }
 

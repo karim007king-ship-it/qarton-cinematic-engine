@@ -317,3 +317,88 @@ test("destroy settles callers when a loader ignores abort and never resolves", a
   assert.equal(manager.pendingCount, 0);
   assert.equal(manager.size, 0);
 });
+
+
+test("aborting one consumer does not cancel a shared asset load", async () => {
+  let finish;
+  let loaderSignal;
+  let calls = 0;
+  const manager = new AssetManager({
+    loader: (_key, _metadata, { signal }) => {
+      calls += 1;
+      loaderSignal = signal;
+      return new Promise(resolve => { finish = resolve; });
+    }
+  });
+  const firstController = new AbortController();
+  const first = manager.load("shared-background", null, { signal: firstController.signal });
+  const second = manager.load("shared-background");
+  await Promise.resolve();
+
+  firstController.abort();
+  await assert.rejects(first, { name: "AbortError" });
+  assert.equal(loaderSignal.aborted, false);
+  assert.equal(manager.pendingCount, 1);
+  assert.equal(calls, 1);
+
+  finish("/shared-background.png");
+  assert.equal(await second, "/shared-background.png");
+  assert.equal(manager.size, 1);
+  assert.equal(manager.pendingCount, 0);
+});
+
+test("aborting the last consumer cancels the shared loader and permits retry", async () => {
+  let loaderSignal;
+  const manager = new AssetManager({
+    loader: (_key, _metadata, { signal }) => {
+      loaderSignal = signal;
+      return new Promise(() => {});
+    }
+  });
+  const controller = new AbortController();
+  const pending = manager.load("orphaned-scene", null, { signal: controller.signal });
+  await Promise.resolve();
+
+  controller.abort();
+  await assert.rejects(pending, { name: "AbortError" });
+  assert.equal(loaderSignal.aborted, true);
+  assert.equal(manager.pendingCount, 0);
+});
+
+test("an already-aborted consumer does not start an asset request", async () => {
+  let calls = 0;
+  const manager = new AssetManager({
+    loader: async () => { calls += 1; return "/unused.png"; }
+  });
+  const controller = new AbortController();
+  controller.abort();
+
+  await assert.rejects(
+    manager.load("unused-by-caller", null, { signal: controller.signal }),
+    { name: "AbortError" }
+  );
+  assert.equal(calls, 0);
+  assert.equal(manager.pendingCount, 0);
+});
+
+
+test("aborting the last consumer after release aborts the detached loader", async () => {
+  let loaderSignal;
+  const manager = new AssetManager({
+    loader: (_key, _metadata, { signal }) => {
+      loaderSignal = signal;
+      return new Promise(() => {});
+    }
+  });
+  const controller = new AbortController();
+  const pending = manager.load("detached-release", null, { signal: controller.signal });
+  await Promise.resolve();
+  assert.equal(manager.release("detached-release"), true);
+  assert.equal(manager.pendingCount, 0);
+  assert.equal(loaderSignal.aborted, false);
+
+  controller.abort();
+  await assert.rejects(pending, { name: "AbortError" });
+  assert.equal(loaderSignal.aborted, true);
+  assert.equal(manager.pendingCount, 0);
+});
