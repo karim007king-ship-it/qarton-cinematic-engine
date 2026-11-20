@@ -507,7 +507,10 @@ test("a stale play rejection cannot pause a newer successful playback attempt", 
   const errors = [];
   let pauseCalls = 0;
   const audio = fakeAudio();
-  audio.play = () => new Promise((resolve, reject) => pending.push({ resolve, reject }));
+  audio.play = () => {
+    audio.paused = false;
+    return new Promise((resolve, reject) => pending.push({ resolve, reject }));
+  };
   audio.pause = () => { pauseCalls += 1; audio.paused = true; };
   const adapter = createHTMLAudioAdapter({
     resolveAsset: () => "/race.mp3",
