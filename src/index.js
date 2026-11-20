@@ -4,6 +4,7 @@ export { createMotionPath, sampleMotionPath } from "./motion/path.js";
 export { createTimeline, getTimelineEvents } from "./motion/timeline.js";
 export { createCharacterController } from "./character/character-controller.js";
 export { createIdleAnimation } from "./character/idle-animation.js";
+export { createWalkAnimation } from "./character/walk-animation.js";
 export { createDOMCharacterRenderer } from "./character/dom-character-renderer.js";
 export { createCharacterStage } from "./character/character-stage.js";
 export { createSceneDefinition } from "./scene/scene-definition.js";
