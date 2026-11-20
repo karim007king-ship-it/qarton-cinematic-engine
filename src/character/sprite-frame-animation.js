@@ -60,5 +60,5 @@ export function createSpriteFrameAnimation({
     });
   }
 
-  return Object.freeze({ frames: frameKeys, sample });
+  return Object.freeze({ frames: frameKeys, idleFrame, sample });
 }
