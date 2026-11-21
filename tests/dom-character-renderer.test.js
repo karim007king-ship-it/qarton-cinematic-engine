@@ -327,3 +327,47 @@ test("DOM character renderer resolves sprite-frame keys through the configured a
   assert.deepEqual(requestedAssets, [walkAsset, idleAsset]);
   renderer.destroy();
 });
+
+
+test("destroy invalidates a pending initial sprite load without attaching a character", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let resolveInitial;
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: () => new Promise(resolve => { resolveInitial = resolve; })
+  });
+  const mounting = renderer.mount({
+    id: "hero", sprites: { neutral: "neutral" },
+    initialState: { expression: "neutral" }
+  });
+  renderer.destroy();
+  resolveInitial("https://assets.test/neutral.png");
+  await assert.rejects(mounting, /destroyed/);
+  assert.equal(root.children.length, 0);
+  assert.doesNotThrow(() => renderer.destroy());
+});
+
+test("unmount invalidates an in-flight sprite request without restoring the element", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let resolveFocused;
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => key === "focused"
+      ? new Promise(resolve => { resolveFocused = resolve; })
+      : `https://assets.test/${key}.png`
+  });
+  const handle = await renderer.mount({
+    id: "hero", sprites: { neutral: "neutral", focused: "focused" },
+    initialState: { expression: "neutral" }
+  });
+  const pending = renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, expression: "focused"
+  });
+  renderer.unmount(handle);
+  resolveFocused("https://assets.test/focused.png");
+  assert.equal(await pending, false);
+  assert.equal(root.children.length, 0);
+  renderer.destroy();
+});
