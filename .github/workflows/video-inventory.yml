@@ -1,0 +1,55 @@
+name: QARTON Video Inventory
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/video-inventory.yml'
+permissions:
+  contents: read
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: false
+      - name: Inventory tracked videos and references
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import csv, hashlib, pathlib, subprocess
+          from urllib.parse import quote
+          exts={'.mp4','.webm','.mov','.m4v','.avi','.mkv','.ogv','.wmv','.mpeg','.mpg'}
+          repo='${{ github.repository }}'
+          files=subprocess.check_output(['git','ls-files','-z']).decode('utf-8','surrogateescape').split('\0')
+          files=[f for f in files if f]
+          videos=[f for f in files if pathlib.PurePosixPath(f).suffix.lower() in exts]
+          rows=[]
+          for f in videos:
+              p=pathlib.Path(f)
+              data=p.read_bytes()
+              sha=hashlib.sha256(data).hexdigest()
+              refs=[]
+              for candidate in files:
+                  q=pathlib.Path(candidate)
+                  if candidate==f or q.suffix.lower() in exts or not q.is_file() or q.stat().st_size>2_000_000: continue
+                  try: s=q.read_text(encoding='utf-8')
+                  except (UnicodeError,OSError): continue
+                  if f in s or p.name in s: refs.append(candidate)
+              rows.append([f,len(data),sha,'; '.join(refs),'https://github.com/'+repo+'/blob/${{ github.sha }}/'+quote(f,safe='/')])
+          with open('video-inventory.csv','w',newline='',encoding='utf-8') as out:
+              w=csv.writer(out);w.writerow(['path','bytes','sha256','references','github_url']);w.writerows(rows)
+          with open('video-inventory.md','w',encoding='utf-8') as out:
+              out.write('# QARTON video inventory\n\n')
+              out.write('Tracked videos on the checked-out commit: '+str(len(rows))+'\n\n')
+              for r in rows:out.write('- ['+r[0]+']('+r[4]+') — '+str(r[1])+' bytes; SHA256 '+r[2]+'; references: '+(r[3] or 'none found')+'\n')
+              out.write('\nNo files were deleted. This checks the current branch only, not other branches or Git history.\n')
+          print('Found',len(rows),'tracked videos')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qarton-video-inventory
+          path: |
+            video-inventory.csv
+            video-inventory.md
