@@ -1,0 +1,53 @@
+name: QARTON Cross-Repository Video Audit
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        repository:
+          - dimo-jeux
+          - football-manager-game2
+          - football-manager-text
+          - football-manager-1
+          - football-manager-2
+          - football-manager-3
+          - football-manager-4
+          - Football-manager-3-v2.0
+          - Football-manager-3-v3.0
+          - carthage-anime-game
+          - qarton-cinematic-engine
+          - samat-fi-madina
+          - Football-manager-v4
+    steps:
+      - name: Checkout audit tooling
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Clone target repository with full reachable history
+        shell: bash
+        env:
+          REPOSITORY: ${{ matrix.repository }}
+        run: |
+          git clone --no-single-branch "https://github.com/karim007king-ship-it/${REPOSITORY}.git" target
+          git -C target fetch --prune origin '+refs/heads/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*'
+      - name: Run read-only historical video inventory
+        shell: bash
+        env:
+          REPOSITORY: ${{ matrix.repository }}
+        run: |
+          cd target
+          GITHUB_REPOSITORY="karim007king-ship-it/${REPOSITORY}" python3 ../scripts/inventory_video_history.py
+      - name: Upload per-repository report
+        uses: actions/upload-artifact@v4
+        with:
+          name: qarton-video-audit-${{ matrix.repository }}
+          path: |
+            target/video-inventory-all-refs.csv
+            target/video-inventory-all-refs.md
+          if-no-files-found: error
