@@ -562,3 +562,19 @@ test("character stage rejects sprite frames missing from the character asset map
     }
   }), /not configured/);
 });
+
+
+test("character stage reducedMotion suppresses decorative idle, walk and sprite frame sampling", async () => {
+  const { root, stage } = fixture({
+    reducedMotion: true,
+    idleAnimations: { hero: createIdleAnimation({ periodMs: 2000, bobAmplitude: 4, swayAmplitude: 0.02, blinkIntervalMs: 5000 }) },
+    walkAnimations: { hero: createWalkAnimation({ stepPeriodMs: 400, bobAmplitude: 3, strideScale: 0.02 }) },
+    spriteAnimations: { hero: createSpriteFrameAnimation({ frames: ["walk1", "walk2"], idleFrame: "stand", frameDurationMs: 100 }) }
+  });
+  await stage.mount();
+  await stage.update(500);
+  const character = root.children[0];
+  assert.equal(character.style.transform, "translate3d(50px, 0px, 0) rotate(0deg) scale(1, 1)");
+  assert.equal(character.children[0].src, "https://assets.test/neutral.png");
+  stage.destroy();
+});
