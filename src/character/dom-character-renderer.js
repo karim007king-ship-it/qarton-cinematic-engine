@@ -73,7 +73,9 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     if (spriteFrame !== null && (typeof spriteFrame !== "string" || !Object.hasOwn(record.sprites, spriteFrame))) {
       throw new TypeError(`Unknown sprite frame "${spriteFrame}" for character "${record.id}"`);
     }
-    const key = spriteFrame ?? record.sprites[expression] ?? record.sprites.default;
+    const key = spriteFrame === null
+      ? (record.sprites[expression] ?? record.sprites.default)
+      : record.sprites[spriteFrame];
     if (typeof key !== "string" || !key.trim()) {
       throw new TypeError(`No sprite asset configured for expression "${expression}"`);
     }
