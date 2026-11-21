@@ -1,9 +1,16 @@
 name: QARTON Video Inventory
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/video-inventory.yml'
+      - 'scripts/inventory_video_history.py'
+      - 'scripts/test_video_inventory.py'
   push:
     paths:
       - '.github/workflows/video-inventory.yml'
+      - 'scripts/inventory_video_history.py'
+      - 'scripts/test_video_inventory.py'
 permissions:
   contents: read
 jobs:
@@ -14,6 +21,13 @@ jobs:
         with:
           fetch-depth: 0
           lfs: false
+      - name: Smoke-test historical inventory
+        run: python3 scripts/test_video_inventory.py
+      - name: Fetch all remote branches and tags
+        run: |
+          git fetch --prune origin '+refs/heads/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*'
+      - name: Inventory historical video blobs
+        run: python3 scripts/inventory_video_history.py
       - name: Inventory tracked videos and references
         shell: bash
         run: |
@@ -53,3 +67,5 @@ jobs:
           path: |
             video-inventory.csv
             video-inventory.md
+            video-inventory-all-refs.csv
+            video-inventory-all-refs.md
