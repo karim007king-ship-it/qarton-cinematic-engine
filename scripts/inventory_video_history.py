@@ -37,7 +37,8 @@ def main():
         digest=hashlib.sha256(data).hexdigest()
         for path in sorted(paths):
             refs=sorted(live.get((oid,path),[]))
-            url=("https://github.com/"+repo+"/blob/"+quote(refs[0],safe="/")+"/"+quote(path,safe="/")) if refs and repo else ""
+            branch=(refs[0].removeprefix("refs/remotes/origin/").removeprefix("refs/tags/")) if refs else ""
+            url=("https://github.com/"+repo+"/blob/"+quote(branch,safe="/")+"/"+quote(path,safe="/")) if refs and repo else ""
             rows.append(dict(path=path,bytes=len(data),sha256=digest,git_blob_oid=oid,source="active_ref" if refs else "git_history_only",refs="; ".join(refs),github_url=url))
     # Record current branch separately so references are explicit.
     tracked=git("ls-files","-z").decode("utf-8","surrogateescape").split("\0")
