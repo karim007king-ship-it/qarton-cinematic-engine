@@ -292,3 +292,38 @@ test("DOM character renderer displays an explicitly selected sprite frame", asyn
   }), /Unknown sprite frame/);
   renderer.destroy();
 });
+
+
+test("DOM character renderer resolves sprite-frame keys through the configured asset map", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const requestedAssets = [];
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: asset => {
+      requestedAssets.push(asset);
+      return asset;
+    }
+  });
+  const idleAsset = "data:image/svg+xml,%3Csvg%3Eidle%3C/svg%3E";
+  const walkAsset = "data:image/svg+xml,%3Csvg%3Ewalk%3C/svg%3E";
+  const handle = await renderer.mount({
+    id: "hero",
+    sprites: { idle: idleAsset, walkFrame: walkAsset },
+    initialState: {
+      x: 0, y: 0, opacity: 1, scale: 1, rotation: 0,
+      expression: "idle", spriteFrame: "walkFrame"
+    }
+  });
+
+  assert.equal(handle.children[0].src, walkAsset);
+  assert.deepEqual(requestedAssets, [walkAsset]);
+
+  await renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0,
+    expression: "idle", spriteFrame: "idle"
+  });
+  assert.equal(handle.children[0].src, idleAsset);
+  assert.deepEqual(requestedAssets, [walkAsset, idleAsset]);
+  renderer.destroy();
+});
