@@ -22,9 +22,9 @@ def main():
     live=defaultdict(list)
     for ref in git("for-each-ref","--format=%(refname)","refs/remotes/origin","refs/tags").decode().splitlines():
         if ref.endswith("/HEAD"): continue
-        for line in git("ls-tree","-r","-z",ref).split(b"\\0"):
+        for line in git("ls-tree","-r","-z",ref).split(bytes([0])):
             if not line: continue
-            meta,_,rawpath=line.partition(b"\\t")
+            meta,_,rawpath=line.partition(bytes([9]))
             parts=meta.split()
             if len(parts)!=3 or parts[1]!=b"blob": continue
             path=rawpath.decode("utf-8","surrogateescape")
@@ -41,9 +41,12 @@ def main():
             rows.append(dict(path=path,bytes=len(data),sha256=digest,git_blob_oid=oid,source="active_ref" if refs else "git_history_only",refs="; ".join(refs),github_url=url))
     # Record current branch separately so references are explicit.
     tracked=git("ls-files","-z").decode("utf-8","surrogateescape").split("\0")
-    current={p for p in tracked if p and pathlib.PurePosixPath(p).suffix.lower() in EXTS}
+    current={}
+    for p in tracked:
+        if p and pathlib.PurePosixPath(p).suffix.lower() in EXTS:
+            current[p]=git("rev-parse","HEAD:"+p).decode().strip()
     for row in rows:
-        if row["path"] in current:
+        if current.get(row["path"])==row["git_blob_oid"]:
             row["source"]+=";current_checkout"
     fields=["path","bytes","sha256","git_blob_oid","source","refs","github_url"]
     with open("video-inventory-all-refs.csv","w",encoding="utf-8",newline="") as out:
