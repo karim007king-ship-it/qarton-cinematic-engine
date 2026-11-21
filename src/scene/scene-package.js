@@ -6,7 +6,7 @@ import { createTimeline } from "../motion/timeline.js";
 import { normalizeAudioCues } from "../audio/audio-cue-controller.js";
 
 /** Compile JSON scene data into existing runtime inputs. Asset keys belong to the host. */
-export function createScenePackage(data) {
+export function createScenePackage(data, { reducedMotion = false } = {}) {
   if (data?.version !== 1) throw new TypeError("Unsupported scene package version");
   const scene = createSceneDefinition(data);
   const tracks = Object.create(null);
@@ -15,7 +15,7 @@ export function createScenePackage(data) {
   }
   const ids = new Set();
   const characters = (data.characters ?? []).map(character => {
-    const controller = createCharacterController(character);
+    const controller = createCharacterController(character, { reducedMotion });
     if (ids.has(controller.id)) throw new TypeError("Duplicate character id");
     ids.add(controller.id);
     const sprites = { ...character.sprites };
@@ -36,7 +36,9 @@ export function createScenePackage(data) {
     audioCues: Object.freeze(normalizeAudioCues(data.audioCues ?? [])),
     imageKeys(profile) {
       const keys = buildLayerPlan(scene, profile).map(layer => layer.asset);
-      for (const { sprites } of characters) keys.push(...Object.values(sprites));
+      for (const { sprites, controller } of characters) {
+        keys.push(...Object.values(sprites), ...(controller.frameAssets ?? []));
+      }
       return [...new Set(keys)];
     }
   });

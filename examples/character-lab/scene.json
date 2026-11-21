@@ -1,0 +1,133 @@
+{
+  "version": 1,
+  "id": "terrace",
+  "durationMs": 5000,
+  "layers": [],
+  "camera": [
+    {
+      "atMs": 0
+    },
+    {
+      "atMs": 5000,
+      "zoom": 1.09,
+      "x": -4
+    }
+  ],
+  "events": [
+    {
+      "id": "0",
+      "atMs": 0,
+      "type": "وقوف"
+    },
+    {
+      "id": "1",
+      "atMs": 1000,
+      "type": "مشي"
+    },
+    {
+      "id": "2",
+      "atMs": 3000,
+      "type": "تحيّة"
+    },
+    {
+      "id": "3",
+      "atMs": 4300,
+      "type": "وقوف"
+    }
+  ],
+  "characters": [
+    {
+      "id": "courier",
+      "sprites": {
+        "default": "frames/idle-0.svg"
+      },
+      "animation": {
+        "clips": {
+          "idle": {
+            "fps": 3,
+            "frames": [
+              "frames/idle-0.svg",
+              "frames/idle-1.svg"
+            ],
+            "blinkFrames": [
+              "frames/idle-0-blink.svg",
+              "frames/idle-1-blink.svg"
+            ]
+          },
+          "walk": {
+            "fps": 6,
+            "frames": [
+              "frames/walk-0.svg",
+              "frames/walk-1.svg",
+              "frames/walk-2.svg",
+              "frames/walk-3.svg"
+            ],
+            "blinkFrames": [
+              "frames/walk-0-blink.svg",
+              "frames/walk-1-blink.svg",
+              "frames/walk-2-blink.svg",
+              "frames/walk-3-blink.svg"
+            ]
+          },
+          "gesture:happy": {
+            "fps": 3,
+            "frames": [
+              "frames/gesture-0.svg",
+              "frames/gesture-1.svg",
+              "frames/gesture-2.svg"
+            ],
+            "blinkFrames": [
+              "frames/gesture-0-blink.svg",
+              "frames/gesture-1-blink.svg",
+              "frames/gesture-2-blink.svg"
+            ]
+          }
+        },
+        "blink": {
+          "intervalMs": 1000,
+          "durationMs": 150
+        }
+      },
+      "motions": [
+        {
+          "id": "step",
+          "state": "walk",
+          "expression": "neutral",
+          "startMs": 1000,
+          "durationMs": 2000,
+          "path": {
+            "points": [
+              {
+                "x": 0,
+                "y": 0
+              },
+              {
+                "x": 48,
+                "y": 0
+              }
+            ]
+          }
+        },
+        {
+          "id": "greet",
+          "state": "gesture",
+          "expression": "happy",
+          "startMs": 3000,
+          "durationMs": 1300,
+          "path": {
+            "points": [
+              {
+                "x": 48,
+                "y": 0
+              },
+              {
+                "x": 48,
+                "y": 0
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
