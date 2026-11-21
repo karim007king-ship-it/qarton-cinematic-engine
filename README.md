@@ -40,7 +40,7 @@ npm test
 - `createCharacterController({ id, initial, motions })`: حساب موضع الشخصية وحالتها وتعبيرها وخصائصها عبر الزمن دون ربطها بـ DOM أو محرك رسم.
 - `createIdleAnimation(options)` و`createWalkAnimation(options)`: مولّدان حتميان لوضعية التنفس/الرمش أثناء الوقوف وخطوات المشي أثناء الحركة؛ يأخذان عينات من ساعة المضيف دون timers أو randomness.
 - `createSpriteFrameAnimation(options)`: تسلسل حتمي لإطارات Sprite، يدعم loop أو التشغيل لمرة واحدة، ووقت بدء، وإطاراً افتراضياً عند الخمول؛ تُحمّل الإطارات من مفاتيح assets التي يمررها التطبيق المضيف.
-- `createCharacterStage({ ..., idleAnimations, walkAnimations, spriteAnimations })`: يربط اختيارياً وضعيات idle/walk وتسلسلات Sprite بالشخصيات عبر خرائط IDs، ويجمعها داخل DOM renderer دون تغيير حالة controller.
+- `createCharacterStage({ ..., idleAnimations, walkAnimations, spriteAnimations, reducedMotion })`: يربط اختيارياً وضعيات idle/walk وتسلسلات Sprite بالشخصيات عبر خرائط IDs، ويجمعها داخل DOM renderer دون تغيير حالة controller. عند `reducedMotion: true` يتم تعطيل عينات الحركة الزخرفية (idle / walk / sprite sequence) مع استمرار حساب الحركة الأساسية للمتحكم؛ الخيار الافتراضي `false` يحافظ على السلوك المعتاد.
 - `createDOMCharacterRenderer({ root, resolveSprite })`: محول اختياري لعرض sprites عبر DOM، مع حقن تحميل الأصول وحماية من نتائج التحميل القديمة.
 - `computeParallaxOffset(...)`: حساب حركة طبقات العمق مع حد أقصى للإزاحة.
 - `sampleCameraShake(...)`: اهتزاز كاميرا deterministic يتلاشى زمنياً.
