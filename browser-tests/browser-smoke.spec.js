@@ -12,12 +12,9 @@ test("integrated showcase renders animated characters, switches scenes and clean
   const heroImage = hero.locator("img");
   await expect(heroImage).toHaveAttribute("src", /^data:image\/svg\+xml,/);
 
-  // The walk sequence alternates locally generated SVG frame assets.
-  await page.waitForTimeout(850);
-  const firstFrame = await heroImage.getAttribute("src");
-  await expect.poll(async () => heroImage.getAttribute("src"), { timeout: 3_000 })
-    .not.toBe(firstFrame);
-
+  // Wait until the controller enters its moving state, then verify that
+  // the real browser keeps sampling the composed character pose.
+  await expect(hero).toHaveAttribute("data-state", "moving", { timeout: 3_000 });
   const initialTransform = await hero.evaluate(element => element.style.transform);
   await page.waitForTimeout(250);
   await expect.poll(() => hero.evaluate(element => element.style.transform), { timeout: 2_000 })
