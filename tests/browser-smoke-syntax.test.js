@@ -20,7 +20,7 @@ test("browser showcase inline module has valid JavaScript syntax", async () => {
     "createWalkAnimation",
     "createSpriteFrameAnimation"
   ]) {
-    assert.match(match[1], new RegExp(`\\\\b${api}\\\\b`), `showcase must import/use ${api}`);
+    assert.ok(match[1].includes(api), `showcase must import/use ${api}`);
   }
   for (const config of ["idleAnimations:", "walkAnimations:", "spriteAnimations:"]) {
     assert.ok(match[1].includes(config), `showcase must configure ${config}`);
