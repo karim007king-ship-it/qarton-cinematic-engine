@@ -609,3 +609,32 @@ test("a stale async mount cannot remove a character from a newer mount", async (
   stage.destroy();
   assert.equal(root.children.length, 0);
 });
+
+
+test("destroy during an asynchronous timeline callback prevents subsequent events", async () => {
+  const timeline = createTimeline([
+    { id: "first", atMs: 100, type: "dialogue" },
+    { id: "second", atMs: 200, type: "sound" }
+  ]);
+  let releaseCallback;
+  const callbackGate = new Promise(resolve => { releaseCallback = resolve; });
+  const events = [];
+  let stage;
+  const setup = fixture({
+    timeline,
+    onEvent: async event => {
+      events.push(event.id);
+      if (event.id === "first") await callbackGate;
+    }
+  });
+  stage = setup.stage;
+  await stage.mount();
+  const pending = stage.update(300);
+  await flushMicrotasks();
+  assert.deepEqual(events, ["first"]);
+  stage.destroy();
+  releaseCallback();
+  assert.equal(await pending, false);
+  assert.deepEqual(events, ["first"]);
+  assert.equal(setup.root.children.length, 0);
+});
