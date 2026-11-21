@@ -58,6 +58,7 @@ function report(error) {
 }
 
 async function show() {
+  status.textContent = "جاري تحضير المشهد…";
   play.disabled = stop.disabled = true;
   cancelAnimationFrame(frame);
   const previous = active;
