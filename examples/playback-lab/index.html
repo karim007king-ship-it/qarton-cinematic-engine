@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>إشارة من المرصد | QARTON</title>
+<style>
+:root{color-scheme:dark;font:1rem system-ui;background:#111521;color:#f5e7cf}*{box-sizing:border-box}
+main{max-width:50rem;margin:auto;padding:1rem}a{color:#f3c989}h1{margin:.7rem 0}
+#stage{position:relative;height:clamp(16rem,50vh,29rem);overflow:hidden;border-radius:1rem;background:#202639}
+.camera,.layers,.cast{position:absolute;inset:0}.cast{left:25%;top:32%;height:50%}
+.qarton-character{height:100%;width:clamp(5rem,18vw,9rem)}label{display:block}
+input{width:100%;direction:ltr;accent-color:#edc283}button{font:inherit;color:inherit;padding:.55rem .75rem;border:1px solid #806a55;background:#2b2830;border-radius:.5rem}
+nav{display:flex;flex-wrap:wrap;gap:.4rem;margin:1rem 0}button:disabled{opacity:.55}output{font-variant-numeric:tabular-nums}
+</style>
+<main>
+<a href="../../docs/">العودة إلى المختبر</a><h1>إشارة من المرصد</h1>
+<div id="stage" aria-label="المشهد السينمائي"></div><p id="status" role="status">جاري التحضير…</p>
+<label for="seek">وقت المشهد <output id="time">0.0 / 5.0 ث</output></label>
+<input type="range" id="seek" min="0" max="5000" step="10" value="0" disabled>
+<nav aria-label="التحكم في المشهد">
+<button id="play" disabled>تشغيل</button><button id="pause" disabled>إيقاف مؤقت</button>
+<button id="replay" disabled>إعادة من البداية</button><button id="switch" disabled>تبديل المشهد</button><button id="close" disabled>إغلاق</button></nav>
+</main><script type="module" src="./lab.js"></script></html>

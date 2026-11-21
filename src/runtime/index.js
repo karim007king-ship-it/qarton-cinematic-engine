@@ -6,3 +6,4 @@ export { createAdaptivePerformanceMonitor, createRuntimeActivityGate } from "./a
 export { createCinematicRuntime } from "./cinematic-runtime.js";
 
 export { createCinematicDirector } from "./cinematic-director.js";
+export { createCinematicPlayback } from "./cinematic-playback.js";

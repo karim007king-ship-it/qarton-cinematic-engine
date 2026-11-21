@@ -154,6 +154,10 @@ export function createAudioCueController({
     update,
     pause,
     resume,
+    releaseVoice(id, voice) {
+      if (!voices.has(id) || voices.get(id) !== voice) return false;
+      return voices.delete(id);
+    },
     setMasterVolume,
     stopAll,
     destroy,

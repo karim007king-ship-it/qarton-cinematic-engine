@@ -129,6 +129,28 @@ export function createCinematicDirector({
     });
   }
 
+  // Reposition the shared cursor without firing historical events or audio cues.
+  function seek(timeMs) {
+    const version = lifecycleVersion;
+    const operation = updateQueue.then(async () => {
+      assertAlive();
+      if (version !== lifecycleVersion) return false;
+      if (!mounted || !Number.isFinite(timeMs) || timeMs < 0) throw new TypeError("Invalid director seek");
+      await characterStage?.update(timeMs);
+      if (destroyed || version !== lifecycleVersion) return false;
+      if (audio) {
+        audio.stopAll({ reset: true });
+        audio.resume(timeMs);
+        if (paused) audio.pause(timeMs);
+      }
+      deliveredEventIds.clear();
+      lastTimeMs = eventCursorMs = timeMs;
+      return true;
+    });
+    updateQueue = operation.catch(() => {});
+    return operation;
+  }
+
   function update(timeMs) {
     const requestedVersion = lifecycleVersion;
     const run = () => performUpdate(timeMs, requestedVersion);
@@ -244,6 +266,7 @@ export function createCinematicDirector({
   return Object.freeze({
     mount,
     update,
+    seek,
     pause,
     resume,
     unmount,
