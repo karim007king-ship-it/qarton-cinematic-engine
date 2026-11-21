@@ -578,3 +578,34 @@ test("character stage reducedMotion suppresses decorative idle, walk and sprite 
   assert.equal(character.children[0].src, "https://assets.test/focused.png");
   stage.destroy();
 });
+
+
+test("a stale async mount cannot remove a character from a newer mount", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const controller = createCharacterController({ id: "hero" });
+  let resolveFirst;
+  let calls = 0;
+  const stage = createCharacterStage({
+    root,
+    resolveSprite: () => {
+      calls += 1;
+      if (calls === 1) return new Promise(resolve => { resolveFirst = resolve; });
+      return "https://assets.test/hero.png";
+    },
+    characters: [{ controller, sprites: { default: "hero" } }]
+  });
+
+  const staleMount = stage.mount();
+  stage.unmount();
+  assert.equal(await stage.mount(), true);
+  assert.equal(root.children.length, 1);
+  const currentHandle = root.children[0];
+  resolveFirst("https://assets.test/hero-old.png");
+  assert.equal(await staleMount, false);
+  assert.equal(root.children.length, 1);
+  assert.equal(root.children[0], currentHandle);
+  assert.equal(await stage.update(100), true);
+  stage.destroy();
+  assert.equal(root.children.length, 0);
+});
