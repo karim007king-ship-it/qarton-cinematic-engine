@@ -180,3 +180,11 @@ test("destroy invalidates an in-flight cache write while preserving its existing
   assert.equal(calls, 1);
 });
 
+
+test("destroy in the same turn preserves an accepted load and leaves no cache entry", async () => {
+  const manager = new AssetManager({ loader: key => "/" + key });
+  const pending = manager.load("sprite");
+  manager.destroy();
+  assert.equal(await pending, "/sprite");
+  assert.equal(manager.size, 0);
+});

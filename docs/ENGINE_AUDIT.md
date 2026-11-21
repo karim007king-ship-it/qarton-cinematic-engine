@@ -33,3 +33,11 @@ Scope: inspected repository README, package.json, src/index.js, examples/browser
 - No game repository changes in this audit.
 - Preserve existing public exports and demo.
 - Record actual test evidence before declaring a feature complete.
+
+## Independent scene package review
+
+Reviewed public exports and internal module imports across assets, audio, camera, characters, core, effects, motion, runtime and scene. Engine modules import engine code. Pack content and URLs are supplied by each host. The new v1 compiler composes the existing scene, timeline, camera, character and audio validators. The observatory fixture lives under examples.
+
+A same-turn load/destroy sequence used to call an already-cleared loader. An accepted request now retains its loader while cache generation prevents a late write. A Node regression covers this sequence.
+
+Pages verification now exercises both examples on pull requests. Publishing requires the main branch. Desktop and Pixel emulation cover DOM geometry, image decode, controls and teardown. Physical Android frame times, memory, WebView audio and production character artwork remain outside this coverage.

@@ -1,0 +1,16 @@
+{
+  "version": 1, "id": "observatory", "durationMs": 3200, "transitionMs": 450,
+  "layers": [
+    {"id":"sky","role":"background","asset":"sky.svg"},
+    {"id":"ridge","role":"midground","asset":"ridge.svg","keyframes":[{"atMs":0,"zoom":1.1},{"atMs":3200,"x":12,"zoom":1.1}]}
+  ],
+  "camera": [{"atMs":0},{"atMs":3200,"zoom":1.05,"y":-3}],
+  "characters": [{
+    "id":"scout","initial":{"expression":"neutral"},
+    "sprites":{"default":"scout.svg","greeting":"wave.svg"},
+    "motions":[
+      {"id":"enter","state":"walk","startMs":150,"durationMs":1350,"path":{"points":[{"x":0,"y":0},{"x":42,"y":0}]}},
+      {"id":"wave","state":"gesture","expression":"greeting","startMs":1650,"durationMs":800,"path":{"points":[{"x":42,"y":0},{"x":42,"y":0}]}}
+    ]
+  }]
+}

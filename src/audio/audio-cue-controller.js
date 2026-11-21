@@ -1,25 +1,7 @@
-/**
- * Timeline-driven audio cue controller.
- * All audio playback is injected by the host (Web Audio, HTMLAudio, native,
- * or game engine). This module owns deterministic cue timing, not decoding.
- */
-export function createAudioCueController({
-  cues = [],
-  play,
-  stop = () => {},
-  setVolume = () => {},
-  masterVolume = 1
-} = {}) {
+export function normalizeAudioCues(cues) {
   if (!Array.isArray(cues)) throw new TypeError("Audio cues must be an array");
-  if (typeof play !== "function" || typeof stop !== "function" || typeof setVolume !== "function") {
-    throw new TypeError("Audio play, stop and setVolume adapters must be functions");
-  }
-  if (!Number.isFinite(masterVolume) || masterVolume < 0 || masterVolume > 1) {
-    throw new TypeError("Master volume must be between 0 and 1");
-  }
-
   const ids = new Set();
-  const normalized = cues.map((cue, index) => {
+  return cues.map((cue, index) => {
     if (!cue || typeof cue !== "object" || typeof cue.id !== "string" || !cue.id.trim() || ids.has(cue.id)) {
       throw new TypeError(`Audio cue ${index} requires a unique id`);
     }
@@ -39,6 +21,28 @@ export function createAudioCueController({
       volume: cue.volume ?? 1
     });
   }).sort((a, b) => a.atMs - b.atMs);
+}
+
+/**
+ * Timeline-driven audio cue controller.
+ * All audio playback is injected by the host (Web Audio, HTMLAudio, native,
+ * or game engine). This module owns deterministic cue timing, not decoding.
+ */
+export function createAudioCueController({
+  cues = [],
+  play,
+  stop = () => {},
+  setVolume = () => {},
+  masterVolume = 1
+} = {}) {
+  if (typeof play !== "function" || typeof stop !== "function" || typeof setVolume !== "function") {
+    throw new TypeError("Audio play, stop and setVolume adapters must be functions");
+  }
+  if (!Number.isFinite(masterVolume) || masterVolume < 0 || masterVolume > 1) {
+    throw new TypeError("Master volume must be between 0 and 1");
+  }
+
+  const normalized = normalizeAudioCues(cues);
 
   let cursor = -1;
   let paused = false;

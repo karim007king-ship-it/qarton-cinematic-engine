@@ -37,6 +37,25 @@ def exercise(context, url):
     page.locator("#destroy").click()
     page.get_by_text("Destroyed: animation loop", exact=False).wait_for()
     assert page.locator(".qarton-character, .qarton-scene").count() == 0
+    page.goto(url)
+    page.get_by_role("link", name="جرّب مشهد المرصد").click()
+    for attempt in range(2):
+        if attempt:
+            page.locator("#play").click()
+        page.get_by_text("المشهد جاهز", exact=True).wait_for()
+        page.wait_for_selector('[data-expression="greeting"][data-state="idle"]')
+        assert page.locator(".qarton-layer img").count() == 2
+        assert page.locator("#stage img").evaluate_all(
+            "(images) => images.every(image => image.complete && image.naturalWidth > 0)")
+        assert page.locator(".camera").evaluate("(el) => el.style.transform.includes('scale(')")
+        assert page.locator('[data-layer-id="ridge"]').evaluate("(el) => !!el.style.transform")
+        assert page.locator(".qarton-character").evaluate("""el => {
+            const r = el.getBoundingClientRect(), s = document.querySelector('#stage').getBoundingClientRect();
+            return r.left >= s.left && r.right <= s.right && r.top >= s.top && r.bottom <= s.bottom;
+        }""")
+    page.locator("#stop").click()
+    page.get_by_text("تم إغلاق المشهد", exact=True).wait_for()
+    assert page.locator("#stage img").count() == 0
     assert not errors, errors
 
 
