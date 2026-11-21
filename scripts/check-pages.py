@@ -56,6 +56,47 @@ def exercise(context, url):
     page.locator("#stop").click()
     page.get_by_text("تم إغلاق المشهد", exact=True).wait_for()
     assert page.locator("#stage img").count() == 0
+    page.goto(url)
+    page.get_by_role("link", name="مختبر حركة الشخصيات").click()
+    actor = page.locator(".qarton-character")
+    seek = page.locator("#seek")
+    def sample(ms, filename, label):
+        seek.evaluate("""(slider, value) => {
+            slider.value = value;
+            slider.dispatchEvent(new Event('input', {bubbles: true}));
+        }""", ms)
+        page.wait_for_function("""file => {
+            const img = document.querySelector('.qarton-character img');
+            return img?.src.endsWith('/' + file) && img.complete && img.naturalWidth > 0;
+        }""", arg=filename)
+        assert page.locator("#status").inner_text() == label
+
+    page.wait_for_function("!document.querySelector('#seek').disabled")
+    sample(1250, "walk-1.svg", "مشي")
+    sample(1900, "walk-1-blink.svg", "مشي")
+    sample(3400, "gesture-1.svg", "تحيّة")
+    pose = page.locator("#camera").get_attribute("style")
+    sample(1250, "walk-1.svg", "مشي")
+    assert page.locator("#camera").get_attribute("style") != pose
+    page.locator("#toggle").click()
+    page.wait_for_function("Number(document.querySelector('#seek').value) > 1350")
+    page.locator("#toggle").click()
+    page.get_by_role("button", name="تشغيل", exact=True).wait_for()
+    paused = seek.input_value()
+    page.wait_for_timeout(120)
+    assert seek.input_value() == paused
+    page.locator("#switch").click()
+    page.wait_for_selector('#stage[data-scene="evening"] .qarton-character')
+    assert actor.count() == 1 and seek.input_value() == "0"
+    page.locator("#close").click()
+    page.get_by_text("تم إغلاق المشهد", exact=True).wait_for()
+    assert actor.count() == 0
+    page.emulate_media(reduced_motion="reduce")
+    page.reload()
+    page.wait_for_function("!document.querySelector('#seek').disabled")
+    sample(1900, "walk-0.svg", "مشي")
+    assert not page.evaluate("""performance.getEntriesByType('resource')
+        .some(entry => entry.name.includes('-blink.svg'))""")
     assert not errors, errors
 
 

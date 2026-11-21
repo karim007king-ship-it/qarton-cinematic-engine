@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>حركة الشخصيات | QARTON</title>
+<style>
+  :root { color-scheme:dark; font:1rem system-ui; background:#151921; color:#f3e6c8 }
+  main { max-width:46rem; margin:auto; padding:1rem }
+  #stage { position:relative; height:clamp(16rem,49vh,29rem); overflow:hidden; border-radius:1rem; background:linear-gradient(#425a81,#e5bd91 75%,#4a544c 75%) }
+  #stage[data-scene="evening"] { background:linear-gradient(#232348,#a97383 75%,#414453 75%) }
+  #camera { position:absolute; inset:0 }
+  #cast { position:absolute; top:18%; left:25%; width:45%; height:60% }
+  .qarton-character { width:clamp(5rem,20vw,9rem); height:100% }
+  button,a,input { font:inherit } button { padding:.55rem .9rem; margin:.25rem } a { color:#edca8c }
+  input { width:100%; direction:ltr } button:focus-visible,input:focus-visible { outline:3px solid #e8bd76 }
+</style>
+<main>
+  <a href="../../docs/">العودة إلى المختبر</a><h1>حركة الشخصيات</h1>
+  <div id="stage"><div id="camera"><div id="cast"></div></div></div>
+  <p id="status" role="status">جاري تحميل الصور…</p>
+  <label for="seek">وقت المشهد</label><input id="seek" type="range" min="0" max="5000" step="10" value="0" disabled>
+  <button id="toggle" disabled>تشغيل</button><button id="switch" disabled>تبديل المشهد</button>
+  <button id="close" disabled>إغلاق</button>
+</main>
+<script type="module" src="./lab.js"></script></html>

@@ -208,3 +208,20 @@ test("renderer destroy retains failed elements and retries cleanup", async () =>
     id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0
   }), /destroyed/);
 });
+
+test("a late animation frame cannot overwrite a replacement scene character", async () => {
+  const root = new Element("main", new Document());
+  let finish;
+  const renderer = createDOMCharacterRenderer({root, resolveSprite: key =>
+    key === "pending" ? new Promise(resolve => { finish = resolve; }) : key});
+  const options = { id:"actor", sprites:{default:"fallback"}, initialState:{frameAsset:"idle"} };
+  const old = await renderer.mount(options);
+  const request = renderer.update(old, {id:"actor", frameAsset:"pending", x:0,y:0,scale:1,opacity:1,rotation:0});
+  renderer.unmount(old);
+  const replacement = await renderer.mount(options);
+  finish("stale");
+  assert.equal(await request,false);
+  assert.equal(replacement.children[0].src,"idle");
+  renderer.destroy();
+  assert.equal(root.children.length,0);
+});

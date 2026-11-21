@@ -1,3 +1,4 @@
+import { compileFrameAnimation } from "./frame-animation.js";
 import { clamp, easeInOutCubic } from "../motion/easing.js";
 import { createMotionPath, sampleMotionPath } from "../motion/path.js";
 
@@ -5,13 +6,14 @@ import { createMotionPath, sampleMotionPath } from "../motion/path.js";
  * Platform-neutral character sampler. It returns render state only; a host
  * renderer decides how sprites, rigs, or DOM elements consume that state.
  */
-export function createCharacterController({ id, initial = {}, motions = [] } = {}) {
+export function createCharacterController({ id, initial = {}, motions = [], animation } = {}, { reducedMotion = false } = {}) {
   if (typeof id !== "string" || !id.trim()) throw new TypeError("Character id is required");
   if (!initial || typeof initial !== "object" || Array.isArray(initial)) {
     throw new TypeError("Character initial state must be an object");
   }
   if (!Array.isArray(motions)) throw new TypeError("Character motions must be an array");
 
+  const sequence = animation === undefined ? null : compileFrameAnimation(animation, reducedMotion);
   const characterId = id.trim();
   const base = Object.freeze({
     x: Number.isFinite(initial.x) ? initial.x : 0,
@@ -63,11 +65,13 @@ export function createCharacterController({ id, initial = {}, motions = [] } = {
 
   function update(timeMs) {
     if (!Number.isFinite(timeMs) || timeMs < 0) throw new TypeError("Character timeMs must be non-negative and finite");
+    let clipStart = 0;
     let state = { ...base };
     for (const motion of normalized) {
       if (timeMs < motion.startMs) break;
       const progress = clamp((timeMs - motion.startMs) / motion.durationMs);
-      const position = sampleMotionPath(motion.path, progress, motion.easing);
+      clipStart = progress >= 1 ? motion.endMs : motion.startMs;
+      const position = sampleMotionPath(motion.path, reducedMotion && progress < 1 ? 0 : progress, motion.easing);
       state = {
         ...state,
         x: position.x,
@@ -80,8 +84,9 @@ export function createCharacterController({ id, initial = {}, motions = [] } = {
       };
       if (progress < 1) break;
     }
+    if (sequence) state.frameAsset = sequence.sample(state.state, state.expression, timeMs, clipStart);
     return Object.freeze({ id: characterId, timeMs, ...state });
   }
 
-  return Object.freeze({ id: characterId, update });
+  return Object.freeze({ id: characterId, update, ...(sequence && { frameAssets: sequence.assets }) });
 }

@@ -20,3 +20,4 @@ export { createAdaptivePerformanceMonitor, createRuntimeActivityGate } from "./r
 export { createCinematicRuntime } from "./runtime/cinematic-runtime.js";
 export { createHTMLAudioAdapter } from "./audio/html-audio-adapter.js";
 export { createScenePackage } from "./scene/scene-package.js";
+export { createSceneClock } from "./motion/scene-clock.js";
