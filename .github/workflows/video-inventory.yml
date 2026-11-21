@@ -1,6 +1,11 @@
 name: QARTON Video Inventory
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/video-inventory.yml'
+      - 'scripts/inventory_video_history.py'
+      - 'scripts/test_video_inventory.py'
   push:
     paths:
       - '.github/workflows/video-inventory.yml'
