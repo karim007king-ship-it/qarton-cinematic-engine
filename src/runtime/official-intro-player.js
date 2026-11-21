@@ -30,9 +30,9 @@ export function createOfficialIntroPlayer({
     if (done) return;
     done = true;
     if (timer !== null) clearTimer(timer);
-    video.pause();
+    try { video.pause(); } catch { /* already stopped */ }
     video.removeAttribute('src');
-    video.load();
+    try { video.load(); } catch { /* detached media */ }
     shell.remove();
     onComplete(reason);
   }
