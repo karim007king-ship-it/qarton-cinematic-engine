@@ -3,9 +3,11 @@ on:
   push:
     branches: [main]
     paths:
+      - 'index.html'
       - 'docs/**'
       - 'examples/**'
       - 'src/**'
+      - 'scripts/check-pages.py'
       - '.github/workflows/qarton-pages.yml'
   workflow_dispatch:
 permissions:
@@ -24,18 +26,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Verify Test Lab entry points
+      - name: Prepare Test Lab site
         run: |
+          mkdir _site
+          cp -R index.html docs examples src _site/
+          cd _site
+          test -s index.html
           test -s docs/index.html
           test -s examples/browser-smoke.html
-          test -d src
+          test -s src/index.js
           grep -q 'QARTON' docs/index.html
+      - name: Exercise the staged site in desktop and mobile Chrome
+        run: |
+          python -m venv "$RUNNER_TEMP/qarton-browser"
+          "$RUNNER_TEMP/qarton-browser/bin/pip" install playwright==1.55.0
+          "$RUNNER_TEMP/qarton-browser/bin/python" scripts/check-pages.py
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload static site
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: _site
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4

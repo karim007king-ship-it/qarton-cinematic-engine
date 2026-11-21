@@ -1,0 +1,56 @@
+"""Exercise the staged Pages site in desktop and touch Chromium contexts."""
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from threading import Thread
+
+from playwright.sync_api import sync_playwright
+
+
+def exercise(context, url):
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.on("response", lambda response: errors.append(f"{response.status} {response.url}")
+            if response.status >= 400 else None)
+    page.goto(url)
+    page.get_by_role("link", name="افتح تجربة المحرك").click()
+    page.wait_for_selector(".qarton-character img")
+    for control, scene in [("scene-two", "dusk"), ("scene-one", "dawn")]:
+        page.locator(f"#{control}").click()
+        page.get_by_text(f"Scene {scene} active", exact=False).wait_for()
+
+    page.locator("#audio").click()
+    page.get_by_text("Audio cues started", exact=False).wait_for()
+    page.wait_for_function("""() => {
+        const characters = [...document.querySelectorAll('.qarton-character')];
+        const stage = document.querySelector('#stage').getBoundingClientRect();
+        return characters.length === 2 && characters.every(character => {
+            const rect = character.getBoundingClientRect();
+            return character.dataset.state === 'idle'
+                && ['determined', 'alert'].includes(character.dataset.expression)
+                && rect.left >= stage.left && rect.right <= stage.right
+                && rect.top >= stage.top && rect.bottom <= stage.bottom
+                && character.firstChild.naturalWidth > 0;
+        });
+    }""")
+    page.locator("#destroy").click()
+    page.get_by_text("Destroyed: animation loop", exact=False).wait_for()
+    assert page.locator(".qarton-character, .qarton-scene").count() == 0
+    assert not errors, errors
+
+
+if __name__ == "__main__":
+    site = Path("_site").resolve()
+    assert (site / "index.html").is_file()
+    handler = partial(SimpleHTTPRequestHandler, directory=site.parent)
+    with ThreadingHTTPServer(("127.0.0.1", 0), handler) as server, sync_playwright() as pw:
+        Thread(target=server.serve_forever, daemon=True).start()
+        url = f"http://127.0.0.1:{server.server_port}/{site.name}/"
+        browser = pw.chromium.launch(channel="chrome")
+        for device in [None, "Pixel 7"]:
+            with browser.new_context(**(pw.devices[device] if device else {})) as context:
+                exercise(context, url)
+                print(f"{device or 'Desktop'} passed", flush=True)
+        browser.close()
+        server.shutdown()
