@@ -19,8 +19,29 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       if (!Number.isFinite(state[key])) throw new TypeError(`Character state ${key} must be finite`);
     }
     if (state.scale < 0) throw new TypeError("Character scale cannot be negative");
+    const idle = state.idle ?? {};
+    const idleOffsetY = idle.offsetY ?? 0;
+    const idleScaleX = idle.scaleX ?? 1;
+    const idleScaleY = idle.scaleY ?? 1;
+    const blinkScaleY = idle.blinkScaleY ?? 1;
+    const walk = state.walk ?? {};
+    const walkOffsetY = walk.offsetY ?? 0;
+    const walkScaleX = walk.scaleX ?? 1;
+    const walkScaleY = walk.scaleY ?? 1;
+    for (const [key, value] of Object.entries({
+      offsetY: idleOffsetY, scaleX: idleScaleX, scaleY: idleScaleY, blinkScaleY,
+      walkOffsetY, walkScaleX, walkScaleY
+    })) {
+      if (!Number.isFinite(value)) throw new TypeError(`Character idle ${key} must be finite`);
+    }
+    if (idleScaleX < 0 || idleScaleY < 0 || blinkScaleY < 0 || blinkScaleY > 1
+      || walkScaleX < 0 || walkScaleY < 0) {
+      throw new TypeError("Character idle scales must be non-negative and blinkScaleY cannot exceed 1");
+    }
     record.element.style.transform =
-      `translate3d(${state.x}px, ${state.y}px, 0) rotate(${state.rotation}deg) scale(${state.scale})`;
+      `translate3d(${state.x}px, ${state.y + idleOffsetY + walkOffsetY}px, 0) rotate(${state.rotation}deg) scale(${state.scale * idleScaleX * walkScaleX}, ${state.scale * idleScaleY * walkScaleY})`;
+    record.image.style.transformOrigin = "center center";
+    record.image.style.transform = `scaleY(${blinkScaleY})`;
     record.element.style.opacity = String(Math.min(1, Math.max(0, state.opacity)));
     record.element.dataset.expression = String(state.expression ?? "neutral");
     record.element.dataset.state = String(state.state ?? "idle");
@@ -48,8 +69,13 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     if (failed) throw firstError;
   }
 
-  async function resolveAsset(record, expression) {
-    const key = record.sprites[expression] ?? record.sprites.default;
+  async function resolveAsset(record, expression, spriteFrame = null) {
+    if (spriteFrame !== null && (typeof spriteFrame !== "string" || !Object.hasOwn(record.sprites, spriteFrame))) {
+      throw new TypeError(`Unknown sprite frame "${spriteFrame}" for character "${record.id}"`);
+    }
+    const key = spriteFrame === null
+      ? (record.sprites[expression] ?? record.sprites.default)
+      : record.sprites[spriteFrame];
     if (typeof key !== "string" || !key.trim()) {
       throw new TypeError(`No sprite asset configured for expression "${expression}"`);
     }
@@ -140,7 +166,7 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     const expression = typeof initialState.expression === "string" ? initialState.expression : "neutral";
     records.set(element, record);
     try {
-      await resolveAsset(record, expression);
+      await resolveAsset(record, expression, initialState.spriteFrame ?? null);
     } catch (error) {
       records.delete(element);
       throw error;
@@ -156,7 +182,9 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       scale: Number.isFinite(initialState.scale) ? initialState.scale : 1,
       rotation: Number.isFinite(initialState.rotation) ? initialState.rotation : 0,
       expression,
-      state: initialState.state ?? "idle"
+      state: initialState.state ?? "idle",
+      idle: initialState.idle,
+      walk: initialState.walk
     });
     root.appendChild(element);
     return element;
@@ -168,7 +196,7 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     if (!record) return false;
     if (!state || state.id !== record.id) throw new TypeError("Character state id does not match mounted character");
     applyState(record, state);
-    return resolveAsset(record, String(state.expression ?? "neutral"));
+    return resolveAsset(record, String(state.expression ?? "neutral"), state.spriteFrame ?? null);
   }
 
   function unmount(handle) {

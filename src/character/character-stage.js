@@ -10,13 +10,29 @@ export function createCharacterStage({
   resolveSprite,
   characters = [],
   timeline = null,
+  idleAnimations = {},
+  walkAnimations = {},
+  spriteAnimations = {},
+  reducedMotion = false,
   onEvent = () => {}
 } = {}) {
   if (!Array.isArray(characters)) throw new TypeError("Characters must be an array");
   if (timeline !== null && (!timeline || !Array.isArray(timeline.events))) {
     throw new TypeError("A valid timeline is required");
   }
+  if (typeof reducedMotion !== "boolean") throw new TypeError("reducedMotion must be a boolean");
   if (typeof onEvent !== "function") throw new TypeError("onEvent must be a function");
+  if (!idleAnimations || typeof idleAnimations !== "object" || Array.isArray(idleAnimations)) {
+    throw new TypeError("idleAnimations must be a character-id-to-animation map");
+  }
+
+  if (!walkAnimations || typeof walkAnimations !== "object" || Array.isArray(walkAnimations)) {
+    throw new TypeError("walkAnimations must be a character-id-to-animation map");
+  }
+
+  if (!spriteAnimations || typeof spriteAnimations !== "object" || Array.isArray(spriteAnimations)) {
+    throw new TypeError("spriteAnimations must be a character-id-to-animation map");
+  }
 
   const renderer = createDOMCharacterRenderer({ root, resolveSprite });
   const records = new Map();
@@ -42,6 +58,40 @@ export function createCharacterStage({
     records.set(id, { controller: entry.controller, sprites: entry.sprites, handle: null });
   }
 
+  const idleByCharacter = new Map();
+  for (const [id, animation] of Object.entries(idleAnimations)) {
+    if (!records.has(id)) throw new TypeError(`Idle animation references unknown character "${id}"`);
+    if (!animation || typeof animation.sample !== "function") {
+      throw new TypeError(`Idle animation for "${id}" must implement sample(timeMs)`);
+    }
+    idleByCharacter.set(id, animation);
+  }
+
+  const walkByCharacter = new Map();
+  for (const [id, animation] of Object.entries(walkAnimations)) {
+    if (!records.has(id)) throw new TypeError(`Walk animation references unknown character "${id}"`);
+    if (!animation || typeof animation.sample !== "function") {
+      throw new TypeError(`Walk animation for "${id}" must implement sample(timeMs, characterState)`);
+    }
+    walkByCharacter.set(id, animation);
+  }
+
+  const spriteByCharacter = new Map();
+  for (const [id, animation] of Object.entries(spriteAnimations)) {
+    const record = records.get(id);
+    if (!record) throw new TypeError(`Sprite animation references unknown character "${id}"`);
+    if (!animation || typeof animation.sample !== "function" || !Array.isArray(animation.frames)) {
+      throw new TypeError(`Sprite animation for "${id}" must expose frames and sample(timeMs, characterState)`);
+    }
+    const configuredFrames = [...animation.frames, ...(animation.idleFrame === null || animation.idleFrame === undefined ? [] : [animation.idleFrame])];
+    for (const frameKey of configuredFrames) {
+      if (!Object.hasOwn(record.sprites, frameKey)) {
+        throw new TypeError(`Sprite frame "${frameKey}" is not configured for character "${id}"`);
+      }
+    }
+    spriteByCharacter.set(id, animation);
+  }
+
   function releaseCompleted(completed) {
     let firstError;
     let failed = false;
@@ -61,7 +111,16 @@ export function createCharacterStage({
     const completed = [];
     try {
       for (const [id, record] of records) {
-        const initialState = record.controller.update(0);
+        const sampledState = record.controller.update(0);
+        const idleAnimation = idleByCharacter.get(id);
+        const walkAnimation = walkByCharacter.get(id);
+        const spriteAnimation = spriteByCharacter.get(id);
+        const initialState = {
+          ...sampledState,
+          ...(idleAnimation && !reducedMotion ? { idle: idleAnimation.sample(0) } : {}),
+          ...(walkAnimation && !reducedMotion ? { walk: walkAnimation.sample(0, sampledState) } : {}),
+          ...(spriteAnimation && !reducedMotion ? { spriteFrame: spriteAnimation.sample(0, sampledState).frameKey } : {})
+        };
         const handle = await renderer.mount({ id, sprites: record.sprites, initialState });
         if (destroyed || version !== lifecycleVersion) {
           renderer.unmount(handle);
@@ -125,8 +184,18 @@ export function createCharacterStage({
     if (rewound) deliveredEventIds.clear();
 
     const updates = [];
-    for (const record of records.values()) {
-      updates.push(renderer.update(record.handle, record.controller.update(timeMs)));
+    for (const [id, record] of records) {
+      const sampledState = record.controller.update(timeMs);
+      const idleAnimation = idleByCharacter.get(id);
+      const walkAnimation = walkByCharacter.get(id);
+      const spriteAnimation = spriteByCharacter.get(id);
+      const renderState = {
+        ...sampledState,
+        ...(idleAnimation && !reducedMotion ? { idle: idleAnimation.sample(timeMs) } : {}),
+        ...(walkAnimation && !reducedMotion ? { walk: walkAnimation.sample(timeMs, sampledState) } : {}),
+        ...(spriteAnimation && !reducedMotion ? { spriteFrame: spriteAnimation.sample(timeMs, sampledState).frameKey } : {})
+      };
+      updates.push(renderer.update(record.handle, renderState));
     }
 
     // Serialize frames so concurrent callers cannot dispatch the same event

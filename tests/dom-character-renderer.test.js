@@ -208,3 +208,166 @@ test("renderer destroy retains failed elements and retries cleanup", async () =>
     id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0
   }), /destroyed/);
 });
+
+
+test("DOM character renderer applies optional idle pose and eye blink transforms", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: () => "https://assets.test/hero.png"
+  });
+  const handle = await renderer.mount({
+    id: "hero",
+    sprites: { default: "hero" },
+    initialState: {
+      x: 10, y: 20, opacity: 1, scale: 1, rotation: 0,
+      idle: { offsetY: -2, scaleX: 1.01, scaleY: 0.99, blinkScaleY: 0.08 }
+    }
+  });
+  assert.match(handle.style.transform, /translate3d\(10px, 18px, 0\)/);
+  assert.match(handle.style.transform, /scale\(1\.01, 0\.99\)/);
+  assert.equal(handle.children[0].style.transform, "scaleY(0.08)");
+  await renderer.update(handle, {
+    id: "hero", x: 10, y: 20, opacity: 1, scale: 1, rotation: 0,
+    expression: "neutral", idle: { offsetY: 0, scaleX: 1, scaleY: 1, blinkScaleY: 1 }
+  });
+  assert.equal(handle.children[0].style.transform, "scaleY(1)");
+  await assert.rejects(renderer.update(handle, {
+    id: "hero", x: 10, y: 20, opacity: 1, scale: 1, rotation: 0,
+    idle: { blinkScaleY: 1.2 }
+  }), /idle scales/);
+  renderer.destroy();
+});
+
+
+test("DOM character renderer composes walk pose with the optional idle pose", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({ root, resolveSprite: () => "https://assets.test/hero.png" });
+  const handle = await renderer.mount({
+    id: "hero",
+    sprites: { default: "hero" },
+    initialState: {
+      x: 5, y: 10, opacity: 1, scale: 1, rotation: 0,
+      idle: { offsetY: -1, scaleX: 1.01, scaleY: 0.99 },
+      walk: { offsetY: -2, scaleX: 1.02, scaleY: 0.98 }
+    }
+  });
+  assert.match(handle.style.transform, /translate3d\(5px, 7px, 0\)/);
+  assert.match(handle.style.transform, /scale\(1\.0302, 0\.9702\)/);
+  await renderer.update(handle, {
+    id: "hero", x: 5, y: 10, opacity: 1, scale: 1, rotation: 0,
+    walk: { active: false, offsetY: 0, scaleX: 1, scaleY: 1 }
+  });
+  assert.match(handle.style.transform, /translate3d\(5px, 10px, 0\)/);
+  renderer.destroy();
+});
+
+
+test("DOM character renderer displays an explicitly selected sprite frame", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`
+  });
+  const handle = await renderer.mount({
+    id: "hero",
+    sprites: { default: "hero", walk1: "walk1", walk2: "walk2" },
+    initialState: {
+      x: 0, y: 0, opacity: 1, scale: 1, rotation: 0,
+      spriteFrame: "walk1"
+    }
+  });
+  assert.equal(handle.children[0].src, "https://assets.test/walk1.png");
+  await renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0,
+    spriteFrame: "walk2"
+  });
+  assert.equal(handle.children[0].src, "https://assets.test/walk2.png");
+  await assert.rejects(renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0,
+    spriteFrame: "missing"
+  }), /Unknown sprite frame/);
+  renderer.destroy();
+});
+
+
+test("DOM character renderer resolves sprite-frame keys through the configured asset map", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const requestedAssets = [];
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: asset => {
+      requestedAssets.push(asset);
+      return asset;
+    }
+  });
+  const idleAsset = "data:image/svg+xml,%3Csvg%3Eidle%3C/svg%3E";
+  const walkAsset = "data:image/svg+xml,%3Csvg%3Ewalk%3C/svg%3E";
+  const handle = await renderer.mount({
+    id: "hero",
+    sprites: { idle: idleAsset, walkFrame: walkAsset },
+    initialState: {
+      x: 0, y: 0, opacity: 1, scale: 1, rotation: 0,
+      expression: "idle", spriteFrame: "walkFrame"
+    }
+  });
+
+  assert.equal(handle.children[0].src, walkAsset);
+  assert.deepEqual(requestedAssets, [walkAsset]);
+
+  await renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0,
+    expression: "idle", spriteFrame: "idle"
+  });
+  assert.equal(handle.children[0].src, idleAsset);
+  assert.deepEqual(requestedAssets, [walkAsset, idleAsset]);
+  renderer.destroy();
+});
+
+
+test("destroy invalidates a pending initial sprite load without attaching a character", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let resolveInitial;
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: () => new Promise(resolve => { resolveInitial = resolve; })
+  });
+  const mounting = renderer.mount({
+    id: "hero", sprites: { neutral: "neutral" },
+    initialState: { expression: "neutral" }
+  });
+  renderer.destroy();
+  resolveInitial("https://assets.test/neutral.png");
+  await assert.rejects(mounting, /destroyed/);
+  assert.equal(root.children.length, 0);
+  assert.doesNotThrow(() => renderer.destroy());
+});
+
+test("unmount invalidates an in-flight sprite request without restoring the element", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let resolveFocused;
+  const renderer = createDOMCharacterRenderer({
+    root,
+    resolveSprite: key => key === "focused"
+      ? new Promise(resolve => { resolveFocused = resolve; })
+      : `https://assets.test/${key}.png`
+  });
+  const handle = await renderer.mount({
+    id: "hero", sprites: { neutral: "neutral", focused: "focused" },
+    initialState: { expression: "neutral" }
+  });
+  const pending = renderer.update(handle, {
+    id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, expression: "focused"
+  });
+  renderer.unmount(handle);
+  resolveFocused("https://assets.test/focused.png");
+  assert.equal(await pending, false);
+  assert.equal(root.children.length, 0);
+  renderer.destroy();
+});

@@ -4,6 +4,9 @@ import { createCharacterStage } from "../src/character/character-stage.js";
 import { createCharacterController } from "../src/character/character-controller.js";
 import { createMotionPath } from "../src/motion/path.js";
 import { createTimeline } from "../src/motion/timeline.js";
+import { createIdleAnimation } from "../src/character/idle-animation.js";
+import { createWalkAnimation } from "../src/character/walk-animation.js";
+import { createSpriteFrameAnimation } from "../src/character/sprite-frame-animation.js";
 
 class Element {
   constructor(tag, ownerDocument) {
@@ -39,7 +42,7 @@ function fixture(options = {}) {
     stage: createCharacterStage({
       root,
       resolveSprite: key => `https://assets.test/${key}.png`,
-      characters: [{ controller, sprites: { neutral: "neutral", focused: "focused" } }],
+      characters: [{ controller, sprites: { neutral: "neutral", focused: "focused", walk1: "walk1", walk2: "walk2", stand: "stand" } }],
       ...options
     })
   };
@@ -445,4 +448,193 @@ test("character stage retries failed async timeline callbacks without replaying 
   assert.equal(await stage.update(400), true);
   assert.deepEqual(events, ["first", "second", "second", "third"]);
   stage.destroy();
+});
+
+
+test("character stage applies optional deterministic idle animation without changing controllers", async () => {
+  const { root, controller, stage } = fixture({
+    idleAnimations: {
+      hero: createIdleAnimation({
+        periodMs: 2000,
+        bobAmplitude: 4,
+        swayAmplitude: 0.02,
+        blinkIntervalMs: 5000
+      })
+    }
+  });
+  await stage.mount();
+  await stage.update(500);
+  const character = root.children[0];
+  assert.match(character.style.transform, /translate3d\(50px, -2px, 0\)/);
+  assert.match(character.style.transform, /scale\(1\.02, 0\.99\)/);
+  assert.equal(character.children[0].style.transform, "scaleY(1)");
+  assert.equal(controller.update(500).y, 0);
+  stage.destroy();
+});
+
+test("character stage validates optional idle animation mappings", () => {
+  const { root, controller } = fixture();
+  assert.throws(() => createCharacterStage({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`,
+    characters: [{ controller, sprites: { default: "hero" } }],
+    idleAnimations: { missing: createIdleAnimation() }
+  }), /unknown character/);
+  assert.throws(() => createCharacterStage({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`,
+    characters: [{ controller, sprites: { default: "hero" } }],
+    idleAnimations: { hero: {} }
+  }), /sample\(timeMs\)/);
+});
+
+
+test("character stage composes optional walk and idle poses without mutating controller state", async () => {
+  const { root, controller, stage } = fixture({
+    idleAnimations: { hero: createIdleAnimation({
+      periodMs: 2000, bobAmplitude: 2, swayAmplitude: 0,
+      phaseOffsetMs: 900, blinkIntervalMs: 5000
+    }) },
+    walkAnimations: { hero: createWalkAnimation({ stepPeriodMs: 400, bobAmplitude: 3, strideScale: 0.02 }) }
+  });
+  await stage.mount();
+  await stage.update(0);
+  const initialTransform = root.children[0].style.transform;
+  assert.match(initialTransform, /scale\(1.02, 0.98\)/);
+  await stage.update(100);
+  const movingTransform = root.children[0].style.transform;
+  assert.match(movingTransform, /translate3d\(0\.4\d*px, -5px, 0\)/);
+  assert.equal(controller.update(100).y, 0);
+  await stage.update(1200);
+  assert.equal(root.children[0].dataset.state, "idle");
+  stage.destroy();
+});
+
+test("character stage validates optional walk animation mappings", () => {
+  const { root, controller } = fixture();
+  assert.throws(() => createCharacterStage({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`,
+    characters: [{ controller, sprites: { default: "hero" } }],
+    walkAnimations: { missing: createWalkAnimation() }
+  }), /unknown character/);
+  assert.throws(() => createCharacterStage({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`,
+    characters: [{ controller, sprites: { default: "hero" } }],
+    walkAnimations: { hero: {} }
+  }), /sample\(timeMs, characterState\)/);
+});
+
+
+test("character stage selects sprite frames from the shared scene clock", async () => {
+  const { root, stage } = fixture({
+    spriteAnimations: {
+      hero: createSpriteFrameAnimation({
+        frames: ["walk1", "walk2"],
+        idleFrame: "stand",
+        frameDurationMs: 100,
+        startTimeMs: 100
+      })
+    }
+  });
+  await stage.mount();
+  assert.equal(root.children[0].children[0].src, "https://assets.test/stand.png");
+  await stage.update(0);
+  assert.equal(root.children[0].children[0].src, "https://assets.test/stand.png");
+  await stage.update(100);
+  assert.equal(root.children[0].children[0].src, "https://assets.test/walk1.png");
+  await stage.update(200);
+  assert.equal(root.children[0].children[0].src, "https://assets.test/walk2.png");
+  await stage.update(300);
+  assert.equal(root.children[0].children[0].src, "https://assets.test/walk1.png");
+  stage.destroy();
+});
+
+test("character stage rejects sprite frames missing from the character asset map", () => {
+  const { root, controller } = fixture();
+  assert.throws(() => createCharacterStage({
+    root,
+    resolveSprite: key => `https://assets.test/${key}.png`,
+    characters: [{ controller, sprites: { default: "hero" } }],
+    spriteAnimations: {
+      hero: createSpriteFrameAnimation({ frames: ["walk1"] })
+    }
+  }), /not configured/);
+});
+
+
+test("character stage reducedMotion suppresses decorative idle, walk and sprite frame sampling", async () => {
+  const { root, stage } = fixture({
+    reducedMotion: true,
+    idleAnimations: { hero: createIdleAnimation({ periodMs: 2000, bobAmplitude: 4, swayAmplitude: 0.02, blinkIntervalMs: 5000 }) },
+    walkAnimations: { hero: createWalkAnimation({ stepPeriodMs: 400, bobAmplitude: 3, strideScale: 0.02 }) },
+    spriteAnimations: { hero: createSpriteFrameAnimation({ frames: ["walk1", "walk2"], idleFrame: "stand", frameDurationMs: 100 }) }
+  });
+  await stage.mount();
+  await stage.update(500);
+  const character = root.children[0];
+  assert.equal(character.style.transform, "translate3d(50px, 0px, 0) rotate(0deg) scale(1, 1)");
+  assert.equal(character.children[0].src, "https://assets.test/focused.png");
+  stage.destroy();
+});
+
+
+test("a stale async mount cannot remove a character from a newer mount", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  const controller = createCharacterController({ id: "hero" });
+  let resolveFirst;
+  let calls = 0;
+  const stage = createCharacterStage({
+    root,
+    resolveSprite: () => {
+      calls += 1;
+      if (calls === 1) return new Promise(resolve => { resolveFirst = resolve; });
+      return "https://assets.test/hero.png";
+    },
+    characters: [{ controller, sprites: { default: "hero" } }]
+  });
+
+  const staleMount = stage.mount();
+  stage.unmount();
+  assert.equal(await stage.mount(), true);
+  assert.equal(root.children.length, 1);
+  const currentHandle = root.children[0];
+  resolveFirst("https://assets.test/hero-old.png");
+  assert.equal(await staleMount, false);
+  assert.equal(root.children.length, 1);
+  assert.equal(root.children[0], currentHandle);
+  assert.equal(await stage.update(100), true);
+  stage.destroy();
+  assert.equal(root.children.length, 0);
+});
+
+
+test("destroy during an asynchronous timeline callback prevents subsequent events", async () => {
+  const timeline = createTimeline([
+    { id: "first", atMs: 100, type: "dialogue" },
+    { id: "second", atMs: 200, type: "sound" }
+  ]);
+  let releaseCallback;
+  const callbackGate = new Promise(resolve => { releaseCallback = resolve; });
+  const events = [];
+  let stage;
+  const setup = fixture({
+    timeline,
+    onEvent: async event => {
+      events.push(event.id);
+      if (event.id === "first") await callbackGate;
+    }
+  });
+  stage = setup.stage;
+  await stage.mount();
+  const pending = stage.update(300);
+  await flushMicrotasks();
+  assert.deepEqual(events, ["first"]);
+  stage.destroy();
+  releaseCallback();
+  assert.equal(await pending, false);
+  assert.deepEqual(events, ["first"]);
+  assert.equal(setup.root.children.length, 0);
 });

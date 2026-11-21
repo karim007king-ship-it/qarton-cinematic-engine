@@ -21,7 +21,10 @@
     "./audio/html": "./src/audio/html-audio-adapter.js",
     "./character/stage": "./src/character/character-stage.js",
     "./runtime/director": "./src/runtime/cinematic-director.js",
-    "./camera": "./src/camera/camera-track.js"
+    "./camera": "./src/camera/camera-track.js",
+    "./character/idle": "./src/character/idle-animation.js",
+    "./character/walk": "./src/character/walk-animation.js",
+    "./character/sprite-frames": "./src/character/sprite-frame-animation.js"
   },
   "scripts": {
     "test": "node --test",

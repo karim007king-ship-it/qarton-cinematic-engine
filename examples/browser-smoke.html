@@ -26,7 +26,7 @@
 <body>
 <main>
   <h1>QARTON Cinematic Engine</h1>
-  <p>Integrated browser showcase: layered backgrounds, two animated characters, timeline events, parallax, camera shake, particles, scene transitions and gesture-started audio cues.</p>
+  <p>Integrated browser showcase: layered backgrounds, two characters with deterministic idle breathing/blinks, procedural walk poses and sprite-frame sequences, plus timeline events, parallax, camera shake, particles, scene transitions and gesture-started audio cues.</p>
   <div id="stage" aria-label="Integrated cinematic scene preview">
     <div id="character-layer"></div>
     <canvas id="particles"></canvas>
@@ -47,7 +47,8 @@
     createCharacterController, createCharacterStage, createTimeline, createCinematicDirector,
     createAudioCueController, sampleCameraShake, createCameraTrack, sampleCameraTrack,
     composeCameraPose, toCameraCSS, computeParallaxOffset,
-    createParticleField, resolveLighting
+    createParticleField, resolveLighting, createIdleAnimation,
+    createWalkAnimation, createSpriteFrameAnimation
   } from "../src/index.js";
 
   const stage = document.querySelector("#stage");
@@ -127,12 +128,44 @@
       { controller: createCharacterController({
         id: "hero", initial: { x: 24, y: 120, scale: 1.08, expression: "neutral" },
         motions: [{ id: "hero-walk", path: walkPath, startMs: 500, durationMs: 5200, expression: "determined" }]
-      }), sprites: { neutral: makeSprite("#e8c18a", "#20212b"), determined: makeSprite("#e8c18a", "#8b263d"), default: makeSprite("#e8c18a", "#20212b") } },
+      }), sprites: {
+        neutral: makeSprite("#e8c18a", "#20212b"),
+        determined: makeSprite("#e8c18a", "#8b263d"),
+        heroIdle: makeSprite("#e8c18a", "#20212b"),
+        heroWalkA: makeSprite("#e8c18a", "#8b263d"),
+        heroWalkB: makeSprite("#e8c18a", "#5b3448"),
+        default: makeSprite("#e8c18a", "#20212b")
+      } },
       { controller: createCharacterController({
         id: "companion", initial: { x: 650, y: 142, scale: .9, expression: "neutral", opacity: .92 },
         motions: [{ id: "companion-enter", path: enterPath, startMs: 1100, durationMs: 4800, expression: "alert" }]
-      }), sprites: { neutral: makeSprite("#b8c7d8", "#253a55"), alert: makeSprite("#b8c7d8", "#a65b36"), default: makeSprite("#b8c7d8", "#253a55") } }
-    ]
+      }), sprites: {
+        neutral: makeSprite("#b8c7d8", "#253a55"),
+        alert: makeSprite("#b8c7d8", "#a65b36"),
+        companionIdle: makeSprite("#b8c7d8", "#253a55"),
+        companionWalkA: makeSprite("#b8c7d8", "#a65b36"),
+        companionWalkB: makeSprite("#b8c7d8", "#6c4961"),
+        default: makeSprite("#b8c7d8", "#253a55")
+      } }
+    ],
+    idleAnimations: {
+      hero: createIdleAnimation({ phaseOffsetMs: 0, bobAmplitude: 2.2, swayAmplitude: 0.008 }),
+      companion: createIdleAnimation({ phaseOffsetMs: 1500, bobAmplitude: 1.6, swayAmplitude: 0.006 })
+    },
+    walkAnimations: {
+      hero: createWalkAnimation({ stepPeriodMs: 420, bobAmplitude: 3, strideScale: 0.018 }),
+      companion: createWalkAnimation({ stepPeriodMs: 460, bobAmplitude: 2.4, strideScale: 0.014, phaseOffsetMs: 90 })
+    },
+    spriteAnimations: {
+      hero: createSpriteFrameAnimation({
+        frames: ["heroWalkA", "heroWalkB"], frameDurationMs: 180,
+        activeState: "moving", idleFrame: "heroIdle"
+      }),
+      companion: createSpriteFrameAnimation({
+        frames: ["companionWalkA", "companionWalkB"], frameDurationMs: 220,
+        activeState: "moving", idleFrame: "companionIdle"
+      })
+    }
   });
 
   function makeSprite(skin, clothes) {
