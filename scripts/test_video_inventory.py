@@ -18,7 +18,6 @@ with tempfile.TemporaryDirectory() as directory:
     video.write_bytes(b"video fixture v1")
     run("git","add",".",cwd=root)
     run("git","commit","-qm","add fixture",cwd=root)
-    run("git","branch","archive",cwd=root)
     video.unlink()
     run("git","add","-A",cwd=root)
     run("git","commit","-qm","remove fixture",cwd=root)
@@ -29,4 +28,13 @@ with tempfile.TemporaryDirectory() as directory:
     assert len(rows)==1, rows
     assert rows[0]["path"]=="sample clip.mp4", rows
     assert rows[0]["source"]=="git_history_only", rows
+    first=run("git","rev-list","--max-parents=0","HEAD",cwd=root).stdout.decode().strip()
+    run("git","update-ref","refs/remotes/origin/archive",first,cwd=root)
+    run("python3",str(SCRIPT),cwd=root,env=env)
+    with (root/"video-inventory-all-refs.csv").open(newline="",encoding="utf-8") as stream:
+        active=list(csv.DictReader(stream))
+    assert len(active)==1, active
+    assert active[0]["source"]=="active_ref", active
+    assert "refs/remotes/origin/archive" in active[0]["refs"], active
+    assert active[0]["github_url"].endswith("/sample%20clip.mp4"), active
 print("Video history inventory smoke test passed")
