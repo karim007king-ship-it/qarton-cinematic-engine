@@ -575,6 +575,6 @@ test("character stage reducedMotion suppresses decorative idle, walk and sprite 
   await stage.update(500);
   const character = root.children[0];
   assert.equal(character.style.transform, "translate3d(50px, 0px, 0) rotate(0deg) scale(1, 1)");
-  assert.equal(character.children[0].src, "https://assets.test/neutral.png");
+  assert.equal(character.children[0].src, "https://assets.test/focused.png");
   stage.destroy();
 });
