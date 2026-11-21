@@ -24,6 +24,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Verify Test Lab entry points
+        run: |
+          test -s docs/index.html
+          test -s examples/browser-smoke.html
+          test -d src
+          grep -q 'QARTON' docs/index.html
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload static site
