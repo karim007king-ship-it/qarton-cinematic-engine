@@ -42,3 +42,17 @@ test("replacing a session waits for submitted updates and the next scene starts 
   const next=fixture(); await next.player.mount();
   assert.equal(next.views.at(-1).timeMs,0); assert.deepEqual(next.sounds,[]);
 });
+
+test("retired voice notifications cannot release a replacement after replay", () => {
+  const voices = [];
+  const audio = createAudioCueController({cues:[{id:"a",atMs:0,asset:"chime"}],
+    play() { const voice = {}; voices.push(voice); return voice; }});
+  audio.update(0);
+  audio.stopAll({reset:true});
+  audio.update(0);
+  assert.equal(audio.releaseVoice("a",voices[0]),false);
+  assert.equal(audio.getState().activeVoices,1);
+  assert.equal(audio.releaseVoice("a",voices[1]),true);
+  assert.equal(audio.getState().activeVoices,0);
+  audio.destroy();
+});

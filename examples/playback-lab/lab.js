@@ -29,8 +29,8 @@ function schedule() {
     if (!active || token !== generation) return;
     try { await active.player.tick(); } catch (error) { return fail(error); }
     if (token !== generation) return;
-    controls();
     if (active.player.state === "playing") frame = requestAnimationFrame(tick);
+    else controls();
   }
   if (active?.player.state === "playing") frame = requestAnimationFrame(tick);
 }

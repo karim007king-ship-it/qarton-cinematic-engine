@@ -99,6 +99,10 @@ def exercise(context, url):
         .some(entry => entry.name.includes('-blink.svg'))""")
     page.emulate_media(reduced_motion="no-preference")
     page.add_init_script("""window.labTones = 0;
+        window.labContexts = [];
+        window.AudioContext = class extends AudioContext {
+            constructor(...args) { super(...args); window.labContexts.push(this); }
+        };
         const start = OscillatorNode.prototype.start;
         OscillatorNode.prototype.start = function(...args) {
             window.labTones++;
@@ -139,9 +143,13 @@ def exercise(context, url):
     assert page.locator(".camera").count() == 1
     assert page.locator(".camera").get_attribute("data-time") == "0"
     assert page.locator(".cast img").count() == 1
+    page.wait_for_function("labContexts.length === 1 && labContexts[0].state === 'closed'")
+    page.locator("#play").click()
+    page.wait_for_function("labContexts.length === 2 && labContexts[1].state === 'running'")
     page.locator("#close").click()
     page.get_by_text("تم إغلاق المشهد", exact=True).wait_for()
     assert page.locator("#stage img").count() == 0
+    assert page.evaluate("labContexts.every(context => context.state === 'closed')")
     page.emulate_media(reduced_motion="reduce")
     page.reload()
     page.wait_for_function("!document.querySelector('#play').disabled")
