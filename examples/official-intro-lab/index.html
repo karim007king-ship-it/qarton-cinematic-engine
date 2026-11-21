@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#100b0b"><title>QARTON — Official Intro Preview</title>
+<link rel="stylesheet" href="../../src/runtime/official-intro.css">
+<style>body{margin:0;min-height:100vh;background:#100b0b;color:#f7e7c4;font-family:system-ui,sans-serif;display:grid;place-items:center}main{max-width:580px;padding:28px;text-align:center}h1{color:#e8bd69;letter-spacing:3px}button,a{display:inline-block;margin:8px;padding:12px 20px;border:1px solid #cda357;border-radius:9px;background:#241610;color:#f6dc9b;font:600 16px system-ui;text-decoration:none;cursor:pointer}#status{min-height:2em}</style></head>
+<body><main><h1>QARTON</h1><p>CULTURE • POWER • CINEMA</p><h2>تجربة المقدمة الرسمية</h2><p>هذه صفحة اختبار مستقلة. لا تفتح اللعبة ولا تغيّر ملفاتها.</p><button id="start">شغّل المقدمة</button><p id="status" role="status">جاهز للاختبار</p><a href="../../docs/">العودة إلى المختبر</a></main>
+<script type="module">
+import { createOfficialIntroPlayer } from '../../src/runtime/official-intro-player.js';
+const status=document.getElementById('status');
+const start=document.getElementById('start');
+let current;
+start.addEventListener('click',async()=>{
+  if(current&&!current.finished)return;
+  status.textContent='جاري تشغيل المقدمة...';
+  current=createOfficialIntroPlayer({mount:document.body,src:'../../official-intro.mp4',onComplete:reason=>{status.textContent='انتهت المقدمة: '+reason;}});
+  await current.start();
+});
+</script></body></html>
