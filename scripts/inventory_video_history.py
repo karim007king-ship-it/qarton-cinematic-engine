@@ -4,6 +4,8 @@ import csv
 import hashlib
 import pathlib
 import subprocess
+import os
+from urllib.parse import quote
 from collections import defaultdict
 
 EXTS={".mp4",".webm",".mov",".m4v",".avi",".mkv",".ogv",".wmv",".mpeg",".mpg"}
@@ -16,20 +18,34 @@ def main():
         oid,_,path=line.partition(" ")
         if path and pathlib.PurePosixPath(path).suffix.lower() in EXTS:
             by_oid[oid].add(path)
+    repo=os.environ.get("GITHUB_REPOSITORY","")
+    live=defaultdict(list)
+    for ref in git("for-each-ref","--format=%(refname)","refs/remotes/origin","refs/tags").decode().splitlines():
+        if ref.endswith("/HEAD"): continue
+        for line in git("ls-tree","-r","-z",ref).split(b"\\0"):
+            if not line: continue
+            meta,_,rawpath=line.partition(b"\\t")
+            parts=meta.split()
+            if len(parts)!=3 or parts[1]!=b"blob": continue
+            path=rawpath.decode("utf-8","surrogateescape")
+            if pathlib.PurePosixPath(path).suffix.lower() in EXTS:
+                live[(parts[2].decode(),path)].append(ref)
     rows=[]
     for oid,paths in sorted(by_oid.items()):
         if git("cat-file","-t",oid).strip()!=b"blob":continue
         data=git("cat-file","blob",oid)
         digest=hashlib.sha256(data).hexdigest()
         for path in sorted(paths):
-            rows.append(dict(path=path,bytes=len(data),sha256=digest,git_blob_oid=oid,source="git_history",github_url=""))
+            refs=sorted(live.get((oid,path),[]))
+            url=("https://github.com/"+repo+"/blob/"+quote(refs[0],safe="/")+"/"+quote(path,safe="/")) if refs and repo else ""
+            rows.append(dict(path=path,bytes=len(data),sha256=digest,git_blob_oid=oid,source="active_ref" if refs else "git_history_only",refs="; ".join(refs),github_url=url))
     # Record current branch separately so references are explicit.
     tracked=git("ls-files","-z").decode("utf-8","surrogateescape").split("\0")
     current={p for p in tracked if p and pathlib.PurePosixPath(p).suffix.lower() in EXTS}
     for row in rows:
         if row["path"] in current:
-            row["source"]="git_history;current_checkout"
-    fields=["path","bytes","sha256","git_blob_oid","source","github_url"]
+            row["source"]+=";current_checkout"
+    fields=["path","bytes","sha256","git_blob_oid","source","refs","github_url"]
     with open("video-inventory-all-refs.csv","w",encoding="utf-8",newline="") as out:
         w=csv.DictWriter(out,fieldnames=fields);w.writeheader();w.writerows(rows)
     groups=defaultdict(list)
