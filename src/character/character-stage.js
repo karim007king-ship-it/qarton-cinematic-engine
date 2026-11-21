@@ -13,12 +13,14 @@ export function createCharacterStage({
   idleAnimations = {},
   walkAnimations = {},
   spriteAnimations = {},
+  reducedMotion = false,
   onEvent = () => {}
 } = {}) {
   if (!Array.isArray(characters)) throw new TypeError("Characters must be an array");
   if (timeline !== null && (!timeline || !Array.isArray(timeline.events))) {
     throw new TypeError("A valid timeline is required");
   }
+  if (typeof reducedMotion !== "boolean") throw new TypeError("reducedMotion must be a boolean");
   if (typeof onEvent !== "function") throw new TypeError("onEvent must be a function");
   if (!idleAnimations || typeof idleAnimations !== "object" || Array.isArray(idleAnimations)) {
     throw new TypeError("idleAnimations must be a character-id-to-animation map");
@@ -115,9 +117,9 @@ export function createCharacterStage({
         const spriteAnimation = spriteByCharacter.get(id);
         const initialState = {
           ...sampledState,
-          ...(idleAnimation ? { idle: idleAnimation.sample(0) } : {}),
-          ...(walkAnimation ? { walk: walkAnimation.sample(0, sampledState) } : {}),
-          ...(spriteAnimation ? { spriteFrame: spriteAnimation.sample(0, sampledState).frameKey } : {})
+          ...(idleAnimation && !reducedMotion ? { idle: idleAnimation.sample(0) } : {}),
+          ...(walkAnimation && !reducedMotion ? { walk: walkAnimation.sample(0, sampledState) } : {}),
+          ...(spriteAnimation && !reducedMotion ? { spriteFrame: spriteAnimation.sample(0, sampledState).frameKey } : {})
         };
         const handle = await renderer.mount({ id, sprites: record.sprites, initialState });
         if (destroyed || version !== lifecycleVersion) {
@@ -189,9 +191,9 @@ export function createCharacterStage({
       const spriteAnimation = spriteByCharacter.get(id);
       const renderState = {
         ...sampledState,
-        ...(idleAnimation ? { idle: idleAnimation.sample(timeMs) } : {}),
-        ...(walkAnimation ? { walk: walkAnimation.sample(timeMs, sampledState) } : {}),
-        ...(spriteAnimation ? { spriteFrame: spriteAnimation.sample(timeMs, sampledState).frameKey } : {})
+        ...(idleAnimation && !reducedMotion ? { idle: idleAnimation.sample(timeMs) } : {}),
+        ...(walkAnimation && !reducedMotion ? { walk: walkAnimation.sample(timeMs, sampledState) } : {}),
+        ...(spriteAnimation && !reducedMotion ? { spriteFrame: spriteAnimation.sample(timeMs, sampledState).frameKey } : {})
       };
       updates.push(renderer.update(record.handle, renderState));
     }
