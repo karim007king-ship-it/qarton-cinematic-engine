@@ -48,8 +48,9 @@ export class AssetManager {
     if (this.#pending.has(normalizedKey)) return this.#pending.get(normalizedKey);
 
     const generation = this.#generation;
+    const loader = this.#loader;
     const request = Promise.resolve()
-      .then(() => this.#loader(normalizedKey, metadata))
+      .then(() => loader(normalizedKey, metadata))
       .then(value => {
         const safeUrl = assertSafeAssetUrl(value, normalizedKey);
         // A per-key release invalidates the pending entry without cancelling

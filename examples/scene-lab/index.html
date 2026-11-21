@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>مشهد المرصد | QARTON</title>
+<style>
+  :root { color-scheme: dark; font: 1rem system-ui; background: #101822; color: #f6e5cb; }
+  main { max-width: 55rem; margin: auto; padding: 1rem; }
+  #stage { position: relative; height: clamp(16rem, 55vh, 32rem); overflow: hidden; border-radius: 1rem; background: #263549; }
+  .camera,.layers,.cast { position: absolute; inset: 0; }
+  .cast { top: 43%; left: 28%; }
+  .qarton-character { width: clamp(3.5rem, 12vw, 6rem); height: 65%; }
+  button,a { font: inherit; color: inherit; } button { margin-inline-end: .5rem; padding: .6rem 1rem; }
+  a { color: #edbe86; }
+</style>
+<main>
+  <a href="../../docs/">العودة إلى المختبر</a>
+  <h1>مشهد المرصد</h1>
+  <div id="stage" aria-label="مشهد المرصد عند الغروب"></div>
+  <p id="status" role="status">جاري تحميل المشهد…</p>
+  <button id="play" disabled>إعادة المشهد</button><button id="stop" disabled>إغلاق المشهد</button>
+</main>
+<script type="module" src="./lab.js"></script>
+</html>

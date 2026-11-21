@@ -9,19 +9,15 @@ on:
       - 'src/**'
       - 'scripts/check-pages.py'
       - '.github/workflows/qarton-pages.yml'
+  pull_request:
   workflow_dispatch:
 permissions:
   contents: read
-  pages: write
-  id-token: write
 concurrency:
-  group: qarton-pages
+  group: qarton-pages-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  verify:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -41,12 +37,24 @@ jobs:
           python -m venv "$RUNNER_TEMP/qarton-browser"
           "$RUNNER_TEMP/qarton-browser/bin/pip" install playwright==1.55.0
           "$RUNNER_TEMP/qarton-browser/bin/python" scripts/check-pages.py
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
       - name: Upload static site
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
           path: _site
+  deploy:
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+      contents: read
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
