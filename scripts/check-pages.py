@@ -97,6 +97,58 @@ def exercise(context, url):
     sample(1900, "walk-0.svg", "مشي")
     assert not page.evaluate("""performance.getEntriesByType('resource')
         .some(entry => entry.name.includes('-blink.svg'))""")
+    page.emulate_media(reduced_motion="no-preference")
+    page.add_init_script("""window.labTones = 0;
+        const start = OscillatorNode.prototype.start;
+        OscillatorNode.prototype.start = function(...args) {
+            window.labTones++;
+            return start.apply(this, args);
+        };""")
+    page.goto(url)
+    page.get_by_role("link", name="إشارة من المرصد").click()
+    page.wait_for_function("!document.querySelector('#play').disabled")
+    def move_to(ms):
+        page.locator("#seek").evaluate("""(el, t) => {
+            el.value = t; el.dispatchEvent(new Event('input', {bubbles:true}));
+        }""", ms)
+        page.wait_for_function("t => +document.querySelector('.camera').dataset.time === t", arg=ms)
+
+    move_to(1900)
+    assert page.locator(".cast img").get_attribute("src").endswith("walk-1-blink.svg")
+    assert page.locator(".qarton-layer img").count() == 2
+    camera = page.locator(".camera").evaluate("e => e.style.transform")
+    ridge = page.locator('[data-layer-id="ridge"]').evaluate("e => e.style.transform")
+    move_to(800)
+    assert page.locator(".camera").evaluate("e => e.style.transform") != camera
+    assert page.locator('[data-layer-id="ridge"]').evaluate("e => e.style.transform") != ridge
+    assert page.evaluate("labTones") == 0
+    page.locator("#play").click()
+    page.wait_for_function("labTones === 1")
+    page.locator("#pause").click()
+    page.get_by_role("button", name="استئناف").wait_for()
+    frozen = page.locator(".camera").get_attribute("data-time")
+    page.wait_for_timeout(150)
+    assert page.locator(".camera").get_attribute("data-time") == frozen
+    move_to(3400)
+    assert "تحيّة" in page.locator("#status").inner_text()
+    assert page.evaluate("labTones") == 1
+    page.locator("#replay").click()
+    page.wait_for_function("+document.querySelector('.camera').dataset.time < 500")
+    page.locator("#switch").click()
+    page.get_by_text("ضوء القمر · وقوف", exact=True).wait_for()
+    assert page.locator(".camera").count() == 1
+    assert page.locator(".camera").get_attribute("data-time") == "0"
+    assert page.locator(".cast img").count() == 1
+    page.locator("#close").click()
+    page.get_by_text("تم إغلاق المشهد", exact=True).wait_for()
+    assert page.locator("#stage img").count() == 0
+    page.emulate_media(reduced_motion="reduce")
+    page.reload()
+    page.wait_for_function("!document.querySelector('#play').disabled")
+    camera = page.locator(".camera").evaluate("e => e.style.transform")
+    move_to(1900)
+    assert page.locator(".camera").evaluate("e => e.style.transform") == camera
+    assert page.locator(".cast img").get_attribute("src").endswith("walk-0.svg")
     assert not errors, errors
 
 
