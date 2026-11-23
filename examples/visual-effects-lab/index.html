@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#10151c">
+  <title>QARTON — مختبر المؤثرات السينمائية</title>
+  <link rel="stylesheet" href="./lab.css">
+</head>
+<body>
+  <main class="shell">
+    <header><p>QARTON MOTION</p><h1>مختبر المؤثرات السينمائية</h1><span>Canvas 2D · معاينة مستقلة للهاتف</span></header>
+    <section class="viewer" aria-label="معاينة المشهد">
+      <canvas id="stage" width="390" height="690" data-testid="stage"></canvas>
+      <output id="clock" data-testid="clock">00:00.0</output>
+    </section>
+    <section class="controls" aria-label="تحكم المشهد">
+      <input id="seek" type="range" min="0" max="6000" value="0" aria-label="موضع المشهد" data-testid="seek">
+      <div class="buttons">
+        <button id="play" data-testid="play">تشغيل</button>
+        <button id="pause" data-testid="pause">إيقاف مؤقت</button>
+        <button id="replay" data-testid="replay">إعادة من البداية</button>
+      </div>
+      <p id="status" role="status" data-testid="status">جاهز — حرّك المؤشر أو ابدأ التشغيل</p>
+    </section>
+    <footer>مشهد تجريبي: حركة خلفية متعددة الطبقات، اهتزاز كاميرا حتمي، تلاشي، وميض، تلوين، تعتيم أطراف وإطار سينمائي.</footer>
+  </main>
+  <script type="module" src="./lab.js"></script>
+</body>
+</html>

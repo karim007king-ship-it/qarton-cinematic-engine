@@ -12,6 +12,7 @@ export { AssetManager } from "./assets/asset-manager.js";
 
 export { computeParallaxOffset } from "./effects/parallax.js";
 export { sampleCameraShake } from "./effects/camera-shake.js";
+export { compileCinematicEffects, sampleCinematicEffects, drawCinematicEffects, createCinematicEffectsPlayer } from "./effects/cinematic-effects.js";
 export { createCameraTrack, sampleCameraTrack, composeCameraPose, toCameraCSS } from "./camera/camera-track.js";
 export { createParticleField } from "./effects/particle-field.js";
 export { resolveLighting, sampleFog } from "./effects/atmosphere.js";
