@@ -1,0 +1,49 @@
+name: Character Animation Android preview
+
+on:
+  pull_request:
+    paths:
+      - 'src/character/**'
+      - 'src/motion/**'
+      - 'src/index.js'
+      - 'examples/character-animation-lab/**'
+      - 'scripts/build-character-animation-preview.mjs'
+      - '.github/workflows/character-animation-preview.yml'
+  push:
+    branches: [feature/character-animation-core-l7a]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Bundle self-contained Android page
+        run: |
+          npm install --no-save --no-package-lock esbuild@0.25.12
+          node scripts/build-character-animation-preview.mjs
+          test -s dist/qarton-character-animation-l7a-android-preview/index.html
+          ! grep -q 'type="module"' dist/qarton-character-animation-l7a-android-preview/index.html
+          ! grep -q 'src="./' dist/qarton-character-animation-l7a-android-preview/index.html
+      - name: Verify the offline file in Chromium
+        run: |
+          python -m venv "$RUNNER_TEMP/qarton-character-browser"
+          "$RUNNER_TEMP/qarton-character-browser/bin/pip" install playwright==1.55.0
+          "$RUNNER_TEMP/qarton-character-browser/bin/python" -m playwright install --with-deps chromium
+          "$RUNNER_TEMP/qarton-character-browser/bin/python" scripts/check-character-animation-preview.py
+      - name: Package Android preview
+        run: |
+          cd dist
+          zip -9 -r ../qarton-character-animation-l7a-android-preview.zip qarton-character-animation-l7a-android-preview
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qarton-character-animation-l7a-android-preview
+          path: qarton-character-animation-l7a-android-preview.zip
+          if-no-files-found: error
+          retention-days: 30
