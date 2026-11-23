@@ -4,13 +4,22 @@ An Android-first Motion Studio editor built around the `StudioProjectV1` core. I
 
 ## Try it on Android
 
-1. For this Draft PR, download the `motion-studio-l8b-android-preview` artifact from the latest successful **Motion Studio Android preview** Actions run for this PR, extract it in Android Files, and open its single `index.html` with Chrome. That generated file bundles its CSS and JavaScript and is designed for `file://`; do not open the repository's regular multi-file `examples/motion-studio-lab/index.html` from `file://`, because it uses ES modules and an import map. The artifact is separate from the official Pages deployment and expires after 30 days.
+1. For this Draft PR, download the `motion-studio-l9b-android-preview` artifact from the latest successful **Motion Studio Android preview** Actions run for this PR, extract it in Android Files, and open its single `index.html` with Chrome. That generated file bundles its CSS and JavaScript and is designed for `file://`; do not open the repository's regular multi-file `examples/motion-studio-lab/index.html` from `file://`, because it uses ES modules and an import map. The artifact is separate from the official Pages deployment and expires after 30 days.
 2. In Chrome on Android, tap **اختر صورة من الهاتف** and select a local JPG, PNG, WebP, AVIF, or GIF. Image bytes stay in the browser; the lab makes a safe preview surface matching the selected aspect ratio.
 3. Set a duration from 3 to 60 seconds and choose the image aspect and Fit/Fill mode. The Timeline below the preview has a time ruler, playhead, and one diamond per camera key. Tap the ruler lane to seek; tap **＋ مفتاح عند المؤشر** to add a key at that time; tap a diamond to select it; drag a diamond horizontally to move it; edit its X, Y, Zoom, or Rotation fields; use **حذف المفتاح المحدد** to remove only that key.
 4. Use Play/Pause and Replay to check playback. The Canvas samples the same compiled project at absolute timestamps; repeated seeks to the same time are deterministic. Legacy start/end sliders remain available and update only their respective endpoint value without dropping intermediate keys.
 5. **حفظ JSON** downloads project metadata. To reopen it, choose the JSON file with **فتح JSON**, then select the source image again. The JSON never embeds image bytes.
 6. In **تصدير الفيديو**, choose MP4 or WebM, a duration (project length, 3, 10, 30, or 60 seconds), and a quality. The lab probes `MediaRecorder.isTypeSupported()` and defaults to MP4 when a supported MP4 MIME is reported, otherwise WebM. The browser can still reject recorder creation or produce a different actual MIME; if MP4 start fails while WebM is available, tap **جرّب WebM بدل MP4**. The result metadata and filename use the MIME reported by the finished recorder.
 7. Optionally enable the synchronized test pulses. Start export and keep the tab open and foregrounded until it finishes. Preview the result, then tap the save link and choose a location in Android's download/file flow.
+
+## L9-B Visual Effects Timeline
+
+- Seven touch-editable lanes are available: Fade, Dissolve, Vignette, Letterbox, Shake, Flash, and Tint. Add at the scene playhead, tap a clip to select it, drag horizontally to move it, then edit start, duration, easing, and strict `from`/`to` channels. Delete removes only the selected clip.
+- Camera, character, audio, visual effects preview, and export frames sample the same absolute scene time. Playback remains driven by the existing audio-backed Studio clock; effects do not introduce a second clock. Seek and replay produce the same sample for the same timestamp and seed.
+- Effects are serialized under optional `visualEffectsTrack` in the existing version-1 JSON envelope. Old projects load with an empty default track; an empty default track is omitted when saving. Unknown effect fields and invalid/fractional clip boundaries or seeds are rejected.
+- Export uses the existing L5 recorder and scheduling unchanged. The Studio frame compositor samples and draws L9 effects into each Canvas 2D frame; the export scheduling/core module is not modified. Audio timeline tracks still are not muxed into exported video.
+- Timeline clips use stable-root Pointer Capture; pointer cancellation, lost capture, page focus loss, and export locking terminate active drags while retaining the last valid committed time. Dynamic value controls and clip selection are disabled during export.
+- Rendering uses Canvas 2D and no offscreen effect buffers or WebGL. The preview surface is capped at 921,600 pixels (about 3.52 MiB for one RGBA backing surface); export surfaces are capped at 921,600 pixels for Standard/High and 307,200 pixels for Economy (about 3.52 MiB / 1.17 MiB per RGBA surface). Browser compositing and recorder buffers require additional device memory. Dissolve is bounded to 144 reveal cells per sample; vignette uses one radial gradient. On low-memory phones, prefer Economy and short exports, then test the actual WebView/Chrome build.
 
 The sample image `preview-test.png` is used only by automated browser checks. Face animation and lip sync are outside this lab.
 
@@ -24,10 +33,11 @@ The sample image `preview-test.png` is used only by automated browser checks. Fa
 
 ## Editor module boundaries
 
-- `studio.js` wires project/image state, Canvas preview, playback, and the existing L5 export flow.
+- `studio.js` wires project/image state, Canvas preview, shared playback time, effects overlays, and the existing L5 export flow.
 - `studio-timeline.js` owns Timeline rendering, selection, touch/pointer lifecycle, keyboard focus restoration, and keyframe edits through the L6-A APIs. It receives the active project, compiled sample, seek, and commit operations through callbacks; it does not implement camera interpolation or export logic.
 - `studio-model.js` validates project/JSON updates transactionally; `studio-export-core.js` retains the existing L5 export scheduling and recorder helpers.
 - `studio-audio-model.js` validates immutable clip/Viseme edits and local file limits; `studio-audio-timeline.js` owns audio lane rendering, selection, dragging, capture loss, and export locking. Audio sampling, scene clock, adapter cleanup and recovery come from the L8-A core.
+- `studio-visual-effects-model.js` adapts `CinematicEffectsV1` to the project viewport and strict editor clip schema; `studio-visual-effects-timeline.js` owns touch lanes, selection, capture cancellation, and drag updates. Sampling and Canvas 2D overlay drawing reuse the effects core; project time stays in the existing Studio host.
 
 ## Project and preview dimensions
 
@@ -57,7 +67,7 @@ The sample image `preview-test.png` is used only by automated browser checks. Fa
 
 - The `Motion Studio Android preview` workflow builds a distinct artifact for each supported feature branch. For this PR, look for `motion-studio-l8b-android-preview` in this PR's workflow run **Artifacts** section; it expires after 30 days. This workflow does not publish through GitHub Pages or deploy to the official site.
 - On Android, open the PR's Actions run in Chrome, download the artifact ZIP, extract it with Files, tap `index.html`, and choose Chrome. The bundled one-file page supports `file://`; the regular multi-file repository page still needs a web server because it uses ES modules and an import map. The included `README.txt` repeats the launch and Timeline gestures.
-- Chromium checks the generated file via `file://`, mobile touch interactions, audio import/clip movement/cancel, manual Viseme editing, shared playback seek, audio JSON round-trip/relink, and the existing WebM recording flow with test audio, 3-second and 10-second runs, playback metadata, download, cancellation, retry, and image replacement. MP4 availability varies and is covered by the existing MIME/error fallback tests; an actual Android MP4 encoder is not emulated in CI.
+- Chromium checks the generated file via `file://`, audio and visual effect editing, real pointer movement/cancel/lost capture, export locking, selection focus after redraw, shared playback seek, JSON persistence and legacy loading, and the existing WebM recording flow. MP4 availability varies and is covered by existing MIME/error fallback tests; an actual Android encoder, WebView memory pressure, and thermal behavior are not emulated in CI.
 - The artifact link is tied to a workflow run and expires after 30 days. If it expires, use the newest run for this branch. The ZIP is usable without a computer: it contains one standalone HTML file plus the Android instructions.
 
 ### HONOR 400 Pro device test

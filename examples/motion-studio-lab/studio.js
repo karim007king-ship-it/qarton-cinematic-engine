@@ -13,6 +13,9 @@ import { createCharacterTimeline } from "./studio-character-timeline.js?v=l7b-ch
 import { compileAudioTracks, makeAudioTracks, addAudioClip, editAudioClip, deleteAudioClip, setAudioTrackVolume, setAudioViseme, makeAudioAssetMetadata, validateAudioFile, readAudioDuration } from "./studio-audio-model.js?v=l8b-audio-timeline-01";
 import { createStudioAudioTimeline } from "./studio-audio-timeline.js?v=l8b-audio-timeline-01";
 import { createCinematicAudioPlayer } from "../../src/audio/cinematic-audio-core.js";
+import { addVisualEffect, deleteVisualEffect, editVisualEffect, makeVisualEffectsTrack, compileVisualEffectsTrack, sampleVisualEffects, VISUAL_EFFECT_CHANNELS, VISUAL_EFFECT_TYPES } from "./studio-visual-effects-model.js?v=l9b-effects-01";
+import { createStudioVisualEffectsTimeline } from "./studio-visual-effects-timeline.js?v=l9b-effects-01";
+import { drawCinematicEffects } from "../../src/effects/cinematic-effects.js";
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("stage");
@@ -71,6 +74,7 @@ let project = makeProject({
   durationMs: 12000, viewport: { ...DEFAULT_OUTPUT_VIEWPORT, fps: VIEWPORT.fps },
   startZoom: 1, endZoom: 1.25, startX: 0, endX: 0, startY: 0, endY: 0
 });
+let visualEffectsTrack = makeVisualEffectsTrack();
 let currentMs = 0;
 let isPlaying = false;
 let pausedAt = null;
@@ -82,6 +86,7 @@ canvas.style.aspectRatio = `${previewViewport.width} / ${previewViewport.height}
 
 const imageProvider = { get: (assetId) => project.layers.some((layer) => layer.assetId === assetId) ? imageSource : null };
 let compiled;
+let visualEffectsCompiled;
 let timelineEditor = null;
 let characterTrack = makeCharacterTrack();
 let characterAnimation = compileCharacterTrack(characterTrack, project.durationMs);
@@ -97,6 +102,27 @@ let audioMasterVolume = 1;
 let audioClipSelection = null;
 let audioTimeline = null;
 let pendingAudioRequest = null;
+let visualEffectsTimeline = null;
+let visualEffectSelection = null;
+
+function compilePreviewEffects(track, sourceProject = project, viewport = previewViewport) {
+  return compileVisualEffectsTrack(track, projectForRaster(sourceProject, viewport));
+}
+
+function drawCharacterWithCamera(ctx, pose, width, height, camera) {
+  ctx.save();
+  try {
+    ctx.translate(width / 2 + camera.x, height / 2 + camera.y);
+    ctx.rotate(camera.rotation * Math.PI / 180);
+    ctx.scale(camera.zoom, camera.zoom);
+    ctx.translate(-width / 2, -height / 2);
+    drawCharacter(ctx, pose, width, height);
+  } finally { ctx.restore(); }
+}
+
+function drawEffectOverlays(ctx, sample) {
+  drawCinematicEffects(ctx, { ...sample, camera: { x: 0, y: 0, zoom: 1, rotation: 0 }, layers: [] });
+}
 
 function makePlaceholder(size) {
   const surface = document.createElement("canvas");
@@ -181,12 +207,14 @@ function refreshExportControls() {
   }
 }
 function setExportBusy(busy) {
-  for (const id of ["imageInput", "projectInput", "audioInput", "audioTrackType", "addAudioClip", "deleteAudioClip", "audioClipStart", "audioClipDuration", "audioClipVolume", "dialogueLanguage", "visemeType", "phonemeLabel", "addViseme", "audioMasterVolume", "aspectPreset", "fitMode", "duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "saveProjectButton", "loadProjectButton"]) {
+  for (const id of ["imageInput", "projectInput", "audioInput", "audioTrackType", "addAudioClip", "deleteAudioClip", "audioClipStart", "audioClipDuration", "audioClipVolume", "dialogueLanguage", "visemeType", "phonemeLabel", "addViseme", "audioMasterVolume", "visualEffectType", "addVisualEffect", "deleteVisualEffect", "visualEffectStart", "visualEffectDuration", "visualEffectEasing", "aspectPreset", "fitMode", "duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "saveProjectButton", "loadProjectButton"]) {
     $(id).disabled = busy;
   }
   timelineEditor?.setBusy(busy);
   characterTimeline?.setBusy(busy);
   audioTimeline?.setBusy(busy);
+  visualEffectsTimeline?.setBusy(busy);
+  renderVisualEffectInspector();
   renderAudioInspector();
   exportButton.disabled = busy || !currentFileInfo || !exportCapability.mp4.length && !exportCapability.webm.length;
   exportFormat.disabled = busy;
@@ -206,10 +234,12 @@ function createTestAudioGraph() {
   gain.connect(destination);
   return { audio, stream: destination.stream, gain };
 }
-function renderExportFrame(ctx, exportCompiled, exportCharacter, elapsedMs, exportLengthMs) {
+function renderExportFrame(ctx, exportCompiled, exportCharacter, exportEffects, elapsedMs, exportLengthMs) {
   const projectMs = projectTimeAt(elapsedMs, exportLengthMs, exportCompiled.durationMs);
-  drawFrame(ctx, sampleFrame(exportCompiled, projectMs));
-  if (characterTrack.keyframes.length) drawCharacter(ctx, exportCharacter.sample(projectMs), exportCompiled.viewport.width, exportCompiled.viewport.height);
+  const effectSample = sampleVisualEffects(exportEffects, projectMs);
+  drawFrame(ctx, { ...sampleFrame(exportCompiled, projectMs), camera: effectSample.camera });
+  if (characterTrack.keyframes.length) drawCharacterWithCamera(ctx, exportCharacter.sample(projectMs), exportCompiled.viewport.width, exportCompiled.viewport.height, effectSample.camera);
+  drawEffectOverlays(ctx, effectSample);
 }
 async function exportVideoFile() {
   const unlock = exportLock.acquire();
@@ -252,7 +282,8 @@ async function exportVideoFile() {
     if (!exportContext) throw new Error("لم تتوفر ذاكرة كافية لإنشاء Canvas التصدير.");
     const exportCompiled = compileProject(projectForRaster(project, rasterViewport), imageProvider);
     const exportCharacter = compileCharacterTrack(characterTrack, exportCompiled.durationMs);
-    renderExportFrame(exportContext, exportCompiled, exportCharacter, 0, exportLengthMs);
+    const exportEffects = compilePreviewEffects(visualEffectsTrack, project, rasterViewport);
+    renderExportFrame(exportContext, exportCompiled, exportCharacter, exportEffects, 0, exportLengthMs);
     stream = exportCanvas.captureStream(rasterViewport.fps);
     if (exportAudioEnabled.checked) {
       audioGraph = createTestAudioGraph();
@@ -276,7 +307,7 @@ async function exportVideoFile() {
     const presentFrame = (frameIndex) => {
       if (frameIndex <= lastFrameIndex) return;
       const frameMs = exportFrameTime(frameIndex, rasterViewport.fps, exportLengthMs);
-      renderExportFrame(exportContext, exportCompiled, exportCharacter, frameMs, exportLengthMs);
+      renderExportFrame(exportContext, exportCompiled, exportCharacter, exportEffects, frameMs, exportLengthMs);
       try { videoTrack?.requestFrame?.(); } catch { /* timed captureStream(fps) remains the fallback */ }
       lastFrameIndex = frameIndex;
     };
@@ -407,20 +438,77 @@ function renderAudioInspector() {
   }
   $("addAudioClip").disabled = !activeAudioAssetId || Boolean(activeExport);
 }
+function selectedVisualEffect() {
+  return visualEffectsTrack.clips.find(({ id }) => id === visualEffectSelection) ?? null;
+}
+function commitVisualEffectsTrack(nextTrack, message = "تم تحديث المؤثر المرئي.") {
+  if (activeExport) throw new Error("أوقف تصدير الفيديو قبل تعديل المؤثرات المرئية.");
+  const nextCompiled = compilePreviewEffects(nextTrack, project, previewViewport);
+  visualEffectsTrack = nextTrack;
+  visualEffectsCompiled = nextCompiled;
+  visualEffectsTimeline?.render();
+  renderVisualEffectInspector();
+  renderAt(currentMs);
+  $("visualEffectsMessage").textContent = message;
+}
+function commitVisualEffectPatch(patch) {
+  const selected = selectedVisualEffect();
+  if (!selected) return;
+  commitVisualEffectsTrack(editVisualEffect(visualEffectsTrack, project, selected.id, patch));
+  visualEffectsTimeline?.select(selected.id);
+}
+function renderVisualEffectInspector() {
+  const selected = selectedVisualEffect();
+  $("visualEffectSelection").textContent = selected ? `${selected.type} · ${selected.id}` : "لا يوجد مؤثر محدد";
+  for (const [id, value] of [["visualEffectStart", selected?.atMs], ["visualEffectDuration", selected?.durationMs]]) {
+    $(id).disabled = !selected || Boolean(activeExport);
+    $(id).value = selected ? String(value) : "";
+  }
+  $("visualEffectEasing").disabled = !selected || Boolean(activeExport);
+  $("visualEffectEasing").value = selected?.easing ?? "easeInOutCubic";
+  $("deleteVisualEffect").disabled = !selected || Boolean(activeExport);
+  const buildFields = (containerId, fieldName, values) => {
+    const container = $(containerId);
+    container.replaceChildren();
+    if (!selected) return;
+    for (const channel of VISUAL_EFFECT_CHANNELS[selected.type]) {
+      const label = document.createElement("label");
+      label.textContent = channel.label;
+      const input = document.createElement("input");
+      input.type = channel.kind === "color" ? "color" : "number";
+      input.dataset.effectSource = fieldName;
+      input.dataset.effectField = channel.key;
+      if (channel.kind !== "color") {
+        input.min = String(channel.min); input.max = String(channel.max); input.step = String(channel.step);
+        input.inputMode = channel.integer ? "numeric" : "decimal";
+      }
+      input.value = String(values[channel.key]);
+      input.disabled = Boolean(activeExport);
+      label.append(input); container.append(label);
+    }
+  };
+  buildFields("visualEffectFrom", "from", selected?.from);
+  buildFields("visualEffectTo", "to", selected?.to);
+  $("visualEffectType").disabled = Boolean(activeExport);
+  $("addVisualEffect").disabled = Boolean(activeExport);
+}
 function renderAt(timeMs, preparedAudioSample = null) {
   currentMs = Math.max(0, Math.min(project.durationMs, timeMs));
-  drawFrame(context, sampleFrame(compiled, currentMs));
+  const effectSample = sampleVisualEffects(visualEffectsCompiled, currentMs);
+  drawFrame(context, { ...sampleFrame(compiled, currentMs), camera: effectSample.camera });
   const audioSample = preparedAudioSample ?? audioPlayer?.sample(currentMs);
   if (characterTrack.keyframes.length || audioSample?.dialogue?.length) {
     const pose = { ...characterAnimation.sample(currentMs) };
     if (audioSample?.dialogue?.length) pose.mouthOpen = Math.max(...audioSample.dialogue.map(({ mouthOpen }) => mouthOpen));
-    drawCharacter(context, pose, previewViewport.width, previewViewport.height);
+    drawCharacterWithCamera(context, pose, previewViewport.width, previewViewport.height, effectSample.camera);
   }
+  drawEffectOverlays(context, effectSample);
   seek.value = String(currentMs);
   timeReadout.textContent = formatTime(currentMs);
   timelineEditor?.renderPlayhead();
   characterTimeline?.render();
   audioTimeline?.renderPlayhead();
+  visualEffectsTimeline?.renderPlayhead();
 }
 function inputNumber(id) { return Number($(id).value); }
 function syncOutputs() {
@@ -446,8 +534,10 @@ function commitKeyframeProject(nextProject) {
   const nextCompiled = compileProject(projectForRaster(nextProject, previewViewport), {
     get: (assetId) => nextProject.layers.some((layer) => layer.assetId === assetId) ? imageSource : null
   });
+  const nextEffectsCompiled = compilePreviewEffects(visualEffectsTrack, nextProject, previewViewport);
   project = nextProject;
   compiled = nextCompiled;
+  visualEffectsCompiled = nextEffectsCompiled;
   syncLegacyCameraInputs();
   renderAt(currentMs);
   status.textContent = currentFileInfo ? "تم تحديث حركة الكاميرا" : "الحركة جاهزة؛ اختر صورة للمعاينة";
@@ -505,8 +595,10 @@ function updateProject({ resetPlayback = false, viewport = project.viewport, edi
       })
     });
     const nextCharacterAnimation = compileCharacterTrack(characterTrack, durationMs);
+    const nextVisualEffectsCompiled = compilePreviewEffects(visualEffectsTrack,nextProject,nextPreview);
     project = nextProject;
     compiled = nextCompiled;
+    visualEffectsCompiled = nextVisualEffectsCompiled;
     characterAnimation = nextCharacterAnimation;
     if (resetPlayback) stopPlayback();
     rebuildAudioPlayer({ resume: !resetPlayback });
@@ -518,6 +610,7 @@ function updateProject({ resetPlayback = false, viewport = project.viewport, edi
     timelineEditor?.render();
     refreshCharacterTimeline();
     audioTimeline?.render(); renderAudioInspector();
+    visualEffectsTimeline?.render(); renderVisualEffectInspector();
     renderAt(Math.min(currentMs, durationMs));
     status.textContent = currentFileInfo ? "المعاينة جاهزة" : "اختر صورة للبدء";
     syncOutputs();
@@ -694,6 +787,55 @@ audioTimeline = createStudioAudioTimeline({
 audioTimeline.render();
 $("audioMasterVolume").value = String(audioMasterVolume);
 renderAudioInspector();
+visualEffectsTimeline = createStudioVisualEffectsTimeline({
+  root: $("visualEffectsTracks"), ruler: $("visualEffectsRuler"), getTrack: () => visualEffectsTrack,
+  getDuration: () => project.durationMs, getCurrentTime: () => currentMs,
+  isBusy: () => Boolean(activeExport), formatTime,
+  onSelect: (id) => { visualEffectSelection = id; renderVisualEffectInspector(); },
+  onMove: (id, atMs) => commitVisualEffectsTrack(moveVisualEffect(visualEffectsTrack, project, id, atMs), "تم نقل المؤثر على المسار."),
+  onSeek: (atMs) => seekTo(atMs),
+  onDragEnd: ({ cancelled }) => { if (cancelled) $("visualEffectsMessage").textContent = "أُلغي السحب؛ حُفظ آخر توقيت صالح للمؤثر."; }
+});
+visualEffectsTimeline.render();
+renderVisualEffectInspector();
+$("addVisualEffect").addEventListener("click", () => {
+  if (activeExport) return;
+  try {
+    const next = addVisualEffect(visualEffectsTrack, project, $("visualEffectType").value, Math.min(currentMs, project.durationMs));
+    const added = next.clips.at(-1);
+    visualEffectSelection = added.id;
+    commitVisualEffectsTrack(next, `أُضيف ${added.type} عند ${formatTime(added.atMs)}.`);
+    visualEffectsTimeline.select(added.id);
+  } catch (error) { $("visualEffectsMessage").textContent = errorText(error); }
+});
+$("deleteVisualEffect").addEventListener("click", () => {
+  if (activeExport || !visualEffectSelection) return;
+  try {
+    visualEffectsTrack = deleteVisualEffect(visualEffectsTrack, project, visualEffectSelection);
+    visualEffectSelection = null;
+    visualEffectsCompiled = compilePreviewEffects(visualEffectsTrack, project, previewViewport);
+    visualEffectsTimeline.clearSelection(); renderVisualEffectInspector(); renderAt(currentMs);
+    $("visualEffectsMessage").textContent = "حُذف المؤثر المحدد.";
+  } catch (error) { $("visualEffectsMessage").textContent = errorText(error); }
+});
+for (const [id, field] of [["visualEffectStart", "atMs"], ["visualEffectDuration", "durationMs"], ["visualEffectEasing", "easing"]]) {
+  $(id).addEventListener("change", () => {
+    if (!selectedVisualEffect() || activeExport) return;
+    try { commitVisualEffectPatch({ [field]: field === "easing" ? $(id).value : Number($(id).value) }); }
+    catch (error) { $("visualEffectsMessage").textContent = errorText(error); renderVisualEffectInspector(); }
+  });
+}
+for (const source of ["visualEffectFrom", "visualEffectTo"]) {
+  $(source).addEventListener("change", event => {
+    const input = event.target.closest?.("[data-effect-field]");
+    if (!input || !selectedVisualEffect() || activeExport) return;
+    try {
+      const channel = VISUAL_EFFECT_CHANNELS[selectedVisualEffect().type].find(({ key }) => key === input.dataset.effectField);
+      if (!channel) throw new TypeError("قناة المؤثر غير معروفة.");
+      commitVisualEffectPatch({ [input.dataset.effectSource]: { [channel.key]: channel.kind === "color" ? input.value : Number(input.value) } });
+    } catch (error) { $("visualEffectsMessage").textContent = errorText(error); renderVisualEffectInspector(); }
+  });
+}
 function renderCharacterRuler() {
   const ruler = $("characterTimelineRuler"); ruler.replaceChildren();
   for (let i = 0; i <= 4; i++) { const label = document.createElement("span"); label.textContent = formatTime(Math.round(project.durationMs * i / 4)); ruler.append(label); }
@@ -833,7 +975,7 @@ imageInput.addEventListener("change", async () => {
 $("saveProjectButton").addEventListener("click", () => {
   clearFailure();
   try {
-    const data = JSON.stringify(makeProjectFile(project, currentFileInfo, { aspectPreset, fitMode }, characterTrack, audioTracks, audioAssets, audioMasterVolume), null, 2);
+    const data = JSON.stringify(makeProjectFile(project, currentFileInfo, { aspectPreset, fitMode }, characterTrack, audioTracks, audioAssets, audioMasterVolume, visualEffectsTrack), null, 2);
     const url = URL.createObjectURL(new Blob([data], { type: "application/json" }));
     const link = document.createElement("a");
     link.href = url;
@@ -867,10 +1009,12 @@ projectInput.addEventListener("change", async () => {
     for (const { url } of audioFiles.values()) if (url) URL.revokeObjectURL(url);
     audioFiles.clear(); activeAudioAssetId = null;
     audioTracks = parsed.audioTracks; audioAssets = parsed.audioAssets; audioMasterVolume = parsed.audioMasterVolume;
+    visualEffectsTrack = parsed.visualEffectsTrack; visualEffectSelection = null;
     audioClipSelection = null;
     $("audioMasterVolume").value = String(audioMasterVolume);
     $("audioFileName").textContent = audioAssets.length ? "أعد اختيار ملفات الصوت المرتبطة بالمشروع من الهاتف" : "MP3 · M4A · AAC · WAV · OGG · WebM · حتى 20 MiB";
     audioTimeline.clearSelection(); renderAudioInspector();
+    visualEffectsTimeline.clearSelection(); renderVisualEffectInspector();
     project = parsed.project;
     characterTrack = parsed.characterTrack;
     characterAnimation = parsedCharacterAnimation;

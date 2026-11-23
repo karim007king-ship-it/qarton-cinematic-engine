@@ -118,6 +118,25 @@
           </div>
           <p id="audioTimelineMessage" class="timeline-message" role="status" aria-live="polite">الصوت والحركة يستخدمان ساعة المشهد نفسها. دقة الجدولة تعتمد على المتصفح والجهاز.</p>
         </section>
+        <section class="timeline-card visual-effects-card" aria-labelledby="visualEffectsHeading">
+          <div class="timeline-heading"><div><span class="eyebrow">المشهد والإضاءة</span><h2 id="visualEffectsHeading">مسارات المؤثرات المرئية</h2></div><span id="visualEffectSelection" class="timeline-selection">لا يوجد مؤثر محدد</span></div>
+          <div class="visual-effect-actions">
+            <label>المؤثر <select id="visualEffectType"><option value="fade">Fade</option><option value="dissolve">Dissolve</option><option value="vignette">Vignette</option><option value="letterbox">Letterbox</option><option value="shake">Shake</option><option value="flash">Flash</option><option value="tint">Tint</option></select></label>
+            <button id="addVisualEffect" class="secondary-button" type="button">＋ أضف عند المؤشر</button>
+            <button id="deleteVisualEffect" class="secondary-button" type="button" disabled>حذف المؤثر</button>
+          </div>
+          <div id="visualEffectsRuler" class="timeline-ruler" aria-hidden="true"></div>
+          <div id="visualEffectsTracks" class="visual-effects-tracks" role="group" tabindex="0" aria-label="مسارات المؤثرات المرئية"></div>
+          <div class="keyframe-editor visual-effect-editor">
+            <h3>المؤثر المحدد</h3>
+            <label>البداية (ms) <input id="visualEffectStart" type="number" min="0" step="1" inputmode="numeric" disabled></label>
+            <label>المدة (ms) <input id="visualEffectDuration" type="number" min="0" step="1" inputmode="numeric" disabled></label>
+            <label>التدرج <select id="visualEffectEasing" disabled><option value="linear">Linear</option><option value="easeInOutCubic">Ease In Out Cubic</option></select></label>
+            <div class="visual-effect-values"><strong>From</strong><div id="visualEffectFrom"></div></div>
+            <div class="visual-effect-values"><strong>To</strong><div id="visualEffectTo"></div></div>
+          </div>
+          <p id="visualEffectsMessage" class="timeline-message" role="status" aria-live="polite">المعاينة والمؤثرات والكاميرا والشخصيات والصوت تستخدم توقيت المشهد نفسه. اسحب أي مؤثر لتغيير بدايته.</p>
+        </section>
       </div>
 
       <div class="controls-panel">
