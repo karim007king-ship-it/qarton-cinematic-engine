@@ -436,6 +436,10 @@ def exercise(context, url):
     # A trusted Chromium drag survives marker rerender; cancel keeps the last
     # committed position from the continuous gesture.
     character_lane = page.locator("#characterTimelineLane")
+    def current_character_times():
+        return [int(value) for value in page.locator(".character-keyframe-marker")
+            .evaluate_all("els => els.map(el => el.dataset.keyTime)")]
+    character_drag_snapshots = {}
     character_box = character_lane.bounding_box()
     character_key_box = page.locator('.character-keyframe-marker[data-key-time="6000"]').bounding_box()
     page.evaluate("""() => {
@@ -455,6 +459,7 @@ def exercise(context, url):
     }))""")
     assert page.locator('.character-keyframe-marker[data-key-time="6960"]').count() == 1
     assert page.locator("#characterTimelineLane").get_attribute("data-scrubbing") is None
+    character_drag_snapshots["cancel"] = current_character_times()
     page.mouse.up()
 
     # A drag into an occupied timestamp fails atomically, while a
@@ -473,6 +478,7 @@ def exercise(context, url):
         bubbles: true, pointerId: id, pointerType: 'mouse', isPrimary: true
     }))""", page.evaluate("window.lastCharacterPointerId"))
     collision_times = [int(value) for value in page.locator(".character-keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")]
+    character_drag_snapshots["collision"] = collision_times
     collision_candidates = [value for value in collision_times if 6960 < value < 10000]
     assert len(collision_times) == 3 and len(set(collision_times)) == 3
     assert collision_candidates, "failed occupied timestamp retains the last valid drag position"
@@ -495,6 +501,7 @@ def exercise(context, url):
     target_x = character_box["x"] + character_box["width"] * (8040 / 12000)
     page.mouse.move(target_x, character_box["y"] + character_box["height"] / 2)
     assert page.locator('.character-keyframe-marker[data-key-time="8040"]').count() == 1
+    character_drag_snapshots["lostCapture"] = current_character_times()
     character_lane.evaluate("""(el, id) => el.dispatchEvent(new PointerEvent('lostpointercapture', {
         bubbles: true, pointerId: id, pointerType: 'mouse', isPrimary: true
     }))""", lost_pointer_id)
@@ -513,6 +520,7 @@ def exercise(context, url):
                     current_lane_box["y"] + current_lane_box["height"] / 2)
     page.mouse.up()
     assert page.locator('.character-keyframe-marker[data-key-time="7500"]').count() == 1
+    character_drag_snapshots["moveTo7500"] = current_character_times()
 
     # Use a real browser pointer to begin a lane scrub, then acquire the export
     # lock. The lock must release capture and discard the stale scrub before retry.
@@ -550,6 +558,7 @@ def exercise(context, url):
     saved_character_times = [key["atMs"] for key in character_data["characterTrack"]["keyframes"]]
     assert saved_character_times == [2000, 7500, 10000], {
         "saved_times": saved_character_times,
+        "drag_snapshots": character_drag_snapshots,
         "timeline_message": page.locator("#characterTimelineMessage").inner_text(),
         "selection": page.locator("#characterTimelineSelection").inner_text(),
     }
