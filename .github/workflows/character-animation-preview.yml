@@ -35,7 +35,6 @@ jobs:
         run: |
           python -m venv "$RUNNER_TEMP/qarton-character-browser"
           "$RUNNER_TEMP/qarton-character-browser/bin/pip" install playwright==1.55.0
-          "$RUNNER_TEMP/qarton-character-browser/bin/python" -m playwright install --with-deps chromium
           "$RUNNER_TEMP/qarton-character-browser/bin/python" scripts/check-character-animation-preview.py
       - name: Package Android preview
         run: |

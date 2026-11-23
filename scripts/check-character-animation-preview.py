@@ -9,7 +9,7 @@ def main():
     assert page_path.is_file(), page_path
     errors = []
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        browser = playwright.chromium.launch(channel="chrome")
         page = browser.new_page(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True)
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.goto(page_path.as_uri())

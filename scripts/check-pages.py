@@ -1,5 +1,275 @@
-Y™Áäx-ÆÈ‹j◊ù¢Îi∫⁄+äßj[hëÈ‹¢ÈÌÔ≠yNãZñã≠¶Îeäw¨‘ààâ·ï…ç•ÕîÅ—°îÅÕ—ÖùïêÅAÖùïÃÅÕ•—îÅ•∏ÅëïÕ≠—Ω¿ÅÖπêÅ—Ω’ç†Å°…Ωµ•’¥ÅçΩπ—ï·—Ã∏ààà)ô…Ω¥Åô’πç—ΩΩ±ÃÅ•µ¡Ω…–Å¡Ö…—•Ö∞)ô…Ω¥Å°——¿πÕï…Ÿï»Å•µ¡Ω…–ÅM•µ¡±ï!QQAIï≈’ïÕ—!Öπë±ï»∞ÅQ°…ïÖë•πù!QQAMï…Ÿï»)•µ¡Ω…–Å©ÕΩ∏)ô…Ω¥ÅΩÃÅ•µ¡Ω…–ÅïπŸ•…Ω∏)ô…Ω¥Å¡Ö—°±•àÅ•µ¡Ω…–ÅAÖ—†)•µ¡Ω…–Å…î)•µ¡Ω…–ÅÕ—…’ç–)ô…Ω¥Å—°…ïÖë•πúÅ•µ¡Ω…–ÅQ°…ïÖê)•µ¡Ω…–ÅÈ±•à()ô…Ω¥Å¡±ÖÂ›…•ù°–πÕÂπç}Ö¡§Å•µ¡Ω…–ÅÕÂπç}¡±ÖÂ›…•ù°–(()ëïòÅï·ï…ç•Õî°çΩπ—ï·–∞Å’…∞§Ë(ÄÄÄÅ¡ÖùîÄÙÅçΩπ—ï·–ππï›}¡Öùî†§(ÄÄÄÅï……Ω…ÃÄÙÅmt(ÄÄÄÅ¡ÖùîπΩ∏†â¡Öùïï……Ω»à∞Å±ÖµâëÑÅï……Ω»ËÅï……Ω…ÃπÖ¡¡ïπê°Õ—»°ï……Ω»§§§(ÄÄÄÅ¡ÖùîπΩ∏†â…ïÕ¡ΩπÕîà∞Å±ÖµâëÑÅ…ïÕ¡ΩπÕîËÅï……Ω…ÃπÖ¡¡ïπê°òâÌ…ïÕ¡ΩπÕîπÕ—Ö—’ÕÙÅÌ…ïÕ¡ΩπÕîπ’…±Ùà§(ÄÄÄÄÄÄÄÄÄÄÄÅ•òÅ…ïÕ¡ΩπÕîπÕ—Ö—’ÃÄ¯ÙÄ–¿¿Åï±ÕîÅ9Ωπî§(ÄÄÄÅ¡ÖùîπùΩ—º°’…∞§(ÄÄÄÅ¡Öùîπùï—}âÂ}…Ω±î†â±•π¨à∞ÅπÖµîÙãbüfb´b¥Éb´b≥b«b£b§Ébüffb∑b«fà§πç±•ç¨†§(ÄÄÄÅ¡Öùîπ›Ö•—}ôΩ…}Õï±ïç—Ω»†àπ≈Ö…—Ω∏µç°Ö…Öç—ï»Å•µúà§(ÄÄÄÅôΩ»ÅçΩπ—…Ω∞∞ÅÕçïπîÅ•∏Ål†âÕçïπîµ—›ºà∞Äâë’Õ¨à§∞Ä†âÕçïπîµΩπîà∞ÄâëÖ›∏à•tË(ÄÄÄÄÄÄÄÅ¡Öùîπ±ΩçÖ—Ω»°òàçÌçΩπ—…Ω±Ùà§πç±•ç¨†§(ÄÄÄÄÄÄÄÅ¡Öùîπùï—}âÂ}—ï·–°òâMçïπîÅÌÕçïπïÙÅÖç—•Ÿîà∞Åï·Öç–ıÖ±Õî§π›Ö•—}ôΩ»†§((ÄÄÄÅ¡Öùîπ±ΩçÖ—Ω»†àçÖ’ë•ºà§πç±•ç¨†§(ÄÄÄÅ¡Öùîπùï—}âÂ}—ï·–†â’ë•ºÅç’ïÃÅÕ—Ö…—ïêà∞Åï·Öç–ıÖ±Õî§π›Ö•—}ôΩ»†§(ÄÄÄÅ¡Öùîπ›Ö•—}ôΩ…}ô’πç—•Ω∏†ààà†§ÄÙ¯ÅÏ(ÄÄÄÄÄÄÄÅçΩπÕ–Åç°Ö…Öç—ï…ÃÄÙÅl∏∏πëΩç’µïπ–π≈’ï…ÂMï±ïç—Ω…±∞†úπ≈Ö…—Ω∏µç°Ö…Öç—ï»ú•tÏ(ÄÄÄÄÄÄÄÅçΩπÕ–ÅÕ—ÖùîÄÙÅëΩç’µïπ–π≈’ï…ÂMï±ïç—Ω»†úçÕ—Öùîú§πùï—	Ω’πë•πù±•ïπ—Iïç–†§Ï(ÄÄÄÄÄÄÄÅ…ï—’…∏Åç°Ö…Öç—ï…Ãπ±ïπù—†ÄÙÙÙÄ»ÄòòÅç°Ö…Öç—ï…ÃπïŸï…‰°ç°Ö…Öç—ï»ÄÙ¯ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπÕ–Å…ïç–ÄÙÅç°Ö…Öç—ï»πùï—	Ω’πë•πù±•ïπ—Iïç–†§Ï(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Åç°Ö…Öç—ï»πëÖ—ÖÕï–πÕ—Ö—îÄÙÙÙÄù•ë±îú(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄòòÅlùëï—ï…µ•πïêú∞ÄùÖ±ï…–ùtπ•πç±’ëïÃ°ç°Ö…Öç—ï»πëÖ—ÖÕï–πï·¡…ïÕÕ•Ω∏§(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄòòÅ…ïç–π±ïô–Ä¯ÙÅÕ—Öùîπ±ïô–ÄòòÅ…ïç–π…•ù°–ÄÙÅÕ—Öùîπ…•ù°–(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄòòÅ…ïç–π—Ω¿Ä¯ÙÅÕ—Öùîπ—Ω¿ÄòòÅ…ïç–πâΩ——Ω¥ÄÙÅÕ—ÖùîπâΩ——Ω¥(ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄòòÅç°Ö…Öç—ï»πô•…Õ—°•±êππÖ—’…Ö±]•ë—†Ä¯Ä¿Ï(ÄÄÄÄÄÄÄÅÙ§Ï(ÄÄÄÅÙààà§(ÄÄÄÅ¡Öùîπ±ΩçÖ—Ω»†àçëïÕ—…Ω‰à§πç±•ç¨†§(ÄÄÄÅ¡Öùîπùï—}âÂ}—ï·–†âïÕ—…ΩÂïêËÅÖπ•µÖ—•Ω∏Å±ΩΩ¿à∞Åï·Öç–ıÖ±Õî§π›Ö•—}ôΩ»†§(ÄÄÄÅÖÕÕï…–Å¡Öùîπ±ΩçÖ—Ω»†àπ≈Ö…—Ω∏µç°Ö…Öç—ï»∞Äπ≈Ö…—Ω∏µÕçïπîà§πçΩ’π–†§ÄÙÙÄ¿(ÄÄÄÅ¡ÖùîπùΩ—º°’…∞§(ÄÄÄÅ¡Öùîπùï—}âÂ}…Ω±î†â±•π¨à∞ÅπÖµîÙãb≥b«fGb†Éfb”fbºÉbüffb«b◊bºà§πç±•ç¨†§(ÄÄÄÅôΩ»ÅÖ——ïµ¡–Å•∏Å…Öπùî†»§Ë(ÄÄÄÄÄÄÄÅ•òÅÖ——ïµ¡–Ë(ÄÄÄÄÄÄÄÄÄÄÄÅ¡Öùîπ±ΩçÖ—Ω»†àç¡±Ö‰à§πç±•ç¨†§(ÄÄÄÄÄÄÄÅ¡Öùîπùï—}âÂ}—ï·–†ãbüffb”fbºÉb≥büfb»à∞Åï·Öç–ıQ…’î§π›Ö•—}ôΩ»†§(ÄÄÄÄÄÄÄÅ¡Öùîπ›Ö•—}ôΩ…}Õï±ïç—Ω»†ùmëÖ—Ñµï·¡…ïÕÕ•Ω∏Ùâù…ïï—•πúâumëÖ—ÑµÕ—Ö—îÙâ•ë±îâtú§(ÄÄÄÄÄÄÄÅÖÕÕï…–Å¡Öùîπ±ΩçÖ—Ω»†àπ≈Ö…—Ω∏µ±ÖÂï»Å•µúà§πçΩ’π–†§ÄÙÙÄ»(ÄÄÄÄÄÄÄÅÖÕÕï…–Å¡Öùîπ±ΩçÖ—Ω»†àçÕ—ÖùîÅ•µúà§πïŸÖ±’Ö—ï}Ö±∞†(ÄÄÄÄÄÄÄÄÄÄÄÄà°•µÖùïÃ§ÄÙ¯Å•µÖùïÃπïŸï…‰°•µÖùîÄÙ¯Å•µÖùîπçΩµ¡±ï—îÄòòÅ•µÖùîππÖ—’…Ö±]•ë—†Ä¯Ä¿§à§(ÄÄÄÄÄÄÄÅÖÕÕï…–Å¡Öùîπ±ΩçÖ—Ω»†àπçÖµï…Ñà§πïŸÖ±’Ö—î†à°ï∞§ÄÙ¯Åï∞πÕ—Â±îπ—…ÖπÕôΩ…¥π•πç±’ëïÃ†ùÕçÖ±î†ú§à§(ÄÄÄÄÄÄÄÅÖÕÕï…–Å¡Öùîπ±ΩçÖ—Ω»†ùmëÖ—Ñµ±ÖÂï»µ•êÙâ…•ëùîâtú§πïŸÖ±’Ö—î†à°ï∞§ÄÙ¯ÄÑÖï∞πÕ—Â±îπ—…ÖπÕôΩ…¥à§(ÄÄÄÄÄÄÄÅÖÕÕï…–Å¡Öùîπ±ΩçÖ—Ω»†àπ≈Ö…—Ω∏µç°Ö…Öç—ï»à§πïŸÖ±’Ö—î†ààâï∞ÄÙ¯ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπÕ–Å»ÄÙÅï∞πùï—	Ω’πë•πù±•ïπ—Iïç–†§∞ÅÃÄÙÅëΩç’µïπ–π≈’ï…ÂMï±ïç—Ω»†úçÕ—Öùîú§πùï—	Ω’πë•πù±•ïπ—Iïç–†§Ï(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å»π±ïô–Ä¯ÙÅÃπ±ïô–ÄòòÅ»π…•ù°–ÄÙÅÃπ…•ù°–ÄòòÅ»π—Ω¿Ä¯ÙÅÃπ—Ω¿ÄòòÅ»πâΩ——Ω¥ÄÙÅÃπâΩ——Ω¥Ï(ÄÄÄÄÄÄÄÅÙààà§(ÄÄÄÅ¡Öùîπ±ΩçÖ—Ω»†àçÕ—Ω¿à§πç±•ç¨†§(ÄÄÄÅ¡Öùîπùï—}âÂ}—ï·–†ãb´fÉbóbÎfbüfÉbüffb”fbºà∞Åï·Öç–ıQ…’î§π›Ö•—}ôΩ»†§(ÄÄÄÅÖÕÕï…–Å¡Öùîπ±ΩçÖ—Ω»†àçÕ—ÖùîÅ•µúà§πçΩ’π–†§ÄÙÙÄ¿(ÄÄÄÅ¡ÖùîπùΩ—º°’…∞§(ÄÄÄÅ¡Öùîπùï—}âÂ}…Ω±î†â±•π¨à∞ÅπÖµîÙãfbªb´b£bƒÉb∑b«fb§Ébüfb”bªb◊f+büb®à§πç±•ç¨†§(ÄÄÄÅÖç—Ω»ÄÙÅ¡Öùîπ±ΩçÖ—Ω»†àπ≈Ö…—Ω∏µç°Ö…Öç—ï»à§(ÄÄÄÅÕïï¨ÄÙÅ¡Öùîπ±ΩçÖ—Ω»†àçÕïï¨à§(ÄÄÄÅëïòÅÕÖµ¡±î°µÃ∞Åô•±ïπÖµî∞Å±Öâï∞§Ë(ÄÄÄÄÄÄÄÅÕïï¨πïŸÖ±’Ö—î†ààà°Õ±•ëï»∞ÅŸÖ±’î§ÄÙ¯ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÅÕ±•ëï»πŸÖ±’îÄÙÅŸÖ±’îÏ(ÄÄÄÄÄÄÄÄÄÄÄÅÕ±•ëï»πë•Õ¡Ö—ç°Ÿïπ–°πï‹ÅŸïπ–†ù•π¡’–ú∞ÅÌâ’ââ±ïÃËÅ—…’ïÙ§§Ï(ÄÄÄÄÄÄÄÅÙààà∞ÅµÃ§(ÄÄÄÄÄÄÄÅ¡Öùîπ›Ö•—}ôΩ…}ô’πç—•Ω∏†ààâô•±îÄÙ¯ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπÕ–Å•µúÄÙÅëΩç’µïπ–π≈’ï…ÂMï±ïç—Ω»†úπ≈Ö…—Ω∏µç°Ö…Öç—ï»Å•µúú§Ï(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏Å•µú¸πÕ…åπïπëÕ]•—††úºúÄ¨Åô•±î§ÄòòÅ•µúπçΩµ¡±ï—îÄòòÅ•µúππÖ—’…Ö±]•ë—†Ä¯Ä¿Ï(ÄÄÄÄÄÄÄÅÙààà∞ÅÖ…úıô•±ïπÖµî§(ÄÄÄÄÄÄÄÅÖÕÕï…–Å¡Öùîπ±ΩçÖ—Ω»†àçÕ—Ö—’Ãà§π•ππï…}—ï·–†§ÄÙÙÅ±Öâï∞((ÄÄÄÅ¡Öùîπ›Ö•—}ôΩ…}ô’πç—•Ω∏†àÖëΩç’µïπ–π≈’ï…ÂMï±ïç—Ω»†úçÕïï¨ú§πë•ÕÖâ±ïêà§(ÄÄÄÅÕÖµ¡±î†ƒ»‘¿∞Äâ›Ö±¨¥ƒπÕŸúà∞Äãfb”f(à§(ÄÄÄÅÕÖµ¡±î†ƒ‰¿¿∞Äâ›Ö±¨¥ƒµâ±•π¨πÕŸúà∞Äãfb”f(à§(ÄÄÄÅÕÖµ¡±î†Ã–¿¿∞ÄâùïÕ—’…î¥ƒπÕŸúà∞Äãb´b∑f+fGb§à§(ÄÄÄÅ¡ΩÕîÄÙÅ¡Öùîπ±ΩçÖ—Ω»†àççÖµï…Ñà§πùï—}Ö——…•â’—î†âÕ—Â±îà§(ÄÄÄÅÕÖµ¡±î†ƒ»‘¿∞Äâ›Ö±¨¥ƒπÕŸúà∞Äãfb”f(à§(ÄÄÄÅÖÕÕï…–Å¡Öùîπ±ΩçÖ—Ω»†àççÖµï…Ñà§πùï—}Ö——…•â’—î†âÕ—Â±îà§ÄÑÙÅ¡ΩÕî(ÄÄÄÅ¡Öùîπ±ΩçÖ—Ω»†àç—Ωùù±îà§πç±•ç¨†§(ÄÄÄÅ¡Öùîπ›Ö•—}ôΩ…}ô’πç—•Ω∏†â9’µâï»°ëΩç’µïπ–π≈’ï…ÂMï±ïç—Ω»†úçÕïï¨ú§πŸÖ±’î§Ä¯ÄƒÃ‘¿à§(ÄÄÄÅ¡Öùîπ±ΩçÖ—Ω»†àç—Ωùù±îà§πç±•ç¨†§(ÄÄÄÅ¡Öùîπùï—}âÂ}…Ω±î†ââ’——Ω∏à∞ÅπÖµîÙãb´b”bÎf+fà∞Åï·Öç–ıQ…’î§π›Ö•—}ôΩ»†§(ÄÄÄÅ¡Ö’ÕïêÄÙÅÕïï¨π•π¡’—}ŸÖ±’î†§(ÄÄÄÅ¡Öùîπ›Ö•—}ôΩ…}—•µïΩ’–†ƒ»¿§(ÄÄÄÅÖÕÕï…–ÅÕïï¨π•π¡’—}ŸÖ±’î†§ÄÙÙÅ¡Ö’Õïê(ÄÄÄÅ¡Öùîπ±ΩçÖ—Ω»†àçÕ›•—ç†à§πç±•ç¨†§(ÄÄÄÅ¡Öùîπ›Ö•—}ôΩ…}Õï±ïç—Ω»†úçÕ—ÖùïmëÖ—ÑµÕçïπîÙâïŸïπ•πúâtÄπ≈Ö…—Ω∏µç°Ö…Öç—ï»ú§(ÄÄÄÅÖÕÕï…–ÅÖç—Ω»πçΩ’π–†§ÄÙÙÄƒÅÖπêÅÕïï¨π•π¡’—}ŸÖ±’î†§ÄÙÙÄà¿à(ÄÄÄÅ¡Öùîπ±ΩçÖ—Ω»†àçç±ΩÕîà§πç±•ç¨†§(ÄÄÄÅ¡Öùîπùï—}âÂ}—ï·–†ãb´fÉbóbÎfbüfÉbüffb”fbºà∞Åï·Öç–ıQ…’î§π›Ö•—}ôΩ»†§(ÄÄÄÅÖÕÕï…–ÅÖç—Ω»πçΩ’π–†§ÄÙÙÄ¿(ÄÄÄÅ¡Öùîπïµ’±Ö—ï}µïë•Ñ°…ïë’çïë}µΩ—•Ω∏Ùâ…ïë’çîà§(ÄÄÄÅ¡Öùîπ…ï±ΩÖê†§(ÄÄÄÅ¡Öùîπ›Ö•—}ôΩ…}ô’πç—•Ω∏†àÖëΩç’µïπ–π≈’ï…ÂMï±ïç—Ω»†úçÕïï¨ú§πë•ÕÖâ±ïêà§(ÄÄÄÅÕÖµ¡±î†ƒ‰¿¿∞Äâ›Ö±¨¥¿πÕŸúà∞Äãfb”f(à§(ÄÄÄÅÖÕÕï…–ÅπΩ–Å¡ÖùîπïŸÖ±’Ö—î†ààâ¡ï…ôΩ…µÖπçîπùï—π—…•ïÕ	ÂQÂ¡î†ù…ïÕΩ’…çîú§(ÄÄÄÄÄÄÄÄπÕΩµî°ïπ—…‰ÄÙ¯Åïπ—…‰ππÖµîπ•πç±’ëïÃ†úµâ±•π¨πÕŸúú§§ààà§(ÄÄÄÅ¡Öùîπïµ’±Ö—ï}µïë•Ñ°…ïë’çïë}µΩ—•Ω∏Ùâπºµ¡…ïôï…ïπçîà§(ÄÄÄÅ¡ÖùîπÖëë}•π•—}Õç…•¡–†ààâ›•πëΩ‹π±ÖâQΩπïÃÄÙÄ¿Ï(ÄÄÄÄÄÄÄÅ›•πëΩ‹π±ÖâΩπ—ï·—ÃÄÙÅmtÏ(ÄÄÄÄÄÄÄÅ›•πëΩ‹π’ë•ΩΩπ—ï·–ÄÙÅç±ÖÕÃÅï·—ïπëÃÅ’ë•ΩΩπ—ï·–ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÅçΩπÕ—…’ç—Ω»†∏∏πÖ…ùÃ§ÅÏÅÕ’¡ï»†∏∏πÖ…ùÃ§ÏÅ›•πëΩ‹π±ÖâΩπ—ï·—Ãπ¡’Õ†°—°•Ã§ÏÅÙ(ÄÄÄÄÄÄÄÅÙÏ(ÄÄÄÄÄÄÄÅçΩπÕ–ÅÕ—Ö…–ÄÙÅ=Õç•±±Ö—Ω…9Ωëîπ¡…Ω—Ω—Â¡îπÕ—Ö…–Ï(ÄÄÄÄÄÄÄÅ=Õç•±±Ö—Ω…9Ωëîπ¡…Ω—Ω—Â¡îπÕ—Ö…–ÄÙÅô’πç—•Ω∏†∏∏πÖ…ùÃ§ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÅ›•πëΩ‹π±ÖâQΩπïÃ¨¨Ï(ÄÄÄÄÄÄÄÄÄÄÄÅ…ï—’…∏ÅÕ—Ö…–πÖ¡¡±‰°—°•Ã∞ÅÖ…ùÃ§Ï(ÄÄÄÄÄÄÄÅÙÏààà§(ÄÄÄÅ¡ÖùîπùΩ—º°’…∞§(ÄÄÄÅ¡Öùîπùï—}âÂ}…Ω±î†â±•π¨à∞ÅπÖµîÙãbób”büb«b§ÉffÉbüffb«b◊bºà§πç±•ç¨†§(ÄÄÄÅ¡Öùîπ›Ö•—}ôΩ…}ô’πç—•Ω∏†àÖëΩç’µïπ–π≈’ï…ÂMï±ïç—Ω»†úç¡±Ö‰ú§πë•ÕÖâ±ïêà§(ÄÄÄÅëïòÅµΩŸï}—º°µÃ§Ë(ÄÄÄÄÄÄÄÅ¡Öùîπ±ΩçÖ—Ω»†àçÕïï¨à§πïŸÖ±’Ö—î†ààà°ï∞∞Å–§ÄÙ¯ÅÏ(ÄÄÄÄÄÄÄÄÄÄÄÅï∞πŸÖ±’îÄÙÅ–ÏÅï∞πë•Õ¡Ö—ç°Ÿïπ–°πï‹ÅŸïπ–†ù•π¡’–ú∞ÅÌâ’ââ±ïÃÈ—…’ïÙ§§Ï(ÄÄÄÄÄÄÄÅÙààà∞ÅµÃ§(ÄÄÄÄÄÄÄÅ¡Öùîπ›Ö•—}ôΩ…}ô’πç—•Ω∏†â–ÄÙ¯Ä≠ëΩç’µïπ–π≈’ï…ÂMï±ïç—Ω»†úπçÖµï…Ñú§πëÖ—ÖÕï–π—•µîÄÙÙÙÅ–à∞ÅÖ…úıµÃ§((ÄÄÄÅµΩŸï}—º†ƒ‰¿¿§(ÄÄÄÅÖÕÕï…–Å¡Öùîπ±ΩçÖ—Ω»†àπçÖÕ–Å•µúà§πùï—}Ö——…•â’—î†âÕ…åà§πïπëÕ›•—††â›Ö±¨¥ƒµâ±•π¨πÕŸúà§(ÄÄÄÅÖÕÕï…–Å¡Öùîπ±ΩçÖ—Ω»†àπ≈Ö…—Ω∏µ±ÖÂï»Å•µúà§πçΩ’π–†§ÄÙÙÄ»(ÄÄÄÅçÖµï…ÑÄÙÅ¡Öùîπ±ΩçÖ—Ω»†àπçÖµï…Ñà§πïŸÖ±’Ö—î†âîÄÙ¯ÅîπÕ—Â±îπ—…ÖπÕôΩ…¥à§(ÄÄÄÅ…•ëùîÄÙÅ¡Öùîπ±ΩçÖ—Ω»†ùmëÖ—Ñµ±ÖÂï»µ•êÙâ…•ëùîâtú§πïŸÖ±’Ö—î†âîÄÙ¯ÅîπÕ—Â±îπ—…ÖπÕôΩ…¥à§(ÄÄÄÅµΩŸï}—º†‡¿¿§(ÄÄÄÅÖÕÕï…–Å¡Öùîπ±ΩçÖ—Ω»†àπçÖµï…Ñà§πïŸÖ±’Ö—î†âîÄÙ¯ÅîπÕ—Â±îπ—…ÖπÕôΩ…¥à§ÄÑÙÅçÖµï…Ñ(ÄÄÄÅÖÕÕï…–Å¡Öùîπ±ΩçÖ—Ω»†ùmëÖ—Ñµ±ÖÂï»µ•êÙâ…•ëùîâtú§πïŸÖ±’Ö—î†âîÄÙ¯ÅîπÕ—Â±îπ—…ÖπÕôΩ…¥à§ÄÑÙÅ…•ëùî(ÄÄÄÅÖÕÕï…–Å¡ÖùîπïŸÖ±’Ö—î†â±ÖâQΩπïÃà§ÄÙÙÄ¿(ÄÄÄÅ¡Öùîπ±ΩçÖ—Ω»†àç¡±Ö‰à§πç±•ç¨†§(ÄÄÄÅ¡Öùîπ›Ö•—}ôΩ…}ô’πç—•Ω∏†â±ÖâQΩπïÃÄÙÙÙÄƒà§(ÄÄÄÅ¡Öùîπ±ΩçÖ—Ω»†àç¡Ö’Õîà§πç±•ç¨†§(ÄÄÄÅ¡Öùîπùï—}âÂ}…Ω±î†ââ’——Ω∏à∞ÅπÖµîÙãbübœb´bõfbüfà§π›Ö•—}ôΩ»†§(ÄÄÄÅô…ΩÈï∏ÄÙÅ¡Öùîπ±ΩçÖ—Ω»†àπçÖµï…Ñà§πùï—}Ö——…•â’—î†âëÖ—Ñµ—•µîà§(ÄÄÄÅ¡Öùîπ›Ö•—}ôΩ…}—•µïΩ’–†ƒ‘¿§(ÄÄÄÅÖÕÕï…–Å¡Öùîπ±ΩçÖ—Ω»†àπçÖµï…Ñà§πùï—}Ö——…•â’—î†âëÖ—Ñµ—•µîà§ÄÙÙÅô…ΩÈï∏(ÄÄÄÅµΩŸï}—º†Ã–¿¿§(ÄÄÄÅÖÕÕï…–Äãb´b∑f+fGb§àÅ•∏Å¡Öùîπ±ΩçÖ—Ω»†àçÕ—Ö—’Ãà§π•ππï…}—ï·–†§(ÄÄÄÅÖÕÕï…–Å¡ÖùîπïŸÖ±’Ö—î†â±ÖâQΩπïÃà§ÄÙÙÄƒ(ÄÄÄÅ¡Öùîπ±ΩçÖ—Ω»†àç…ï¡±Ö‰à§πç±•ç¨†§(ÄÄÄÅ¡Öùîπ›Ö•—}ôΩ…}ô’πç—•Ω∏†à≠ëΩç’µïπ–π≈’ï…ÂMï±ïç—Ω»†úπçÖµï…Ñú§πëÖ—ÖÕï–π—•µîÄÄ‘¿¿à§(ÄÄÄÅ¡Öùîπ±ΩçÖ—Ω»†àçÕ›•—ç†à§πç±•ç¨†§(ÄÄÄÅ¡Öùîπùï—}âÂ}—ï·–†ãb€f#bÑÉbüfffbƒÉ
-‹Éf#ff#fà∞Åï·Öç–ıQ…’î§π›Ö•—}ôΩ»†§(ÄÄÄÅÖÕÕï…–Å¡Öùîπ±ΩçÖ—Ω»†àπçÖµï…Ñà§πçΩ’π–†§ÄÙÙÄƒ(ÄÄÄÅÖÕÕï…–Å¡Öùîπ±ΩçÖ—Ω»†àπçÖµï…Ñà§πùï—}Ö——…•â’—î†âëÖ—Ñµ—•µîà§ÄÙÙÄà¿à(ÄÄÄÅÖÕÕï…–Å¡Öùîπ±ønµÊ⁄$z{-ÆÈ‹j◊ùinfo:
+"""Exercise the staged Pages site in desktop and touch Chromium contexts."""
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+import json
+from os import environ
+from pathlib import Path
+import re
+import struct
+from threading import Thread
+import zlib
+
+from playwright.sync_api import sync_playwright
+
+
+def exercise(context, url):
+    page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.on("response", lambda response: errors.append(f"{response.status} {response.url}")
+            if response.status >= 400 else None)
+    page.goto(url)
+    page.get_by_role("link", name="ÿßŸÅÿ™ÿ≠ ÿ™ÿ¨ÿ±ÿ®ÿ© ÿßŸÑŸÖÿ≠ÿ±ŸÉ").click()
+    page.wait_for_selector(".qarton-character img")
+    for control, scene in [("scene-two", "dusk"), ("scene-one", "dawn")]:
+        page.locator(f"#{control}").click()
+        page.get_by_text(f"Scene {scene} active", exact=False).wait_for()
+
+    page.locator("#audio").click()
+    page.get_by_text("Audio cues started", exact=False).wait_for()
+    page.wait_for_function("""() => {
+        const characters = [...document.querySelectorAll('.qarton-character')];
+        const stage = document.querySelector('#stage').getBoundingClientRect();
+        return characters.length === 2 && characters.every(character => {
+            const rect = character.getBoundingClientRect();
+            return character.dataset.state === 'idle'
+                && ['determined', 'alert'].includes(character.dataset.expression)
+                && rect.left >= stage.left && rect.right <= stage.right
+                && rect.top >= stage.top && rect.bottom <= stage.bottom
+                && character.firstChild.naturalWidth > 0;
+        });
+    }""")
+    page.locator("#destroy").click()
+    page.get_by_text("Destroyed: animation loop", exact=False).wait_for()
+    assert page.locator(".qarton-character, .qarton-scene").count() == 0
+    page.goto(url)
+    page.get_by_role("link", name="ÿ¨ÿ±Ÿëÿ® ŸÖÿ¥ŸáÿØ ÿßŸÑŸÖÿ±ÿµÿØ").click()
+    for attempt in range(2):
+        if attempt:
+            page.locator("#play").click()
+        page.get_by_text("ÿßŸÑŸÖÿ¥ŸáÿØ ÿ¨ÿßŸáÿ≤", exact=True).wait_for()
+        page.wait_for_selector('[data-expression="greeting"][data-state="idle"]')
+        assert page.locator(".qarton-layer img").count() == 2
+        assert page.locator("#stage img").evaluate_all(
+            "(images) => images.every(image => image.complete && image.naturalWidth > 0)")
+        assert page.locator(".camera").evaluate("(el) => el.style.transform.includes('scale(')")
+        assert page.locator('[data-layer-id="ridge"]').evaluate("(el) => !!el.style.transform")
+        assert page.locator(".qarton-character").evaluate("""el => {
+            const r = el.getBoundingClientRect(), s = document.querySelector('#stage').getBoundingClientRect();
+            return r.left >= s.left && r.right <= s.right && r.top >= s.top && r.bottom <= s.bottom;
+        }""")
+    page.locator("#stop").click()
+    page.get_by_text("ÿ™ŸÖ ÿ•ÿ∫ŸÑÿßŸÇ ÿßŸÑŸÖÿ¥ŸáÿØ", exact=True).wait_for()
+    assert page.locator("#stage img").count() == 0
+    page.goto(url)
+    page.get_by_role("link", name="ŸÖÿÆÿ™ÿ®ÿ± ÿ≠ÿ±ŸÉÿ© ÿßŸÑÿ¥ÿÆÿµŸäÿßÿ™").click()
+    actor = page.locator(".qarton-character")
+    seek = page.locator("#seek")
+    def sample(ms, filename, label):
+        seek.evaluate("""(slider, value) => {
+            slider.value = value;
+            slider.dispatchEvent(new Event('input', {bubbles: true}));
+        }""", ms)
+        page.wait_for_function("""file => {
+            const img = document.querySelector('.qarton-character img');
+            return img?.src.endsWith('/' + file) && img.complete && img.naturalWidth > 0;
+        }""", arg=filename)
+        assert page.locator("#status").inner_text() == label
+
+    page.wait_for_function("!document.querySelector('#seek').disabled")
+    sample(1250, "walk-1.svg", "ŸÖÿ¥Ÿä")
+    sample(1900, "walk-1-blink.svg", "ŸÖÿ¥Ÿä")
+    sample(3400, "gesture-1.svg", "ÿ™ÿ≠ŸäŸëÿ©")
+    pose = page.locator("#camera").get_attribute("style")
+    sample(1250, "walk-1.svg", "ŸÖÿ¥Ÿä")
+    assert page.locator("#camera").get_attribute("style") != pose
+    page.locator("#toggle").click()
+    page.wait_for_function("Number(document.querySelector('#seek').value) > 1350")
+    page.locator("#toggle").click()
+    page.get_by_role("button", name="ÿ™ÿ¥ÿ∫ŸäŸÑ", exact=True).wait_for()
+    paused = seek.input_value()
+    page.wait_for_timeout(120)
+    assert seek.input_value() == paused
+    page.locator("#switch").click()
+    page.wait_for_selector('#stage[data-scene="evening"] .qarton-character')
+    assert actor.count() == 1 and seek.input_value() == "0"
+    page.locator("#close").click()
+    page.get_by_text("ÿ™ŸÖ ÿ•ÿ∫ŸÑÿßŸÇ ÿßŸÑŸÖÿ¥ŸáÿØ", exact=True).wait_for()
+    assert actor.count() == 0
+    page.emulate_media(reduced_motion="reduce")
+    page.reload()
+    page.wait_for_function("!document.querySelector('#seek').disabled")
+    sample(1900, "walk-0.svg", "ŸÖÿ¥Ÿä")
+    assert not page.evaluate("""performance.getEntriesByType('resource')
+        .some(entry => entry.name.includes('-blink.svg'))""")
+    page.emulate_media(reduced_motion="no-preference")
+    page.add_init_script("""window.labTones = 0;
+        window.labContexts = [];
+        window.AudioContext = class extends AudioContext {
+            constructor(...args) { super(...args); window.labContexts.push(this); }
+        };
+        const start = OscillatorNode.prototype.start;
+        OscillatorNode.prototype.start = function(...args) {
+            window.labTones++;
+            return start.apply(this, args);
+        };""")
+    page.goto(url)
+    page.get_by_role("link", name="ÿ•ÿ¥ÿßÿ±ÿ© ŸÖŸÜ ÿßŸÑŸÖÿ±ÿµÿØ").click()
+    page.wait_for_function("!document.querySelector('#play').disabled")
+    def move_to(ms):
+        page.locator("#seek").evaluate("""(el, t) => {
+            el.value = t; el.dispatchEvent(new Event('input', {bubbles:true}));
+        }""", ms)
+        page.wait_for_function("t => +document.querySelector('.camera').dataset.time === t", arg=ms)
+
+    move_to(1900)
+    assert page.locator(".cast img").get_attribute("src").endswith("walk-1-blink.svg")
+    assert page.locator(".qarton-layer img").count() == 2
+    camera = page.locator(".camera").evaluate("e => e.style.transform")
+    ridge = page.locator('[data-layer-id="ridge"]').evaluate("e => e.style.transform")
+    move_to(800)
+    assert page.locator(".camera").evaluate("e => e.style.transform") != camera
+    assert page.locator('[data-layer-id="ridge"]').evaluate("e => e.style.transform") != ridge
+    assert page.evaluate("labTones") == 0
+    page.locator("#play").click()
+    page.wait_for_function("labTones === 1")
+    page.locator("#pause").click()
+    page.get_by_role("button", name="ÿßÿ≥ÿ™ÿ¶ŸÜÿßŸÅ").wait_for()
+    frozen = page.locator(".camera").get_attribute("data-time")
+    page.wait_for_timeout(150)
+    assert page.locator(".camera").get_attribute("data-time") == frozen
+    move_to(3400)
+    assert "ÿ™ÿ≠ŸäŸëÿ©" in page.locator("#status").inner_text()
+    assert page.evaluate("labTones") == 1
+    page.locator("#replay").click()
+    page.wait_for_function("+document.querySelector('.camera').dataset.time < 500")
+    page.locator("#switch").click()
+    page.get_by_text("ÿ∂Ÿàÿ° ÿßŸÑŸÇŸÖÿ± ¬∑ ŸàŸÇŸàŸÅ", exact=True).wait_for()
+    assert page.locator(".camera").count() == 1
+    assert page.locator(".camera").get_attribute("data-time") == "0"
+    assert page.locator(".cast img").count() == 1
+    page.wait_for_function("labContexts.length === 1 && labContexts[0].state === 'closed'")
+    page.locator("#play").click()
+    page.wait_for_function("labContexts.length === 2 && labContexts[1].state === 'running'")
+    page.locator("#close").click()
+    page.get_by_text("ÿ™ŸÖ ÿ•ÿ∫ŸÑÿßŸÇ ÿßŸÑŸÖÿ¥ŸáÿØ", exact=True).wait_for()
+    assert page.locator("#stage img").count() == 0
+    assert page.evaluate("labContexts.every(context => context.state === 'closed')")
+    page.emulate_media(reduced_motion="reduce")
+    page.reload()
+    page.wait_for_function("!document.querySelector('#play').disabled")
+    camera = page.locator(".camera").evaluate("e => e.style.transform")
+    move_to(1900)
+    assert page.locator(".camera").evaluate("e => e.style.transform") == camera
+    assert page.locator(".cast img").get_attribute("src").endswith("walk-0.svg")
+
+    page.add_init_script("""(() => {
+        const nativeCreateImageBitmap = window.createImageBitmap.bind(window);
+        window.labBitmapCalls = [];
+        window.createImageBitmap = async (source, ...options) => {
+            if (source?.name === 'preview-test-slow.png')
+                await new Promise(resolve => setTimeout(resolve, 700));
+            const bitmap = await nativeCreateImageBitmap(source, ...options);
+            window.labBitmapCalls.push({name: source?.name, options: options[0] || {}, width: bitmap.width, height: bitmap.height});
+            return bitmap;
+        };
+    })();""")
+    page.goto(url + "examples/motion-studio-lab/")
+    export_support = page.evaluate("""() => {
+        const Recorder = window.MediaRecorder;
+        const candidates = {
+            mp4: ['video/mp4;codecs="avc1.42E01E,mp4a.40.2"', 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4'],
+            webm: ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
+        };
+        const available = Object.fromEntries(Object.entries(candidates).map(([format, values]) =>
+            [format, !!Recorder && values.some(type => { try { return Recorder.isTypeSupported(type); } catch { return false; } })]));
+        return {available, selected: document.querySelector('#exportFormat').value,
+                disabled: Object.fromEntries(['mp4', 'webm'].map(format => [format,
+                    document.querySelector(`#exportFormat option[value=${format}]`).disabled]))};
+    }""")
+    assert export_support["available"]["mp4"] or export_support["available"]["webm"]
+    assert export_support["selected"] == ("mp4" if export_support["available"]["mp4"] else "webm")
+    assert export_support["disabled"]["mp4"] == (not export_support["available"]["mp4"])
+    assert export_support["disabled"]["webm"] == (not export_support["available"]["webm"])
+    assert page.locator("#exportButton").is_disabled()
+    image_input = page.locator("#imageInput")
+    image_input.set_input_files(str(site / "examples/motion-studio-lab/preview-large.png"))
+    page.get_by_text("ÿßŸÑŸÖÿπÿßŸäŸÜÿ© ÿ¨ÿßŸáÿ≤ÿ©", exact=True).wait_for()
+    assert "preview-large.png" in page.locator("#imageName").inner_text()
+    large_decode = page.evaluate("labBitmapCalls.find(call => call.name === 'preview-large.png')")
+    assert large_decode and large_decode["options"].get("resizeWidth") == 1280
+    assert large_decode["width"] * large_decode["height"] <= 2_621_440
+    assert large_decode["width"] <= 2048 and large_decode["height"] <= 2048
+    native_project = re.search(r"(\d+) √ó (\d+) ¬∑ ŸÖÿπÿßŸäŸÜÿ© (\d+) √ó (\d+)", page.locator("#viewportValue").evaluate("el => el.textContent"))
+    assert native_project
+    assert abs(int(native_project.group(1)) / int(native_project.group(2)) - large_decode["width"] / large_decode["height"]) < 0.003
+
+    image_input.set_input_files(str(site / "examples/motion-studio-lab/preview-test.png"))
+    page.get_by_text("ÿßŸÑŸÖÿπÿßŸäŸÜÿ© ÿ¨ÿßŸáÿ≤ÿ©", exact=True).wait_for()
+    assert "preview-test.png" in page.locator("#imageName").inner_text()
+    assert page.locator("#exportButton").is_enabled()
+    normal_decode = page.evaluate("labBitmapCalls.find(call => call.name === 'preview-test.png')")
+    assert normal_decode and normal_decode["width"] <= 2048 and normal_decode["height"] <= 2048
+    square_project = re.search(r"(\d+) √ó (\d+) ¬∑ ŸÖÿπÿßŸäŸÜÿ© (\d+) √ó (\d+)", page.locator("#viewportValue").evaluate("el => el.textContent"))
+    assert square_project and square_project.group(1) == square_project.group(2)
+
+    assert page.locator("#aspectPreset").input_value() == "original"
+    assert page.locator("#fitMode").input_value() == "fit"
+    page.locator("#aspectPreset").select_option("portrait")
+    page.get_by_text("ÿßŸÑŸÖÿπÿßŸäŸÜÿ© ÿ¨ÿßŸáÿ≤ÿ©", exact=True).wait_for()
+    preview_dimension = page.locator("#stage").evaluate("el => [el.width, el.height]")
+    assert preview_dimension == [720, 1280]
+    assert "1080 √ó 1920" in page.locator("#viewportValue").inner_text()
+    fit_frame = page.locator("#stage").evaluate("el => el.toDataURL()")
+    page.locator("#fitMode").select_option("fill")
+    page.get_by_text("ÿßŸÑŸÖÿπÿßŸäŸÜÿ© ÿ¨ÿßŸáÿ≤ÿ©", exact=True).wait_for()
+    fill_frame = page.locator("#stage").evaluate("el => el.toDataURL()")
+    assert fit_frame != fill_frame
+
+    page.locator("#endZoom").evaluate("el => { el.value = '1.4'; el.dispatchEvent(new Event('input', {bubbles:true})); }")
+    page.locator("#endX").evaluate("el => { el.value = '42'; el.dispatchEvent(new Event('input', {bubbles:true})); }")
+    page.locator("#endY").evaluate("el => { el.value = '-21'; el.dispatchEvent(new Event('input', {bubbles:true})); }")
+
+    image_input.set_input_files({
+        "name": "preview-test-slow.png", "mimeType": "image/png",
+        "buffer": (site / "examples/motion-studio-lab/preview-test.png").read_bytes()
+    })
+    image_input.set_input_files(str(site / "examples/motion-studio-lab/preview-test.png"))
+    page.get_by_text("ÿßŸÑŸÖÿπÿßŸäŸÜÿ© ÿ¨ÿßŸáÿ≤ÿ©", exact=True).wait_for()
+    assert "preview-test.png" in page.locator("#imageName").inner_text()
+    page.wait_for_timeout(760)
+    assert "preview-test.png" in page.locator("#imageName").inner_text()
+    preview = page.locator("#stage")
+    studio_seek = page.locator("#seek")
+    def set_studio_time(ms):
+        studio_seek.evaluate("""(el, value) => {
+            el.value = String(value); el.dispatchEvent(new Event('input', {bubbles: true}));
+        }""", ms)
+    set_studio_time(6000)
+    at_middle = preview.evaluate("el => el.toDataURL()")
+    set_studio_time(0)
+    set_studio_time(6000)
+    assert preview.evaluate("el => el.toDataURL()") == at_middle
+    page.locator("#playPauseButton").click()
+    page.wait_for_function("Number(document.querySelector('#seek').value) > 6200")
+    page.locator("#playPauseButton").click()
+    paused_value = studio_seek.input_value()
+    page.locator("#aspectPreset").select_option("landscape")
+    page.get_by_text("ÿßŸÑŸÖÿπÿßŸäŸÜÿ© ÿ¨ÿßŸáÿ≤ÿ©", exact=True).wait_for()
+    assert studio_seek.input_value() == paused_value
+    assert page.locator("#playPauseButton").inner_text() == "ŸÖÿ™ÿßÿ®ÿπÿ©"
+    assert page.locator("#stage").evaluate("el => [el.width, el.height]") == [1280, 720]
+    page.wait_for_timeout(140)
+    assert studio_seek.input_value() == paused_value
+    page.locator("#aspectPreset").select_option("post")
+    page.get_by_text("ÿßŸÑŸÖÿπÿßŸäŸÜÿ© ÿ¨ÿßŸáÿ≤ÿ©", exact=True).wait_for()
+    assert studio_seek.input_value() == paused_value
+    assert page.locator("#playPauseButton").inner_text() == "ŸÖÿ™ÿßÿ®ÿπÿ©"
+    assert page.locator("#stage").evaluate("el => [el.width, el.height]") == [858, 1073]
+    page.locator("#replayButton").click()
+    page.wait_for_function("Number(document.querySelector('#seek').value) > 0")
+    page.wait_for_function("Number(document.querySelector('#seek').value) < 1000")
+    with page.expect_download() as download_info:
         page.locator("#saveProjectButton").click()
     project_download = download_info.value
     project_path = Path("/tmp/qarton-motion-studio-check.json")
