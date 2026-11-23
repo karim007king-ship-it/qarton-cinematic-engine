@@ -62,6 +62,33 @@
           </div>
           <p id="timelineMessage" class="timeline-message" role="status" aria-live="polite">المس التدريج للانتقال، أو أضف مفتاحًا عند Playhead.</p>
         </section>
+        <section class="timeline-card character-timeline-card" aria-labelledby="characterTimelineHeading">
+          <div class="timeline-heading">
+            <div><span class="eyebrow">تحرير مستقل عن الكاميرا</span><h2 id="characterTimelineHeading">مسار الشخصية</h2></div>
+            <span id="characterTimelineSelection" class="timeline-selection">لا يوجد مفتاح محدد</span>
+          </div>
+          <div id="characterTimelineRuler" class="timeline-ruler" aria-hidden="true"></div>
+          <div id="characterTimelineLane" class="timeline-lane character-timeline-lane" role="group" tabindex="0" aria-label="مسار الشخصية؛ المس للتنقل واسحب المفاتيح لتغيير توقيتها">
+            <div class="timeline-grid" aria-hidden="true"></div><div id="characterTimelinePlayhead" class="timeline-playhead" aria-hidden="true"></div>
+            <div id="characterTimelineMarkers" class="timeline-keyframes" aria-label="مفاتيح الشخصية"></div>
+          </div>
+          <div class="timeline-actions">
+            <button id="addCharacterKeyframe" class="secondary-button" type="button">＋ مفتاح شخصية عند المؤشر</button>
+            <button id="deleteCharacterKeyframe" class="secondary-button" type="button" disabled>حذف المفتاح المحدد</button>
+          </div>
+          <div class="keyframe-editor character-keyframe-editor" aria-label="خصائص حركة الشخصية">
+            <h3>خصائص المفتاح المحدد</h3>
+            <label>دوران الرأس <input data-character-channel="headRotation" type="number" min="-60" max="60" step="1" disabled></label>
+            <label>العين X <input data-character-channel="eyeX" type="number" min="-1" max="1" step="0.05" disabled></label>
+            <label>العين Y <input data-character-channel="eyeY" type="number" min="-1" max="1" step="0.05" disabled></label>
+            <label>الرمش <input data-character-channel="blink" type="number" min="0" max="1" step="0.05" disabled></label>
+            <label>فتح الفم <input data-character-channel="mouthOpen" type="number" min="0" max="1" step="0.05" disabled></label>
+            <label>دوران الجسم <input data-character-channel="bodyRotation" type="number" min="-30" max="30" step="1" disabled></label>
+            <label>التعبير <select data-character-channel="expression" disabled><option>neutral</option><option>happy</option><option>sad</option><option>surprised</option><option>angry</option></select></label>
+            <label>الإيماءة <select data-character-channel="gesture" disabled><option>neutral</option><option>wave</option><option>nod</option><option>shrug</option><option>point</option></select></label>
+          </div>
+          <p id="characterTimelineMessage" class="timeline-message" role="status" aria-live="polite">أضف مفاتيح الشخصية عند Playhead. تتزامن المعاينة مع ساعة الكاميرا.</p>
+        </section>
       </div>
 
       <div class="controls-panel">

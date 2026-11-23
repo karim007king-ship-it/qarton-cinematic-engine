@@ -35,9 +35,11 @@ canvas { width: 100%; height: auto; max-height: 68vh; object-fit: contain; displ
 .timeline-playhead { position: absolute; z-index: 1; top: 4px; bottom: 4px; left: 0%; width: 2px; transform: translateX(-1px); background: var(--gold); box-shadow: 0 0 8px #e7bd6988; pointer-events: none; }
 .timeline-playhead::before { position: absolute; top: -3px; left: 50%; width: 10px; height: 10px; border-radius: 3px; content: ""; background: var(--gold); transform: translateX(-50%) rotate(45deg); }
 .timeline-keyframes { position: absolute; inset: 0; direction: ltr; }
-.keyframe-marker { position: absolute; z-index: 2; top: 50%; left: var(--key-position); width: 44px; height: 52px; padding: 0; transform: translate(-50%, -50%); border: 0; border-radius: 10px; background: transparent; touch-action: none; }
-.keyframe-marker::before { position: absolute; inset: 15px; border: 2px solid #171820; border-radius: 4px; content: ""; background: #d8d6dc; box-shadow: 0 1px 5px #000a; transform: rotate(45deg); }
-.keyframe-marker[aria-pressed="true"]::before { background: var(--gold); box-shadow: 0 0 0 3px #e7bd6940, 0 1px 5px #000a; }
+.keyframe-marker, .character-keyframe-marker { position: absolute; z-index: 2; top: 50%; left: var(--key-position); width: 44px; height: 52px; padding: 0; transform: translate(-50%, -50%); border: 0; border-radius: 10px; background: transparent; touch-action: none; }
+.keyframe-marker::before, .character-keyframe-marker::before { position: absolute; inset: 15px; border: 2px solid #171820; border-radius: 4px; content: ""; background: #d8d6dc; box-shadow: 0 1px 5px #000a; transform: rotate(45deg); }
+.keyframe-marker[aria-pressed="true"]::before, .character-keyframe-marker[aria-pressed="true"]::before { background: var(--gold); box-shadow: 0 0 0 3px #e7bd6940, 0 1px 5px #000a; }
+.character-timeline-lane { background: linear-gradient(180deg, #171321, #101118); }
+.character-keyframe-marker::before { background: #b99af4; }
 .keyframe-marker:focus-visible { outline: 2px solid #fff; outline-offset: -4px; }
 .timeline-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
 .timeline-actions button { min-width: 0; min-height: 44px; padding: 8px 9px; font-size: 11px; }
@@ -46,6 +48,9 @@ canvas { width: 100%; height: auto; max-height: 68vh; object-fit: contain; displ
 .keyframe-editor label { min-width: 0; display: grid; gap: 4px; color: #aaa8b0; font-size: 10px; direction: ltr; }
 .keyframe-editor input { width: 100%; min-width: 0; height: 40px; padding: 5px 6px; border: 1px solid #484751; border-radius: 8px; color: #f2eee5; background: #111219; font-size: 12px; font-variant-numeric: tabular-nums; }
 .keyframe-editor input:disabled { opacity: .45; }
+.character-keyframe-editor { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.character-keyframe-editor select { width: 100%; min-width: 0; height: 40px; padding: 4px; border: 1px solid #484751; border-radius: 8px; color: #f2eee5; background: #111219; font-size: 11px; }
+.character-keyframe-editor select:disabled { opacity: .45; }
 .timeline-message { min-height: 1.6em; margin-top: 8px; color: var(--muted); font-size: 10px; line-height: 1.45; }
 .primary-button, .secondary-button, .icon-button { border: 1px solid transparent; border-radius: 10px; min-height: 42px; padding: 8px 14px; }
 .primary-button { color: #1b1710; background: var(--gold); font-weight: 700; min-width: 92px; }

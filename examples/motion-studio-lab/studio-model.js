@@ -1,4 +1,5 @@
 import { normalizeCameraPose, updateCameraKeyframe, validateCameraKeyframes } from "../../packages/motion-studio/keyframes.js";
+import { compileCharacterTrack, makeCharacterTrack } from "./studio-character-track.js";
 
 export const VIEWPORT = Object.freeze({ width: 720, height: 1280, fps: 24 });
 export const MIN_DURATION_MS = 3000;
@@ -132,14 +133,16 @@ export function playbackTimeMs({ startAtMs, pausedAtMs, durationMs }, nowMs) {
   return Math.max(0, Math.min(durationMs, elapsed));
 }
 
-export function makeProjectFile(project, imageInfo = null, settings = { aspectPreset: "original", fitMode: "fit" }) {
-  return {
+export function makeProjectFile(project, imageInfo = null, settings = { aspectPreset: "original", fitMode: "fit" }, characterTrack = null) {
+  const file = {
     format: PROJECT_FORMAT,
     version: 1,
     project,
     image: imageInfo ? { name: imageInfo.name, type: imageInfo.type, size: imageInfo.size } : null,
     settings: { aspectPreset: settings.aspectPreset, fitMode: settings.fitMode }
   };
+  if (characterTrack?.keyframes?.length) file.characterTrack = characterTrack;
+  return file;
 }
 
 export function parseProjectFile(text) {
@@ -150,8 +153,10 @@ export function parseProjectFile(text) {
   try { data = JSON.parse(text); }
   catch { throw new TypeError("ملف JSON غير صالح."); }
   const legacyEnvelope = ownObject(data) && Object.keys(data).sort().join(",") === "format,image,project,version";
-  const currentEnvelope = ownObject(data) && Object.keys(data).sort().join(",") === "format,image,project,settings,version";
-  if (!legacyEnvelope && !currentEnvelope ||
+  const keys = ownObject(data) ? Object.keys(data).sort().join(",") : "";
+  const legacyCharacterEnvelope = keys === "characterTrack,format,image,project,version";
+  const currentEnvelope = keys === "format,image,project,settings,version" || keys === "characterTrack,format,image,project,settings,version";
+  if (!legacyEnvelope && !legacyCharacterEnvelope && !currentEnvelope ||
       data.format !== PROJECT_FORMAT || data.version !== 1) {
     throw new TypeError("صيغة ملف Motion Studio غير مدعومة.");
   }
@@ -172,11 +177,14 @@ export function parseProjectFile(text) {
       !Number.isSafeInteger(data.image.size) || data.image.size < 0)) {
     throw new TypeError("بيانات الصورة المرتبطة بالمشروع غير صالحة.");
   }
-  const settings = legacyEnvelope ? null : data.settings;
+  const settings = legacyEnvelope || legacyCharacterEnvelope ? null : data.settings;
   if (settings !== null && (!ownObject(settings) || Object.keys(settings).sort().join(",") !== "aspectPreset,fitMode" ||
       !["original", "square", "portrait", "landscape", "post", "classic-landscape", "classic-portrait"].includes(settings.aspectPreset) ||
       !["fit", "fill"].includes(settings.fitMode))) {
     throw new TypeError("إعدادات أبعاد المشروع أو طريقة العرض غير صالحة.");
   }
-  return { project, image: data.image, settings };
+  const characterTrack = Object.hasOwn(data, "characterTrack") ? data.characterTrack : makeCharacterTrack();
+  try { compileCharacterTrack(characterTrack, project.durationMs); }
+  catch (error) { throw new TypeError(`مسار الشخصية في ملف المشروع غير صالح: ${error.message}`); }
+  return { project, image: data.image, settings, characterTrack };
 }

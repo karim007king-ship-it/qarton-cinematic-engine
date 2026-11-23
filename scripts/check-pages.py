@@ -381,6 +381,56 @@ def exercise(context, url):
     page.locator('.keyframe-marker[data-key-time="7000"]').evaluate("el => el.click()")
     page.locator("#deleteKeyframeButton").click()
     assert [int(value) for value in page.locator(".keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")] == [0, 12000]
+
+    # Exercise the separate character lane through real DOM events and Canvas sampling.
+    for position in (2000, 6000, 10000):
+        studio_seek.evaluate("""(el, value) => {
+            el.value = String(value); el.dispatchEvent(new Event('input', {bubbles:true}));
+        }""", position)
+        page.locator("#addCharacterKeyframe").click()
+    assert page.locator(".character-keyframe-marker").count() == 3
+    page.locator('.character-keyframe-marker[data-key-time="6000"]').evaluate("el => el.click()")
+    mouth = page.locator('[data-character-channel="mouthOpen"]')
+    mouth.fill("0.9")
+    mouth.dispatch_event("change")
+    assert page.locator("#characterTimelineSelection").inner_text() == "المحدد · 00:06.00"
+    studio_seek.evaluate("""(el, value) => {
+        el.value = String(value); el.dispatchEvent(new Event('input', {bubbles:true}));
+    }""", 4000)
+    character_frame = preview.evaluate("el => el.toDataURL()")
+    studio_seek.evaluate("""(el, value) => {
+        el.value = '0'; el.dispatchEvent(new Event('input', {bubbles:true}));
+        el.value = String(value); el.dispatchEvent(new Event('input', {bubbles:true}));
+    }""", 4000)
+    assert preview.evaluate("el => el.toDataURL()") == character_frame
+    # Cancelled pointer drags retain the last committed valid key time.
+    character_lane = page.locator("#characterTimelineLane")
+    character_box = character_lane.bounding_box()
+    page.locator('.character-keyframe-marker[data-key-time="6000"]').dispatch_event("pointerdown", {
+        "pointerId": 67, "pointerType": "touch", "isPrimary": True, "button": 0,
+        "clientX": character_box["x"] + character_box["width"] * .5,
+        "clientY": character_box["y"] + character_box["height"] / 2
+    })
+    character_lane.dispatch_event("pointermove", {
+        "pointerId": 67, "pointerType": "touch", "isPrimary": True, "button": 0,
+        "clientX": character_box["x"] + character_box["width"] * .58,
+        "clientY": character_box["y"] + character_box["height"] / 2
+    })
+    character_lane.dispatch_event("pointercancel", {"pointerId": 67, "pointerType": "touch", "isPrimary": True, "button": 0})
+    assert page.locator('.character-keyframe-marker[data-key-time="6960"]').count() == 1
+    with page.expect_download() as character_download_info:
+        page.locator("#saveProjectButton").click()
+    character_path = Path("/tmp/qarton-motion-studio-character.json")
+    character_download_info.value.save_as(character_path)
+    character_data = json.loads(character_path.read_text())
+    assert [key["atMs"] for key in character_data["characterTrack"]["keyframes"]] == [2000, 6960, 10000]
+    page.locator("#loadProjectButton").click()
+    page.locator("#projectInput").set_input_files(str(character_path))
+    page.get_by_text("فُتح المشروع؛ اختر الصورة المرتبطة به", exact=True).wait_for()
+    assert page.locator(".character-keyframe-marker").count() == 3
+    page.locator('.character-keyframe-marker[data-key-time="6960"]').evaluate("el => el.click()")
+    page.locator("#deleteCharacterKeyframe").click()
+    assert [int(value) for value in page.locator(".character-keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")] == [2000, 10000]
     page.goto(url + "examples/character-animation-lab/")
     page.wait_for_function("document.querySelector('#status')?.textContent.includes('المشهد جاهز')")
     actor = page.locator("#character")
