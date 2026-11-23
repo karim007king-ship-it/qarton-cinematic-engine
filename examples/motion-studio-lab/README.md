@@ -1,10 +1,10 @@
-# QARTON Motion Studio Lab (L6-B)
+# QARTON Motion Studio Lab (L8-B)
 
-An Android-first, image-only preview editor for the S2-B `StudioProjectV1` core. It imports `compileProject`, `sampleFrame`, and `drawFrame` from `@qarton/cinematic-engine/motion-studio`. The app owns image selection, decoding, downsampling, project JSON, and the playback clock; camera interpolation, timeline sampling, and Canvas drawing remain in the engine.
+An Android-first Motion Studio editor built around the `StudioProjectV1` core. It imports `compileProject`, `sampleFrame`, and `drawFrame` from `@qarton/cinematic-engine/motion-studio` and reuses the L8-A `compileCinematicAudioProject` / `createCinematicAudioPlayer` APIs. The existing camera and character tracks remain intact; audio timing now drives their shared scene time while audio clips and manual dialogue Visemes are edited in their own lanes.
 
 ## Try it on Android
 
-1. For this Draft PR, download the `motion-studio-l6b-android-preview` artifact from the latest successful **Motion Studio Android preview** Actions run for PR #116, extract it in Android Files, and open its single `index.html` with Chrome. That generated file bundles its CSS and JavaScript and is designed for `file://`; do not open the repository's regular multi-file `examples/motion-studio-lab/index.html` from `file://`, because it uses ES modules and an import map. The artifact is separate from the official Pages deployment and expires after 30 days.
+1. For this Draft PR, download the `motion-studio-l8b-android-preview` artifact from the latest successful **Motion Studio Android preview** Actions run for this PR, extract it in Android Files, and open its single `index.html` with Chrome. That generated file bundles its CSS and JavaScript and is designed for `file://`; do not open the repository's regular multi-file `examples/motion-studio-lab/index.html` from `file://`, because it uses ES modules and an import map. The artifact is separate from the official Pages deployment and expires after 30 days.
 2. In Chrome on Android, tap **اختر صورة من الهاتف** and select a local JPG, PNG, WebP, AVIF, or GIF. Image bytes stay in the browser; the lab makes a safe preview surface matching the selected aspect ratio.
 3. Set a duration from 3 to 60 seconds and choose the image aspect and Fit/Fill mode. The Timeline below the preview has a time ruler, playhead, and one diamond per camera key. Tap the ruler lane to seek; tap **＋ مفتاح عند المؤشر** to add a key at that time; tap a diamond to select it; drag a diamond horizontally to move it; edit its X, Y, Zoom, or Rotation fields; use **حذف المفتاح المحدد** to remove only that key.
 4. Use Play/Pause and Replay to check playback. The Canvas samples the same compiled project at absolute timestamps; repeated seeks to the same time are deterministic. Legacy start/end sliders remain available and update only their respective endpoint value without dropping intermediate keys.
@@ -14,11 +14,20 @@ An Android-first, image-only preview editor for the S2-B `StudioProjectV1` core.
 
 The sample image `preview-test.png` is used only by automated browser checks. Face animation and lip sync are outside this lab.
 
+## L8-B audio and dialogue timeline
+
+- The audio Timeline has Dialogue, Music, and SFX lanes. Import a local MP3, M4A/AAC, WAV, OGG, or WebM file up to 20 MiB. The browser must be able to read valid metadata and duration (at most one hour); imported bytes stay local.
+- Add clips at the playhead, select and drag them, edit start/duration and clip/track/master volume. Clips must fit inside the project length. Lost pointer capture and cancelled drags keep the last valid committed position; export locks editing.
+- Dialogue clips can use `ar` (Modern Standard Arabic) or `tn` (Tunisian). Add manual `rest`, `open`, `wide`, `round`, `closed`, or `teeth` Viseme cues at the playhead, with an optional short phoneme label. This is authored timing data, not automatic speech recognition or automatic lip-sync.
+- JSON stores tracks, cues, language, volumes and audio asset metadata, never audio bytes. After reopening, choose each linked local file again. Filename, MIME type and size reconnect it to its saved `assetId`; if those differ, it remains unlinked until corrected.
+- The existing L5 video export flow remains unchanged and does not render these new audio tracks into exported video. Export integration requires a separate reviewed task. Browser media-element scheduling is not sample-accurate and varies across Android devices.
+
 ## Editor module boundaries
 
 - `studio.js` wires project/image state, Canvas preview, playback, and the existing L5 export flow.
 - `studio-timeline.js` owns Timeline rendering, selection, touch/pointer lifecycle, keyboard focus restoration, and keyframe edits through the L6-A APIs. It receives the active project, compiled sample, seek, and commit operations through callbacks; it does not implement camera interpolation or export logic.
 - `studio-model.js` validates project/JSON updates transactionally; `studio-export-core.js` retains the existing L5 export scheduling and recorder helpers.
+- `studio-audio-model.js` validates immutable clip/Viseme edits and local file limits; `studio-audio-timeline.js` owns audio lane rendering, selection, dragging, capture loss, and export locking. Audio sampling, scene clock, adapter cleanup and recovery come from the L8-A core.
 
 ## Project and preview dimensions
 
@@ -46,9 +55,9 @@ The sample image `preview-test.png` is used only by automated browser checks. Fa
 
 ## Standalone Android preview artifact
 
-- The `Motion Studio Android preview` workflow builds a distinct artifact for each supported feature branch. For this PR, look for `motion-studio-l6b-android-preview` in the L6-B workflow run's **Artifacts** section; it expires after 30 days. This workflow does not publish through GitHub Pages or deploy to the official site.
+- The `Motion Studio Android preview` workflow builds a distinct artifact for each supported feature branch. For this PR, look for `motion-studio-l8b-android-preview` in this PR's workflow run **Artifacts** section; it expires after 30 days. This workflow does not publish through GitHub Pages or deploy to the official site.
 - On Android, open the PR's Actions run in Chrome, download the artifact ZIP, extract it with Files, tap `index.html`, and choose Chrome. The bundled one-file page supports `file://`; the regular multi-file repository page still needs a web server because it uses ES modules and an import map. The included `README.txt` repeats the launch and Timeline gestures.
-- Chromium checks the generated file via `file://`, mobile touch interactions, keyframe add/edit/drag/delete, JSON round-trip, deterministic seek, and the existing WebM recording flow with audio, 3-second and 10-second runs, playback metadata, download, cancellation, retry, and image replacement. MP4 availability varies and is covered by the MIME/error fallback tests; an actual Android MP4 encoder is not emulated in CI.
+- Chromium checks the generated file via `file://`, mobile touch interactions, audio import/clip movement/cancel, manual Viseme editing, shared playback seek, audio JSON round-trip/relink, and the existing WebM recording flow with test audio, 3-second and 10-second runs, playback metadata, download, cancellation, retry, and image replacement. MP4 availability varies and is covered by the existing MIME/error fallback tests; an actual Android MP4 encoder is not emulated in CI.
 - The artifact link is tied to a workflow run and expires after 30 days. If it expires, use the newest run for this branch. The ZIP is usable without a computer: it contains one standalone HTML file plus the Android instructions.
 
 ### HONOR 400 Pro device test
@@ -57,6 +66,7 @@ The sample image `preview-test.png` is used only by automated browser checks. Fa
 2. Save JSON, reload it, relink the image, and verify all key times and values remain. Delete a middle key and confirm the others remain. Try a duplicate-time drag and a duration reduction that would cross a middle key; both should be rejected without losing data.
 3. Confirm Chrome reports the export controls as available. Choose **3 seconds + Economy**, export, and verify the result shows its actual MIME, dimensions, size, duration, plays in the preview, and saves to Downloads. Repeat using the keys at the start, midpoint, and end; the exported motion should follow them.
 4. Repeat with **9:16 + Fill** and **16:9 + Fit**, test supported MP4 and WebM separately, enable the test audio, and do a 10-second export. Cancel an export and retry, then change the image after completion.
+5. Import one short MP3/WAV from Files, add it to each lane type as needed, adjust its start and volume, and listen while seeking and replaying. Add Arabic and Tunisian Viseme cues, save JSON, reopen it, select the source audio file again, and verify the `assetId` reconnects and the mouth sample follows the same scene time. Confirm actual audio decoder, latency and recording-output limits on the handset.
 3. Try MP4 and WebM only when each is marked supported. If MP4 is the default, verify the finished recorder MIME and playback; if a format fails, record the displayed error and try the other supported choice.
 4. Test 10 seconds with synchronized audio pulses, then test 30/60 seconds only if the phone remains responsive and output stays below the displayed 24 MiB bound. Cancel an export and immediately start another; also try changing the image/project while recording and confirm it cancels cleanly.
 5. Save a JSON project, export a video, then reopen the JSON and relink the image. Confirm aspect, Fit/Fill, camera controls, and seek remain unchanged. Compare output playback and audio sync on-device; browser automation cannot verify the phone encoder, decoder, filesystem prompt, or thermals.

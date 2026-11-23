@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#101118">
   <title>QARTON Motion Studio Lab</title>
-  <link rel="stylesheet" href="./studio.css?v=l6b-timeline-01">
+  <link rel="stylesheet" href="./studio.css?v=l8b-audio-timeline-01">
   <script type="importmap">
     {
       "imports": {
@@ -88,6 +88,35 @@
             <label>الإيماءة <select data-character-channel="gesture" disabled><option>neutral</option><option>wave</option><option>nod</option><option>shrug</option><option>point</option></select></label>
           </div>
           <p id="characterTimelineMessage" class="timeline-message" role="status" aria-live="polite">أضف مفاتيح الشخصية عند Playhead. تتزامن المعاينة مع ساعة الكاميرا.</p>
+        </section>
+        <section class="timeline-card audio-timeline-card" aria-labelledby="audioTimelineHeading">
+          <div class="timeline-heading"><div><span class="eyebrow">الصوت والحوار</span><h2 id="audioTimelineHeading">مسارات الصوت</h2></div><span id="audioSelection" class="timeline-selection">لا يوجد مقطع محدد</span></div>
+          <label class="file-picker audio-file-picker" for="audioInput"><span>＋</span><span><strong>استيراد صوت من الهاتف</strong><small id="audioFileName">MP3 · M4A · AAC · WAV · OGG · WebM · حتى 20 MiB</small></span></label>
+          <input id="audioInput" class="sr-only" type="file" accept="audio/mpeg,audio/mp4,audio/aac,audio/wav,audio/x-wav,audio/ogg,audio/webm,.mp3,.m4a,.aac,.wav,.ogg,.oga,.webm">
+          <div class="audio-track-actions">
+            <label>المسار <select id="audioTrackType"><option value="dialogue">حوار</option><option value="music">موسيقى</option><option value="sfx">مؤثرات</option></select></label>
+            <button id="addAudioClip" class="secondary-button" type="button" disabled>＋ أضف عند المؤشر</button>
+            <button id="deleteAudioClip" class="secondary-button" type="button" disabled>حذف المقطع</button>
+          </div>
+          <div id="audioTimelineRuler" class="timeline-ruler" aria-hidden="true"></div>
+          <div id="audioTracks" class="audio-tracks" aria-label="مسارات الصوت والحوار"></div>
+          <div class="keyframe-editor audio-clip-editor">
+            <h3>المقطع المحدد</h3>
+            <label>البداية (ms) <input id="audioClipStart" type="number" min="0" step="100" inputmode="numeric" disabled></label>
+            <label>المدة (ms) <input id="audioClipDuration" type="number" min="1" step="100" inputmode="numeric" disabled></label>
+            <label>الصوت <input id="audioClipVolume" type="range" min="0" max="1" step="0.01" disabled></label>
+            <label class="audio-track-master">الصوت الرئيسي <input id="audioMasterVolume" type="range" min="0" max="1" step="0.01" value="1"></label>
+          </div>
+          <div class="viseme-editor" aria-labelledby="visemeHeading">
+            <h3 id="visemeHeading">مفاتيح الفم اليدوية</h3>
+            <p class="hint">اختر العربية الفصحى أو التونسية وأضف Viseme عند المؤشر. لا يوجد توليد تلقائي من الصوت.</p>
+            <label>اللغة <select id="dialogueLanguage"><option value="ar">العربية الفصحى</option><option value="tn">التونسية</option></select></label>
+            <label>Viseme <select id="visemeType"><option value="rest">راحة</option><option value="open">مفتوح</option><option value="wide">واسع</option><option value="round">مستدير</option><option value="closed">مغلق</option><option value="teeth">أسنان</option></select></label>
+            <label>Phoneme اختياري <input id="phonemeLabel" maxlength="24" type="text" autocomplete="off"></label>
+            <button id="addViseme" class="secondary-button" type="button" disabled>＋ Viseme عند المؤشر</button>
+            <div id="visemeMarkers" class="viseme-markers" aria-label="مفاتيح Viseme"></div>
+          </div>
+          <p id="audioTimelineMessage" class="timeline-message" role="status" aria-live="polite">الصوت والحركة يستخدمان ساعة المشهد نفسها. دقة الجدولة تعتمد على المتصفح والجهاز.</p>
         </section>
       </div>
 
@@ -189,6 +218,6 @@
     <p id="errorMessage" class="error-message" role="alert" hidden></p>
     <footer>نسخة تجريبية · التصدير محلي على الجهاز · اختبر الصيغة الناتجة قبل اعتمادها</footer>
   </main>
-  <script type="module" src="./studio.js?v=l6b-timeline-01"></script>
+  <script type="module" src="./studio.js?v=l8b-audio-timeline-01"></script>
 </body>
 </html>

@@ -1,5 +1,5 @@
 import { compileProject, drawFrame, sampleFrame } from "@qarton/cinematic-engine/motion-studio";
-import { createRequestToken, makeProject, makeProjectFile, parseProjectFile, playbackTimeMs, prepareProjectUpdate, VIEWPORT } from "./studio-model.js?v=l7b-character-01";
+import { createRequestToken, makeProject, makeProjectFile, parseProjectFile, prepareProjectUpdate, VIEWPORT } from "./studio-model.js?v=l7b-character-01";
 import { decodeImageBitmap } from "./studio-image.js?v=l4-flex-01";
 import { DEFAULT_OUTPUT_VIEWPORT, imageRect, inferAspectPreset, projectSizeForPreset, safePreviewSize } from "./studio-dimensions.js?v=l4-flex-01";
 import {
@@ -10,6 +10,9 @@ import {
 import { createStudioTimeline } from "./studio-timeline.js?v=l6b-cleanup-01";
 import { compileCharacterTrack, drawCharacter, makeCharacterTrack } from "./studio-character-track.js?v=l7b-character-01";
 import { createCharacterTimeline } from "./studio-character-timeline.js?v=l7b-character-01";
+import { compileAudioTracks, makeAudioTracks, addAudioClip, editAudioClip, deleteAudioClip, setAudioTrackVolume, setAudioViseme, validateAudioFile, readAudioDuration } from "./studio-audio-model.js?v=l8b-audio-timeline-01";
+import { createStudioAudioTimeline } from "./studio-audio-timeline.js?v=l8b-audio-timeline-01";
+import { createCinematicAudioPlayer } from "../../src/audio/cinematic-audio-core.js";
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("stage");
@@ -34,6 +37,7 @@ const playPauseButton = $("playPauseButton");
 const aspectSelect = $("aspectPreset");
 const fitSelect = $("fitMode");
 const imageRequest = createRequestToken();
+const audioRequest = createRequestToken();
 const exportLock = createExportLock();
 const exportFormat = $("exportFormat");
 const exportDuration = $("exportDuration");
@@ -69,7 +73,6 @@ let project = makeProject({
 });
 let currentMs = 0;
 let isPlaying = false;
-let playbackStartAt = 0;
 let pausedAt = null;
 let rafId = 0;
 
@@ -83,6 +86,17 @@ let timelineEditor = null;
 let characterTrack = makeCharacterTrack();
 let characterAnimation = compileCharacterTrack(characterTrack, project.durationMs);
 let characterTimeline = null;
+let audioTracks = makeAudioTracks();
+let audioAssets = [];
+const audioFiles = new Map();
+let activeAudioAssetId = null;
+let audioAssetSerial = 0;
+let audioPlayer = null;
+let audioCompiled = compileAudioTracks(audioTracks, project.durationMs);
+let audioMasterVolume = 1;
+let audioClipSelection = null;
+let audioTimeline = null;
+let pendingAudioRequest = null;
 
 function makePlaceholder(size) {
   const surface = document.createElement("canvas");
@@ -156,7 +170,7 @@ function refreshExportControls() {
   if (preferred && (!exportFormatInitialized || exportCapability[exportFormat.value]?.length === 0)) exportFormat.value = preferred;
   exportFormatInitialized = true;
   const available = Boolean(preferred);
-  exportButton.disabled = !available || !currentFileInfo || Boolean(activeExport) || pendingImageRequest !== null;
+  exportButton.disabled = !available || !currentFileInfo || Boolean(activeExport) || pendingImageRequest !== null || pendingAudioRequest !== null;
   exportFormat.disabled = Boolean(activeExport);
   if (!exportStatusHasResult && !activeExport) {
     exportStatus.textContent = !hasMediaRecorder
@@ -167,11 +181,13 @@ function refreshExportControls() {
   }
 }
 function setExportBusy(busy) {
-  for (const id of ["imageInput", "projectInput", "aspectPreset", "fitMode", "duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "saveProjectButton", "loadProjectButton"]) {
+  for (const id of ["imageInput", "projectInput", "audioInput", "audioTrackType", "addAudioClip", "deleteAudioClip", "audioClipStart", "audioClipDuration", "audioClipVolume", "dialogueLanguage", "visemeType", "phonemeLabel", "addViseme", "audioMasterVolume", "aspectPreset", "fitMode", "duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "saveProjectButton", "loadProjectButton"]) {
     $(id).disabled = busy;
   }
   timelineEditor?.setBusy(busy);
   characterTimeline?.setBusy(busy);
+  audioTimeline?.setBusy(busy);
+  renderAudioInspector();
   exportButton.disabled = busy || !currentFileInfo || !exportCapability.mp4.length && !exportCapability.webm.length;
   exportFormat.disabled = busy;
   exportDuration.disabled = busy;
@@ -326,14 +342,85 @@ async function exportVideoFile() {
     refreshExportControls();
   }
 }
-function renderAt(timeMs) {
+function audioAdapterPlay(assetId, options) {
+  const asset = audioFiles.get(assetId);
+  if (!asset?.url) throw new Error("ملف صوت محلي غير مرتبط. أعد اختياره من الهاتف قبل التشغيل.");
+  const voice = new Audio(asset.url);
+  voice.preload = "auto";
+  voice.loop = options.loop;
+  voice.volume = Math.max(0, Math.min(1, options.volume));
+  if (options.offsetMs > 0) voice.currentTime = options.offsetMs / 1000;
+  const started = voice.play();
+  started?.catch((error) => {
+    if (audioPlayer && audioPlayer.state === "playing") {
+      try { audioPlayer.pause(); } catch { try { audioPlayer.recover(); } catch { /* Failure is surfaced in the editor status below. */ } }
+      isPlaying = false; cancelAnimationFrame(rafId); playPauseButton.textContent = "متابعة";
+      $("audioTimelineMessage").textContent = `تعذر تشغيل الصوت على هذا الجهاز: ${errorText(error)}`;
+    }
+  });
+  return voice;
+}
+function audioAdapterStop(voice) { voice.pause(); voice.removeAttribute("src"); voice.load(); }
+function audioAdapterSetVolume(voice, value) { voice.volume = Math.max(0, Math.min(1, value)); }
+function rebuildAudioPlayer({ resume = false } = {}) {
+  const wasPlaying = resume && isPlaying;
+  if (audioPlayer) { try { audioPlayer.destroy(); } catch (error) { $("audioTimelineMessage").textContent = `تنظيف مورد صوت: ${errorText(error)}`; } }
+  audioCompiled = compileAudioTracks(audioTracks, project.durationMs);
+  audioPlayer = createCinematicAudioPlayer(audioCompiled, {
+    play: audioAdapterPlay, stop: audioAdapterStop, setVolume: audioAdapterSetVolume,
+    masterVolume: audioMasterVolume, now: () => performance.now()
+  });
+  if (currentMs > 0) audioPlayer.seek(currentMs);
+  if (wasPlaying) audioPlayer.play();
+}
+function commitAudioTracks(nextTracks, { resume = true } = {}) {
+  if (activeExport) throw new Error("أوقف تصدير الفيديو قبل تعديل مسارات الصوت.");
+  const nextCompiled = compileAudioTracks(nextTracks, project.durationMs);
+  audioTracks = nextTracks;
+  audioCompiled = nextCompiled;
+  rebuildAudioPlayer({ resume });
+  audioTimeline?.render();
+  renderAudioInspector();
+  renderAt(currentMs);
+}
+function selectedAudioClip() {
+  if (!audioClipSelection) return null;
+  const track = audioTracks.find(({ id }) => id === audioClipSelection.trackId);
+  const clip = track?.clips.find(({ id }) => id === audioClipSelection.clipId);
+  return track && clip ? { track, clip } : null;
+}
+function renderAudioInspector() {
+  const selected = selectedAudioClip();
+  $("audioSelection").textContent = selected ? `${selected.track.type === "dialogue" ? "حوار" : selected.track.type === "music" ? "موسيقى" : "مؤثر"} · ${selected.clip.name || selected.clip.id}` : "لا يوجد مقطع محدد";
+  for (const [id, value] of [["audioClipStart", selected?.clip.startMs], ["audioClipDuration", selected?.clip.durationMs], ["audioClipVolume", selected?.clip.volume ?? 1]]) {
+    $(id).disabled = !selected || Boolean(activeExport);
+    $(id).value = selected ? String(value) : "";
+  }
+  $("deleteAudioClip").disabled = !selected || Boolean(activeExport);
+  $("addViseme").disabled = !selected || selected.track.type !== "dialogue" || Boolean(activeExport);
+  const markerRoot = $("visemeMarkers"); markerRoot.replaceChildren();
+  for (const cue of selected?.clip.visemes ?? []) {
+    const marker = document.createElement("button"); marker.type = "button"; marker.className = "viseme-marker";
+    marker.textContent = `${formatTime(selected.clip.startMs + cue.atMs)} · ${cue.viseme}${cue.phoneme ? ` · ${cue.phoneme}` : ""}`;
+    marker.setAttribute("aria-label", `Viseme ${cue.viseme} عند ${cue.atMs} ملي ثانية`);
+    marker.addEventListener("click", () => { seekTo(selected.clip.startMs + cue.atMs); }); markerRoot.append(marker);
+  }
+  $("addAudioClip").disabled = !activeAudioAssetId || Boolean(activeExport);
+}
+function renderAt(timeMs, preparedAudioSample = null) {
   currentMs = Math.max(0, Math.min(project.durationMs, timeMs));
   drawFrame(context, sampleFrame(compiled, currentMs));
-  if (characterTrack.keyframes.length) drawCharacter(context, characterAnimation.sample(currentMs), previewViewport.width, previewViewport.height);
+  const audioSample = preparedAudioSample ?? audioPlayer?.sample(currentMs);
+  if (characterTrack.keyframes.length || audioSample?.dialogue?.length) {
+    const pose = { ...characterAnimation.sample(currentMs) };
+    if (audioSample?.dialogue?.length) pose.mouthOpen = Math.max(...audioSample.dialogue.map(({ mouthOpen }) => mouthOpen));
+    drawCharacter(context, pose, previewViewport.width, previewViewport.height);
+  }
   seek.value = String(currentMs);
   timeReadout.textContent = formatTime(currentMs);
   timelineEditor?.renderPlayhead();
   characterTimeline?.render();
+  audioTimeline?.renderPlayhead();
 }
 function inputNumber(id) { return Number($(id).value); }
 function syncOutputs() {
@@ -392,6 +479,7 @@ function updateProject({ resetPlayback = false, viewport = project.viewport, edi
   clearFailure();
   try {
     const durationMs = inputNumber("duration") * 1000;
+    compileAudioTracks(audioTracks, durationMs);
     const nextViewport = { width: viewport.width, height: viewport.height, fps: VIEWPORT.fps };
     const nextPreview = safePreviewSize(nextViewport.width, nextViewport.height);
     const nextImageSource = currentFileInfo ? imageSource : makePlaceholder(nextPreview);
@@ -420,29 +508,42 @@ function updateProject({ resetPlayback = false, viewport = project.viewport, edi
     project = nextProject;
     compiled = nextCompiled;
     characterAnimation = nextCharacterAnimation;
+    if (resetPlayback) stopPlayback();
+    rebuildAudioPlayer({ resume: !resetPlayback });
     if (selectedWasLast && project.camera?.length) timelineEditor.selectTime(project.camera.at(-1).atMs);
     if (!currentFileInfo) placeholder = imageSource = nextImageSource;
     applyCanvasDimensions(nextPreview);
     seek.max = String(durationMs);
-    if (resetPlayback) stopPlayback();
     syncLegacyCameraInputs();
     timelineEditor?.render();
     refreshCharacterTimeline();
+    audioTimeline?.render(); renderAudioInspector();
     renderAt(Math.min(currentMs, durationMs));
     status.textContent = currentFileInfo ? "المعاينة جاهزة" : "اختر صورة للبدء";
     syncOutputs();
   } catch (error) { fail(error); }
 }
 function stopPlayback() {
+  if (audioPlayer?.state === "playing") {
+    try { const sampled = audioPlayer.pause(); currentMs = sampled.timeMs; }
+    catch (error) { try { audioPlayer.recover(); } catch { /* Keep the last stable preview time after adapter failure. */ } $("audioTimelineMessage").textContent = `توقفت المعاينة بعد خطأ صوتي: ${errorText(error)}`; }
+  }
   isPlaying = false;
   pausedAt = null;
   cancelAnimationFrame(rafId);
   playPauseButton.textContent = "تشغيل";
 }
-function playbackTick(now) {
+function playbackTick() {
   if (!isPlaying) return;
-  const elapsed = playbackTimeMs({ startAtMs: playbackStartAt, pausedAtMs: pausedAt, durationMs: project.durationMs }, now);
-  renderAt(elapsed);
+  let audioSample;
+  try { audioSample = audioPlayer.tick(); }
+  catch (error) {
+    try { audioPlayer.recover(); } catch { /* Adapter cleanup failure is reported to the user below. */ }
+    isPlaying = false; pausedAt = currentMs; playPauseButton.textContent = "متابعة"; cancelAnimationFrame(rafId);
+    $("audioTimelineMessage").textContent = `تعذر تحديث مسار الصوت: ${errorText(error)}`; return;
+  }
+  const elapsed = audioSample.timeMs;
+  renderAt(elapsed, audioSample);
   if (elapsed >= project.durationMs) {
     stopPlayback();
     return;
@@ -451,16 +552,33 @@ function playbackTick(now) {
 }
 function play() {
   if (currentMs >= project.durationMs) renderAt(0);
-  pausedAt = null;
-  playbackStartAt = performance.now() - currentMs;
-  isPlaying = true;
-  playPauseButton.textContent = "إيقاف مؤقت";
-  rafId = requestAnimationFrame(playbackTick);
+  try {
+    const sample = audioPlayer.play();
+    pausedAt = null; currentMs = sample.timeMs; isPlaying = true;
+    playPauseButton.textContent = "إيقاف مؤقت";
+    renderAt(currentMs, sample); rafId = requestAnimationFrame(playbackTick);
+  } catch (error) {
+    try { audioPlayer.recover(); } catch { /* Keep player in the recoverable paused state. */ }
+    isPlaying = false; pausedAt = currentMs; playPauseButton.textContent = "متابعة";
+    $("audioTimelineMessage").textContent = `تعذر تشغيل الصوت: ${errorText(error)}`;
+  }
 }
 function replay() {
   stopPlayback();
-  renderAt(0);
-  play();
+  try { const sample = audioPlayer.replay(); renderAt(sample.timeMs, sample); isPlaying = true; pausedAt = null; playPauseButton.textContent = "إيقاف مؤقت"; rafId = requestAnimationFrame(playbackTick); }
+  catch (error) { try { audioPlayer.recover(); } catch { /* Retry remains possible after resource cleanup. */ } $("audioTimelineMessage").textContent = `تعذرت إعادة التشغيل: ${errorText(error)}`; }
+}
+function seekTo(timeMs) {
+  const wasPlaying = isPlaying;
+  try {
+    const sampled = audioPlayer.seek(timeMs);
+    if (!wasPlaying && sampled.timeMs < project.durationMs) playPauseButton.textContent = pausedAt === null ? "تشغيل" : "متابعة";
+    renderAt(sampled.timeMs, sampled);
+  } catch (error) {
+    try { audioPlayer.recover(); } catch { /* Preserve the last committed preview and expose the adapter failure. */ }
+    isPlaying = false; pausedAt = currentMs; playPauseButton.textContent = "متابعة";
+    $("audioTimelineMessage").textContent = `تعذر الانتقال إلى الزمن المطلوب: ${errorText(error)}`;
+  }
 }
 function dimensionsForCurrentPreset() {
   const size = projectSizeForPreset(aspectPreset, selectedImageDimensions?.width, selectedImageDimensions?.height);
@@ -512,7 +630,8 @@ async function refreshSelectedImage() {
 
 playPauseButton.addEventListener("click", () => {
   if (isPlaying) {
-    pausedAt = currentMs;
+    try { const sampled = audioPlayer.pause(); pausedAt = sampled.timeMs; renderAt(sampled.timeMs, sampled); }
+    catch (error) { try { audioPlayer.recover(); } catch { /* Keep audio resources in the paused recovery state. */ } pausedAt = currentMs; $("audioTimelineMessage").textContent = `تعذر إيقاف الصوت بأمان: ${errorText(error)}`; }
     isPlaying = false;
     cancelAnimationFrame(rafId);
     playPauseButton.textContent = "متابعة";
@@ -520,9 +639,7 @@ playPauseButton.addEventListener("click", () => {
 });
 $("replayButton").addEventListener("click", replay);
 seek.addEventListener("input", () => {
-  renderAt(Number(seek.value));
-  if (isPlaying) playbackStartAt = performance.now() - currentMs;
-  if (currentMs < project.durationMs && !isPlaying) playPauseButton.textContent = pausedAt === null ? "تشغيل" : "متابعة";
+  seekTo(Number(seek.value));
 });
 timelineEditor = createStudioTimeline({
   lane: timelineLane,
@@ -540,9 +657,8 @@ timelineEditor = createStudioTimeline({
   isBusy: () => Boolean(activeExport),
   formatTime,
   samplePose: (compiledProject, atMs) => sampleFrame(compiledProject, atMs).camera,
-  seek: (atMs) => renderAt(atMs),
+  seek: (atMs) => seekTo(atMs),
   syncPlaybackSeek: () => {
-    if (isPlaying) playbackStartAt = performance.now() - currentMs;
     if (currentMs < project.durationMs && !isPlaying) {
       playPauseButton.textContent = pausedAt === null ? "تشغيل" : "متابعة";
     }
@@ -559,17 +675,112 @@ characterTimeline = createCharacterTimeline({
   getTrack: () => characterTrack, getDuration: () => project.durationMs, getTime: () => currentMs,
   getAnimation: () => characterAnimation, isBusy: () => Boolean(activeExport),
   seek: atMs => {
-    renderAt(atMs);
-    if (isPlaying) playbackStartAt = performance.now() - currentMs;
+    seekTo(atMs);
   },
   commit: commitCharacterTrack, formatTime
 });
+audioTimeline = createStudioAudioTimeline({
+  root: $("audioTracks"), ruler: $("audioTimelineRuler"), getTracks: () => audioTracks,
+  getDuration: () => project.durationMs, getCurrentTime: () => currentMs,
+  isBusy: () => Boolean(activeExport), formatTime,
+  onSelect: (selection) => { audioClipSelection = selection; const selected = selectedAudioClip(); if (selected) $("audioTrackType").value = selected.track.type; renderAudioInspector(); },
+  onMove: (trackId, clipId, startMs) => commitAudioTracks(editAudioClip(audioTracks, project.durationMs, trackId, clipId, { startMs })),
+  onVolume: (trackId, volume) => {
+    try { audioTracks = setAudioTrackVolume(audioTracks, project.durationMs, trackId, volume); audioPlayer.setTrackVolume(trackId, volume); }
+    catch (error) { $("audioTimelineMessage").textContent = errorText(error); }
+  },
+  onDragEnd: ({ cancelled }) => { if (cancelled) $("audioTimelineMessage").textContent = "أُلغي السحب؛ حُفظ آخر توقيت صالح للمقطع."; }
+});
+audioTimeline.render();
+$("audioMasterVolume").value = String(audioMasterVolume);
+renderAudioInspector();
 function renderCharacterRuler() {
   const ruler = $("characterTimelineRuler"); ruler.replaceChildren();
   for (let i = 0; i <= 4; i++) { const label = document.createElement("span"); label.textContent = formatTime(Math.round(project.durationMs * i / 4)); ruler.append(label); }
 }
 const renderCharacterTimeline = characterTimeline.render.bind(characterTimeline);
 function refreshCharacterTimeline() { renderCharacterRuler(); renderCharacterTimeline(); }
+$("audioInput").addEventListener("change", async () => {
+  const file = $("audioInput").files?.[0];
+  if (!file) return;
+  const requestToken = audioRequest.begin();
+  pendingAudioRequest = requestToken; refreshExportControls();
+  try {
+    const metadata = validateAudioFile(file);
+    $("audioTimelineMessage").textContent = "جارٍ التحقق من فك ترميز الصوت وقراءة مدته…";
+    const durationMs = await readAudioDuration(file);
+    if (!audioRequest.isCurrent(requestToken)) return;
+    const known = audioAssets.find((asset) => asset.name === metadata.name && asset.type === metadata.mime && asset.size === metadata.size);
+    const id = known?.id ?? `audio-asset-${Date.now()}-${++audioAssetSerial}`;
+    const url = URL.createObjectURL(file);
+    const previous = audioFiles.get(id);
+    if (previous?.url) URL.revokeObjectURL(previous.url);
+    audioFiles.set(id, { file, url, durationMs });
+    if (!known) audioAssets = [...audioAssets, { id, ...metadata }];
+    activeAudioAssetId = id;
+    rebuildAudioPlayer({ resume: isPlaying });
+    $("audioFileName").textContent = `${metadata.name} · ${(metadata.size / 1024 / 1024).toFixed(2)} MiB · ${(durationMs / 1000).toFixed(2)} ث`;
+    $("audioTimelineMessage").textContent = `تم التحقق من الملف. مدته ${(durationMs / 1000).toFixed(2)} ثانية؛ أضفه إلى مسار عند المؤشر.`;
+    renderAudioInspector();
+  } catch (error) { if (audioRequest.isCurrent(requestToken)) $("audioTimelineMessage").textContent = errorText(error); }
+  finally { if (pendingAudioRequest === requestToken) pendingAudioRequest = null; if (audioRequest.isCurrent(requestToken)) $("audioInput").value = ""; refreshExportControls(); }
+});
+$("addAudioClip").addEventListener("click", () => {
+  if (activeExport || !activeAudioAssetId) return;
+  try {
+    const trackType = $("audioTrackType").value;
+    const track = audioTracks.find((item) => item.type === trackType);
+    if (!track) throw new Error("المسار الصوتي المحدد غير موجود.");
+    const startMs = Math.min(currentMs, project.durationMs - 1);
+    const metadata = audioAssets.find(({ id }) => id === activeAudioAssetId);
+    const source = audioFiles.get(activeAudioAssetId);
+    const durationMs = Math.min(source?.durationMs ?? 1000, project.durationMs - startMs);
+    const clip = { id: `audio-clip-${Date.now()}-${++audioAssetSerial}`, asset: activeAudioAssetId, name: metadata?.name, startMs, durationMs, volume: 1,
+      ...(trackType === "dialogue" ? { language: $("dialogueLanguage").value, visemes: [] } : {}) };
+    const next = addAudioClip(audioTracks, project.durationMs, track.id, clip);
+    audioClipSelection = { trackId: track.id, clipId: clip.id };
+    commitAudioTracks(next);
+    audioTimeline.select(audioClipSelection);
+    $("audioTimelineMessage").textContent = `أُضيف المقطع عند ${formatTime(startMs)}.`;
+  } catch (error) { $("audioTimelineMessage").textContent = errorText(error); }
+});
+$("deleteAudioClip").addEventListener("click", () => {
+  if (activeExport || !audioClipSelection) return;
+  try {
+    audioTracks = deleteAudioClip(audioTracks, project.durationMs, audioClipSelection.trackId, audioClipSelection.clipId);
+    audioClipSelection = null; rebuildAudioPlayer({ resume: true }); audioTimeline.clearSelection(); renderAudioInspector(); renderAt(currentMs);
+  } catch (error) { $("audioTimelineMessage").textContent = errorText(error); }
+});
+for (const [id, field] of [["audioClipStart", "startMs"], ["audioClipDuration", "durationMs"], ["audioClipVolume", "volume"]]) {
+  $(id).addEventListener("change", () => {
+    const selected = selectedAudioClip(); if (!selected || activeExport) return;
+    try {
+      const value = Number($(id).value);
+      const next = editAudioClip(audioTracks, project.durationMs, selected.track.id, selected.clip.id, { [field]: value });
+      commitAudioTracks(next); audioTimeline.select(audioClipSelection);
+      $("audioTimelineMessage").textContent = "تم تحديث المقطع الصوتي.";
+    } catch (error) { $("audioTimelineMessage").textContent = errorText(error); renderAudioInspector(); }
+  });
+}
+$("dialogueLanguage").addEventListener("change", () => {
+  const selected = selectedAudioClip(); if (!selected || selected.track.type !== "dialogue" || activeExport) return;
+  try { commitAudioTracks(editAudioClip(audioTracks, project.durationMs, selected.track.id, selected.clip.id, { language: $("dialogueLanguage").value })); }
+  catch (error) { $("audioTimelineMessage").textContent = errorText(error); }
+});
+$("addViseme").addEventListener("click", () => {
+  const selected = selectedAudioClip(); if (!selected || selected.track.type !== "dialogue" || activeExport) return;
+  try {
+    const atMs = currentMs - selected.clip.startMs;
+    const next = setAudioViseme(audioTracks, project.durationMs, selected.track.id, selected.clip.id, atMs, $("visemeType").value, $("phonemeLabel").value);
+    commitAudioTracks(next); audioTimeline.select(audioClipSelection);
+    $("audioTimelineMessage").textContent = `أُضيف مفتاح ${$("visemeType").selectedOptions[0].textContent} عند ${formatTime(currentMs)}.`;
+  } catch (error) { $("audioTimelineMessage").textContent = errorText(error); }
+});
+$("audioMasterVolume").addEventListener("input", () => {
+  audioMasterVolume = Number($("audioMasterVolume").value);
+  try { audioPlayer.setMasterVolume(audioMasterVolume); }
+  catch (error) { $("audioTimelineMessage").textContent = errorText(error); }
+});
 for (const id of ["duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY"]) {
   $(id).addEventListener("input", () => updateProject({ resetPlayback: id === "duration", editedControl: id }));
 }
@@ -622,7 +833,7 @@ imageInput.addEventListener("change", async () => {
 $("saveProjectButton").addEventListener("click", () => {
   clearFailure();
   try {
-    const data = JSON.stringify(makeProjectFile(project, currentFileInfo, { aspectPreset, fitMode }, characterTrack), null, 2);
+    const data = JSON.stringify(makeProjectFile(project, currentFileInfo, { aspectPreset, fitMode }, characterTrack, audioTracks, audioAssets, audioMasterVolume), null, 2);
     const url = URL.createObjectURL(new Blob([data], { type: "application/json" }));
     const link = document.createElement("a");
     link.href = url;
@@ -636,6 +847,7 @@ $("loadProjectButton").addEventListener("click", () => projectInput.click());
 projectInput.addEventListener("change", async () => {
   invalidateExport("فُتح ملف مشروع جديد.");
   imageRequest.begin();
+  audioRequest.begin(); pendingAudioRequest = null;
   clearFailure();
   const file = projectInput.files?.[0];
   if (!file) return;
@@ -650,6 +862,15 @@ projectInput.addEventListener("change", async () => {
     aspectSelect.value = aspectPreset;
     fitSelect.value = fitMode;
     timelineEditor.clearSelection();
+    stopPlayback();
+    if (audioPlayer) { try { audioPlayer.destroy(); } catch (error) { $("audioTimelineMessage").textContent = `تعذر تنظيف الصوت القديم: ${errorText(error)}`; } }
+    for (const { url } of audioFiles.values()) if (url) URL.revokeObjectURL(url);
+    audioFiles.clear(); activeAudioAssetId = null;
+    audioTracks = parsed.audioTracks; audioAssets = parsed.audioAssets; audioMasterVolume = parsed.audioMasterVolume;
+    audioClipSelection = null;
+    $("audioMasterVolume").value = String(audioMasterVolume);
+    $("audioFileName").textContent = audioAssets.length ? "أعد اختيار ملفات الصوت المرتبطة بالمشروع من الهاتف" : "MP3 · M4A · AAC · WAV · OGG · WebM · حتى 20 MiB";
+    audioTimeline.clearSelection(); renderAudioInspector();
     project = parsed.project;
     characterTrack = parsed.characterTrack;
     characterAnimation = parsedCharacterAnimation;
@@ -693,6 +914,10 @@ for (const control of [exportFormat, exportDuration, exportQuality, exportAudioE
 }
 window.addEventListener("pagehide", () => {
   cancelActiveExport("غادرت الصفحة أثناء التصدير.");
+  audioRequest.begin();
+  try { audioPlayer?.destroy(); } catch { /* Browser is unloading; all local playback handles are being discarded. */ }
+  for (const { url } of audioFiles.values()) if (url) URL.revokeObjectURL(url);
+  audioFiles.clear();
   if (exportVideoUrl) URL.revokeObjectURL(exportVideoUrl);
   exportVideoUrl = null;
 });

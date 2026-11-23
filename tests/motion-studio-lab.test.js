@@ -282,7 +282,7 @@ test("browser module uses the engine sampling API and includes deterministic see
   assert.match(source, /sampleFrame\(compiled, currentMs\)/);
   assert.match(source, /seek\.addEventListener\("input"/);
   assert.match(source, /function replay\(\)/);
-  assert.match(source, /renderAt\(0\);\s*play\(\);/);
+  assert.match(source, /audioPlayer\.replay\(\)/);
   assert.match(source, /decodeImageBitmap\(file/);
   assert.match(source, /imageRequest\.isCurrent\(requestToken\)/);
   assert.match(source, /projectInput\.addEventListener\("change"[\s\S]*?imageRequest\.begin\(\)/);
@@ -295,7 +295,7 @@ test("browser module uses the engine sampling API and includes deterministic see
   assert.match(source, /exportCharacter\.sample\(projectMs\)/);
   assert.match(source, /drawCharacter\(ctx/);
   assert.match(source, /characterTimeline\?\.setBusy\(busy\)/);
-  assert.match(source, /makeProjectFile\(project, currentFileInfo, \{ aspectPreset, fitMode \}, characterTrack\)/);
+  assert.match(source, /makeProjectFile\(project, currentFileInfo, \{ aspectPreset, fitMode \}, characterTrack, audioTracks, audioAssets, audioMasterVolume\)/);
   assert.match(characterTimeline, /pointercancel/);
   assert.match(characterTimeline, /lostpointercapture/);
   assert.match(characterTimeline, /moveCharacterKeyframe/);

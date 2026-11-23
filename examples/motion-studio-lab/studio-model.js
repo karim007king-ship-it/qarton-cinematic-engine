@@ -1,5 +1,6 @@
 import { normalizeCameraPose, updateCameraKeyframe, validateCameraKeyframes } from "../../packages/motion-studio/keyframes.js";
 import { compileCharacterTrack, makeCharacterTrack } from "./studio-character-track.js";
+import { compileAudioTracks } from "./studio-audio-model.js";
 
 export const VIEWPORT = Object.freeze({ width: 720, height: 1280, fps: 24 });
 export const MIN_DURATION_MS = 3000;
@@ -133,7 +134,7 @@ export function playbackTimeMs({ startAtMs, pausedAtMs, durationMs }, nowMs) {
   return Math.max(0, Math.min(durationMs, elapsed));
 }
 
-export function makeProjectFile(project, imageInfo = null, settings = { aspectPreset: "original", fitMode: "fit" }, characterTrack = null) {
+export function makeProjectFile(project, imageInfo = null, settings = { aspectPreset: "original", fitMode: "fit" }, characterTrack = null, audioTracks = [], audioAssets = [], audioMasterVolume = 1) {
   const file = {
     format: PROJECT_FORMAT,
     version: 1,
@@ -142,6 +143,9 @@ export function makeProjectFile(project, imageInfo = null, settings = { aspectPr
     settings: { aspectPreset: settings.aspectPreset, fitMode: settings.fitMode }
   };
   if (characterTrack?.keyframes?.length) file.characterTrack = characterTrack;
+  if (audioTracks?.some((track) => track.clips?.length)) file.audioTracks = audioTracks;
+  if (audioAssets?.length) file.audioAssets = audioAssets.map(({ id, name, type, size }) => ({ id, name, type, size }));
+  if (audioMasterVolume !== 1) file.audioMasterVolume = audioMasterVolume;
   return file;
 }
 
@@ -152,11 +156,14 @@ export function parseProjectFile(text) {
   let data;
   try { data = JSON.parse(text); }
   catch { throw new TypeError("ملف JSON غير صالح."); }
-  const legacyEnvelope = ownObject(data) && Object.keys(data).sort().join(",") === "format,image,project,version";
   const keys = ownObject(data) ? Object.keys(data).sort().join(",") : "";
-  const legacyCharacterEnvelope = keys === "characterTrack,format,image,project,version";
-  const currentEnvelope = keys === "format,image,project,settings,version" || keys === "characterTrack,format,image,project,settings,version";
-  if (!legacyEnvelope && !legacyCharacterEnvelope && !currentEnvelope ||
+  const baseKeys = new Set(["format", "image", "project", "version"]);
+  const hasSettings = Object.hasOwn(data ?? {}, "settings");
+  const optionalKeys = ["settings", "characterTrack", "audioTracks", "audioAssets", "audioMasterVolume"];
+  const allowedKeys = new Set([...baseKeys, ...optionalKeys.filter((key) => Object.hasOwn(data ?? {}, key))]);
+  const validEnvelope = ownObject(data) && keys.split(",").every((key) => allowedKeys.has(key)) &&
+    [...allowedKeys].every((key) => Object.hasOwn(data, key));
+  if (!validEnvelope ||
       data.format !== PROJECT_FORMAT || data.version !== 1) {
     throw new TypeError("صيغة ملف Motion Studio غير مدعومة.");
   }
@@ -177,7 +184,7 @@ export function parseProjectFile(text) {
       !Number.isSafeInteger(data.image.size) || data.image.size < 0)) {
     throw new TypeError("بيانات الصورة المرتبطة بالمشروع غير صالحة.");
   }
-  const settings = legacyEnvelope || legacyCharacterEnvelope ? null : data.settings;
+  const settings = hasSettings ? data.settings : null;
   if (settings !== null && (!ownObject(settings) || Object.keys(settings).sort().join(",") !== "aspectPreset,fitMode" ||
       !["original", "square", "portrait", "landscape", "post", "classic-landscape", "classic-portrait"].includes(settings.aspectPreset) ||
       !["fit", "fill"].includes(settings.fitMode))) {
@@ -186,5 +193,22 @@ export function parseProjectFile(text) {
   const characterTrack = Object.hasOwn(data, "characterTrack") ? data.characterTrack : makeCharacterTrack();
   try { compileCharacterTrack(characterTrack, project.durationMs); }
   catch (error) { throw new TypeError(`مسار الشخصية في ملف المشروع غير صالح: ${error.message}`); }
-  return { project, image: data.image, settings, characterTrack };
+  const audioTracks = data.audioTracks ?? [];
+  try { compileAudioTracks(audioTracks, project.durationMs); }
+  catch (error) { throw new TypeError(`مسارات الصوت في ملف المشروع غير صالحة: ${error.message}`); }
+  const audioAssets = data.audioAssets ?? [];
+  if (!Array.isArray(audioAssets) || audioAssets.length > 256 || audioAssets.some((asset) => !ownObject(asset) ||
+      Object.keys(asset).sort().join(",") !== "id,name,size,type" || typeof asset.id !== "string" || !asset.id.trim() ||
+      asset.id.length > 128 || typeof asset.name !== "string" || asset.name.length > 180 || typeof asset.type !== "string" ||
+      !Number.isSafeInteger(asset.size) || asset.size < 1 || asset.size > 20 * 1024 * 1024) ||
+      new Set(audioAssets.map((asset) => asset.id)).size !== audioAssets.length) {
+    throw new TypeError("بيانات ملفات الصوت المرتبطة بالمشروع غير صالحة.");
+  }
+  const referencedAssets = new Set(audioTracks.flatMap((track) => track.clips.map((clip) => clip.asset)));
+  if ([...referencedAssets].some((assetId) => !audioAssets.some((asset) => asset.id === assetId))) {
+    throw new TypeError("ملف المشروع لا يحتوي بيانات وصفية لملف صوت مرتبط بمقطع.");
+  }
+  const audioMasterVolume = data.audioMasterVolume ?? 1;
+  if (!Number.isFinite(audioMasterVolume) || audioMasterVolume < 0 || audioMasterVolume > 1) throw new TypeError("مستوى الصوت الرئيسي في المشروع غير صالح.");
+  return { project, image: data.image, settings, characterTrack, audioTracks, audioAssets, audioMasterVolume };
 }

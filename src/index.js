@@ -20,6 +20,7 @@ export { createAudioCueController } from "./audio/audio-cue-controller.js";
 export { createAdaptivePerformanceMonitor, createRuntimeActivityGate } from "./runtime/adaptive-performance.js";
 export { createCinematicRuntime } from "./runtime/cinematic-runtime.js";
 export { createHTMLAudioAdapter } from "./audio/html-audio-adapter.js";
+export { compileCinematicAudioProject, createCinematicAudioPlayer } from "./audio/cinematic-audio-core.js";
 export { createScenePackage } from "./scene/scene-package.js";
 export { createSceneClock } from "./motion/scene-clock.js";
 export { createCinematicPlayback } from "./runtime/cinematic-playback.js";

@@ -3,6 +3,9 @@ from pathlib import Path
 from os import environ
 import shutil
 import tempfile
+import math
+import struct
+import wave
 
 from playwright.sync_api import sync_playwright
 
@@ -19,6 +22,12 @@ assert "<style>" in html and "</style>" in html
 with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
     other_image = Path(tmp) / "alternate-photo.png"
     shutil.copyfile(sample, other_image)
+    audio_sample = Path(tmp) / "dialogue.wav"
+    with wave.open(str(audio_sample), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(22050)
+        wav.writeframes(b"".join(struct.pack("<h", int(900 * math.sin(2 * math.pi * 440 * i / 22050))) for i in range(22050 * 2)))
     with sync_playwright() as pw:
         executable = environ.get("CHROMIUM_EXECUTABLE_PATH")
         browser = pw.chromium.launch(executable_path=executable) if executable else pw.chromium.launch(channel="chrome")
@@ -42,6 +51,50 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         image_input = page.locator("#imageInput")
         image_input.set_input_files(str(sample))
         page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+        page.locator("#audioInput").set_input_files(str(audio_sample))
+        page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('تم التحقق من الملف')")
+        page.locator("#audioTrackType").select_option("dialogue")
+        page.locator("#addAudioClip").click()
+        assert page.locator(".audio-clip").count() == 1
+        page.locator("#audioClipStart").fill("500")
+        page.locator("#audioClipStart").dispatch_event("change")
+        page.locator("#seek").evaluate("""(el, value) => { el.value = String(value); el.dispatchEvent(new Event('input', {bubbles: true})); }""", 800)
+        page.locator("#visemeType").select_option("wide")
+        page.locator("#phonemeLabel").fill("مَ")
+        page.locator("#addViseme").click()
+        assert page.locator(".viseme-marker").count() == 1
+        assert "dialogue.wav" in page.locator("#audioSelection").inner_text()
+        page.locator("#audioMasterVolume").evaluate("el => { el.value = '0.7'; el.dispatchEvent(new Event('input', {bubbles: true})); }")
+        audio_lane = page.locator("#audioTracks .audio-track-lane[data-track-id='audio-dialogue']")
+        audio_box = audio_lane.bounding_box()
+        audio_clip = page.locator(".audio-clip")
+        audio_clip.dispatch_event("pointerdown", {"pointerId": 170, "pointerType": "touch", "isPrimary": True, "button": 0,
+            "clientX": audio_box["x"] + audio_box["width"] * 0.05, "clientY": audio_box["y"] + audio_box["height"] / 2})
+        audio_lane.dispatch_event("pointermove", {"pointerId": 170, "pointerType": "touch", "isPrimary": True, "button": 0,
+            "clientX": audio_box["x"] + audio_box["width"] * 0.12, "clientY": audio_box["y"] + audio_box["height"] / 2})
+        audio_lane.dispatch_event("pointercancel", {"pointerId": 170, "pointerType": "touch", "isPrimary": True, "button": 0})
+        assert "00:01.34" in page.locator(".audio-clip").get_attribute("aria-label"), "cancelled audio drag keeps its last valid timing"
+        page.locator("#seek").evaluate("""(el, value) => { el.value = String(value); el.dispatchEvent(new Event('input', {bubbles: true})); }""", 0)
+        page.locator("#playPauseButton").click()
+        page.wait_for_function("Number(document.querySelector('#seek').value) > 100", timeout=3000)
+        page.locator("#playPauseButton").click()
+        assert page.locator("#playPauseButton").inner_text() == "متابعة"
+        with page.expect_download() as project_download:
+            page.locator("#saveProjectButton").click()
+        project_path = Path(tmp) / "audio-project.json"
+        project_download.value.save_as(project_path)
+        saved_project = __import__("json").loads(project_path.read_text())
+        assert saved_project["audioTracks"][0]["clips"][0]["asset"] == saved_project["audioAssets"][0]["id"]
+        assert "data:audio" not in project_path.read_text()
+        page.locator("#projectInput").set_input_files(str(project_path))
+        page.wait_for_function("document.querySelector('#status').textContent.includes('فُتح المشروع')")
+        assert page.locator(".audio-clip").count() == 1
+        page.locator("#audioInput").set_input_files(str(audio_sample))
+        page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('تم التحقق من الملف')")
+        assert not page.locator("#addAudioClip").is_disabled(), "relinked local audio keeps the saved asset id"
+        image_input.set_input_files(str(sample))
+        page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+        page.locator("#seek").evaluate("""(el, value) => { el.value = String(value); el.dispatchEvent(new Event('input', {bubbles: true})); }""", 0)
         page.locator("#seek").evaluate("""(el, value) => {
           el.value = String(value); el.dispatchEvent(new Event('input', {bubbles: true}));
         }""", 4000)
