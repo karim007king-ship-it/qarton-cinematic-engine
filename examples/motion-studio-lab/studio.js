@@ -2,6 +2,11 @@ import { compileProject, drawFrame, sampleFrame } from "@qarton/cinematic-engine
 import { createRequestToken, makeProject, makeProjectFile, parseProjectFile, playbackTimeMs, VIEWPORT } from "./studio-model.js?v=l4-flex-01";
 import { decodeImageBitmap } from "./studio-image.js?v=l4-flex-01";
 import { DEFAULT_OUTPUT_VIEWPORT, imageRect, inferAspectPreset, projectSizeForPreset, safePreviewSize } from "./studio-dimensions.js?v=l4-flex-01";
+import {
+  EXPORT_PROFILES, chooseDefaultFormat, createExportLock, createRecordingSession, estimateVideoBytes,
+  exportDurationMs, exportViewportFor, extensionForMime, projectForRaster, projectTimeAt,
+  scheduleTestPulses, supportedCandidates
+} from "./studio-export-core.js?v=l5-export-01";
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("stage");
@@ -17,6 +22,25 @@ const playPauseButton = $("playPauseButton");
 const aspectSelect = $("aspectPreset");
 const fitSelect = $("fitMode");
 const imageRequest = createRequestToken();
+const exportLock = createExportLock();
+const exportFormat = $("exportFormat");
+const exportDuration = $("exportDuration");
+const exportQuality = $("exportQuality");
+const exportAudioEnabled = $("exportAudioEnabled");
+const exportButton = $("exportButton");
+const cancelExportButton = $("cancelExportButton");
+const exportStatus = $("exportStatus");
+const exportProgress = $("exportProgress");
+const exportVideo = $("exportVideo");
+const exportDownload = $("exportDownload");
+const exportMetadata = $("exportMetadata");
+const exportError = $("exportError");
+let activeExport = null;
+let exportVideoUrl = null;
+let exportCapability = { mp4: [], webm: [] };
+let exportFormatInitialized = false;
+let pendingImageRequest = null;
+let exportStatusHasResult = false;
 
 let aspectPreset = "original";
 let fitMode = "fit";
@@ -41,25 +65,6 @@ canvas.height = previewViewport.height;
 canvas.style.aspectRatio = `${previewViewport.width} / ${previewViewport.height}`;
 
 const imageProvider = { get: (assetId) => project.layers.some((layer) => layer.assetId === assetId) ? imageSource : null };
-function cameraKeys(keys, scaleX, scaleY) {
-  return keys.map((key) => ({ ...key, value: { ...key.value, x: key.value.x * scaleX, y: key.value.y * scaleY } }));
-}
-function previewProject(sourceProject) {
-  const preview = {
-    ...sourceProject,
-    viewport: { ...previewViewport, fps: sourceProject.viewport.fps },
-    layers: sourceProject.layers.map((layer) => {
-      if (!layer.track) return layer;
-      return { ...layer, track: cameraKeys(layer.track, previewViewport.width / sourceProject.viewport.width, previewViewport.height / sourceProject.viewport.height) };
-    })
-  };
-  if (sourceProject.camera) {
-    preview.camera = cameraKeys(sourceProject.camera,
-      previewViewport.width / sourceProject.viewport.width,
-      previewViewport.height / sourceProject.viewport.height);
-  }
-  return preview;
-}
 let compiled;
 
 function makePlaceholder(size) {
@@ -86,6 +91,189 @@ function clearFailure() { errorMessage.hidden = true; errorMessage.textContent =
 function formatTime(ms) {
   const seconds = Math.max(0, ms) / 1000;
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${(seconds % 60).toFixed(2).padStart(5, "0")}`;
+}
+function clearExportResult() {
+  exportStatusHasResult = false;
+  exportError.hidden = true;
+  exportError.textContent = "";
+  exportVideo.pause();
+  exportVideo.removeAttribute("src");
+  exportVideo.load();
+  exportVideo.hidden = true;
+  exportDownload.hidden = true;
+  exportDownload.removeAttribute("href");
+  exportMetadata.textContent = "لم يُنشأ فيديو بعد.";
+  exportProgress.value = 0;
+  if (exportVideoUrl) URL.revokeObjectURL(exportVideoUrl);
+  exportVideoUrl = null;
+}
+function cancelActiveExport(reason = "تغير المشروع أثناء التصدير.") {
+  const running = activeExport;
+  if (!running) return;
+  const abortError = new DOMException(reason, "AbortError");
+  running.controller.abort(abortError);
+  running.session?.cancel(abortError);
+  if (running.rafId) cancelAnimationFrame(running.rafId);
+  exportStatus.textContent = "جارٍ إيقاف التسجيل وتنظيف الموارد…";
+}
+function invalidateExport(reason) {
+  cancelActiveExport(reason);
+  clearExportResult();
+  refreshExportControls();
+}
+function refreshExportControls() {
+  const RecorderClass = typeof MediaRecorder === "function" ? MediaRecorder : null;
+  const hasMediaRecorder = Boolean(RecorderClass && typeof canvas.captureStream === "function");
+  exportCapability = {
+    mp4: hasMediaRecorder ? supportedCandidates(RecorderClass, "mp4") : [],
+    webm: hasMediaRecorder ? supportedCandidates(RecorderClass, "webm") : []
+  };
+  for (const format of ["mp4", "webm"]) {
+    const option = exportFormat.querySelector(`option[value="${format}"]`);
+    option.disabled = exportCapability[format].length === 0;
+    option.textContent = `${format.toUpperCase()}${option.disabled ? " · غير مدعوم" : " · متاح"}`;
+  }
+  const preferred = chooseDefaultFormat(RecorderClass);
+  if (preferred && (!exportFormatInitialized || exportCapability[exportFormat.value]?.length === 0)) exportFormat.value = preferred;
+  exportFormatInitialized = true;
+  const available = Boolean(preferred);
+  exportButton.disabled = !available || !currentFileInfo || Boolean(activeExport) || pendingImageRequest !== null;
+  exportFormat.disabled = Boolean(activeExport);
+  if (!exportStatusHasResult && !activeExport) {
+    exportStatus.textContent = !hasMediaRecorder
+      ? "التصدير غير متاح: هذا المتصفح لا يوفر MediaRecorder وCanvas captureStream."
+      : available
+        ? `فحص MediaRecorder: MP4 ${exportCapability.mp4.length ? "مدعوم" : "غير مدعوم"}، WebM ${exportCapability.webm.length ? "مدعوم" : "غير مدعوم"}. قد يرفض الجهاز بدء التسجيل رغم الفحص.`
+        : "لا يدعم هذا المتصفح WebM ولا MP4 عبر MediaRecorder.";
+  }
+}
+function setExportBusy(busy) {
+  for (const id of ["imageInput", "projectInput", "aspectPreset", "fitMode", "duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "saveProjectButton", "loadProjectButton"]) {
+    $(id).disabled = busy;
+  }
+  exportButton.disabled = busy || !currentFileInfo || !exportCapability.mp4.length && !exportCapability.webm.length;
+  exportFormat.disabled = busy;
+  exportDuration.disabled = busy;
+  exportQuality.disabled = busy;
+  exportAudioEnabled.disabled = busy;
+  cancelExportButton.hidden = !busy;
+  cancelExportButton.disabled = !busy;
+}
+function createTestAudioGraph() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) throw new Error("المسار الصوتي الاختباري غير متاح؛ أوقف خيار الصوت أو استخدم متصفحًا يدعم Web Audio.");
+  const audio = new AudioContextClass();
+  const destination = audio.createMediaStreamDestination();
+  const gain = audio.createGain();
+  gain.gain.value = 0.18;
+  gain.connect(destination);
+  return { audio, stream: destination.stream, gain };
+}
+function renderExportFrame(ctx, exportCompiled, elapsedMs, exportLengthMs) {
+  const projectMs = projectTimeAt(elapsedMs, exportLengthMs, exportCompiled.durationMs);
+  drawFrame(ctx, sampleFrame(exportCompiled, projectMs));
+}
+async function exportVideoFile() {
+  const unlock = exportLock.acquire();
+  if (!unlock) return;
+  if (!currentFileInfo) {
+    unlock();
+    exportStatus.textContent = "اختر صورة قبل تصدير الفيديو.";
+    return;
+  }
+  const candidates = exportCapability[exportFormat.value] || [];
+  if (!candidates.length) {
+    unlock();
+    exportStatus.textContent = `الصيغة ${exportFormat.value.toUpperCase()} غير مدعومة في هذا المتصفح.`;
+    return;
+  }
+
+  clearFailure();
+  clearExportResult();
+  const controller = new AbortController();
+  const running = { controller, session: null, rafId: 0 };
+  activeExport = running;
+  setExportBusy(true);
+  exportError.hidden = true;
+  const quality = exportQuality.value;
+  const profile = EXPORT_PROFILES[quality];
+  const exportLengthMs = exportDurationMs(exportDuration.value, project.durationMs);
+  const expectedBytes = estimateVideoBytes(exportLengthMs, profile.videoBitsPerSecond + (exportAudioEnabled.checked ? 96_000 : 0));
+  const maxVideoBytes = 24 * 1024 * 1024;
+  let stream;
+  let audioGraph;
+  let exportCanvas;
+  let result = null;
+  try {
+    if (expectedBytes > maxVideoBytes) throw new RangeError("الحجم المتوقع يتجاوز 24 ميغابايت؛ اختر مدة أو جودة أقل.");
+    const rasterViewport = exportViewportFor(project.viewport, quality);
+    exportCanvas = document.createElement("canvas");
+    exportCanvas.width = rasterViewport.width;
+    exportCanvas.height = rasterViewport.height;
+    const exportContext = exportCanvas.getContext("2d", { alpha: false });
+    if (!exportContext) throw new Error("لم تتوفر ذاكرة كافية لإنشاء Canvas التصدير.");
+    const exportCompiled = compileProject(projectForRaster(project, rasterViewport), imageProvider);
+    renderExportFrame(exportContext, exportCompiled, 0, exportLengthMs);
+    stream = exportCanvas.captureStream(rasterViewport.fps);
+    if (exportAudioEnabled.checked) {
+      audioGraph = createTestAudioGraph();
+      const audioTrack = audioGraph.stream.getAudioTracks()[0];
+      if (!audioTrack) throw new Error("لم ينشئ Web Audio مسارًا صوتيًا للتسجيل.");
+      stream.addTrack(audioTrack);
+      await audioGraph.audio.resume();
+      if (controller.signal.aborted) throw controller.signal.reason;
+    }
+
+    const mimeType = candidates[0];
+    running.session = createRecordingSession({
+      stream, mimeType, durationMs: exportLengthMs, videoBitsPerSecond: profile.videoBitsPerSecond,
+      maxBytes: maxVideoBytes, signal: controller.signal
+    });
+    if (audioGraph) scheduleTestPulses(audioGraph.audio, audioGraph.gain, exportLengthMs);
+    exportStatus.textContent = `جارٍ تسجيل ${exportLengthMs / 1000} ثوانٍ بدقة ${rasterViewport.width}×${rasterViewport.height}… اترك الصفحة مفتوحة.`;
+    const paint = (now) => {
+      if (activeExport !== running || controller.signal.aborted) return;
+      const elapsed = Math.min(exportLengthMs, now - running.session.startedAt);
+      renderExportFrame(exportContext, exportCompiled, elapsed, exportLengthMs);
+      exportProgress.value = elapsed / exportLengthMs;
+      if (elapsed < exportLengthMs) running.rafId = requestAnimationFrame(paint);
+    };
+    running.rafId = requestAnimationFrame(paint);
+    result = await running.session.promise;
+    if (controller.signal.aborted || activeExport !== running) return;
+    const safeMime = result.mimeType || candidates[0];
+    exportVideoUrl = URL.createObjectURL(result.blob);
+    exportVideo.src = exportVideoUrl;
+    exportVideo.hidden = false;
+    exportDownload.href = exportVideoUrl;
+    exportDownload.download = `qarton-motion-${Date.now()}.${extensionForMime(safeMime)}`;
+    exportDownload.textContent = `حفظ ${extensionForMime(safeMime).toUpperCase()} على الهاتف`;
+    exportDownload.hidden = false;
+    exportProgress.value = 1;
+    exportMetadata.textContent = `الصيغة الفعلية: ${safeMime} · ${rasterViewport.width}×${rasterViewport.height} · ${(result.blob.size / 1024 / 1024).toFixed(2)} MiB · ${(result.durationMs / 1000).toFixed(2)} ث`;
+    exportStatusHasResult = true;
+    exportStatus.textContent = "اكتمل التسجيل. شغّل المعاينة ثم احفظ الملف إذا كانت النتيجة مناسبة.";
+  } catch (error) {
+    if (controller.signal.aborted || error?.name === "AbortError") {
+      exportStatusHasResult = true;
+      exportStatus.textContent = "أُلغي التسجيل ونُظّفت موارده.";
+    } else {
+      exportError.textContent = error?.message || String(error);
+      exportError.hidden = false;
+      exportStatusHasResult = true;
+      exportStatus.textContent = "فشل التصدير؛ تحقق من الصيغة والمدة والذاكرة المتاحة.";
+    }
+  } finally {
+    if (running.rafId) cancelAnimationFrame(running.rafId);
+    if (running.session && !result && running.session.recorder.state !== "inactive") running.session.cancel("انتهى التصدير قبل اكتمال التسجيل.");
+    stream?.getTracks().forEach((track) => track.stop());
+    if (audioGraph) await audioGraph.audio.close().catch(() => {});
+    exportCanvas = null;
+    if (activeExport === running) activeExport = null;
+    unlock();
+    setExportBusy(false);
+    refreshExportControls();
+  }
 }
 function renderAt(timeMs) {
   currentMs = Math.max(0, Math.min(project.durationMs, timeMs));
@@ -114,6 +302,7 @@ function setCanvasDimensions() {
   }
 }
 function updateProject({ resetPlayback = false, viewport = project.viewport } = {}) {
+  invalidateExport("تغيّر المشروع؛ أُلغي التصدير السابق أو الجاري.");
   clearFailure();
   try {
     const durationMs = inputNumber("duration") * 1000;
@@ -126,7 +315,7 @@ function updateProject({ resetPlayback = false, viewport = project.viewport } = 
       startY: inputNumber("startY"), endY: inputNumber("endY")
     });
     setCanvasDimensions();
-    compiled = compileProject(previewProject(project), imageProvider);
+    compiled = compileProject(projectForRaster(project, previewViewport), imageProvider);
     seek.max = String(durationMs);
     if (resetPlayback) stopPlayback();
     renderAt(Math.min(currentMs, durationMs));
@@ -192,17 +381,22 @@ async function loadImageSurface(file, requestToken) {
 async function refreshSelectedImage() {
   if (!selectedImageFile) return;
   const requestToken = imageRequest.begin();
+  pendingImageRequest = requestToken;
+  refreshExportControls();
   clearFailure();
   status.textContent = "جارٍ تجهيز الصورة للأبعاد الجديدة…";
   try {
     const prepared = await loadImageSurface(selectedImageFile, requestToken);
     if (!prepared || !imageRequest.isCurrent(requestToken)) return;
     imageSource = prepared.surface;
-    compiled = compileProject(previewProject(project), imageProvider);
+    compiled = compileProject(projectForRaster(project, previewViewport), imageProvider);
     renderAt(currentMs);
     status.textContent = "المعاينة جاهزة";
   } catch (error) {
     if (imageRequest.isCurrent(requestToken)) fail(error);
+  } finally {
+    if (pendingImageRequest === requestToken) pendingImageRequest = null;
+    refreshExportControls();
   }
 }
 
@@ -230,31 +424,43 @@ aspectSelect.addEventListener("change", () => {
   refreshSelectedImage();
 });
 fitSelect.addEventListener("change", () => {
+  invalidateExport("تغيّرت طريقة عرض الصورة.");
   fitMode = fitSelect.value;
   refreshSelectedImage();
 });
 
 imageInput.addEventListener("change", async () => {
+  invalidateExport("اختيرت صورة جديدة.");
   const requestToken = imageRequest.begin();
+  pendingImageRequest = requestToken;
   clearFailure();
   const file = imageInput.files?.[0];
   if (!file) return;
   selectedImageFile = file;
   selectedImageDimensions = null;
+  currentFileInfo = null;
+  imageSource = placeholder;
+  refreshExportControls();
+  renderAt(currentMs);
   status.textContent = "جارٍ تحميل الصورة…";
   try {
     const prepared = await loadImageSurface(file, requestToken);
     if (!prepared || !imageRequest.isCurrent(requestToken)) return;
     imageSource = prepared.surface;
     currentFileInfo = { name: file.name.slice(0, 180), type: file.type, size: file.size };
-    compiled = compileProject(previewProject(project), imageProvider);
+    compiled = compileProject(projectForRaster(project, previewViewport), imageProvider);
     imageName.textContent = `${currentFileInfo.name} · ${prepared.dimensions.width}×${prepared.dimensions.height}`;
     renderAt(currentMs);
     status.textContent = "المعاينة جاهزة";
+    refreshExportControls();
   } catch (error) {
     if (imageRequest.isCurrent(requestToken)) fail(error);
   }
-  finally { imageInput.value = ""; }
+  finally {
+    if (pendingImageRequest === requestToken) pendingImageRequest = null;
+    imageInput.value = "";
+    refreshExportControls();
+  }
 });
 
 $("saveProjectButton").addEventListener("click", () => {
@@ -272,6 +478,7 @@ $("saveProjectButton").addEventListener("click", () => {
 });
 $("loadProjectButton").addEventListener("click", () => projectInput.click());
 projectInput.addEventListener("change", async () => {
+  invalidateExport("فُتح ملف مشروع جديد.");
   imageRequest.begin();
   clearFailure();
   const file = projectInput.files?.[0];
@@ -302,9 +509,24 @@ projectInput.addEventListener("change", async () => {
     renderAt(0);
     syncOutputs();
     status.textContent = "فُتح المشروع؛ اختر الصورة المرتبطة به";
+    refreshExportControls();
   } catch (error) { fail(error); }
   finally { projectInput.value = ""; }
 });
 
 updateProject({ viewport: project.viewport });
 renderAt(0);
+refreshExportControls();
+exportButton.addEventListener("click", () => { void exportVideoFile(); });
+cancelExportButton.addEventListener("click", () => cancelActiveExport("ألغى المستخدم التسجيل."));
+for (const control of [exportFormat, exportDuration, exportQuality, exportAudioEnabled]) {
+  control.addEventListener("change", () => {
+    clearExportResult();
+    refreshExportControls();
+  });
+}
+window.addEventListener("pagehide", () => {
+  cancelActiveExport("غادرت الصفحة أثناء التصدير.");
+  if (exportVideoUrl) URL.revokeObjectURL(exportVideoUrl);
+  exportVideoUrl = null;
+});
