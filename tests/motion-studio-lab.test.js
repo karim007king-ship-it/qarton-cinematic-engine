@@ -14,7 +14,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 test("mobile interface exposes portrait preview, image input, camera controls and timeline", async () => {
   const html = await readFile(resolve(root, "examples/motion-studio-lab/index.html"), "utf8");
-  for (const id of ["stage", "imageInput", "aspectPreset", "fitMode", "viewportValue", "duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "seek", "playPauseButton", "replayButton", "saveProjectButton", "loadProjectButton", "exportFormat", "exportDuration", "exportQuality", "exportAudioEnabled", "exportButton", "cancelExportButton", "exportProgress", "exportVideo", "exportDownload", "exportMetadata"]) {
+  for (const id of ["stage", "imageInput", "aspectPreset", "fitMode", "viewportValue", "duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "seek", "playPauseButton", "replayButton", "saveProjectButton", "loadProjectButton", "exportFormat", "exportDuration", "exportQuality", "exportAudioEnabled", "exportButton", "cancelExportButton", "tryWebmButton", "exportProgress", "exportVideo", "exportDownload", "exportMetadata"]) {
     assert.match(html, new RegExp(`id=["']${id}["']`), `missing interface control ${id}`);
   }
   assert.match(html, /width="720" height="1280"/);
@@ -241,4 +241,8 @@ test("video export uses Motion Studio sampling, cancellation, resource cleanup a
   assert.match(source, /stream\?\.getTracks\(\)\.forEach\(\(track\) => track\.stop\(\)\)/);
   assert.match(source, /audioGraph\.audio\.close\(\)/);
   assert.match(source, /window\.addEventListener\("pagehide"/);
+  assert.match(source, /exportFrameTime\(frameIndex, rasterViewport\.fps, exportLengthMs\)/);
+  assert.match(source, /presentFrame\(frameIndex\)/);
+  assert.match(source, /tryWebmButton\.hidden = !canTryWebm/);
+  assert.match(source, /tryWebmButton\.addEventListener\("click"/);
 });

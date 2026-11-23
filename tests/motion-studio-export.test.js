@@ -5,7 +5,7 @@ import { imageRect } from "../examples/motion-studio-lab/studio-dimensions.js";
 import { makeProject, makeProjectFile, parseProjectFile } from "../examples/motion-studio-lab/studio-model.js";
 import {
   chooseDefaultFormat, createExportLock, createRecordingSession, estimateVideoBytes, exportDurationMs,
-  exportViewportFor, extensionForMime, mimeCandidates, projectForRaster, projectTimeAt,
+  exportFrameCount, exportFrameTime, exportViewportFor, extensionForMime, mimeCandidates, projectForRaster, projectTimeAt,
   scheduleTestPulses, supportedCandidates
 } from "../examples/motion-studio-lab/studio-export-core.js";
 
@@ -21,8 +21,8 @@ class FakeRecorder extends EventTarget {
   start() { if (this.state !== "inactive") throw new Error("already recording"); this.state = "recording"; }
   stop() {
     if (this.state === "inactive") throw new Error("inactive");
-    this.dispatchEvent(Object.assign(new Event("dataavailable"), { data: new Blob(["frame-data"], { type: this.mimeType }) }));
     this.state = "inactive";
+    this.dispatchEvent(Object.assign(new Event("dataavailable"), { data: new Blob(["frame-data"], { type: this.mimeType }) }));
     this.dispatchEvent(new Event("stop"));
   }
 }
@@ -92,6 +92,18 @@ test("duration mapping and output byte limits are bounded", () => {
   assert.throws(() => estimateVideoBytes(0, 1000), RangeError);
 });
 
+test("3 and 10 second frame clocks are monotonic and always sample the exact last frame", () => {
+  for (const durationMs of [3000, 10000]) {
+    const count = exportFrameCount(durationMs, 24);
+    const times = Array.from({ length: count }, (_, index) => exportFrameTime(index, 24, durationMs));
+    assert.equal(times[0], 0);
+    assert.equal(times.at(-1), durationMs);
+    assert.ok(times.every((time, index) => index === 0 || time >= times[index - 1]));
+    assert.ok(times.slice(1, -1).every((time) => time < durationMs));
+  }
+  assert.throws(() => exportFrameTime(-1, 24, 3000), RangeError);
+});
+
 test("export lock prevents overlapping recordings and can be reused after release", () => {
   const lock = createExportLock();
   const release = lock.acquire();
@@ -120,6 +132,21 @@ test("recording captures chunks, reports the actual MIME and stops at its durati
   assert.equal(session.recorder.state, "inactive");
 });
 
+test("manual-stop mode waits for the exact final-frame clock instead of stopping on a competing timer", async () => {
+  const session = createRecordingSession({ stream: {}, mimeType: "video/webm", durationMs: 3000,
+    MediaRecorderClass: FakeRecorder, autoStop: false,
+    schedule: () => { throw new Error("auto-stop timer should not be scheduled"); } });
+  session.stop();
+  assert.equal((await session.promise).durationMs >= 0, true);
+});
+
+test("recording rejects an oversized output chunk and stops the recorder", async () => {
+  const session = createRecordingSession({ stream: {}, mimeType: "video/webm", durationMs: 3000,
+    maxBytes: 4, MediaRecorderClass: FakeRecorder });
+  await assert.rejects(session.promise, /تجاوز الفيديو حد الحجم الآمن/);
+  assert.equal(session.recorder.state, "inactive");
+});
+
 test("WebM and MP4 recorder regressions preserve the actual container MIME", async () => {
   for (const mimeType of ["video/webm;codecs=vp8,opus", "video/mp4;codecs=avc1.42E01E,mp4a.40.2"]) {
     const session = createRecordingSession({ stream: {}, mimeType, durationMs: 3000, MediaRecorderClass: FakeRecorder });
@@ -142,6 +169,21 @@ test("recording cancellation rejects, stops the recorder and releases its single
   assert.equal(session.recorder.state, "inactive");
   release();
   assert.equal(lock.held, false);
+});
+
+test("an MP4 start failure leaves the recorder reusable for an explicit WebM retry", async () => {
+  class Mp4RejectingRecorder extends FakeRecorder {
+    constructor(stream, options = {}) {
+      if (options.mimeType?.startsWith("video/mp4")) throw new Error("MP4 encoder unavailable");
+      super(stream, options);
+    }
+  }
+  Mp4RejectingRecorder.supported = new Set(["video/mp4", "video/webm"]);
+  assert.equal(chooseDefaultFormat(Mp4RejectingRecorder), "mp4", "capability probe may report MP4 before the encoder rejects it");
+  assert.throws(() => createRecordingSession({ stream: {}, mimeType: "video/mp4", durationMs: 3000, MediaRecorderClass: Mp4RejectingRecorder }), /encoder unavailable/);
+  const retry = createRecordingSession({ stream: {}, mimeType: "video/webm", durationMs: 3000, MediaRecorderClass: Mp4RejectingRecorder });
+  retry.stop();
+  assert.equal((await retry.promise).mimeType, "video/webm");
 });
 
 test("optional Web Audio pulses use the same recording clock", () => {

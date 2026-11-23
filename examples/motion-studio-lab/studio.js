@@ -4,7 +4,7 @@ import { decodeImageBitmap } from "./studio-image.js?v=l4-flex-01";
 import { DEFAULT_OUTPUT_VIEWPORT, imageRect, inferAspectPreset, projectSizeForPreset, safePreviewSize } from "./studio-dimensions.js?v=l4-flex-01";
 import {
   EXPORT_PROFILES, chooseDefaultFormat, createExportLock, createRecordingSession, estimateVideoBytes,
-  exportDurationMs, exportViewportFor, extensionForMime, projectForRaster, projectTimeAt,
+  exportDurationMs, exportFrameCount, exportFrameTime, exportViewportFor, extensionForMime, projectForRaster, projectTimeAt,
   scheduleTestPulses, supportedCandidates
 } from "./studio-export-core.js?v=l5-export-01";
 
@@ -35,6 +35,7 @@ const exportVideo = $("exportVideo");
 const exportDownload = $("exportDownload");
 const exportMetadata = $("exportMetadata");
 const exportError = $("exportError");
+const tryWebmButton = $("tryWebmButton");
 let activeExport = null;
 let exportVideoUrl = null;
 let exportCapability = { mp4: [], webm: [] };
@@ -96,6 +97,7 @@ function clearExportResult() {
   exportStatusHasResult = false;
   exportError.hidden = true;
   exportError.textContent = "";
+  tryWebmButton.hidden = true;
   exportVideo.pause();
   exportVideo.removeAttribute("src");
   exportVideo.load();
@@ -114,6 +116,7 @@ function cancelActiveExport(reason = "تغير المشروع أثناء الت�
   running.controller.abort(abortError);
   running.session?.cancel(abortError);
   if (running.rafId) cancelAnimationFrame(running.rafId);
+  if (running.stopTimer) clearTimeout(running.stopTimer);
   exportStatus.textContent = "جارٍ إيقاف التسجيل وتنظيف الموارد…";
 }
 function invalidateExport(reason) {
@@ -191,7 +194,7 @@ async function exportVideoFile() {
   clearFailure();
   clearExportResult();
   const controller = new AbortController();
-  const running = { controller, session: null, rafId: 0 };
+  const running = { controller, session: null, rafId: 0, stopTimer: 0 };
   activeExport = running;
   setExportBusy(true);
   exportError.hidden = true;
@@ -227,16 +230,37 @@ async function exportVideoFile() {
     const mimeType = candidates[0];
     running.session = createRecordingSession({
       stream, mimeType, durationMs: exportLengthMs, videoBitsPerSecond: profile.videoBitsPerSecond,
-      maxBytes: maxVideoBytes, signal: controller.signal
+      maxBytes: maxVideoBytes, signal: controller.signal, autoStop: false
     });
     if (audioGraph) scheduleTestPulses(audioGraph.audio, audioGraph.gain, exportLengthMs);
-    exportStatus.textContent = `جارٍ تسجيل ${exportLengthMs / 1000} ثوانٍ بدقة ${rasterViewport.width}×${rasterViewport.height}… اترك الصفحة مفتوحة.`;
+    const videoTrack = stream.getVideoTracks()[0];
+    const nominalIntervalMs = 1000 / rasterViewport.fps;
+    const totalFrames = exportFrameCount(exportLengthMs, rasterViewport.fps);
+    let lastFrameIndex = -1;
+    const presentFrame = (frameIndex) => {
+      if (frameIndex <= lastFrameIndex) return;
+      const frameMs = exportFrameTime(frameIndex, rasterViewport.fps, exportLengthMs);
+      renderExportFrame(exportContext, exportCompiled, frameMs, exportLengthMs);
+      try { videoTrack?.requestFrame?.(); } catch { /* timed captureStream(fps) remains the fallback */ }
+      lastFrameIndex = frameIndex;
+    };
+    presentFrame(0);
+    exportStatus.textContent = `جارٍ تسجيل ${exportLengthMs / 1000} ثوانٍ بدقة ${rasterViewport.width}×${rasterViewport.height} وبمعدل مستهدف ${rasterViewport.fps} إطارًا/ث… اترك الصفحة في الواجهة.`;
     const paint = (now) => {
       if (activeExport !== running || controller.signal.aborted) return;
       const elapsed = Math.min(exportLengthMs, now - running.session.startedAt);
-      renderExportFrame(exportContext, exportCompiled, elapsed, exportLengthMs);
+      const frameIndex = elapsed >= exportLengthMs
+        ? totalFrames - 1
+        : Math.min(totalFrames - 1, Math.floor(elapsed / nominalIntervalMs));
+      presentFrame(frameIndex);
       exportProgress.value = elapsed / exportLengthMs;
-      if (elapsed < exportLengthMs) running.rafId = requestAnimationFrame(paint);
+      if (elapsed < exportLengthMs) {
+        running.rafId = requestAnimationFrame(paint);
+      } else {
+        exportProgress.value = 1;
+        // Give the capture track a short window to mux the exact endpoint frame before stopping.
+        running.stopTimer = setTimeout(() => running.session.stop(), 100);
+      }
     };
     running.rafId = requestAnimationFrame(paint);
     result = await running.session.promise;
@@ -252,19 +276,26 @@ async function exportVideoFile() {
     exportProgress.value = 1;
     exportMetadata.textContent = `الصيغة الفعلية: ${safeMime} · ${rasterViewport.width}×${rasterViewport.height} · ${(result.blob.size / 1024 / 1024).toFixed(2)} MiB · ${(result.durationMs / 1000).toFixed(2)} ث`;
     exportStatusHasResult = true;
+    tryWebmButton.hidden = true;
     exportStatus.textContent = "اكتمل التسجيل. شغّل المعاينة ثم احفظ الملف إذا كانت النتيجة مناسبة.";
   } catch (error) {
     if (controller.signal.aborted || error?.name === "AbortError") {
       exportStatusHasResult = true;
       exportStatus.textContent = "أُلغي التسجيل ونُظّفت موارده.";
     } else {
-      exportError.textContent = error?.message || String(error);
+      const detail = error?.message || String(error);
+      const canTryWebm = exportFormat.value === "mp4" && exportCapability.webm.length > 0;
+      exportError.textContent = canTryWebm
+        ? `${detail} قد يعلن الجهاز دعم MP4 ثم يرفض بدء التسجيل؛ يمكنك تجربة WebM من الزر أدناه.`
+        : detail;
       exportError.hidden = false;
+      tryWebmButton.hidden = !canTryWebm;
       exportStatusHasResult = true;
       exportStatus.textContent = "فشل التصدير؛ تحقق من الصيغة والمدة والذاكرة المتاحة.";
     }
   } finally {
     if (running.rafId) cancelAnimationFrame(running.rafId);
+    if (running.stopTimer) clearTimeout(running.stopTimer);
     if (running.session && !result && running.session.recorder.state !== "inactive") running.session.cancel("انتهى التصدير قبل اكتمال التسجيل.");
     stream?.getTracks().forEach((track) => track.stop());
     if (audioGraph) await audioGraph.audio.close().catch(() => {});
@@ -519,6 +550,10 @@ renderAt(0);
 refreshExportControls();
 exportButton.addEventListener("click", () => { void exportVideoFile(); });
 cancelExportButton.addEventListener("click", () => cancelActiveExport("ألغى المستخدم التسجيل."));
+tryWebmButton.addEventListener("click", () => {
+  exportFormat.value = "webm";
+  exportFormat.dispatchEvent(new Event("change", { bubbles: true }));
+});
 for (const control of [exportFormat, exportDuration, exportQuality, exportAudioEnabled]) {
   control.addEventListener("change", () => {
     clearExportResult();

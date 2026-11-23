@@ -58,6 +58,20 @@ export function projectTimeAt(exportElapsedMs, exportDuration, projectDuration) 
   return Math.round(fraction * projectDuration);
 }
 
+/** Return an export frame timestamp aligned to the nominal frame clock, including the exact endpoint. */
+export function exportFrameTime(frameIndex, fps, durationMs) {
+  if (!Number.isSafeInteger(frameIndex) || frameIndex < 0 || !Number.isSafeInteger(fps) || fps < 1 ||
+      !Number.isSafeInteger(durationMs) || durationMs < 1) throw new RangeError("Export frame clock is invalid.");
+  return Math.min(durationMs, Math.round(frameIndex * 1000 / fps));
+}
+
+export function exportFrameCount(durationMs, fps) {
+  if (!Number.isSafeInteger(durationMs) || durationMs < 1 || !Number.isSafeInteger(fps) || fps < 1) {
+    throw new RangeError("Export frame clock is invalid.");
+  }
+  return Math.ceil(durationMs * fps / 1000) + 1;
+}
+
 export function estimateVideoBytes(durationMs, videoBitsPerSecond) {
   if (![durationMs, videoBitsPerSecond].every(Number.isFinite) || durationMs <= 0 || videoBitsPerSecond <= 0) {
     throw new RangeError("تعذر تقدير حجم الفيديو.");
@@ -91,6 +105,7 @@ export function createRecordingSession({
   maxBytes = 24 * 1024 * 1024,
   MediaRecorderClass = globalThis.MediaRecorder,
   signal,
+  autoStop = true,
   now = () => globalThis.performance.now(),
   schedule = globalThis.setTimeout,
   unschedule = globalThis.clearTimeout,
@@ -177,7 +192,7 @@ export function createRecordingSession({
     try {
       recorder.start(250);
       startedAt = now();
-      timer = schedule(stop, durationMs);
+      if (autoStop) timer = schedule(stop, durationMs);
     } catch (error) { settleError(error); }
   }
   return Object.freeze({ recorder, promise, stop, cancel, get startedAt() { return startedAt; } });
