@@ -76,8 +76,10 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         page.locator("#playPauseButton").click()
         assert page.locator("#playPauseButton").inner_text() == "متابعة"
         effect_lane = page.locator('#visualEffectsTracks .visual-effect-lane[data-effect-type="fade"]')
+        effect_lane.scroll_into_view_if_needed()
         effect_box = effect_lane.bounding_box()
         effect_clip = page.locator(".visual-effect-clip")
+        effect_clip.scroll_into_view_if_needed()
         effect_original = effect_clip.element_handle()
         effect_box_clip = effect_clip.bounding_box()
         effect_start_x = effect_box_clip["x"] + effect_box_clip["width"] / 2
@@ -116,6 +118,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         assert not page.locator("#visualEffectsTracks").get_attribute("data-dragging")
         assert "أُلغي السحب" in page.locator("#visualEffectsMessage").inner_text()
         page.mouse.up()
+        page.locator(".visual-effect-clip").scroll_into_view_if_needed()
         effect_box_clip = page.locator(".visual-effect-clip").bounding_box()
         page.mouse.move(effect_box_clip["x"] + effect_box_clip["width"] / 2, effect_box_clip["y"] + effect_box_clip["height"] / 2)
         page.mouse.down()
@@ -126,6 +129,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         page.wait_for_function("!document.querySelector('#visualEffectsTracks').dataset.dragging")
         assert "أُلغي السحب" in page.locator("#visualEffectsMessage").inner_text()
         page.mouse.up()
+        page.locator(".visual-effect-clip").scroll_into_view_if_needed()
         effect_box_clip = page.locator(".visual-effect-clip").bounding_box()
         page.mouse.move(effect_box_clip["x"] + effect_box_clip["width"] / 2, effect_box_clip["y"] + effect_box_clip["height"] / 2)
         page.mouse.down()
