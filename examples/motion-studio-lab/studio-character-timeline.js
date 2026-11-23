@@ -11,6 +11,8 @@ export function createCharacterTimeline({ lane, markers, playhead, selection, me
   function render() {
     const duration = getDuration(), track = getTrack();
     if (!track.keyframes.some(key => key.atMs === selected)) selected = null;
+    const wasMarkerFocused = markers.contains(document.activeElement);
+    const focusedAtMs = wasMarkerFocused ? Number(document.activeElement.dataset.keyTime) : null;
     const current = clamp(getTime(), 0, duration);
     playhead.style.left = `${duration ? current / duration * 100 : 0}%`;
     lane.setAttribute("aria-label", `مسار الشخصية. المؤشر ${formatTime(current)} من ${formatTime(duration)}. اسحب المفتاح أو استخدم الأسهم.`);
@@ -25,6 +27,11 @@ export function createCharacterTimeline({ lane, markers, playhead, selection, me
       marker.addEventListener("pointerdown", event => beginDrag(event, key.atMs));
       marker.addEventListener("click", () => select(key.atMs, true));
       markers.append(marker);
+    }
+    const focusAtMs = track.keyframes.some(key => key.atMs === focusedAtMs) ? focusedAtMs
+      : track.keyframes.some(key => key.atMs === selected) ? selected : null;
+    if (wasMarkerFocused && focusAtMs !== null) {
+      markers.querySelector(`[data-key-time="${focusAtMs}"]`)?.focus({ preventScroll: true });
     }
     const key = track.keyframes.find(item => item.atMs === selected);
     selection.textContent = key ? `المحدد · ${formatTime(key.atMs)}` : "لا يوجد مفتاح محدد";
@@ -72,15 +79,21 @@ export function createCharacterTimeline({ lane, markers, playhead, selection, me
     if (busy || isBusy() || !event.isPrimary || event.button !== 0) return;
     event.preventDefault(); event.stopPropagation(); select(atMs, true);
     drag = { pointerId: event.pointerId, from: atMs, source: getTrack(), last: atMs };
+    lane.dataset.dragging = "true";
     try { lane.setPointerCapture(event.pointerId); } catch {}
   }
   function end(event, aborted = false) {
-    if (drag?.pointerId === event.pointerId) { drag = null; render(); if (aborted) message.textContent = "أُلغي السحب؛ بقي آخر توقيت صالح."; }
-    if (pointer === event.pointerId) pointer = null;
+    if (drag?.pointerId === event.pointerId) {
+      drag = null; delete lane.dataset.dragging; render();
+      if (aborted) message.textContent = "أُلغي السحب؛ بقي آخر توقيت صالح.";
+    }
+    if (pointer === event.pointerId) { pointer = null; delete lane.dataset.scrubbing; }
   }
   lane.addEventListener("pointerdown", event => {
-    if (busy || isBusy() || !event.isPrimary || event.button !== 0 || event.target.closest(".keyframe-marker")) return;
-    event.preventDefault(); pointer = event.pointerId; try { lane.setPointerCapture(event.pointerId); } catch {}
+    if (busy || isBusy() || !event.isPrimary || event.button !== 0 ||
+        event.target.closest(".keyframe-marker, .character-keyframe-marker")) return;
+    event.preventDefault(); pointer = event.pointerId; lane.dataset.scrubbing = "true";
+    try { lane.setPointerCapture(event.pointerId); } catch {}
     seek(timeAt(event.clientX));
   });
   lane.addEventListener("pointermove", event => {
@@ -105,7 +118,18 @@ export function createCharacterTimeline({ lane, markers, playhead, selection, me
   for (const input of Object.values(fields)) input.addEventListener("change", () => edit(input.dataset.channel));
   function setBusy(value) {
     busy = Boolean(value); lane.style.pointerEvents = busy ? "none" : ""; lane.setAttribute("aria-disabled", String(busy));
-    if (busy && drag) { const id = drag.pointerId; drag = null; pointer = null; try { lane.releasePointerCapture(id); } catch {} }
+    if (busy) {
+      const capturedPointerId = drag?.pointerId ?? pointer;
+      drag = null;
+      pointer = null;
+      delete lane.dataset.dragging;
+      delete lane.dataset.scrubbing;
+      try {
+        if (capturedPointerId !== null && capturedPointerId !== undefined && lane.hasPointerCapture(capturedPointerId)) {
+          lane.releasePointerCapture(capturedPointerId);
+        }
+      } catch { /* The browser may already have released a cancelled pointer. */ }
+    }
     render();
   }
   return Object.freeze({ render, setBusy, getSelectedTime: () => selected, clearSelection() { selected = null; render(); } });
