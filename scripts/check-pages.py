@@ -175,6 +175,23 @@ def exercise(context, url):
         };
     })();""")
     page.goto(url + "examples/motion-studio-lab/")
+    export_support = page.evaluate("""() => {
+        const Recorder = window.MediaRecorder;
+        const candidates = {
+            mp4: ['video/mp4;codecs="avc1.42E01E,mp4a.40.2"', 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4'],
+            webm: ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
+        };
+        const available = Object.fromEntries(Object.entries(candidates).map(([format, values]) =>
+            [format, !!Recorder && values.some(type => { try { return Recorder.isTypeSupported(type); } catch { return false; } })]));
+        return {available, selected: document.querySelector('#exportFormat').value,
+                disabled: Object.fromEntries(['mp4', 'webm'].map(format => [format,
+                    document.querySelector(`#exportFormat option[value=${format}]`).disabled]))};
+    }""")
+    assert export_support["available"]["mp4"] or export_support["available"]["webm"]
+    assert export_support["selected"] == ("mp4" if export_support["available"]["mp4"] else "webm")
+    assert export_support["disabled"]["mp4"] == (not export_support["available"]["mp4"])
+    assert export_support["disabled"]["webm"] == (not export_support["available"]["webm"])
+    assert page.locator("#exportButton").is_disabled()
     image_input = page.locator("#imageInput")
     image_input.set_input_files(str(site / "examples/motion-studio-lab/preview-large.png"))
     page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
@@ -190,6 +207,7 @@ def exercise(context, url):
     image_input.set_input_files(str(site / "examples/motion-studio-lab/preview-test.png"))
     page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
     assert "preview-test.png" in page.locator("#imageName").inner_text()
+    assert page.locator("#exportButton").is_enabled()
     normal_decode = page.evaluate("labBitmapCalls.find(call => call.name === 'preview-test.png')")
     assert normal_decode and normal_decode["width"] <= 2048 and normal_decode["height"] <= 2048
     square_project = re.search(r"(\d+) × (\d+) · معاينة (\d+) × (\d+)", page.locator("#viewportValue").evaluate("el => el.textContent"))
