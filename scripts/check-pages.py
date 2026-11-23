@@ -381,6 +381,82 @@ def exercise(context, url):
     page.locator('.keyframe-marker[data-key-time="7000"]').evaluate("el => el.click()")
     page.locator("#deleteKeyframeButton").click()
     assert [int(value) for value in page.locator(".keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")] == [0, 12000]
+    page.goto(url + "examples/character-animation-lab/")
+    page.wait_for_function("document.querySelector('#status')?.textContent.includes('المشهد جاهز')")
+    actor = page.locator("#character")
+    assert actor.count() == 1
+    def seek_character(ms):
+        page.locator("#seek").evaluate("""(el, time) => {
+            el.value = String(time); el.dispatchEvent(new Event('input', {bubbles:true}));
+        }""", ms)
+        page.wait_for_function("time => +document.querySelector('#character').dataset.time === time", arg=ms)
+
+    seek_character(250)
+    sampled = actor.evaluate("el => [el.dataset.headRotation, el.dataset.eyeX, el.dataset.expression]")
+    assert sampled[2] == "neutral"
+    seek_character(0)
+    seek_character(250)
+    assert actor.evaluate("el => [el.dataset.headRotation, el.dataset.eyeX, el.dataset.expression]") == sampled
+    seek_character(820)
+    assert float(actor.get_attribute("data-blink")) > 0
+    assert actor.get_attribute("data-gesture") == "wave"
+    seek_character(1350)
+    assert actor.get_attribute("data-expression") == "happy"
+    assert float(actor.get_attribute("data-mouth-open")) > 0
+    initial_frame = page.locator("#spritePreview").get_attribute("viewBox")
+    seek_character(350)
+    assert page.locator("#spritePreview").get_attribute("viewBox") != initial_frame
+    page.locator("#play").click()
+    page.wait_for_function("Number(document.querySelector('#seek').value) > 400")
+    page.locator("#pause").click()
+    paused_time = page.locator("#seek").input_value()
+    page.wait_for_timeout(120)
+    assert page.locator("#seek").input_value() == paused_time
+    page.locator("#replay").click()
+    page.wait_for_function("Number(document.querySelector('#seek').value) > 0")
+    page.wait_for_function("Number(document.querySelector('#seek').value) < 100")
+    page.locator("#play").click()
+    page.wait_for_function("Number(document.querySelector('#seek').value) > 100")
+    page.locator("#switch").click()
+    page.wait_for_function("document.querySelector('#stage').dataset.scene === 'night'")
+    assert actor.count() == 1 and actor.get_attribute("data-time") == "0"
+    assert "ضوء المساء" in page.locator("#status").inner_text()
+    page.wait_for_timeout(120)
+    assert actor.get_attribute("data-time") == "0"
+    page.locator("#play").click()
+    page.wait_for_function("Number(document.querySelector('#seek').value) > 0")
+    page.locator("#switch").click()
+    assert page.locator("#character").count() == 1
+    browser_keyframes = page.evaluate("""async () => {
+        const { createCharacterAnimation } = await import(
+            new URL('../../src/character/animation-core.js', location.href));
+        const animation = createCharacterAnimation({
+            character: { id: 'browser-order', initial: { headRotation: -5, eyeY: 0.25 } },
+            durationMs: 2000,
+            keyframes: [
+                { atMs: 1000, values: { headRotation: 30 } },
+                { atMs: 1500, values: { eyeY: -0.5 } },
+                { atMs: 0, values: { eyeX: 0.5 } },
+                { atMs: 500, values: { headRotation: 10, mouthOpen: 0.4 }, easing: 'linear' }
+            ]
+        });
+        const result = [250, 750, 1250].map(time => animation.sample(time));
+        animation.sample(0);
+        const repeated = animation.sample(750);
+        return {
+            times: animation.timeline.events.map(event => event.atMs),
+            headAt250: result[0].headRotation,
+            headAt750: result[1].headRotation,
+            eyeXAt750: result[1].eyeX,
+            mouthAt750: result[1].mouthOpen,
+            eyeYAt1250: result[2].eyeY,
+            seekStable: JSON.stringify(result[1]) === JSON.stringify(repeated)
+        };
+    }""")
+    assert browser_keyframes == {
+        "times": [0, 500, 1000, 1500], "headAt250": 2.5, "headAt750": 20,
+        "eyeXAt750": 0.5, "mouthAt750": 0.4, "eyeYAt1250": -0.125, "seekStable": True
+    }
     assert not errors, errors
 
 

@@ -24,6 +24,30 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     record.element.style.opacity = String(Math.min(1, Math.max(0, state.opacity)));
     record.element.dataset.expression = String(state.expression ?? "neutral");
     record.element.dataset.state = String(state.state ?? "idle");
+    const frame = state.spriteFrame;
+    if (frame) {
+      if (![frame.x, frame.y, frame.width, frame.height, frame.columns, frame.rows].every(Number.isFinite) ||
+          frame.width <= 0 || frame.height <= 0 || frame.columns <= 0 || frame.rows <= 0) {
+        throw new TypeError("Character spriteFrame requires a finite positive frame grid");
+      }
+      record.element.style.overflow = "hidden";
+      Object.assign(record.image.style, {
+        position: "absolute",
+        maxWidth: "none",
+        width: `${frame.columns * 100}%`,
+        height: `${frame.rows * 100}%`,
+        objectFit: "fill",
+        transform: `translate(${-((frame.x / frame.width) * 100 / frame.columns)}%, ${-((frame.y / frame.height) * 100 / frame.rows)}%)`
+      });
+      record.element.dataset.spriteFrame = String(frame.index);
+    } else {
+      record.element.style.overflow = "visible";
+      Object.assign(record.image.style, {
+        position: "static", maxWidth: "100%", width: "100%", height: "100%",
+        objectFit: "contain", transform: "none"
+      });
+      delete record.element.dataset.spriteFrame;
+    }
   }
 
   function removeElement(handle) {
@@ -48,8 +72,8 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     if (failed) throw firstError;
   }
 
-  async function resolveAsset(record, expression, frameAsset) {
-    const key = frameAsset ?? record.sprites[expression] ?? record.sprites.default;
+  async function resolveAsset(record, expression, frameAsset, spriteFrame) {
+    const key = frameAsset ?? spriteFrame?.asset ?? record.sprites[expression] ?? record.sprites.default;
     if (typeof key !== "string" || !key.trim()) {
       throw new TypeError(`No sprite asset configured for expression "${expression}"`);
     }
@@ -140,7 +164,7 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     const expression = typeof initialState.expression === "string" ? initialState.expression : "neutral";
     records.set(element, record);
     try {
-      await resolveAsset(record, expression, initialState.frameAsset);
+      await resolveAsset(record, expression, initialState.frameAsset, initialState.spriteFrame);
     } catch (error) {
       records.delete(element);
       throw error;
@@ -156,7 +180,8 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
       scale: Number.isFinite(initialState.scale) ? initialState.scale : 1,
       rotation: Number.isFinite(initialState.rotation) ? initialState.rotation : 0,
       expression,
-      state: initialState.state ?? "idle"
+      state: initialState.state ?? "idle",
+      spriteFrame: initialState.spriteFrame
     });
     root.appendChild(element);
     return element;
@@ -168,7 +193,7 @@ export function createDOMCharacterRenderer({ root, resolveSprite } = {}) {
     if (!record) return false;
     if (!state || state.id !== record.id) throw new TypeError("Character state id does not match mounted character");
     applyState(record, state);
-    return resolveAsset(record, String(state.expression ?? "neutral"), state.frameAsset);
+    return resolveAsset(record, String(state.expression ?? "neutral"), state.frameAsset, state.spriteFrame);
   }
 
   function unmount(handle) {

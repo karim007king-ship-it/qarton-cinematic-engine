@@ -84,7 +84,11 @@ export function createCharacterController({ id, initial = {}, motions = [], anim
       };
       if (progress < 1) break;
     }
-    if (sequence) state.frameAsset = sequence.sample(state.state, state.expression, timeMs, clipStart);
+    if (sequence) {
+      const frame = sequence.sample(state.state, state.expression, timeMs, clipStart);
+      if (typeof frame === "string") state.frameAsset = frame;
+      else if (frame) state.spriteFrame = frame;
+    }
     return Object.freeze({ id: characterId, timeMs, ...state });
   }
 
