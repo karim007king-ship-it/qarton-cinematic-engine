@@ -168,9 +168,10 @@ async function probeOne({ canvas, width, height, fps, audioMode, mimeType, Media
     stream = audioStream ? new Stream([...videoStream.getVideoTracks(), ...audioStream.getAudioTracks()]) : videoStream;
     recorder = new MediaRecorderClass(stream, { mimeType });
     recorder.addEventListener("dataavailable", event => { if (event.data?.size) chunks.push(event.data); });
-    const started = waitForEvent(recorder, "start", { timeoutMs, errorNames: ["error"] });
-    recorder.start(100);
-    await started;
+    // Some Chromium builds do not dispatch MediaRecorder's start event until
+    // the composed stream has produced its first video frame. Keep the probe
+    // source live before start so capability detection tests the actual stream
+    // rather than timing out on a static Canvas.
     let frame = 0;
     interval = globalThis.setInterval(() => {
       frame++;
@@ -178,6 +179,9 @@ async function probeOne({ canvas, width, height, fps, audioMode, mimeType, Media
       context.fillRect(0, 0, width, height);
       try { videoStream.getVideoTracks()[0]?.requestFrame?.(); } catch {}
     }, Math.max(16, 1000 / fps));
+    const started = waitForEvent(recorder, "start", { timeoutMs, errorNames: ["error"] });
+    recorder.start(100);
+    await started;
     await new Promise(resolve => globalThis.setTimeout(resolve, durationMs));
     const stoppedPromise = waitForEvent(recorder, "stop", { timeoutMs, errorNames: ["error"] });
     recorder.stop();
@@ -381,6 +385,9 @@ export async function startExport(plan, host = {}, { signal, onProgress } = {}) 
     checkAbort(signal);
     const startedPromise = waitForEvent(recorder, "start", { signal, timeoutMs: host.startTimeoutMs ?? 5000, errorNames: ["error"] });
     recorder.start(250);
+    // Prime manual Canvas tracks while waiting for the start event. Chromium
+    // may defer that event until the first encoded frame is available.
+    if (requestFrames) requestFrame(videoStream);
     const stoppedPromise = waitForEvent(recorder, "stop", { timeoutMs: plan.durationMs + (host.stopTimeoutMs ?? 10_000), errorNames: ["error"] });
     await startedPromise;
     checkAbort(signal);
