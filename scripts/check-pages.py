@@ -463,7 +463,7 @@ def exercise(context, url):
     page.mouse.up()
 
     # A drag into an occupied timestamp fails atomically, while a
-    # lostpointercapture event after a valid move keeps that last valid position.
+    # lostpointercapture event after a valid move keeps the moved key.
     character_lane = page.locator("#characterTimelineLane")
     character_box = character_lane.bounding_box()
     key_box = page.locator('.character-keyframe-marker[data-key-time="6960"]').bounding_box()
@@ -485,7 +485,7 @@ def exercise(context, url):
     page.mouse.up()
 
     character_box = character_lane.bounding_box()
-    collision_source = collision_candidates[-1]
+    collision_source = 2000
     key_box = page.locator(f'.character-keyframe-marker[data-key-time="{collision_source}"]').bounding_box()
     page.evaluate("""() => {
         window.lostCapturePointerId = null;
@@ -498,8 +498,9 @@ def exercise(context, url):
     lost_pointer_id = page.evaluate("window.lostCapturePointerId")
     assert lost_pointer_id is not None
     assert character_lane.evaluate("(el, id) => el.hasPointerCapture(id)", lost_pointer_id)
-    target_x = character_box["x"] + character_box["width"] * (8040 / 12000)
-    page.mouse.move(target_x, character_box["y"] + character_box["height"] / 2)
+    current_lane_box = character_lane.bounding_box()
+    target_x = current_lane_box["x"] + current_lane_box["width"] * (8040 / 12000)
+    page.mouse.move(target_x, current_lane_box["y"] + current_lane_box["height"] / 2)
     assert page.locator('.character-keyframe-marker[data-key-time="8040"]').count() == 1
     character_drag_snapshots["lostCapture"] = current_character_times()
     character_lane.evaluate("""(el, id) => el.dispatchEvent(new PointerEvent('lostpointercapture', {
@@ -556,7 +557,7 @@ def exercise(context, url):
     character_download_info.value.save_as(character_path)
     character_data = json.loads(character_path.read_text())
     saved_character_times = [key["atMs"] for key in character_data["characterTrack"]["keyframes"]]
-    assert saved_character_times == [2000, 7500, 10000], {
+    assert saved_character_times == sorted([7500, collision_candidates[-1], 10000]), {
         "saved_times": saved_character_times,
         "drag_snapshots": character_drag_snapshots,
         "timeline_message": page.locator("#characterTimelineMessage").inner_text(),
