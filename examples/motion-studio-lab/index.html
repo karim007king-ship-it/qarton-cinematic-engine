@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101118">
+  <title>QARTON Motion Studio Lab</title>
+  <link rel="stylesheet" href="./studio.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "@qarton/cinematic-engine/motion-studio": "../../packages/motion-studio/index.js",
+        "@qarton/cinematic-engine/camera": "../../src/camera/camera-track.js",
+        "@qarton/cinematic-engine/motion": "../../src/motion/easing.js",
+        "@qarton/cinematic-engine/motion/timeline": "../../src/motion/timeline.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <main class="studio">
+    <header class="topbar">
+      <div><p class="eyebrow">QARTON · مختبر مستقل</p><h1>Motion Studio</h1></div>
+      <span class="status-pill" id="status" role="status" aria-live="polite">اختر صورة للبدء</span>
+    </header>
+
+    <section class="workspace" aria-label="مساحة العمل">
+      <div class="preview-panel">
+        <div class="preview-heading"><div><span class="eyebrow">معاينة عمودية</span><strong>720 × 1280</strong></div><span id="timeReadout">00:00.00</span></div>
+        <div class="stage-wrap"><canvas id="stage" width="720" height="1280" aria-label="معاينة الصورة المتحركة 720 في 1280"></canvas></div>
+        <div class="transport" aria-label="تحكم المعاينة">
+          <button id="replayButton" class="icon-button" type="button" aria-label="إعادة التشغيل من البداية">↺</button>
+          <button id="playPauseButton" class="primary-button" type="button">تشغيل</button>
+          <label class="sr-only" for="seek">موضع المعاينة</label>
+          <input id="seek" type="range" min="0" max="60000" step="1" value="0">
+        </div>
+      </div>
+
+      <div class="controls-panel">
+        <section class="control-card">
+          <h2>الصورة والمشروع</h2>
+          <label class="file-picker" for="imageInput"><span>＋</span><span><strong>اختر صورة من الهاتف</strong><small id="imageName">JPG أو PNG أو WebP · تُعالج على الجهاز</small></span></label>
+          <input id="imageInput" class="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/avif,image/gif">
+          <div class="button-row">
+            <button id="saveProjectButton" class="secondary-button" type="button">حفظ JSON</button>
+            <button id="loadProjectButton" class="secondary-button" type="button">فتح JSON</button>
+            <input id="projectInput" class="sr-only" type="file" accept="application/json,.json">
+          </div>
+          <p class="hint">ملف المشروع يحفظ الحركة فقط. بعد فتحه، اختر الصورة الأصلية من جديد.</p>
+        </section>
+
+        <section class="control-card">
+          <h2>المدة</h2>
+          <label class="field-label" for="duration">مدة المشروع <output id="durationValue">12 ثانية</output></label>
+          <input id="duration" type="range" min="3" max="60" step="1" value="12">
+        </section>
+
+        <section class="control-card">
+          <h2>حركة الكاميرا</h2>
+          <p class="hint">حرّك نقطة البداية والنهاية. المحرك يحسب الانتقال بسلاسة بينهما.</p>
+          <div class="control-grid">
+            <label class="field-label" for="startZoom">تقريب البداية <output id="startZoomValue">1.00×</output><input id="startZoom" type="range" min="0.5" max="3" step="0.01" value="1"></label>
+            <label class="field-label" for="endZoom">تقريب النهاية <output id="endZoomValue">1.25×</output><input id="endZoom" type="range" min="0.5" max="3" step="0.01" value="1.25"></label>
+            <label class="field-label" for="startX">تحريك البداية أفقيًا <output id="startXValue">0 px</output><input id="startX" type="range" min="-500" max="500" step="1" value="0"></label>
+            <label class="field-label" for="endX">تحريك النهاية أفقيًا <output id="endXValue">0 px</output><input id="endX" type="range" min="-500" max="500" step="1" value="0"></label>
+            <label class="field-label" for="startY">تحريك البداية عموديًا <output id="startYValue">0 px</output><input id="startY" type="range" min="-800" max="800" step="1" value="0"></label>
+            <label class="field-label" for="endY">تحريك النهاية عموديًا <output id="endYValue">0 px</output><input id="endY" type="range" min="-800" max="800" step="1" value="0"></label>
+          </div>
+        </section>
+      </div>
+    </section>
+    <p id="errorMessage" class="error-message" role="alert" hidden></p>
+    <footer>نسخة تجريبية · الفيديو لا يُصدّر في هذه المهمة · المشروع والصورة لا يُرفعان إلى خادم</footer>
+  </main>
+  <script type="module" src="./studio.js"></script>
+</body>
+</html>

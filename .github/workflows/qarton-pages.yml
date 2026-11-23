@@ -26,11 +26,12 @@ jobs:
       - name: Prepare Test Lab site
         run: |
           mkdir _site
-          cp -R index.html docs examples src official-intro.mp4 _site/
+          cp -R index.html docs examples packages src official-intro.mp4 _site/
           cd _site
           test -s index.html
           test -s docs/index.html
           test -s examples/browser-smoke.html
+          test -s packages/motion-studio/index.js
           test -s src/index.js
           test -s official-intro.mp4
           grep -q 'QARTON' docs/index.html
