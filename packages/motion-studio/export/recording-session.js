@@ -90,11 +90,15 @@ function requestFrame(videoStream) {
   try { track?.requestFrame?.(); } catch {}
 }
 
-async function inspectOutput(blob, plan, host, audioContext) {
+async function inspectOutput(blob, plan, host, stream) {
   if (!(blob instanceof Blob) || blob.size === 0) throw error("INVALID_OUTPUT", "Recorder returned an empty export");
   if (blob.size > plan.outputBudgetBytes) throw error("BUDGET_EXCEEDED", "Recorded file exceeded the output memory budget");
   const actualMime = blob.type || plan.mimeType;
   if (!mimeMatches(actualMime, plan.mimeType)) throw error("INVALID_OUTPUT", `Recorder output MIME ${actualMime} does not match the selected ${plan.mimeType}`);
+  const audioTracks = stream?.getAudioTracks?.() ?? [];
+  if (plan.audio === "mix" && (!audioTracks.length || audioTracks.some(track => track.readyState === "ended"))) {
+    throw error("INVALID_OUTPUT", "The mixed audio track was not active in the recorder stream");
+  }
   const document = dom(host);
   const URLApi = host.URL ?? globalThis.URL;
   if (!document?.createElement || !URLApi?.createObjectURL) return { actualMime, measuredDurationMs: null, warnings: ["Output metadata could not be measured in this host"] };
@@ -116,6 +120,11 @@ async function inspectOutput(blob, plan, host, audioContext) {
     }
     const durationMs = finiteMediaDuration(video) ?? seekableMediaDuration(video);
     const warnings = [];
+    if (plan.audio === "mix" && video.audioTracks === undefined) {
+      warnings.push("This browser does not expose encoded audio-track inspection; the active mixed track was sent to the recorder.");
+    } else if (plan.audio === "mix" && video.audioTracks.length === 0) {
+      throw error("INVALID_OUTPUT", "Recorded media has no encoded audio track");
+    }
     if (durationMs === null) {
       if (video.duration !== Infinity) throw error("INVALID_OUTPUT", "Recorded video has no usable duration metadata");
       warnings.push("Container duration and end seek are unavailable in this browser; file duration could not be measured.");
@@ -131,12 +140,6 @@ async function inspectOutput(blob, plan, host, audioContext) {
       });
       video.currentTime = seekTarget;
       await seek;
-    }
-    if (plan.audio === "mix") {
-      if (!audioContext?.decodeAudioData) throw error("INVALID_OUTPUT", "Audio output cannot be verified without Web Audio decoding");
-      try { await awaitWork(audioContext.decodeAudioData(await blob.arrayBuffer()), host.audioValidationTimeoutMs ?? 10_000,
-        "Recorded audio track decoder timed out", { signal, code: "INVALID_OUTPUT" }); }
-      catch (cause) { throw error("INVALID_OUTPUT", "Recorded audio track could not be decoded", cause); }
     }
     return { actualMime, measuredDurationMs: durationMs, warnings };
   } finally {
@@ -235,11 +238,15 @@ async function probeOne({ canvas, width, height, fps, audioMode, mimeType, Media
         video.currentTime = Math.max(0, measuredDurationMs / 1000 - 0.02);
         await seek;
       }
-      if (audioMode === "mix") {
-        try { await awaitWork(audioContext.decodeAudioData(await blob.arrayBuffer()), timeoutMs, "Probe audio decoder timed out", { code: "INVALID_OUTPUT" }); }
-        catch (cause) { throw error("INVALID_OUTPUT", "Probe audio track could not be decoded", cause); }
+      const routedAudioTracks = stream?.getAudioTracks?.() ?? [];
+      if (audioMode === "mix" && (!routedAudioTracks.length || routedAudioTracks.some(track => track.readyState === "ended"))) {
+        throw error("INVALID_OUTPUT", "Probe mixed audio track was not active in the recorder stream");
+      }
+      if (audioMode === "mix" && Array.isArray(video.audioTracks) && video.audioTracks.length === 0) {
+        throw error("INVALID_OUTPUT", "Probe output has no encoded audio track");
       }
       return Object.freeze({ verification: "verified", mimeType: recorder.mimeType || mimeType, width, height, fps, audioMode,
+        audioTrackRoute: audioMode === "mix" ? "verified" : "none",
         durationMetadata: measuredDurationMs === null ? "unavailable" : "verified" });
     } finally { URLApi.revokeObjectURL(url); }
   } finally {
@@ -497,7 +504,7 @@ export async function startExport(plan, host = {}, { signal, onProgress } = {}) 
     onProgress?.(Object.freeze({ phase: "validating", elapsedMs: plan.durationMs, targetMs: plan.durationMs,
       renderedFrames, droppedFrames }));
     const blob = new Blob(chunks, { type: recorder.mimeType || plan.mimeType });
-    const metadata = await inspectOutput(blob, plan, host, audioContext);
+    const metadata = await inspectOutput(blob, plan, host, stream);
     checkAbort(signal);
     return Object.freeze({ blob, mimeType: metadata.actualMime,
       extension: metadata.actualMime.toLowerCase().startsWith("video/mp4") ? "mp4" : "webm",
