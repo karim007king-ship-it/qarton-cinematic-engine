@@ -8,6 +8,8 @@ export const CHARACTER_INITIAL = Object.freeze({ headRotation: 0, eyeX: 0, eyeY:
   mouthOpen: 0, bodyRotation: 0, expression: "neutral", gesture: "neutral" });
 const PLAIN = value => value !== null && typeof value === "object" && !Array.isArray(value) &&
   [Object.prototype, null].includes(Object.getPrototypeOf(value));
+const ALLOWED_POSE_CHANNELS = new Set([...Object.keys(CHARACTER_CHANNELS), "expression", "gesture"]);
+const MAX_CHARACTER_KEYS = 512;
 
 export function makeCharacterTrack() {
   return { character: { id: "studio-character", initial: { ...CHARACTER_INITIAL } }, keyframes: [] };
@@ -17,7 +19,11 @@ export function compileCharacterTrack(track, durationMs) {
   if (!PLAIN(track) || Object.keys(track).sort().join(",") !== "character,keyframes" ||
       !PLAIN(track.character) || Object.keys(track.character).some(key => !["id", "initial"].includes(key)) ||
       typeof track.character.id !== "string" || !track.character.id.trim() || track.character.id.length > 64 ||
-      !Array.isArray(track.keyframes)) throw new TypeError("مسار الشخصية غير صالح.");
+      !Array.isArray(track.keyframes) || track.keyframes.length > MAX_CHARACTER_KEYS) throw new TypeError("مسار الشخصية غير صالح أو يتجاوز 512 مفتاحًا.");
+  if (track.character.initial !== undefined && (!PLAIN(track.character.initial) ||
+      Object.keys(track.character.initial).some(key => !ALLOWED_POSE_CHANNELS.has(key)))) {
+    throw new TypeError("الوضعية الابتدائية للشخصية تحتوي خصائص غير مدعومة.");
+  }
   return createCharacterAnimation({ character: track.character, durationMs, keyframes: track.keyframes });
 }
 

@@ -30,6 +30,7 @@ test("character keys reject collisions, invalid channels, ranges, and times atom
   assert.throws(() => moveCharacterKeyframe(track, 6000, duration + 1, duration), RangeError);
   assert.throws(() => addCharacterKeyframe(track, { atMs: 1000, values: { blink: 2 } }, duration), RangeError);
   assert.throws(() => updateCharacterKeyframe(track, 6000, { mystery: 1 }, duration), /unsupported/);
+  assert.throws(() => compileCharacterTrack({ character: { id: "bad", initial: { unknown: 1 } }, keyframes: [] }, duration), /خصائص غير مدعومة/);
   assert.equal(track.keyframes[1].values.blink, 1);
 });
 
