@@ -17,6 +17,12 @@ test("mobile interface exposes portrait preview, image input, camera controls an
   for (const id of ["stage", "imageInput", "aspectPreset", "fitMode", "viewportValue", "duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "seek", "playPauseButton", "replayButton", "saveProjectButton", "loadProjectButton", "exportFormat", "exportDuration", "exportQuality", "exportAudioEnabled", "exportButton", "cancelExportButton", "tryWebmButton", "exportProgress", "exportVideo", "exportDownload", "exportMetadata"]) {
     assert.match(html, new RegExp(`id=["']${id}["']`), `missing interface control ${id}`);
   }
+  for (const id of ["characterTimelineLane", "characterTimelineMarkers", "addCharacterKeyframe", "deleteCharacterKeyframe", "characterTimelinePlayhead"]) {
+    assert.match(html, new RegExp(`id=["']${id}["']`), `missing Character Track control ${id}`);
+  }
+  for (const channel of ["headRotation", "eyeX", "eyeY", "blink", "mouthOpen", "bodyRotation", "expression", "gesture"]) {
+    assert.match(html, new RegExp(`data-character-channel=["']${channel}["']`));
+  }
   assert.match(html, /width="720" height="1280"/);
   assert.match(html, /value="original" selected/);
   assert.match(html, /value="fit" selected/);
@@ -271,6 +277,7 @@ test("project control and duration updates preserve multi-key tracks and reject 
 test("browser module uses the engine sampling API and includes deterministic seek and replay paths", async () => {
   const source = await readFile(resolve(root, "examples/motion-studio-lab/studio.js"), "utf8");
   const timeline = await readFile(resolve(root, "examples/motion-studio-lab/studio-timeline.js"), "utf8");
+  const characterTimeline = await readFile(resolve(root, "examples/motion-studio-lab/studio-character-timeline.js"), "utf8");
   assert.match(source, /import \{[^}]*compileProject[^}]*drawFrame[^}]*sampleFrame[^}]*\} from "@qarton\/cinematic-engine\/motion-studio"/);
   assert.match(source, /sampleFrame\(compiled, currentMs\)/);
   assert.match(source, /seek\.addEventListener\("input"/);
@@ -284,6 +291,15 @@ test("browser module uses the engine sampling API and includes deterministic see
   assert.match(source, /bitmap\.close/);
   assert.doesNotMatch(source, /createCameraTrack|sampleCameraTrack|createTimeline/);
   assert.match(source, /createStudioTimeline/);
+  assert.match(source, /characterAnimation\.sample\(currentMs\)/);
+  assert.match(source, /exportCharacter\.sample\(projectMs\)/);
+  assert.match(source, /drawCharacter\(ctx/);
+  assert.match(source, /characterTimeline\?\.setBusy\(busy\)/);
+  assert.match(source, /makeProjectFile\(project, currentFileInfo, \{ aspectPreset, fitMode \}, characterTrack\)/);
+  assert.match(characterTimeline, /pointercancel/);
+  assert.match(characterTimeline, /lostpointercapture/);
+  assert.match(characterTimeline, /moveCharacterKeyframe/);
+  assert.match(characterTimeline, /isBusy\(\)/);
   assert.doesNotMatch(source, /pointerdown|pointermove|keyframeDrag/u, "timeline pointer state is isolated in its module");
   for (const api of ["addCameraKeyframe", "updateCameraKeyframe", "moveCameraKeyframe", "deleteCameraKeyframe"]) {
     assert.match(timeline, new RegExp(`${api}\\(`), `timeline must use L6-A ${api}`);

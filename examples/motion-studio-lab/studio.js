@@ -1,5 +1,5 @@
 import { compileProject, drawFrame, sampleFrame } from "@qarton/cinematic-engine/motion-studio";
-import { createRequestToken, makeProject, makeProjectFile, parseProjectFile, playbackTimeMs, prepareProjectUpdate, VIEWPORT } from "./studio-model.js?v=l6b-timeline-01";
+import { createRequestToken, makeProject, makeProjectFile, parseProjectFile, playbackTimeMs, prepareProjectUpdate, VIEWPORT } from "./studio-model.js?v=l7b-character-01";
 import { decodeImageBitmap } from "./studio-image.js?v=l4-flex-01";
 import { DEFAULT_OUTPUT_VIEWPORT, imageRect, inferAspectPreset, projectSizeForPreset, safePreviewSize } from "./studio-dimensions.js?v=l4-flex-01";
 import {
@@ -8,6 +8,8 @@ import {
   scheduleTestPulses, supportedCandidates
 } from "./studio-export-core.js?v=l5-export-01";
 import { createStudioTimeline } from "./studio-timeline.js?v=l6b-cleanup-01";
+import { compileCharacterTrack, drawCharacter, makeCharacterTrack } from "./studio-character-track.js?v=l7b-character-01";
+import { createCharacterTimeline } from "./studio-character-timeline.js?v=l7b-character-01";
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("stage");
@@ -78,6 +80,9 @@ canvas.style.aspectRatio = `${previewViewport.width} / ${previewViewport.height}
 const imageProvider = { get: (assetId) => project.layers.some((layer) => layer.assetId === assetId) ? imageSource : null };
 let compiled;
 let timelineEditor = null;
+let characterTrack = makeCharacterTrack();
+let characterAnimation = compileCharacterTrack(characterTrack, project.durationMs);
+let characterTimeline = null;
 
 function makePlaceholder(size) {
   const surface = document.createElement("canvas");
@@ -166,6 +171,7 @@ function setExportBusy(busy) {
     $(id).disabled = busy;
   }
   timelineEditor?.setBusy(busy);
+  characterTimeline?.setBusy(busy);
   exportButton.disabled = busy || !currentFileInfo || !exportCapability.mp4.length && !exportCapability.webm.length;
   exportFormat.disabled = busy;
   exportDuration.disabled = busy;
@@ -184,9 +190,10 @@ function createTestAudioGraph() {
   gain.connect(destination);
   return { audio, stream: destination.stream, gain };
 }
-function renderExportFrame(ctx, exportCompiled, elapsedMs, exportLengthMs) {
+function renderExportFrame(ctx, exportCompiled, exportCharacter, elapsedMs, exportLengthMs) {
   const projectMs = projectTimeAt(elapsedMs, exportLengthMs, exportCompiled.durationMs);
   drawFrame(ctx, sampleFrame(exportCompiled, projectMs));
+  if (characterTrack.keyframes.length) drawCharacter(ctx, exportCharacter.sample(projectMs), exportCompiled.viewport.width, exportCompiled.viewport.height);
 }
 async function exportVideoFile() {
   const unlock = exportLock.acquire();
@@ -228,7 +235,8 @@ async function exportVideoFile() {
     const exportContext = exportCanvas.getContext("2d", { alpha: false });
     if (!exportContext) throw new Error("لم تتوفر ذاكرة كافية لإنشاء Canvas التصدير.");
     const exportCompiled = compileProject(projectForRaster(project, rasterViewport), imageProvider);
-    renderExportFrame(exportContext, exportCompiled, 0, exportLengthMs);
+    const exportCharacter = compileCharacterTrack(characterTrack, exportCompiled.durationMs);
+    renderExportFrame(exportContext, exportCompiled, exportCharacter, 0, exportLengthMs);
     stream = exportCanvas.captureStream(rasterViewport.fps);
     if (exportAudioEnabled.checked) {
       audioGraph = createTestAudioGraph();
@@ -252,7 +260,7 @@ async function exportVideoFile() {
     const presentFrame = (frameIndex) => {
       if (frameIndex <= lastFrameIndex) return;
       const frameMs = exportFrameTime(frameIndex, rasterViewport.fps, exportLengthMs);
-      renderExportFrame(exportContext, exportCompiled, frameMs, exportLengthMs);
+      renderExportFrame(exportContext, exportCompiled, exportCharacter, frameMs, exportLengthMs);
       try { videoTrack?.requestFrame?.(); } catch { /* timed captureStream(fps) remains the fallback */ }
       lastFrameIndex = frameIndex;
     };
@@ -321,9 +329,11 @@ async function exportVideoFile() {
 function renderAt(timeMs) {
   currentMs = Math.max(0, Math.min(project.durationMs, timeMs));
   drawFrame(context, sampleFrame(compiled, currentMs));
+  if (characterTrack.keyframes.length) drawCharacter(context, characterAnimation.sample(currentMs), previewViewport.width, previewViewport.height);
   seek.value = String(currentMs);
   timeReadout.textContent = formatTime(currentMs);
   timelineEditor?.renderPlayhead();
+  characterTimeline?.render();
 }
 function inputNumber(id) { return Number($(id).value); }
 function syncOutputs() {
@@ -354,6 +364,14 @@ function commitKeyframeProject(nextProject) {
   syncLegacyCameraInputs();
   renderAt(currentMs);
   status.textContent = currentFileInfo ? "تم تحديث حركة الكاميرا" : "الحركة جاهزة؛ اختر صورة للمعاينة";
+}
+function commitCharacterTrack(nextTrack) {
+  if (activeExport) throw new Error("أوقف تصدير الفيديو قبل تعديل مسار الشخصية.");
+  const nextAnimation = compileCharacterTrack(nextTrack, project.durationMs);
+  characterTrack = nextTrack;
+  characterAnimation = nextAnimation;
+  renderAt(currentMs);
+  status.textContent = "تم تحديث حركة الشخصية";
 }
 function applyCanvasDimensions(size) {
   previewViewport = size;
@@ -398,8 +416,10 @@ function updateProject({ resetPlayback = false, viewport = project.viewport, edi
         get: (assetId) => candidate.layers.some((layer) => layer.assetId === assetId) ? nextImageSource : null
       })
     });
+    const nextCharacterAnimation = compileCharacterTrack(characterTrack, durationMs);
     project = nextProject;
     compiled = nextCompiled;
+    characterAnimation = nextCharacterAnimation;
     if (selectedWasLast && project.camera?.length) timelineEditor.selectTime(project.camera.at(-1).atMs);
     if (!currentFileInfo) placeholder = imageSource = nextImageSource;
     applyCanvasDimensions(nextPreview);
@@ -407,6 +427,7 @@ function updateProject({ resetPlayback = false, viewport = project.viewport, edi
     if (resetPlayback) stopPlayback();
     syncLegacyCameraInputs();
     timelineEditor?.render();
+    refreshCharacterTimeline();
     renderAt(Math.min(currentMs, durationMs));
     status.textContent = currentFileInfo ? "المعاينة جاهزة" : "اختر صورة للبدء";
     syncOutputs();
@@ -528,6 +549,27 @@ timelineEditor = createStudioTimeline({
   },
   commitProject: commitKeyframeProject
 });
+const characterFields = Object.fromEntries([...document.querySelectorAll("[data-character-channel]")]
+  .map(input => { input.dataset.channel = input.dataset.characterChannel; return [input.dataset.characterChannel, input]; }));
+characterTimeline = createCharacterTimeline({
+  lane: $("characterTimelineLane"), markers: $("characterTimelineMarkers"),
+  playhead: $("characterTimelinePlayhead"), selection: $("characterTimelineSelection"),
+  message: $("characterTimelineMessage"), addButton: $("addCharacterKeyframe"),
+  deleteButton: $("deleteCharacterKeyframe"), fields: characterFields,
+  getTrack: () => characterTrack, getDuration: () => project.durationMs, getTime: () => currentMs,
+  getAnimation: () => characterAnimation, isBusy: () => Boolean(activeExport),
+  seek: atMs => {
+    renderAt(atMs);
+    if (isPlaying) playbackStartAt = performance.now() - currentMs;
+  },
+  commit: commitCharacterTrack, formatTime
+});
+function renderCharacterRuler() {
+  const ruler = $("characterTimelineRuler"); ruler.replaceChildren();
+  for (let i = 0; i <= 4; i++) { const label = document.createElement("span"); label.textContent = formatTime(Math.round(project.durationMs * i / 4)); ruler.append(label); }
+}
+const renderCharacterTimeline = characterTimeline.render.bind(characterTimeline);
+function refreshCharacterTimeline() { renderCharacterRuler(); renderCharacterTimeline(); }
 for (const id of ["duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY"]) {
   $(id).addEventListener("input", () => updateProject({ resetPlayback: id === "duration", editedControl: id }));
 }
@@ -580,7 +622,7 @@ imageInput.addEventListener("change", async () => {
 $("saveProjectButton").addEventListener("click", () => {
   clearFailure();
   try {
-    const data = JSON.stringify(makeProjectFile(project, currentFileInfo, { aspectPreset, fitMode }), null, 2);
+    const data = JSON.stringify(makeProjectFile(project, currentFileInfo, { aspectPreset, fitMode }, characterTrack), null, 2);
     const url = URL.createObjectURL(new Blob([data], { type: "application/json" }));
     const link = document.createElement("a");
     link.href = url;
@@ -602,12 +644,15 @@ projectInput.addEventListener("change", async () => {
     const parsed = parseProjectFile(await file.text());
     const importedImageProvider = { get: (assetId) => parsed.project.layers.some((layer) => layer.assetId === assetId) ? placeholder : null };
     compileProject(parsed.project, importedImageProvider);
+    const parsedCharacterAnimation = compileCharacterTrack(parsed.characterTrack, parsed.project.durationMs);
     aspectPreset = parsed.settings?.aspectPreset ?? inferAspectPreset(parsed.project.viewport.width, parsed.project.viewport.height);
     fitMode = parsed.settings?.fitMode ?? "fit";
     aspectSelect.value = aspectPreset;
     fitSelect.value = fitMode;
     timelineEditor.clearSelection();
     project = parsed.project;
+    characterTrack = parsed.characterTrack;
+    characterAnimation = parsedCharacterAnimation;
     selectedImageFile = null;
     selectedImageDimensions = null;
     currentFileInfo = null;
@@ -631,6 +676,7 @@ projectInput.addEventListener("change", async () => {
 
 updateProject({ viewport: project.viewport });
 timelineEditor.render();
+refreshCharacterTimeline();
 renderAt(0);
 refreshExportControls();
 exportButton.addEventListener("click", () => { void exportVideoFile(); });

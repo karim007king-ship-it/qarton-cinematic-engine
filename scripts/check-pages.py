@@ -381,6 +381,153 @@ def exercise(context, url):
     page.locator('.keyframe-marker[data-key-time="7000"]').evaluate("el => el.click()")
     page.locator("#deleteKeyframeButton").click()
     assert [int(value) for value in page.locator(".keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")] == [0, 12000]
+
+    # Exercise the separate character lane through real DOM events and Canvas sampling.
+    for position in (2000, 6000, 10000):
+        studio_seek.evaluate("""(el, value) => {
+            el.value = String(value); el.dispatchEvent(new Event('input', {bubbles:true}));
+        }""", position)
+        page.locator("#addCharacterKeyframe").click()
+    assert page.locator(".character-keyframe-marker").count() == 3
+    focus_marker = page.locator('.character-keyframe-marker[data-key-time="6000"]')
+    focus_marker.evaluate("el => el.focus()")
+    page.keyboard.press("ArrowRight")
+    assert page.evaluate("document.activeElement?.dataset.keyTime") == "6000"
+    page.locator('.character-keyframe-marker[data-key-time="6000"]').evaluate("el => el.click()")
+    mouth = page.locator('[data-character-channel="mouthOpen"]')
+    mouth.fill("0.9")
+    mouth.dispatch_event("change")
+    assert page.locator("#characterTimelineSelection").inner_text() == "المحدد · 00:06.00"
+    set_studio_time(6000)
+    neutral_face = preview.evaluate("el => el.toDataURL()")
+    expression = page.locator('[data-character-channel="expression"]')
+    expression.select_option("happy")
+    expression.dispatch_event("change")
+    happy_face = preview.evaluate("el => el.toDataURL()")
+    assert happy_face != neutral_face
+    gesture = page.locator('[data-character-channel="gesture"]')
+    gesture.select_option("wave")
+    gesture.dispatch_event("change")
+    assert preview.evaluate("el => el.toDataURL()") != happy_face
+    studio_seek.evaluate("""(el, value) => {
+        el.value = String(value); el.dispatchEvent(new Event('input', {bubbles:true}));
+    }""", 4000)
+    character_frame = preview.evaluate("el => el.toDataURL()")
+    studio_seek.evaluate("""(el, value) => {
+        el.value = '0'; el.dispatchEvent(new Event('input', {bubbles:true}));
+        el.value = String(value); el.dispatchEvent(new Event('input', {bubbles:true}));
+    }""", 4000)
+    assert preview.evaluate("el => el.toDataURL()") == character_frame
+    # Cancelled pointer drags retain the last committed valid key time.
+    character_lane = page.locator("#characterTimelineLane")
+    character_box = character_lane.bounding_box()
+    page.locator('.character-keyframe-marker[data-key-time="6000"]').dispatch_event("pointerdown", {
+        "pointerId": 67, "pointerType": "touch", "isPrimary": True, "button": 0,
+        "clientX": character_box["x"] + character_box["width"] * .5,
+        "clientY": character_box["y"] + character_box["height"] / 2
+    })
+    character_lane.dispatch_event("pointermove", {
+        "pointerId": 67, "pointerType": "touch", "isPrimary": True, "button": 0,
+        "clientX": character_box["x"] + character_box["width"] * .58,
+        "clientY": character_box["y"] + character_box["height"] / 2
+    })
+    character_lane.dispatch_event("pointercancel", {"pointerId": 67, "pointerType": "touch", "isPrimary": True, "button": 0})
+    assert page.locator('.character-keyframe-marker[data-key-time="6960"]').count() == 1
+    assert page.locator("#characterTimelineLane").get_attribute("data-scrubbing") is None
+
+    # A drag into an occupied timestamp fails atomically, while a native
+    # lostpointercapture after a valid move keeps that last valid position.
+    character_lane = page.locator("#characterTimelineLane")
+    character_box = character_lane.bounding_box()
+    page.locator('.character-keyframe-marker[data-key-time="6960"]').dispatch_event("pointerdown", {
+        "pointerId": 68, "pointerType": "touch", "isPrimary": True, "button": 0,
+        "clientX": character_box["x"] + character_box["width"] * .58,
+        "clientY": character_box["y"] + character_box["height"] / 2
+    })
+    assert character_lane.get_attribute("data-scrubbing") is None, "marker pointerdown must not start lane scrubbing"
+    character_lane.dispatch_event("pointermove", {
+        "pointerId": 68, "pointerType": "touch", "isPrimary": True, "button": 0,
+        "clientX": character_box["x"] + character_box["width"] * (10000 / 12000),
+        "clientY": character_box["y"] + character_box["height"] / 2
+    })
+    assert "يوجد مفتاح آخر" in page.locator("#characterTimelineMessage").inner_text()
+    character_lane.dispatch_event("lostpointercapture", {"pointerId": 68, "pointerType": "touch", "isPrimary": True, "button": 0})
+    assert page.locator('.character-keyframe-marker[data-key-time="6960"]').count() == 1
+
+    character_box = character_lane.bounding_box()
+    page.evaluate("""() => {
+        window.lostCapturePointerId = null;
+        document.querySelector('#characterTimelineLane').addEventListener('pointerdown', event => {
+            window.lostCapturePointerId = event.pointerId;
+        }, {capture: true, once: true});
+    }""")
+    page.mouse.move(character_box["x"] + character_box["width"] * .58, character_box["y"] + character_box["height"] / 2)
+    page.mouse.down()
+    lost_pointer_id = page.evaluate("window.lostCapturePointerId")
+    assert lost_pointer_id is not None
+    assert character_lane.evaluate("(el, id) => el.hasPointerCapture(id)", lost_pointer_id)
+    page.mouse.move(character_box["x"] + character_box["width"] * .67, character_box["y"] + character_box["height"] / 2)
+    character_lane.evaluate("(el, id) => el.releasePointerCapture(id)", lost_pointer_id)
+    assert page.locator('.character-keyframe-marker[data-key-time="8040"]').count() == 1
+    page.wait_for_function("!document.querySelector('#characterTimelineLane').hasAttribute('data-dragging')")
+    page.mouse.up()
+    assert page.locator('.character-keyframe-marker[data-key-time="8040"]').count() == 1
+
+    character_box = character_lane.bounding_box()
+    page.locator('.character-keyframe-marker[data-key-time="8040"]').dispatch_event("pointerdown", {
+        "pointerId": 70, "pointerType": "touch", "isPrimary": True, "button": 0,
+        "clientX": character_box["x"] + character_box["width"] * .67,
+        "clientY": character_box["y"] + character_box["height"] / 2
+    })
+    character_lane.dispatch_event("pointermove", {
+        "pointerId": 70, "pointerType": "touch", "isPrimary": True, "button": 0,
+        "clientX": character_box["x"] + character_box["width"] * .625,
+        "clientY": character_box["y"] + character_box["height"] / 2
+    })
+    character_lane.dispatch_event("pointerup", {"pointerId": 70, "pointerType": "touch", "isPrimary": True, "button": 0})
+    assert page.locator('.character-keyframe-marker[data-key-time="7500"]').count() == 1
+
+    # Use a real browser pointer to begin a lane scrub, then acquire the export
+    # lock. The lock must release capture and discard the stale scrub before retry.
+    page.locator("#exportDuration").select_option("3000")
+    character_box = character_lane.bounding_box()
+    page.evaluate("""() => {
+        window.characterPointerId = null;
+        document.querySelector('#characterTimelineLane').addEventListener('pointerdown', event => {
+            window.characterPointerId = event.pointerId;
+        }, {capture: true, once: true});
+    }""")
+    page.mouse.move(character_box["x"] + character_box["width"] * .4, character_box["y"] + character_box["height"] / 2)
+    page.mouse.down()
+    pointer_id = page.evaluate("window.characterPointerId")
+    assert pointer_id is not None
+    assert character_lane.evaluate("(el, id) => el.hasPointerCapture(id)", pointer_id)
+    locked_time = page.locator("#seek").input_value()
+    page.locator("#exportButton").evaluate("el => el.click()")
+    page.wait_for_function("!document.querySelector('#cancelExportButton').hidden")
+    assert character_lane.get_attribute("aria-disabled") == "true"
+    assert character_lane.get_attribute("data-scrubbing") is None
+    assert not character_lane.evaluate("(el, id) => el.hasPointerCapture(id)", pointer_id)
+    page.locator("#cancelExportButton").evaluate("el => el.click()")
+    page.wait_for_function("document.querySelector('#exportStatus').textContent.includes('أُلغي التسجيل')")
+    page.wait_for_function("document.querySelector('#characterTimelineLane').getAttribute('aria-disabled') === 'false'")
+    page.mouse.move(character_box["x"] + character_box["width"] * .9, character_box["y"] + character_box["height"] / 2)
+    assert page.locator("#seek").input_value() == locked_time, "cancelled scrub must not resume after export unlock"
+    page.mouse.up()
+
+    with page.expect_download() as character_download_info:
+        page.locator("#saveProjectButton").click()
+    character_path = Path("/tmp/qarton-motion-studio-character.json")
+    character_download_info.value.save_as(character_path)
+    character_data = json.loads(character_path.read_text())
+    assert [key["atMs"] for key in character_data["characterTrack"]["keyframes"]] == [2000, 7500, 10000]
+    page.locator("#loadProjectButton").click()
+    page.locator("#projectInput").set_input_files(str(character_path))
+    page.get_by_text("فُتح المشروع؛ اختر الصورة المرتبطة به", exact=True).wait_for()
+    assert page.locator(".character-keyframe-marker").count() == 3
+    page.locator('.character-keyframe-marker[data-key-time="7500"]').evaluate("el => el.click()")
+    page.locator("#deleteCharacterKeyframe").click()
+    assert [int(value) for value in page.locator(".character-keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")] == [2000, 10000]
     page.goto(url + "examples/character-animation-lab/")
     page.wait_for_function("document.querySelector('#status')?.textContent.includes('المشهد جاهز')")
     actor = page.locator("#character")
