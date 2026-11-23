@@ -508,8 +508,9 @@ def exercise(context, url):
     page.mouse.move(key_box["x"] + key_box["width"] / 2, key_box["y"] + key_box["height"] / 2)
     page.mouse.down()
     page.wait_for_function("document.querySelector('#characterTimelineLane').hasPointerCapture(window.lastCharacterPointerId)")
-    page.mouse.move(character_box["x"] + character_box["width"] * (7500 / 12000),
-                    character_box["y"] + character_box["height"] / 2)
+    current_lane_box = character_lane.bounding_box()
+    page.mouse.move(current_lane_box["x"] + current_lane_box["width"] * (7500 / 12000),
+                    current_lane_box["y"] + current_lane_box["height"] / 2)
     page.mouse.up()
     assert page.locator('.character-keyframe-marker[data-key-time="7500"]').count() == 1
 
@@ -546,7 +547,12 @@ def exercise(context, url):
     character_path = Path("/tmp/qarton-motion-studio-character.json")
     character_download_info.value.save_as(character_path)
     character_data = json.loads(character_path.read_text())
-    assert [key["atMs"] for key in character_data["characterTrack"]["keyframes"]] == [2000, 7500, 10000]
+    saved_character_times = [key["atMs"] for key in character_data["characterTrack"]["keyframes"]]
+    assert saved_character_times == [2000, 7500, 10000], {
+        "saved_times": saved_character_times,
+        "timeline_message": page.locator("#characterTimelineMessage").inner_text(),
+        "selection": page.locator("#characterTimelineSelection").inner_text(),
+    }
     page.locator("#loadProjectButton").click()
     page.locator("#projectInput").set_input_files(str(character_path))
     page.get_by_text("فُتح المشروع؛ اختر الصورة المرتبطة به", exact=True).wait_for()
