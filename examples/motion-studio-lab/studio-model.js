@@ -48,7 +48,7 @@ export function setCameraEndpoints(project, { durationMs = project.durationMs, s
   validateCameraKeyframes(project.camera, project.durationMs);
   const keys = project.camera.map(({ atMs, value }) => ({ atMs, value: { ...value } }));
   if (keys.slice(1, -1).some(({ atMs }) => atMs >= durationMs)) {
-    throw new RangeError("لا يمكن تقصير المدة إلى ما قبل Keyframe موجود؛ حرّك الإطار أو احذفه أولًا.");
+    throw new RangeError("لا يمكن تقصير المدة لأن Keyframe وسيطًا سيصل إلى نقطة النهاية أو يتجاوزها؛ حرّكه أو احذفه أولًا.");
   }
   const startPose = normalizeCameraPose({ ...keys[0].value, ...start });
   const endPose = normalizeCameraPose({ ...keys.at(-1).value, ...end });
@@ -64,6 +64,33 @@ export function setCameraEndpoints(project, { durationMs = project.durationMs, s
   }
   validateCameraKeyframes(camera, durationMs);
   return { ...project, durationMs, camera };
+}
+
+/** Prepare a complete project update before the caller commits any active UI state. */
+export function prepareProjectUpdate(project, { durationMs, viewport, start, end, prepare }) {
+  if (typeof prepare !== "function") throw new TypeError("Project update requires a prepare callback");
+  validateViewport(viewport);
+  let candidate;
+  if (project?.camera?.length) {
+    candidate = {
+      ...setCameraEndpoints(project, { durationMs, start, end }),
+      viewport: { ...viewport }
+    };
+  } else {
+    candidate = makeProject({
+      durationMs,
+      viewport,
+      layers: project.layers,
+      startZoom: start.zoom,
+      endZoom: end.zoom,
+      startX: start.x,
+      endX: end.x,
+      startY: start.y,
+      endY: end.y
+    });
+  }
+  const prepared = prepare(candidate);
+  return { project: candidate, prepared };
 }
 
 export function createRequestToken() {

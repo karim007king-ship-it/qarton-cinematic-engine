@@ -236,7 +236,7 @@ test("legacy start/end controls preserve intermediate imported keyframes and rej
   assert.deepEqual(project.camera.map(({ atMs }) => atMs), [0, 4200, 9000], "source JSON remains unchanged");
   assert.throws(() => setCameraEndpoints(project, {
     durationMs: 4000, start: { x: 0, y: 0, zoom: 1 }, end: { x: 0, y: 0, zoom: 1 }
-  }), /Keyframe موجود/);
+  }), /Keyframe وسيطًا سيصل إلى نقطة النهاية/);
 });
 
 test("browser module uses the engine sampling API and includes deterministic seek and replay paths", async () => {
@@ -253,6 +253,16 @@ test("browser module uses the engine sampling API and includes deterministic see
   assert.doesNotMatch(source, /project\.layers\[0\]\.assetId\s*=\s*["']photo-1/);
   assert.match(source, /bitmap\.close/);
   assert.doesNotMatch(source, /createCameraTrack|sampleCameraTrack|createTimeline/);
+});
+
+test("UI prepares a candidate project before committing the active project and compiled frame", async () => {
+  const source = await readFile(resolve(root, "examples/motion-studio-lab/studio.js"), "utf8");
+  const prepareIndex = source.indexOf("prepare: (candidate) => compileProject(projectForRaster(candidate, nextPreview)");
+  const commitIndex = source.indexOf("project = nextProject;");
+  assert.notEqual(prepareIndex, -1);
+  assert.notEqual(commitIndex, -1);
+  assert.ok(prepareIndex < commitIndex, "candidate compilation runs before the active project is replaced");
+  assert.match(source, /project = nextProject;\s*compiled = nextCompiled;/);
 });
 
 test("video export uses Motion Studio sampling, cancellation, resource cleanup and real MIME probes", async () => {
