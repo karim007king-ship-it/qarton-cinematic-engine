@@ -16,8 +16,13 @@ function isPlainObject(value) {
     [Object.prototype, null].includes(Object.getPrototypeOf(value));
 }
 
+function hasExactKeys(value, expected) {
+  const keys = Reflect.ownKeys(value);
+  return keys.length === expected.length && keys.every((key) => typeof key === "string" && expected.includes(key));
+}
+
 function validatePose(value, label = "Keyframe pose") {
-  if (!isPlainObject(value) || Object.keys(value).sort().join(",") !== [...POSE_FIELDS].sort().join(",")) {
+  if (!isPlainObject(value) || !hasExactKeys(value, POSE_FIELDS)) {
     throw new TypeError(`${label} must contain exactly x, y, zoom, and rotation`);
   }
   for (const field of POSE_FIELDS) {
@@ -42,7 +47,7 @@ function timelineFor(camera, durationMs, { allowMissing = false } = {}) {
     throw new TypeError("Camera keyframes must contain 1 to 1024 entries");
   }
   const timeline = createTimeline(camera.map((key, index) => {
-    if (!isPlainObject(key) || Object.keys(key).sort().join(",") !== "atMs,value") {
+    if (!isPlainObject(key) || !hasExactKeys(key, ["atMs", "value"])) {
       throw new TypeError(`Camera keyframe ${index} must contain only atMs and value`);
     }
     if (!Number.isSafeInteger(key.atMs) || key.atMs < 0 || key.atMs > durationMs) {
@@ -89,7 +94,11 @@ function withFrames(project, frames) {
 }
 
 /** Add a full-pose camera keyframe. Returns a fresh project with chronological keys. */
-export function addCameraKeyframe(project, { atMs, value }) {
+export function addCameraKeyframe(project, keyframe) {
+  if (!isPlainObject(keyframe) || !hasExactKeys(keyframe, ["atMs", "value"])) {
+    throw new TypeError("Add keyframe input must contain only atMs and value");
+  }
+  const { atMs, value } = keyframe;
   const { frames } = checkedProject(project);
   checkedTime(atMs, project.durationMs);
   const pose = validatePose(value);
@@ -101,7 +110,8 @@ export function addCameraKeyframe(project, { atMs, value }) {
 export function updateCameraKeyframe(project, atMs, patch) {
   const { frames } = checkedProject(project);
   checkedTime(atMs, project.durationMs);
-  if (!isPlainObject(patch) || Object.keys(patch).length === 0 || Object.keys(patch).some((key) => !POSE_FIELDS.includes(key))) {
+  if (!isPlainObject(patch) || Reflect.ownKeys(patch).length === 0 ||
+      Reflect.ownKeys(patch).some((key) => typeof key !== "string" || !POSE_FIELDS.includes(key))) {
     throw new TypeError("Keyframe update must contain one or more of x, y, zoom, or rotation");
   }
   const index = frames.findIndex((key) => key.atMs === atMs);
