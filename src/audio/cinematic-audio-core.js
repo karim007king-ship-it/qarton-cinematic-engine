@@ -172,6 +172,9 @@ export function createCinematicAudioPlayer(project, {
   let state = "paused";
   let destroyed = false;
   let destroying = false;
+  let lastStableTime = 0;
+  let recoveryState = "paused";
+  let lastError = null;
   const trackVolumes = new Map(project.tracks.map(track => [track.id, track.volume]));
   const voices = new Map();
 
@@ -207,54 +210,107 @@ export function createCinematicAudioPlayer(project, {
         id: clip.id, trackId: clip.trackId, channel: clip.type, type: clip.type,
         loop: clip.loop, offsetMs: timeMs - clip.startMs, volume: effectiveVolume(clip)
       }));
-      if (voice != null) voices.set(clip.id, voice);
+      if (voice == null || (typeof voice === "object" && typeof voice.then === "function")) {
+        throw new TypeError(`Audio adapter play() must return a synchronous voice handle for "${clip.id}"`);
+      }
+      voices.set(clip.id, voice);
     }
   }
   function currentTime() { return clock.time(); }
   function sample(timeMs = currentTime()) { assertAlive(); return project.sample(timeMs); }
-  function playFrom(timeMs) {
+  function rollback(timeMs, previousState, cause) {
+    clock.pause();
     clock.seek(timeMs);
-    clock.resume();
-    state = "playing";
-    reconcile(timeMs, true);
-    return sample(timeMs);
+    lastStableTime = timeMs;
+    recoveryState = previousState === "ended" ? "ended" : "paused";
+    let cleanupError = null;
+    try { stopVoices(); } catch (error) { cleanupError = error; }
+    state = voices.size ? "error" : recoveryState;
+    lastError = cleanupError ? new AggregateError([cause, cleanupError], "Audio operation failed and cleanup is incomplete") : cause;
+    if (cleanupError) throw lastError;
+    throw cause;
+  }
+  function playFrom(timeMs, rollbackTime = lastStableTime, previousState = state) {
+    const target = Math.max(0, Math.min(project.durationMs, timeMs));
+    clock.pause();
+    try {
+      stopVoices();
+      reconcile(target, true);
+      clock.seek(target);
+      clock.resume();
+      state = "playing";
+      lastStableTime = target;
+      recoveryState = "paused";
+      lastError = null;
+      return sample(target);
+    } catch (error) {
+      return rollback(rollbackTime, previousState, error);
+    }
   }
   function playNow() {
     assertAlive();
+    if (state === "error") throw new Error("Audio adapter failed; call recover() before playback");
     if (state === "playing") return sample();
-    if (state === "ended") return playFrom(0);
-    return playFrom(currentTime());
+    if (state === "ended") return playFrom(0, lastStableTime, state);
+    return playFrom(lastStableTime, lastStableTime, state);
   }
   function pause() {
     assertAlive();
+    if (state === "error") throw new Error("Audio adapter failed; call recover() before pausing");
     if (state !== "playing") return sample();
     const timeMs = clock.pause();
-    state = "paused";
-    stopVoices();
-    return sample(timeMs);
+    try {
+      stopVoices();
+      state = timeMs >= project.durationMs ? "ended" : "paused";
+      lastStableTime = timeMs;
+      recoveryState = state;
+      lastError = null;
+      return sample(timeMs);
+    } catch (error) {
+      return rollback(timeMs, timeMs >= project.durationMs ? "ended" : "paused", error);
+    }
   }
   function seek(timeMs) {
     assertAlive();
+    if (state === "error") throw new Error("Audio adapter failed; call recover() before seeking");
+    if (!Number.isFinite(timeMs)) throw new TypeError("Seek time must be finite");
     const wasPlaying = state === "playing";
-    const time = clock.seek(timeMs);
-    if (wasPlaying && time < project.durationMs) reconcile(time, true);
-    else {
+    const previousTime = wasPlaying ? clock.time() : lastStableTime;
+    const previousState = state;
+    const time = Math.max(0, Math.min(project.durationMs, timeMs));
+    if (wasPlaying && time < project.durationMs) return playFrom(time, previousTime, previousState);
+    clock.pause();
+    try {
       stopVoices();
-      clock.pause();
+      clock.seek(time);
+      lastStableTime = time;
       state = time >= project.durationMs ? "ended" : "paused";
+      recoveryState = state;
+      lastError = null;
+      return sample(time);
+    } catch (error) {
+      return rollback(previousTime, previousState, error);
     }
-    return sample(time);
   }
   function tick() {
     assertAlive();
+    if (state === "error") return sample(lastStableTime);
+    if (state !== "playing") return sample();
+    const previousTime = lastStableTime;
     const timeMs = currentTime();
-    if (state === "playing") {
+    try {
       reconcile(timeMs);
       if (timeMs >= project.durationMs) {
         clock.pause();
         stopVoices();
         state = "ended";
+        lastStableTime = project.durationMs;
+        recoveryState = "ended";
       }
+      else lastStableTime = timeMs;
+      lastError = null;
+    } catch (error) {
+      return rollback(previousTime, "playing", error);
     }
     return sample(timeMs);
   }
@@ -272,10 +328,32 @@ export function createCinematicAudioPlayer(project, {
     }
     return next;
   }
-  function replay() { assertAlive(); stopVoices(); return playFrom(0); }
+  function replay() {
+    assertAlive();
+    if (state === "error") throw new Error("Audio adapter failed; call recover() before replay");
+    const previousTime = state === "playing" ? clock.time() : lastStableTime;
+    return playFrom(0, previousTime, state);
+  }
+  function recover() {
+    assertAlive();
+    if (state !== "error") return sample(lastStableTime);
+    clock.pause();
+    clock.seek(lastStableTime);
+    try {
+      stopVoices();
+      state = recoveryState;
+      lastError = null;
+      return sample(lastStableTime);
+    } catch (error) {
+      lastError = error;
+      throw error;
+    }
+  }
   function destroy() {
     if (destroyed) return false;
+    if (state === "playing") lastStableTime = clock.time();
     clock.pause();
+    clock.seek(lastStableTime);
     state = "destroying";
     destroying = true;
     stopVoices();
@@ -286,10 +364,11 @@ export function createCinematicAudioPlayer(project, {
   }
 
   return Object.freeze({
-    play: playNow, pause, resume: playNow, seek, replay, tick, sample,
+    play: playNow, pause, resume: playNow, seek, replay, tick, sample, recover,
     setMasterVolume, setTrackVolume, destroy,
     get timeMs() { assertAlive(); return currentTime(); },
     get state() { return state; },
-    get activeVoiceCount() { return voices.size; }
+    get activeVoiceCount() { return voices.size; },
+    get error() { return lastError; }
   });
 }

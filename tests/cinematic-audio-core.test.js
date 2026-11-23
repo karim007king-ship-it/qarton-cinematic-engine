@@ -127,3 +127,132 @@ test("destroy remains closed and retries a voice whose adapter cleanup failed", 
   assert.equal(stopAttempts, 2);
   assert.equal(player.state, "destroyed");
 });
+
+test("partial multi-clip Play rolls back the clock, stops started voices, and can retry", () => {
+  const compiled = compileCinematicAudioProject({ durationMs: 2000, tracks: [
+    { id: "dialogue", type: "dialogue", clips: [{ id: "line", asset: "line", startMs: 0, durationMs: 1500, language: "ar" }] },
+    { id: "music", type: "music", clips: [{ id: "bed", asset: "bed", startMs: 0, durationMs: 2000, loop: true }] }
+  ] });
+  let failSecond = true;
+  const started = [];
+  const stopped = [];
+  const player = createCinematicAudioPlayer(compiled, {
+    play: (asset, options) => {
+      if (asset === "bed" && failSecond) throw new Error("music adapter rejected start");
+      const voice = { asset, id: options.id };
+      started.push(voice);
+      return voice;
+    },
+    stop: voice => stopped.push(voice.id)
+  });
+  assert.throws(() => player.play(), /rejected start/);
+  assert.equal(player.state, "paused");
+  assert.equal(player.timeMs, 0);
+  assert.equal(player.activeVoiceCount, 0);
+  assert.deepEqual(stopped, ["line"]);
+  failSecond = false;
+  player.play();
+  assert.equal(player.state, "playing");
+  assert.equal(player.activeVoiceCount, 2);
+  player.destroy();
+});
+
+test("persistent Stop failure freezes at the pause time until recover retries cleanup", () => {
+  let now = 0;
+  let canStop = false;
+  let stops = 0;
+  const player = createCinematicAudioPlayer(compileCinematicAudioProject({ durationMs: 2000, tracks: [
+    { id: "music", type: "music", clips: [{ id: "bed", asset: "bed", startMs: 0, durationMs: 2000, loop: true }] }
+  ] }), {
+    now: () => now,
+    play: (_asset, options) => ({ id: options.id }),
+    stop: () => { stops += 1; if (!canStop) throw new Error("native stop failed"); }
+  });
+  player.play();
+  now = 100;
+  player.tick();
+  now = 180;
+  assert.throws(() => player.pause(), error => error instanceof AggregateError &&
+    error.errors.some(item => item.message === "native stop failed"));
+  assert.equal(player.state, "error");
+  assert.equal(player.timeMs, 180);
+  assert.equal(player.activeVoiceCount, 1);
+  assert.throws(() => player.play(), /recover/);
+  canStop = true;
+  assert.equal(player.recover().timeMs, 180);
+  assert.equal(player.state, "paused");
+  assert.equal(player.activeVoiceCount, 0);
+  assert.equal(stops, 3); // failed pause stop, rollback cleanup attempt, explicit recovery
+  player.play();
+  assert.equal(player.state, "playing");
+  player.destroy();
+});
+
+test("failed Seek restart restores the previous committed time and can be retried", () => {
+  let now = 0;
+  let failDialogue = false;
+  const stopped = [];
+  const player = createCinematicAudioPlayer(compileCinematicAudioProject({ durationMs: 3000, tracks: [
+    { id: "music", type: "music", clips: [{ id: "bed", asset: "bed", startMs: 0, durationMs: 3000, loop: true }] },
+    { id: "dialogue", type: "dialogue", clips: [{ id: "line", asset: "line", startMs: 500, durationMs: 1000, language: "tn" }] }
+  ] }), {
+    now: () => now,
+    play: (asset, options) => {
+      if (asset === "line" && failDialogue) throw new Error("dialogue seek start failed");
+      return { asset, id: options.id };
+    },
+    stop: voice => stopped.push(voice.id)
+  });
+  player.play();
+  now = 120;
+  player.tick();
+  failDialogue = true;
+  assert.throws(() => player.seek(700), /dialogue seek start failed/);
+  assert.equal(player.state, "paused");
+  assert.equal(player.timeMs, 120);
+  assert.equal(player.activeVoiceCount, 0);
+  assert.deepEqual(stopped, ["bed", "bed"]);
+  failDialogue = false;
+  assert.equal(player.seek(700).dialogue[0].language, "tn");
+  assert.equal(player.timeMs, 700);
+  assert.equal(player.state, "paused");
+  player.play();
+  assert.equal(player.state, "playing");
+  player.destroy();
+});
+
+test("clip boundaries are half-open and delayed ticks start only clips still active at sampled time", () => {
+  let now = 0;
+  const calls = [];
+  const stopped = [];
+  const compiled = compileCinematicAudioProject({ durationMs: 4000, tracks: [{
+    id: "effects", type: "sfx", clips: [
+      { id: "first", asset: "first", startMs: 0, durationMs: 1000 },
+      { id: "second", asset: "second", startMs: 1000, durationMs: 1500 },
+      { id: "missed", asset: "missed", startMs: 2700, durationMs: 100 },
+      { id: "tail", asset: "tail", startMs: 3000, durationMs: 500 }
+    ]
+  }] });
+  const player = createCinematicAudioPlayer(compiled, {
+    now: () => now,
+    play: (asset, options) => { calls.push({ asset, offsetMs: options.offsetMs }); return asset; },
+    stop: asset => stopped.push(asset)
+  });
+  assert.equal(compiled.sample(1000).activeClips[0].id, "second");
+  assert.equal(compiled.sample(2500).activeClips.length, 0);
+  player.play();
+  assert.deepEqual(calls[0], { asset: "first", offsetMs: 0 });
+  now = 999; player.tick();
+  assert.equal(calls.length, 1);
+  now = 1000; player.tick();
+  assert.deepEqual(calls.at(-1), { asset: "second", offsetMs: 0 });
+  now = 2500; player.tick();
+  assert.equal(player.activeVoiceCount, 0);
+  now = 3100; player.tick();
+  assert.deepEqual(calls.at(-1), { asset: "tail", offsetMs: 100 });
+  assert.equal(calls.some(call => call.asset === "missed"), false);
+  now = 3500; player.tick();
+  assert.equal(player.activeVoiceCount, 0);
+  assert.deepEqual(stopped, ["first", "second", "tail"]);
+  player.destroy();
+});
