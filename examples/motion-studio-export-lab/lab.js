@@ -192,8 +192,8 @@ async function probeOneFormat(format) {
       audioGraph = makeAudioGraph();
       stream.addTrack(audioGraph.mediaDestination.stream.getAudioTracks()[0]);
       await audioGraph.audio.resume();
-      scheduleTestPulses(audioGraph.audio, audioGraph.gain, 350);
-      const { recorder, chunks } = await collectChunks(stream, mime, 350);
+      scheduleTestPulses(audioGraph.audio, audioGraph.gain, 700);
+      const { recorder, chunks } = await collectChunks(stream, mime, 700);
       const blob = new Blob(chunks, { type: recorder.mimeType || mime });
       if (!blob.size) throw new Error('MediaRecorder انطلق لكن الملف الناتج فارغ.');
       output.textContent = `نجح التسجيل القصير: ${recorder.mimeType || mime} — ${blob.size} بايت`;
