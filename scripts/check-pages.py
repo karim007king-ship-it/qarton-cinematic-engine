@@ -4,6 +4,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 from os import environ
 from pathlib import Path
+import re
 import struct
 from threading import Thread
 import zlib
@@ -182,14 +183,17 @@ def exercise(context, url):
     assert large_decode and large_decode["options"].get("resizeWidth") == 1280
     assert large_decode["width"] * large_decode["height"] <= 2_621_440
     assert large_decode["width"] <= 2048 and large_decode["height"] <= 2048
-    assert "1920 × 1280" in page.locator("#viewportValue").inner_text()
+    native_project = re.search(r"(\d+) × (\d+) · معاينة (\d+) × (\d+)", page.locator("#viewportValue").evaluate("el => el.textContent"))
+    assert native_project
+    assert abs(int(native_project.group(1)) / int(native_project.group(2)) - large_decode["width"] / large_decode["height"]) < 0.003
 
     image_input.set_input_files(str(site / "examples/motion-studio-lab/preview-test.png"))
     page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
     assert "preview-test.png" in page.locator("#imageName").inner_text()
     normal_decode = page.evaluate("labBitmapCalls.find(call => call.name === 'preview-test.png')")
     assert normal_decode and normal_decode["width"] <= 2048 and normal_decode["height"] <= 2048
-    assert "1920 × 1920" in page.locator("#viewportValue").inner_text()
+    square_project = re.search(r"(\d+) × (\d+) · معاينة (\d+) × (\d+)", page.locator("#viewportValue").evaluate("el => el.textContent"))
+    assert square_project and square_project.group(1) == square_project.group(2)
 
     assert page.locator("#aspectPreset").input_value() == "original"
     assert page.locator("#fitMode").input_value() == "fit"
