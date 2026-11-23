@@ -30,7 +30,13 @@ class FakeCanvas {
 class FakeRecorder extends EventTarget {
   static isTypeSupported(type) { return type === "video/webm;codecs=vp8,opus"; }
   constructor(stream, options) { super(); this.stream = stream; this.mimeType = options.mimeType; this.state = "inactive"; }
-  start() { this.state = "recording"; FakeRecorder.paintCountAtStart = this.stream.getVideoTracks()[0]?.owner?.paintCount ?? 0; queueMicrotask(() => this.dispatchEvent(new Event("start"))); }
+  start() {
+    this.state = "recording";
+    const track = this.stream.getVideoTracks()[0];
+    FakeRecorder.paintCountAtStart = track?.owner?.paintCount ?? 0;
+    FakeRecorder.requestCountAtStart = track?.requests ?? 0;
+    queueMicrotask(() => this.dispatchEvent(new Event("start")));
+  }
   stop() {
     if (this.state !== "recording") return;
     this.state = "inactive";
@@ -104,6 +110,7 @@ test("recording uses exact absolute project samples, reports progress, validates
   assert.ok(progress.some(({ phase }) => phase === "validating"));
   assert.equal(canvas.track.stopped, true);
   assert.ok(canvas.track.requests > 0);
+  assert.ok(FakeRecorder.requestCountAtStart > 0, "manual Canvas track is requested before waiting for MediaRecorder.start");
 });
 
 test("WebM without finite container duration metadata uses the shared recording clock and reports the limitation", async () => {

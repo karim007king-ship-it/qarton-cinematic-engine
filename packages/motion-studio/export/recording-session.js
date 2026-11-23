@@ -309,6 +309,7 @@ export async function startExport(plan, host = {}, { signal, onProgress } = {}) 
   let canvas = null;
   let rafId = null;
   let watchdog = null;
+  let startFrameInterval = null;
   let chunks = [];
   let released = false;
   let stopReason = null;
@@ -326,6 +327,7 @@ export async function startExport(plan, host = {}, { signal, onProgress } = {}) 
     released = true;
     if (rafId !== null) (caf ?? clearTimeout)(rafId);
     if (watchdog !== null) clearInterval(watchdog);
+    if (startFrameInterval !== null) clearInterval(startFrameInterval);
     signal?.removeEventListener("abort", onAbort);
     document?.removeEventListener?.("visibilitychange", onVisibility);
     window?.removeEventListener?.("pagehide", onPageHide);
@@ -405,15 +407,34 @@ export async function startExport(plan, host = {}, { signal, onProgress } = {}) 
       boundTracks.push([track, onTrackEnded]);
     }
     checkAbort(signal);
+    const fps = plan.fps;
+    const frameContext = Object.freeze({ exporting: true, range: plan.range, quality: plan.quality, audio: plan.audio });
+    const primeStartFrame = () => {
+      if (released || stopReason) return;
+      try {
+        const result = host.renderFrame(context, startSceneMs, plan.viewport, Object.freeze({ ...frameContext,
+          frameIndex: 0, elapsedMs: 0 }));
+        if (result?.then) throw error("CAPTURE_FAILED", "renderFrame must remain synchronous while starting the recorder");
+        if (requestFrames) requestFrame(videoStream);
+      } catch (cause) {
+        stopReason ??= cause;
+        try { if (recorder?.state === "recording") recorder.stop(); } catch {}
+      }
+    };
+    if (requestFrames) {
+      // Chromium can wait for consecutive Canvas frames before it emits start.
+      // Keep the fixed initial scene frame live until that event, then switch
+      // immediately to the shared audio/performance epochs below.
+      primeStartFrame();
+      startFrameInterval = globalThis.setInterval(primeStartFrame, Math.max(16, 1000 / fps));
+    }
     const startedPromise = waitForEvent(recorder, "start", { signal, timeoutMs: host.startTimeoutMs ?? 5000, errorNames: ["error"] });
     recorder.start(250);
-    // Prime manual Canvas tracks while waiting for the start event. Chromium
-    // may defer that event until the first encoded frame is available.
-    if (requestFrames) requestFrame(videoStream);
     const stoppedPromise = waitForEvent(recorder, "stop", { timeoutMs: plan.durationMs + (host.stopTimeoutMs ?? 10_000), errorNames: ["error"] });
     await startedPromise;
+    if (startFrameInterval !== null) { clearInterval(startFrameInterval); startFrameInterval = null; }
     checkAbort(signal);
-    const fps = plan.fps;
+    if (stopReason) throw stopReason;
     const frameCount = Math.ceil(plan.durationMs * fps / 1000) + 1;
     const frameIntervalMs = 1000 / fps;
     const leadMs = Math.min(50, Math.max(30, host.startLeadMs ?? 40));
@@ -423,7 +444,6 @@ export async function startExport(plan, host = {}, { signal, onProgress } = {}) 
     let nextFrame = 0;
     let lastProgress = now();
     let finished = false;
-    const frameContext = Object.freeze({ exporting: true, range: plan.range, quality: plan.quality, audio: plan.audio });
     const paint = (index, elapsedMs) => {
       const sceneMs = index === frameCount - 1 ? plan.range.endMs : Math.min(plan.range.endMs,
         plan.range.startMs + Math.min(plan.durationMs, index * frameIntervalMs));
