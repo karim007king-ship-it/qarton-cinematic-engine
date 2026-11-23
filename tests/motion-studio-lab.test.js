@@ -295,7 +295,7 @@ test("browser module uses the engine sampling API and includes deterministic see
   assert.match(source, /exportCharacter\.sample\(projectMs\)/);
   assert.match(source, /drawCharacter\(ctx/);
   assert.match(source, /characterTimeline\?\.setBusy\(busy\)/);
-  assert.match(source, /makeProjectFile\(project, currentFileInfo, \{ aspectPreset, fitMode \}, characterTrack, audioTracks, audioAssets, audioMasterVolume\)/);
+  assert.match(source, /makeProjectFile\(project, currentFileInfo, \{ aspectPreset, fitMode \}, characterTrack, audioTracks, audioAssets, audioMasterVolume, visualEffectsTrack\)/);
   assert.match(characterTimeline, /pointercancel/);
   assert.match(characterTimeline, /lostpointercapture/);
   assert.match(characterTimeline, /moveCharacterKeyframe/);
@@ -325,7 +325,7 @@ test("UI prepares a candidate project before committing the active project and c
 test("video export uses Motion Studio sampling, cancellation, resource cleanup and real MIME probes", async () => {
   const source = await readFile(resolve(root, "examples/motion-studio-lab/studio.js"), "utf8");
   assert.match(source, /compileProject\(projectForRaster\(project, rasterViewport\), imageProvider\)/);
-  assert.match(source, /drawFrame\(ctx, sampleFrame\(exportCompiled, projectMs\)\)/);
+  assert.match(source, /drawFrame\(ctx, \{ \.\.\.sampleFrame\(exportCompiled, projectMs\), camera: effectSample\.camera \}\)/);
   assert.match(source, /supportedCandidates\(RecorderClass, "mp4"\)/);
   assert.match(source, /supportedCandidates\(RecorderClass, "webm"\)/);
   assert.match(source, /controller\.abort\(abortError\)/);

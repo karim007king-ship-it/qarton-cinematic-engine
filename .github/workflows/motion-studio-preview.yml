@@ -2,7 +2,7 @@ name: Motion Studio Android preview
 
 on:
   pull_request:
-    branches: [main, integration/character-animation-timeline-l7]
+    branches: [main, integration/character-animation-timeline-l7, feature/audio-dialogue-timeline-l8b]
     paths:
       - '.github/workflows/motion-studio-preview.yml'
       - 'examples/motion-studio-lab/**'
@@ -11,7 +11,9 @@ on:
       - 'src/camera/**'
       - 'src/motion/**'
       - 'src/audio/**'
+      - 'src/effects/**'
       - 'tests/motion-studio-audio-timeline.test.js'
+      - 'tests/motion-studio-visual-effects.test.js'
       - 'scripts/build-motion-studio-preview.mjs'
       - 'scripts/check-motion-studio-preview.py'
   push:
@@ -20,6 +22,7 @@ on:
       - feature/motion-studio-visual-timeline-l6b
       - feature/character-animation-timeline-l7b
       - feature/audio-dialogue-timeline-l8b
+      - feature/visual-effects-timeline-l9b
   workflow_dispatch:
 
 permissions:
@@ -27,8 +30,8 @@ permissions:
 
 jobs:
   preview:
-    if: github.event_name != 'pull_request' || contains(fromJSON('["feature/motion-studio-video-export-l5","feature/motion-studio-visual-timeline-l6b","feature/character-animation-timeline-l7b","feature/audio-dialogue-timeline-l8b"]'), github.event.pull_request.head.ref)
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || contains(fromJSON('["feature/motion-studio-video-export-l5","feature/motion-studio-visual-timeline-l6b","feature/character-animation-timeline-l7b","feature/audio-dialogue-timeline-l8b","feature/visual-effects-timeline-l9b"]'), github.event.pull_request.head.ref)
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout PR branch
         uses: actions/checkout@v4
@@ -50,6 +53,9 @@ jobs:
           elif [ "$BRANCH_NAME" = 'feature/audio-dialogue-timeline-l8b' ]; then
             PREVIEW_SLUG='motion-studio-l8b-android-preview'
             PREVIEW_LABEL='L8-B'
+          elif [ "$BRANCH_NAME" = 'feature/visual-effects-timeline-l9b' ]; then
+            PREVIEW_SLUG='motion-studio-l9b-android-preview'
+            PREVIEW_LABEL='L9-B'
           else
             PREVIEW_SLUG='motion-studio-l5-android-preview'
             PREVIEW_LABEL='L5'

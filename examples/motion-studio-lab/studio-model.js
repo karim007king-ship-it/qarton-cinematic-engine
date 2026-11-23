@@ -1,6 +1,7 @@
 import { normalizeCameraPose, updateCameraKeyframe, validateCameraKeyframes } from "../../packages/motion-studio/keyframes.js";
 import { compileCharacterTrack, makeCharacterTrack } from "./studio-character-track.js";
 import { compileAudioTracks } from "./studio-audio-model.js";
+import { compileVisualEffectsTrack, makeVisualEffectsTrack } from "./studio-visual-effects-model.js";
 
 export const VIEWPORT = Object.freeze({ width: 720, height: 1280, fps: 24 });
 export const MIN_DURATION_MS = 3000;
@@ -134,7 +135,7 @@ export function playbackTimeMs({ startAtMs, pausedAtMs, durationMs }, nowMs) {
   return Math.max(0, Math.min(durationMs, elapsed));
 }
 
-export function makeProjectFile(project, imageInfo = null, settings = { aspectPreset: "original", fitMode: "fit" }, characterTrack = null, audioTracks = [], audioAssets = [], audioMasterVolume = 1) {
+export function makeProjectFile(project, imageInfo = null, settings = { aspectPreset: "original", fitMode: "fit" }, characterTrack = null, audioTracks = [], audioAssets = [], audioMasterVolume = 1, visualEffectsTrack = null) {
   const file = {
     format: PROJECT_FORMAT,
     version: 1,
@@ -146,6 +147,10 @@ export function makeProjectFile(project, imageInfo = null, settings = { aspectPr
   if (audioTracks?.some((track) => track.clips?.length)) file.audioTracks = audioTracks;
   if (audioAssets?.length) file.audioAssets = audioAssets.map(({ id, name, type, size }) => ({ id, name, type, size }));
   if (audioMasterVolume !== 1) file.audioMasterVolume = audioMasterVolume;
+  if (visualEffectsTrack && (visualEffectsTrack.seed !== 1 || visualEffectsTrack.clips?.length)) {
+    file.visualEffectsTrack = { version: visualEffectsTrack.version, seed: visualEffectsTrack.seed,
+      clips: visualEffectsTrack.clips.map(clip => ({...clip,from:{...clip.from},to:{...clip.to}})) };
+  }
   return file;
 }
 
@@ -159,7 +164,7 @@ export function parseProjectFile(text) {
   const keys = ownObject(data) ? Object.keys(data).sort().join(",") : "";
   const baseKeys = new Set(["format", "image", "project", "version"]);
   const hasSettings = Object.hasOwn(data ?? {}, "settings");
-  const optionalKeys = ["settings", "characterTrack", "audioTracks", "audioAssets", "audioMasterVolume"];
+  const optionalKeys = ["settings", "characterTrack", "audioTracks", "audioAssets", "audioMasterVolume", "visualEffectsTrack"];
   const allowedKeys = new Set([...baseKeys, ...optionalKeys.filter((key) => Object.hasOwn(data ?? {}, key))]);
   const validEnvelope = ownObject(data) && keys.split(",").every((key) => allowedKeys.has(key)) &&
     [...allowedKeys].every((key) => Object.hasOwn(data, key));
@@ -210,5 +215,8 @@ export function parseProjectFile(text) {
   }
   const audioMasterVolume = data.audioMasterVolume ?? 1;
   if (!Number.isFinite(audioMasterVolume) || audioMasterVolume < 0 || audioMasterVolume > 1) throw new TypeError("مستوى الصوت الرئيسي في المشروع غير صالح.");
-  return { project, image: data.image, settings, characterTrack, audioTracks, audioAssets, audioMasterVolume };
+  const visualEffectsTrack = Object.hasOwn(data,"visualEffectsTrack") ? data.visualEffectsTrack : makeVisualEffectsTrack();
+  try { compileVisualEffectsTrack(visualEffectsTrack,project); }
+  catch (error) { throw new TypeError(`مسارات المؤثرات المرئية في المشروع غير صالحة: ${error.message}`); }
+  return { project, image: data.image, settings, characterTrack, audioTracks, audioAssets, audioMasterVolume, visualEffectsTrack };
 }
