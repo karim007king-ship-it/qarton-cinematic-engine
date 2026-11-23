@@ -2,6 +2,17 @@ import { createCameraTrack, sampleCameraTrack } from "@qarton/cinematic-engine/c
 import { clamp } from "@qarton/cinematic-engine/motion";
 import { createTimeline } from "@qarton/cinematic-engine/motion/timeline";
 
+export {
+  addCameraKeyframe,
+  deleteCameraKeyframe,
+  moveCameraKeyframe,
+  normalizeCameraPose,
+  updateCameraKeyframe,
+  validateCameraKeyframes,
+  CAMERA_POSE_LIMITS,
+  DEFAULT_CAMERA_POSE
+} from "./keyframes.js";
+
 const LIMITS = Object.freeze({ dimension: 4096, pixels: 8_388_608, fps: 60, durationMs: 300_000,
   layers: 64, keys: 1024 });
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u;

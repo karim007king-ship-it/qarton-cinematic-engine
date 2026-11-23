@@ -1,3 +1,5 @@
+import { normalizeCameraPose, validateCameraKeyframes } from "../../packages/motion-studio/keyframes.js";
+
 export const VIEWPORT = Object.freeze({ width: 720, height: 1280, fps: 24 });
 export const MIN_DURATION_MS = 3000;
 export const MAX_DURATION_MS = 60000;
@@ -35,6 +37,60 @@ export function validateViewport(viewport) {
     throw new RangeError("أبعاد المشروع تتجاوز الحدود المدعومة أو غير صالحة.");
   }
   return viewport;
+}
+
+/** Update the legacy start/end controls without discarding imported intermediate keyframes. */
+export function setCameraEndpoints(project, { durationMs = project.durationMs, start, end }) {
+  if (!project?.camera?.length) throw new TypeError("Project needs at least one camera keyframe");
+  if (!Number.isInteger(durationMs) || durationMs < MIN_DURATION_MS || durationMs > MAX_DURATION_MS) {
+    throw new RangeError("مدة المشروع يجب أن تكون بين 3 و60 ثانية.");
+  }
+  validateCameraKeyframes(project.camera, project.durationMs);
+  const keys = project.camera.map(({ atMs, value }) => ({ atMs, value: { ...value } }));
+  if (keys.slice(1, -1).some(({ atMs }) => atMs >= durationMs)) {
+    throw new RangeError("لا يمكن تقصير المدة لأن Keyframe وسيطًا سيصل إلى نقطة النهاية أو يتجاوزها؛ حرّكه أو احذفه أولًا.");
+  }
+  const startPose = normalizeCameraPose({ ...keys[0].value, ...start });
+  const endPose = normalizeCameraPose({ ...keys.at(-1).value, ...end });
+  let camera;
+  if (keys.length === 1) {
+    camera = [{ atMs: 0, value: startPose }, { atMs: durationMs, value: endPose }];
+  } else {
+    keys[0].atMs = 0;
+    keys[0].value = startPose;
+    keys.at(-1).atMs = durationMs;
+    keys.at(-1).value = endPose;
+    camera = keys;
+  }
+  validateCameraKeyframes(camera, durationMs);
+  return { ...project, durationMs, camera };
+}
+
+/** Prepare a complete project update before the caller commits any active UI state. */
+export function prepareProjectUpdate(project, { durationMs, viewport, start, end, prepare }) {
+  if (typeof prepare !== "function") throw new TypeError("Project update requires a prepare callback");
+  validateViewport(viewport);
+  let candidate;
+  if (project?.camera?.length) {
+    candidate = {
+      ...setCameraEndpoints(project, { durationMs, start, end }),
+      viewport: { ...viewport }
+    };
+  } else {
+    candidate = makeProject({
+      durationMs,
+      viewport,
+      layers: project.layers,
+      startZoom: start.zoom,
+      endZoom: end.zoom,
+      startX: start.x,
+      endX: end.x,
+      startY: start.y,
+      endY: end.y
+    });
+  }
+  const prepared = prepare(candidate);
+  return { project: candidate, prepared };
 }
 
 export function createRequestToken() {
@@ -80,10 +136,9 @@ export function parseProjectFile(text) {
     throw new TypeError("بيانات المشروع لا تطابق واجهة Motion Studio على الهاتف.");
   }
   validateViewport(project.viewport);
-  if (Object.hasOwn(project, "camera") &&
-      (!Array.isArray(project.camera) || project.camera.length !== 2 ||
-       project.camera[0]?.atMs !== 0 || project.camera[1]?.atMs !== project.durationMs)) {
-    throw new TypeError("هذا المختبر يدعم مفتاحي كاميرا للبداية والنهاية فقط؛ لم يُفتح المشروع حتى لا تضيع بقية المفاتيح.");
+  if (Object.hasOwn(project, "camera")) {
+    try { validateCameraKeyframes(project.camera, project.durationMs); }
+    catch (error) { throw new TypeError(`مفاتيح الكاميرا في ملف المشروع غير صالحة: ${error.message}`); }
   }
   if (data.image !== null && (!ownObject(data.image) ||
       Object.keys(data.image).sort().join(",") !== "name,size,type" ||

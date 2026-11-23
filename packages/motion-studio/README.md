@@ -20,6 +20,34 @@ const compiled = compileProject(project, new Map([["photo", decodedImage]]));
 drawFrame(canvas.getContext("2d"), sampleFrame(compiled, 1500));
 ```
 
+## Immutable camera keyframe editing
+
+The same package also exports pure project-editing operations:
+
+```js
+import {
+  addCameraKeyframe,
+  updateCameraKeyframe,
+  moveCameraKeyframe,
+  deleteCameraKeyframe
+} from "@qarton/cinematic-engine/motion-studio";
+
+let next = addCameraKeyframe(project, {
+  atMs: 1500,
+  value: { x: 20, y: -8, zoom: 1.3, rotation: 5 }
+});
+next = updateCameraKeyframe(next, 1500, { zoom: 1.4 });
+next = moveCameraKeyframe(next, 1500, 2000);
+next = deleteCameraKeyframe(next, 2000);
+```
+
+- Every operation returns a new project and camera array; the input is not changed. Keyframes contain a complete `x`, `y`, `zoom`, `rotation` pose. Updates accept a non-empty partial pose patch.
+- Times are safe integer milliseconds within the inclusive project duration. Duplicate times, collisions on move, unknown fields, invalid poses, and missing edit targets are rejected. Bounds match `compileProject`: x/y ±32,768, zoom 0.01–64, rotation ±36,000 degrees.
+- Keys are sorted chronologically. Before the first camera key, the engine's identity pose applies. The last key holds through the project end. Deleting the last key removes the optional camera track, yielding identity for the project.
+- `validateCameraKeyframes` validates imported camera data without rewriting it. The Motion Studio JSON reader accepts 1–1024 keys, preserving older L4/L5 two-key files and newer multi-key files. Existing start/end controls preserve intermediate keyframes when their endpoint values are edited. Shortening duration retimes the final key if the intermediate keys still fit; if one would collide with or pass the new endpoint, the edit is rejected without changing the active project or deleting keys.
+- UI project updates compile a candidate before replacing the active project and compiled frame, so compile failures leave the previous project and preview state in place.
+- These APIs organize and validate project data. Sampling and interpolation continue to use the existing `createCameraTrack`/`sampleCameraTrack` and `createTimeline` rules; this package does not add a second animation engine or visual Timeline UI.
+
 - Use a dedicated 2D canvas with matching backing dimensions and no host clip.
   Each image fills the viewport rectangle. Fit and cropping can be prepared by
   the host. Draw order is ascending signed 32-bit integer `z` with ties in

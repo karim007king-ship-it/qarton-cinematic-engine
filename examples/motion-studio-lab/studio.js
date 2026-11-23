@@ -1,5 +1,5 @@
 import { compileProject, drawFrame, sampleFrame } from "@qarton/cinematic-engine/motion-studio";
-import { createRequestToken, makeProject, makeProjectFile, parseProjectFile, playbackTimeMs, VIEWPORT } from "./studio-model.js?v=l4-flex-01";
+import { createRequestToken, makeProject, makeProjectFile, parseProjectFile, playbackTimeMs, prepareProjectUpdate, VIEWPORT } from "./studio-model.js?v=l6-keyframes-01";
 import { decodeImageBitmap } from "./studio-image.js?v=l4-flex-01";
 import { DEFAULT_OUTPUT_VIEWPORT, imageRect, inferAspectPreset, projectSizeForPreset, safePreviewSize } from "./studio-dimensions.js?v=l4-flex-01";
 import {
@@ -321,12 +321,15 @@ function syncOutputs() {
   $("durationValue").textContent = `${inputNumber("duration")} ثانية`;
   $("viewportValue").textContent = `${project.viewport.width} × ${project.viewport.height} · معاينة ${previewViewport.width} × ${previewViewport.height}`;
 }
-function setCanvasDimensions() {
-  previewViewport = safePreviewSize(project.viewport.width, project.viewport.height);
+function applyCanvasDimensions(size) {
+  previewViewport = size;
   canvas.width = previewViewport.width;
   canvas.height = previewViewport.height;
   canvas.style.aspectRatio = `${previewViewport.width} / ${previewViewport.height}`;
   canvas.setAttribute("aria-label", `معاينة الصورة المتحركة ${project.viewport.width} في ${project.viewport.height}`);
+}
+function setCanvasDimensions() {
+  applyCanvasDimensions(safePreviewSize(project.viewport.width, project.viewport.height));
   if (!currentFileInfo) {
     placeholder = makePlaceholder(previewViewport);
     imageSource = placeholder;
@@ -337,16 +340,22 @@ function updateProject({ resetPlayback = false, viewport = project.viewport } = 
   clearFailure();
   try {
     const durationMs = inputNumber("duration") * 1000;
-    project = makeProject({
+    const nextViewport = { width: viewport.width, height: viewport.height, fps: VIEWPORT.fps };
+    const nextPreview = safePreviewSize(nextViewport.width, nextViewport.height);
+    const nextImageSource = currentFileInfo ? imageSource : makePlaceholder(nextPreview);
+    const { project: nextProject, prepared: nextCompiled } = prepareProjectUpdate(project, {
       durationMs,
-      viewport: { width: viewport.width, height: viewport.height, fps: VIEWPORT.fps },
-      layers: project.layers,
-      startZoom: inputNumber("startZoom"), endZoom: inputNumber("endZoom"),
-      startX: inputNumber("startX"), endX: inputNumber("endX"),
-      startY: inputNumber("startY"), endY: inputNumber("endY")
+      viewport: nextViewport,
+      start: { x: inputNumber("startX"), y: inputNumber("startY"), zoom: inputNumber("startZoom") },
+      end: { x: inputNumber("endX"), y: inputNumber("endY"), zoom: inputNumber("endZoom") },
+      prepare: (candidate) => compileProject(projectForRaster(candidate, nextPreview), {
+        get: (assetId) => candidate.layers.some((layer) => layer.assetId === assetId) ? nextImageSource : null
+      })
     });
-    setCanvasDimensions();
-    compiled = compileProject(projectForRaster(project, previewViewport), imageProvider);
+    project = nextProject;
+    compiled = nextCompiled;
+    if (!currentFileInfo) placeholder = imageSource = nextImageSource;
+    applyCanvasDimensions(nextPreview);
     seek.max = String(durationMs);
     if (resetPlayback) stopPlayback();
     renderAt(Math.min(currentMs, durationMs));

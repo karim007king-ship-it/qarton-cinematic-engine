@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import {
   MAX_DURATION_MS, MIN_DURATION_MS, createRequestToken, makeProject, makeProjectFile, parseProjectFile,
-  playbackTimeMs, VIEWPORT
+  playbackTimeMs, setCameraEndpoints, VIEWPORT
 } from "../examples/motion-studio-lab/studio-model.js";
 import { decodeImageBitmap, IMAGE_DECODE_WIDTHS, MAX_PREVIEW_PIXELS } from "../examples/motion-studio-lab/studio-image.js";
 import { ASPECT_PRESETS, imageRect, inferAspectPreset, projectSizeForPreset, safePreviewSize } from "../examples/motion-studio-lab/studio-dimensions.js";
@@ -204,15 +204,39 @@ test("project JSON persists flexible dimensions and fit mode while loading legac
   assert.equal(legacyLoaded.settings, null);
 });
 
-test("JSON import rejects extra or displaced camera keys before slider editing", () => {
+test("JSON import preserves multiple camera keyframes and rejects displaced endpoints only by strict key validation", () => {
   const project = makeProject({ durationMs: 6000, startZoom: 1, endZoom: 1.2, startX: 0, endX: 0, startY: 0, endY: 0 });
   const withMiddleKey = structuredClone(project);
   withMiddleKey.camera.splice(1, 0, { atMs: 3000, value: { x: 12, y: 0, zoom: 1.1, rotation: 0 } });
   const file = (value) => JSON.stringify(makeProjectFile(value));
-  assert.throws(() => parseProjectFile(file(withMiddleKey)), /مفتاحي كاميرا/);
+  assert.deepEqual(parseProjectFile(file(withMiddleKey)).project.camera, withMiddleKey.camera);
   const displaced = structuredClone(project);
   displaced.camera[1].atMs = 5000;
-  assert.throws(() => parseProjectFile(file(displaced)), /مفتاحي كاميرا/);
+  assert.deepEqual(parseProjectFile(file(displaced)).project.camera, displaced.camera);
+  const outOfRange = structuredClone(project);
+  outOfRange.camera[1].atMs = 6001;
+  assert.throws(() => parseProjectFile(file(outOfRange)), /غير صالحة/);
+  const duplicate = structuredClone(project);
+  duplicate.camera[1].atMs = 0;
+  assert.throws(() => parseProjectFile(file(duplicate)), /غير صالحة/);
+});
+
+test("legacy start/end controls preserve intermediate imported keyframes and reject truncation that would lose one", () => {
+  const project = makeProject({ durationMs: 9000, startZoom: 1, endZoom: 1.4, startX: 0, endX: 80, startY: 0, endY: 30 });
+  project.camera.splice(1, 0, { atMs: 4200, value: { x: 25, y: 8, zoom: 1.2, rotation: 10 } });
+  const updated = setCameraEndpoints(project, {
+    durationMs: 9000,
+    start: { x: -5, y: 2, zoom: 0.9 },
+    end: { x: 90, y: -12, zoom: 1.6 }
+  });
+  assert.deepEqual(updated.camera.map(({ atMs }) => atMs), [0, 4200, 9000]);
+  assert.deepEqual(updated.camera[1].value, project.camera[1].value);
+  assert.deepEqual(updated.camera[0].value, { x: -5, y: 2, zoom: 0.9, rotation: 0 });
+  assert.deepEqual(updated.camera[2].value, { x: 90, y: -12, zoom: 1.6, rotation: 0 });
+  assert.deepEqual(project.camera.map(({ atMs }) => atMs), [0, 4200, 9000], "source JSON remains unchanged");
+  assert.throws(() => setCameraEndpoints(project, {
+    durationMs: 4000, start: { x: 0, y: 0, zoom: 1 }, end: { x: 0, y: 0, zoom: 1 }
+  }), /Keyframe وسيطًا سيصل إلى نقطة النهاية/);
 });
 
 test("browser module uses the engine sampling API and includes deterministic seek and replay paths", async () => {
@@ -229,6 +253,16 @@ test("browser module uses the engine sampling API and includes deterministic see
   assert.doesNotMatch(source, /project\.layers\[0\]\.assetId\s*=\s*["']photo-1/);
   assert.match(source, /bitmap\.close/);
   assert.doesNotMatch(source, /createCameraTrack|sampleCameraTrack|createTimeline/);
+});
+
+test("UI prepares a candidate project before committing the active project and compiled frame", async () => {
+  const source = await readFile(resolve(root, "examples/motion-studio-lab/studio.js"), "utf8");
+  const prepareIndex = source.indexOf("prepare: (candidate) => compileProject(projectForRaster(candidate, nextPreview)");
+  const commitIndex = source.indexOf("project = nextProject;");
+  assert.notEqual(prepareIndex, -1);
+  assert.notEqual(commitIndex, -1);
+  assert.ok(prepareIndex < commitIndex, "candidate compilation runs before the active project is replaced");
+  assert.match(source, /project = nextProject;\s*compiled = nextCompiled;/);
 });
 
 test("video export uses Motion Studio sampling, cancellation, resource cleanup and real MIME probes", async () => {
