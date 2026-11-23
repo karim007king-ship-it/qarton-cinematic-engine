@@ -69,6 +69,19 @@ export function drawCharacter(ctx, pose, width, height) {
     ctx.rotate((pose.bodyRotation || 0) * Math.PI / 180);
     ctx.fillStyle = "#e7bd69";
     ctx.beginPath(); ctx.ellipse(0, unit * 1.08, unit * .66, unit * .88, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "#e8b98c"; ctx.lineWidth = Math.max(3, unit * .095); ctx.lineCap = "round"; ctx.lineJoin = "round";
+    const arm = (side, gesture) => {
+      const startX = side * unit * .47, startY = unit * .64;
+      ctx.beginPath(); ctx.moveTo(startX, startY);
+      if (gesture === "shrug") ctx.quadraticCurveTo(side * unit * .78, unit * .15, side * unit * .72, -unit * .05);
+      else if (gesture === "wave" && side > 0) ctx.quadraticCurveTo(unit * .9, unit * .25, unit * .74, -unit * .55);
+      else if (gesture === "point" && side > 0) ctx.lineTo(unit * 1.08, unit * .42);
+      else ctx.quadraticCurveTo(side * unit * .83, unit * .82, side * unit * .88, unit * 1.2);
+      ctx.stroke();
+    };
+    if (pose.gesture === "shrug") { arm(-1, "shrug"); arm(1, "shrug"); }
+    else if (pose.gesture === "wave" || pose.gesture === "point") { arm(-1, "neutral"); arm(1, pose.gesture); }
+    else { arm(-1, "neutral"); arm(1, "neutral"); }
     ctx.save(); ctx.translate(0, -unit * .35); ctx.rotate((pose.headRotation || 0) * Math.PI / 180);
     ctx.fillStyle = "#e8b98c"; ctx.beginPath(); ctx.arc(0, 0, unit * .58, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = "#292631";
@@ -80,8 +93,26 @@ export function drawCharacter(ctx, pose, width, height) {
         ctx.beginPath(); ctx.moveTo(ex - unit * .08, ey); ctx.lineTo(ex + unit * .08, ey); ctx.stroke();
       } else { ctx.beginPath(); ctx.ellipse(ex, ey, unit * .055, unit * .09 * (1 - (pose.blink || 0)), 0, 0, Math.PI * 2); ctx.fill(); }
     }
-    ctx.fillStyle = "#6f2838"; ctx.beginPath();
-    ctx.ellipse(0, unit * .25, unit * .13, unit * (.025 + (pose.mouthOpen || 0) * .13), 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "#292631"; ctx.lineWidth = Math.max(2, unit * .035);
+    if (pose.expression === "angry" || pose.expression === "sad") {
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        const y = -unit * .19;
+        ctx.moveTo(side * unit * .31, y + (pose.expression === "angry" ? side : -side) * unit * .045);
+        ctx.lineTo(side * unit * .12, y - (pose.expression === "angry" ? side : -side) * unit * .025);
+        ctx.stroke();
+      }
+    }
+    ctx.fillStyle = "#6f2838";
+    if (pose.expression === "happy" && (pose.mouthOpen || 0) < .12) {
+      ctx.beginPath(); ctx.arc(0, unit * .19, unit * .16, .15 * Math.PI, .85 * Math.PI); ctx.stroke();
+    } else if (pose.expression === "sad" && (pose.mouthOpen || 0) < .12) {
+      ctx.beginPath(); ctx.arc(0, unit * .39, unit * .14, 1.15 * Math.PI, 1.85 * Math.PI); ctx.stroke();
+    } else if (pose.expression === "surprised" && (pose.mouthOpen || 0) < .12) {
+      ctx.beginPath(); ctx.ellipse(0, unit * .25, unit * .08, unit * .12, 0, 0, Math.PI * 2); ctx.fill();
+    } else {
+      ctx.beginPath(); ctx.ellipse(0, unit * .25, unit * .13, unit * (.025 + (pose.mouthOpen || 0) * .13), 0, 0, Math.PI * 2); ctx.fill();
+    }
     ctx.restore();
     ctx.fillStyle = "#f2eee5"; ctx.font = `${Math.max(12, Math.round(unit * .17))}px system-ui`;
     ctx.textAlign = "center"; ctx.fillText(`${pose.expression} · ${pose.gesture}`, 0, unit * 2.25);

@@ -394,6 +394,17 @@ def exercise(context, url):
     mouth.fill("0.9")
     mouth.dispatch_event("change")
     assert page.locator("#characterTimelineSelection").inner_text() == "المحدد · 00:06.00"
+    set_studio_time(6000)
+    neutral_face = preview.evaluate("el => el.toDataURL()")
+    expression = page.locator('[data-character-channel="expression"]')
+    expression.select_option("happy")
+    expression.dispatch_event("change")
+    happy_face = preview.evaluate("el => el.toDataURL()")
+    assert happy_face != neutral_face
+    gesture = page.locator('[data-character-channel="gesture"]')
+    gesture.select_option("wave")
+    gesture.dispatch_event("change")
+    assert preview.evaluate("el => el.toDataURL()") != happy_face
     studio_seek.evaluate("""(el, value) => {
         el.value = String(value); el.dispatchEvent(new Event('input', {bubbles:true}));
     }""", 4000)
