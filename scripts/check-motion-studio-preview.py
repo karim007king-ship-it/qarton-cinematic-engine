@@ -117,6 +117,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         page.mouse.down()
         page.wait_for_function("document.querySelector('#audioTracks').hasPointerCapture(window.lastAudioPointerId)")
         page.evaluate("""() => document.querySelector('#audioTracks').releasePointerCapture(window.lastAudioPointerId)""")
+        page.mouse.move(clip_box["x"] + clip_box["width"] / 2 + 1, clip_box["y"] + clip_box["height"] / 2)
         page.wait_for_function("!document.querySelector('#audioTracks').dataset.dragging")
         assert "أُلغي السحب" in page.locator("#audioTimelineMessage").inner_text()
         page.mouse.up()
@@ -220,6 +221,8 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
                     page.mouse.up()
                 elif end_event == "lostpointercapture":
                     page.evaluate("""() => document.querySelector('#timelineLane').releasePointerCapture(window.lastCameraPointerId)""")
+                    page.mouse.move(box["x"] + box["width"] * target_ms / 12000 + 1,
+                                    box["y"] + box["height"] / 2)
                     page.wait_for_function("!document.querySelector('#timelineLane').hasPointerCapture(window.lastCameraPointerId)")
                     page.mouse.up()
 

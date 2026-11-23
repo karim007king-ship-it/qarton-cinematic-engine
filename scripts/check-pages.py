@@ -358,7 +358,19 @@ def exercise(context, url):
             "is_dragging": lane.get_attribute("data-dragging"),
             "playhead": page.locator("#timelinePlayhead").get_attribute("style"),
         })
-    assert page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
+    horizontal_overflow = page.evaluate("""() => ({
+        scrollWidth: document.documentElement.scrollWidth,
+        clientWidth: document.documentElement.clientWidth,
+        viewportWidth: innerWidth,
+        offenders: [...document.querySelectorAll('body *')].map(element => {
+            const rect = element.getBoundingClientRect();
+            return {tag: element.tagName, id: element.id, className: String(element.className),
+                left: Math.round(rect.left), right: Math.round(rect.right), width: Math.round(rect.width),
+                scrollWidth: element.scrollWidth, clientWidth: element.clientWidth};
+        }).filter(item => item.right > innerWidth + 1 || item.left < -1 || item.scrollWidth > item.clientWidth + 1)
+          .slice(0, 12)
+    })""")
+    assert horizontal_overflow["scrollWidth"] <= horizontal_overflow["clientWidth"], horizontal_overflow
 
     with page.expect_download() as timeline_download_info:
         page.locator("#saveProjectButton").click()
