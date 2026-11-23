@@ -569,7 +569,13 @@ def exercise(context, url):
     assert page.locator(".character-keyframe-marker").count() == 3
     page.locator('.character-keyframe-marker[data-key-time="7500"]').evaluate("el => el.click()")
     page.locator("#deleteCharacterKeyframe").click()
-    assert [int(value) for value in page.locator(".character-keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")] == [2000, 10000]
+    remaining_character_times = [int(value) for value in page.locator(".character-keyframe-marker")
+        .evaluate_all("els => els.map(el => el.dataset.keyTime)")]
+    assert remaining_character_times == sorted([collision_candidates[-1], 10000]), {
+        "remaining_times": remaining_character_times,
+        "deleted_time": 7500,
+        "drag_snapshots": character_drag_snapshots,
+    }
     page.goto(url + "examples/character-animation-lab/")
     page.wait_for_function("document.querySelector('#status')?.textContent.includes('المشهد جاهز')")
     actor = page.locator("#character")
