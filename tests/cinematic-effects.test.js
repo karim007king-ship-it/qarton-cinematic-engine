@@ -25,6 +25,25 @@ test("strictly rejects invalid dimensions, IDs, ranges, colors, and clip timing"
   }
 });
 
+test("V1 rejects fractional discrete values, nulls, missing channels, and unknown fields", () => {
+  const base={version:"CinematicEffectsV1",width:64,height:64,durationMs:100,layers:[],clips:[]};
+  const fade={id:"f",type:"fade",atMs:0,durationMs:10,from:{opacity:0,color:"#000000"},to:{opacity:1,color:"#000000"}};
+  const shake={id:"s",type:"shake",atMs:0,durationMs:10,from:{amplitude:1,frequencyHz:3,seed:1},to:{amplitude:0,frequencyHz:3,seed:1}};
+  const invalid=[
+    {...base,width:64.5},{...base,height:63.5},{...base,durationMs:100.5},{...base,seed:1.5},
+    {...base,unexpected:true},{...base,camera:[{atMs:0,scale:1}]},{...base,camera:[{atMs:0.5}]},
+    {...base,layers:[{id:"x",z:1.5}]},{...base,layers:[{id:"x",unknown:1}]},
+    {...base,clips:[{...fade,atMs:0.5}]},{...base,clips:[{...fade,durationMs:0.5}]},
+    {...base,clips:[{...fade,unknown:1}]},{...base,clips:[{...fade,from:{...fade.from,extra:1}}]},
+    {...base,clips:[{...fade,to:{opacity:1}}]},{...base,clips:[{...shake,from:{...shake.from,seed:1.5}}]},
+    {...base,seed:null},{...base,layers:[{id:"x",depth:null}]},{...base,layers:Array(1)}
+  ];
+  for(const candidate of invalid) assert.throws(()=>compileCinematicEffects(candidate));
+  const compiled=compileCinematicEffects({...base,clips:[fade]});
+  assert.ok(Object.isFrozen(compiled.clips[0].from));
+  assert.deepEqual(Object.keys(compiled.clips[0].from).sort(),["color","opacity"]);
+});
+
 test("absolute-time sampling is deterministic across seek and replay", () => {
   const scene = demo();
   const a = sampleCinematicEffects(scene, 1450);
@@ -58,6 +77,36 @@ test("samples all authored effects and camera/parallax movement at exact boundar
   assert.notDeepEqual(start.layers.map(layer=>layer.x), mid.layers.map(layer=>layer.x));
 });
 
+test("samples exact effect boundaries and zero-duration clips as instantaneous steps", () => {
+  const scene=compileCinematicEffects({version:"CinematicEffectsV1",width:24,height:40,durationMs:50,layers:[],clips:[
+    {id:"fade",type:"fade",atMs:10,durationMs:10,from:{opacity:0,color:"#000000"},to:{opacity:1,color:"#000000"}},
+    {id:"instant-vignette",type:"vignette",atMs:20,durationMs:0,from:{intensity:0},to:{intensity:.75}},
+    {id:"instant-shake",type:"shake",atMs:30,durationMs:0,from:{amplitude:0,frequencyHz:5,seed:2},to:{amplitude:5,frequencyHz:5,seed:2}}
+  ]});
+  assert.equal(sampleCinematicEffects(scene,9).fade.opacity,1);
+  assert.equal(sampleCinematicEffects(scene,10).fade.opacity,0);
+  assert.equal(sampleCinematicEffects(scene,20).fade.opacity,1);
+  assert.equal(sampleCinematicEffects(scene,19).vignette,0);
+  assert.equal(sampleCinematicEffects(scene,20).vignette,.75);
+  const pulse=sampleCinematicEffects(scene,30).shake;
+  assert.ok(pulse.x!==0||pulse.y!==0||pulse.rotation!==0);
+  assert.deepEqual(sampleCinematicEffects(scene,31).shake,{x:0,y:0,rotation:0});
+});
+
+test("overlapping effects combine deterministically without order-dependent maxima", () => {
+  const scene=compileCinematicEffects({version:"CinematicEffectsV1",width:24,height:40,durationMs:100,layers:[],clips:[
+    {id:"vignette-a",type:"vignette",atMs:0,durationMs:100,from:{intensity:.1},to:{intensity:.7}},
+    {id:"vignette-b",type:"vignette",atMs:25,durationMs:50,from:{intensity:.5},to:{intensity:.8}},
+    {id:"flash-a",type:"flash",atMs:0,durationMs:100,from:{intensity:.3,color:"#ffffff"},to:{intensity:.7,color:"#ffffff"}},
+    {id:"flash-b",type:"flash",atMs:25,durationMs:50,from:{intensity:.6,color:"#ffccaa"},to:{intensity:.9,color:"#ffccaa"}}
+  ]});
+  const sample=sampleCinematicEffects(scene,50);
+  assert.equal(sample.vignette,.65);
+  assert.equal(sample.flash.intensity,.75);
+  assert.equal(sample.flash.color,"#ffccaa");
+  assert.deepEqual(sample,sampleCinematicEffects(scene,50));
+});
+
 test("Scene Clock transport pauses, seeks, replays, and clamps at the scene end", () => {
   let now=0;
   const player=createCinematicEffectsPlayer(demo(),{now:()=>now});
@@ -73,6 +122,17 @@ test("Scene Clock transport pauses, seeks, replays, and clamps at the scene end"
   assert.equal(player.timeMs,5000);
 });
 
+test("camera shake is identical after backward seek and replay", () => {
+  let now=0;
+  const player=createCinematicEffectsPlayer(demo(),{now:()=>now});
+  player.play(); now=1450;
+  const first=player.sample().shake;
+  player.seek(3900); player.seek(1450);
+  assert.deepEqual(player.sample().shake,first);
+  player.replay(); player.seek(1450);
+  assert.deepEqual(player.sample().shake,first);
+});
+
 test("Canvas renderer draws sorted layers and screen-space overlays with bounded work", () => {
   const sample=sampleCinematicEffects(demo(),2200), calls=[];
   const ctx={save(){calls.push("save")},restore(){calls.push("restore")},translate(){},rotate(){},scale(){},fillRect(x,y,w,h){calls.push(["rect",x,y,w,h])},
@@ -81,4 +141,15 @@ test("Canvas renderer draws sorted layers and screen-space overlays with bounded
   assert.deepEqual(Object.keys(pose),["x","y","rotation"]);
   assert.equal(calls.filter(item=>Array.isArray(item)&&item[0]==="rect").length,6);
   assert.equal(calls[0],"save"); assert.equal(calls.at(-1),"restore");
+});
+
+test("Canvas state is restored when drawImage throws", () => {
+  const scene=compileCinematicEffects({version:"CinematicEffectsV1",width:24,height:40,durationMs:10,
+    layers:[{id:"asset",assetId:"picture"}],clips:[]});
+  const sample=sampleCinematicEffects(scene,0);
+  let depth=0,saves=0,restores=0;
+  const ctx={save(){depth++;saves++;},restore(){depth--;restores++;},translate(){},rotate(){},scale(){},drawImage(){throw new Error("decode/render failure");}};
+  assert.throws(()=>drawCinematicEffects(ctx,sample,{picture:{}}),/decode\/render failure/);
+  assert.equal(depth,0);
+  assert.equal(saves,restores);
 });

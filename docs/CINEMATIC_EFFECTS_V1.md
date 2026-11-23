@@ -18,7 +18,9 @@
 }
 ```
 
-Project dimensions are limited to 1–4096 pixels per side, duration to 1 ms–1 hour, seed to ±1,000,000. Camera position is limited to ±4096 px, zoom to 0.1–8, and rotation to ±180°. Layer depth is ±4, velocity ±1000 px/s, and z order ±10,000. Clip starts and durations must fit inside the scene. IDs are unique within their respective lists.
+Dimensions, scene/clip/camera timestamps, clip durations, z order, and seeds must be safe integers. Dimensions are limited to 1–4096 pixels per side, scene duration to 1 ms–1 hour, project/clip seeds to ±1,000,000. Camera position is limited to ±4096 px, zoom to 0.1–8, and rotation to ±180°. Layer depth is ±4, velocity ±1000 px/s, and z order ±10,000. Clip starts and durations must fit inside the scene; zero-duration non-shake clips apply their final value at that timestamp, while a zero-duration shake is a one-sample pulse. Fractional scene sample times and subpixel camera/layer motion remain supported for smooth playback. IDs are unique within their respective lists.
+
+Each object has a closed schema: unknown keys, null optional values, missing channel values, and extra `from`/`to` channel keys are rejected before compilation. The compiled project, clip records, channel maps, camera track, and layer records are frozen snapshots.
 
 ## Clip channels
 

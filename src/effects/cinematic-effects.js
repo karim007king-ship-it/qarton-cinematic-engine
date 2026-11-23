@@ -7,30 +7,66 @@ import { createSceneClock } from "../motion/scene-clock.js";
 
 const TYPES = new Set(["fade", "dissolve", "vignette", "letterbox", "shake", "flash", "tint"]);
 const COLOR = /^#[\da-f]{6}$/iu;
+const CHANNELS = Object.freeze({
+  fade: ["opacity", "color"], dissolve: ["progress", "color"], vignette: ["intensity"],
+  letterbox: ["ratio"], shake: ["amplitude", "frequencyHz", "seed"],
+  flash: ["intensity", "color"], tint: ["strength", "color"]
+});
 const finite = (value, label) => {
   if (!Number.isFinite(value)) throw new TypeError(`${label} must be a finite number`);
+};
+const integer = (value, min, max, label) => {
+  if (!Number.isSafeInteger(value)) throw new TypeError(`${label} must be a safe integer`);
+  range(value, min, max, label);
 };
 const range = (value, min, max, label) => {
   finite(value, label);
   if (value < min || value > max) throw new RangeError(`${label} must be between ${min} and ${max}`);
 };
+function assertRecord(value, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError(`${label} must be a plain object`);
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) throw new TypeError(`${label} must be a plain object`);
+}
+function assertKeys(value, required, optional, label) {
+  assertRecord(value, label);
+  const allowed = new Set([...required, ...optional]);
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string" || !allowed.has(key)) throw new TypeError(`${label} has unknown field ${String(key)}`);
+  }
+  for (const key of optional) {
+    if (Object.hasOwn(value, key) && value[key] == null) throw new TypeError(`${label}.${key} must not be null or undefined`);
+  }
+  for (const key of required) {
+    if (!Object.hasOwn(value, key)) throw new TypeError(`${label}.${key} is required`);
+  }
+}
+function assertDenseArray(value, label) {
+  if (!Array.isArray(value)) throw new TypeError(`${label} must be an array`);
+  for (let index = 0; index < value.length; index += 1) {
+    if (!Object.hasOwn(value, index)) throw new TypeError(`${label}[${index}] is missing`);
+  }
+}
 const color = (value, label) => {
   if (typeof value !== "string" || !COLOR.test(value)) throw new TypeError(`${label} must be a #RRGGBB color`);
   return value.toLowerCase();
 };
 
 function validateProject(project) {
-  if (!project || typeof project !== "object" || project.version !== "CinematicEffectsV1") {
+  assertKeys(project, ["version", "width", "height", "durationMs", "layers", "clips"], ["seed", "camera"], "project");
+  if (project.version !== "CinematicEffectsV1") {
     throw new TypeError('project.version must be "CinematicEffectsV1"');
   }
-  range(project.width, 1, 4096, "width");
-  range(project.height, 1, 4096, "height");
-  range(project.durationMs, 1, 3_600_000, "durationMs");
-  range(project.seed ?? 1, -1_000_000, 1_000_000, "seed");
-  if (!Array.isArray(project.layers) || !Array.isArray(project.clips)) throw new TypeError("layers and clips must be arrays");
+  integer(project.width, 1, 4096, "width");
+  integer(project.height, 1, 4096, "height");
+  integer(project.durationMs, 1, 3_600_000, "durationMs");
+  integer(project.seed ?? 1, -1_000_000, 1_000_000, "seed");
+  assertDenseArray(project.layers, "layers");
+  assertDenseArray(project.clips, "clips");
   const ids = new Set();
   const layers = project.layers.map((layer, index) => {
-    if (!layer || typeof layer !== "object" || typeof layer.id !== "string" || !layer.id.trim() || ids.has(layer.id)) {
+    assertKeys(layer, ["id"], ["assetId", "depth", "x", "y", "speedX", "speedY", "color", "z"], `layers[${index}]`);
+    if (typeof layer.id !== "string" || !layer.id.trim() || ids.has(layer.id)) {
       throw new TypeError(`layers[${index}] needs a unique non-empty id`);
     }
     ids.add(layer.id);
@@ -40,7 +76,7 @@ function validateProject(project) {
     range(layer.speedX ?? 0, -1000, 1000, `layers[${index}].speedX`);
     range(layer.speedY ?? 0, -1000, 1000, `layers[${index}].speedY`);
     const fill = color(layer.color ?? "#20334a", `layers[${index}].color`);
-    range(layer.z ?? index, -10000, 10000, `layers[${index}].z`);
+    integer(layer.z ?? index, -10000, 10000, `layers[${index}].z`);
     if (layer.assetId !== undefined && (typeof layer.assetId !== "string" || !layer.assetId.trim())) throw new TypeError(`layers[${index}].assetId must be a non-empty string`);
     return Object.freeze({ id: layer.id, assetId: layer.assetId ?? null, depth: layer.depth ?? 0,
       x: layer.x ?? 0, y: layer.y ?? 0, speedX: layer.speedX ?? 0, speedY: layer.speedY ?? 0,
@@ -48,38 +84,49 @@ function validateProject(project) {
   }).sort((a, b) => a.z - b.z || a.id.localeCompare(b.id));
   const seen = new Set();
   const clips = project.clips.map((clip, index) => {
-    if (!clip || typeof clip !== "object" || typeof clip.id !== "string" || !clip.id.trim() || seen.has(clip.id)) {
+    assertKeys(clip, ["id", "type", "atMs", "durationMs", "from", "to"], ["easing"], `clips[${index}]`);
+    if (typeof clip.id !== "string" || !clip.id.trim() || seen.has(clip.id)) {
       throw new TypeError(`clips[${index}] needs a unique non-empty id`);
     }
     if (!TYPES.has(clip.type)) throw new TypeError(`clips[${index}].type is unsupported`);
-    range(clip.atMs, 0, project.durationMs, `clips[${index}].atMs`);
-    range(clip.durationMs, 0, project.durationMs, `clips[${index}].durationMs`);
+    integer(clip.atMs, 0, project.durationMs, `clips[${index}].atMs`);
+    integer(clip.durationMs, 0, project.durationMs, `clips[${index}].durationMs`);
     if (clip.atMs + clip.durationMs > project.durationMs) throw new RangeError(`clips[${index}] ends after the scene`);
-    if (!clip.from || !clip.to || typeof clip.from !== "object" || typeof clip.to !== "object") {
-      throw new TypeError(`clips[${index}] needs from and to values`);
-    }
-    const fields = ({fade:["opacity","color"], dissolve:["progress","color"], vignette:["intensity"], letterbox:["ratio"],
-      shake:["amplitude","frequencyHz","seed"], flash:["intensity","color"], tint:["strength","color"]})[clip.type];
+    const fields = CHANNELS[clip.type];
+    assertKeys(clip.from, fields, [], `clips[${index}].from`);
+    assertKeys(clip.to, fields, [], `clips[${index}].to`);
+    const from = {}, to = {};
     for (const field of fields) {
-      if (field === "color") { color(clip.from[field], `clips[${index}].from.color`); color(clip.to[field], `clips[${index}].to.color`); }
+      if (field === "color") {
+        from[field] = color(clip.from[field], `clips[${index}].from.color`);
+        to[field] = color(clip.to[field], `clips[${index}].to.color`);
+      }
       else {
         const bounds = field === "ratio" ? [0, 0.2] : field === "frequencyHz" ? [0, 60] : field === "amplitude" ? [0, 64] : field === "seed" ? [-1e6, 1e6] : [0, 1];
-        range(clip.from[field], bounds[0], bounds[1], `clips[${index}].from.${field}`);
-        range(clip.to[field], bounds[0], bounds[1], `clips[${index}].to.${field}`);
+        if (field === "seed") {
+          integer(clip.from[field], bounds[0], bounds[1], `clips[${index}].from.seed`);
+          integer(clip.to[field], bounds[0], bounds[1], `clips[${index}].to.seed`);
+        } else {
+          range(clip.from[field], bounds[0], bounds[1], `clips[${index}].from.${field}`);
+          range(clip.to[field], bounds[0], bounds[1], `clips[${index}].to.${field}`);
+        }
+        from[field] = clip.from[field]; to[field] = clip.to[field];
       }
     }
     if (clip.easing !== undefined && !["linear", "easeInOutCubic"].includes(clip.easing)) throw new TypeError(`clips[${index}].easing is unsupported`);
     seen.add(clip.id);
     return Object.freeze({ id: clip.id, type: clip.type, atMs: clip.atMs, durationMs: clip.durationMs,
-      from: Object.freeze({...clip.from}), to: Object.freeze({...clip.to}), easing: clip.easing ?? "linear" });
+      from: Object.freeze(from), to: Object.freeze(to), easing: clip.easing ?? "linear" });
   });
   const timeline = createTimeline(clips.map(({id, atMs, type}) => ({id, atMs, type})));
   const clipsById = new Map(clips.map(clip => [clip.id, clip]));
   const orderedClips = timeline.events.map(event => clipsById.get(event.id));
   const cameraFrames = project.camera ?? [{atMs: 0}];
-  if (!Array.isArray(cameraFrames) || cameraFrames.length === 0) throw new TypeError("camera must contain at least one keyframe");
+  assertDenseArray(cameraFrames, "camera");
+  if (cameraFrames.length === 0) throw new TypeError("camera must contain at least one keyframe");
   cameraFrames.forEach((frame, index) => {
-    range(frame.atMs, 0, project.durationMs, `camera[${index}].atMs`);
+    assertKeys(frame, ["atMs"], ["x", "y", "zoom", "rotation"], `camera[${index}]`);
+    integer(frame.atMs, 0, project.durationMs, `camera[${index}].atMs`);
     range(frame.x ?? 0, -4096, 4096, `camera[${index}].x`);
     range(frame.y ?? 0, -4096, 4096, `camera[${index}].y`);
     range(frame.zoom ?? 1, 0.1, 8, `camera[${index}].zoom`);
@@ -120,12 +167,17 @@ export function sampleCinematicEffects(compiled, timeMs) {
       case "vignette": vignette = Math.max(vignette, read("intensity")); break;
       case "letterbox": letterbox = Math.max(letterbox, read("ratio")); break;
       case "shake": {
+        if (clip.durationMs === 0 && timeMs > clip.atMs) break;
         const duration = Math.max(1, clip.durationMs);
         const shake = sampleCameraShake({timeMs: Math.min(clip.durationMs, Math.max(0, timeMs - clip.atMs)), durationMs: duration,
           amplitude: read("amplitude"), frequencyHz: read("frequencyHz"), seed: read("seed") + compiled.seed});
         result.shake.x += shake.x; result.shake.y += shake.y; result.shake.rotation += shake.rotation; break;
       }
-      case "flash": flash = Math.max(flash, read("intensity")); result.flash.color = read("color"); break;
+      case "flash": {
+        const intensity = read("intensity");
+        if (intensity >= flash) { flash = intensity; result.flash.color = read("color"); }
+        break;
+      }
       case "tint": if (read("strength") >= tintStrength) { tintStrength = read("strength"); result.tint.color = read("color"); } break;
     }
   }
