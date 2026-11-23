@@ -38,6 +38,9 @@ function dom(host) { return host.document ?? globalThis.document; }
 function mimeMatches(actual, expected) {
   return typeof actual === "string" && actual.toLowerCase().split(";")[0] === expected.toLowerCase().split(";")[0];
 }
+function finiteMediaDuration(video) {
+  return Number.isFinite(video?.duration) && video.duration > 0 ? video.duration * 1000 : null;
+}
 function waitForEvent(target, name, { signal, timeoutMs = 5000, errorNames = [] } = {}) {
   return new Promise((resolve, reject) => {
     let timer;
@@ -100,14 +103,18 @@ async function inspectOutput(blob, plan, host, audioContext) {
     });
     video.src = url;
     await metadata;
-    if (!Number.isFinite(video.duration) || video.duration <= 0 || video.videoWidth < 1 || video.videoHeight < 1) {
+    if ((video.duration !== Infinity && finiteMediaDuration(video) === null) || video.videoWidth < 1 || video.videoHeight < 1) {
       throw error("INVALID_OUTPUT", "Recorded video has invalid dimensions or duration");
     }
-    const durationMs = video.duration * 1000;
-    if (Math.abs(durationMs - plan.durationMs) > Math.max(150, 1000 / plan.fps)) {
+    const durationMs = finiteMediaDuration(video);
+    const warnings = [];
+    if (durationMs === null) {
+      if (video.duration !== Infinity) throw error("INVALID_OUTPUT", "Recorded video has no usable duration metadata");
+      warnings.push("Container duration metadata is unavailable; recording duration is controlled by the shared scene clock.");
+    } else if (Math.abs(durationMs - plan.durationMs) > Math.max(150, 1000 / plan.fps)) {
       throw error("INVALID_OUTPUT", `Recorded duration ${durationMs.toFixed(0)}ms differs from the ${plan.durationMs}ms target`);
     }
-    const seekTarget = Math.max(0, video.duration - 0.05);
+    const seekTarget = durationMs === null ? 0 : Math.max(0, durationMs / 1000 - 0.05);
     if (seekTarget > 0) {
       const seek = new Promise((resolve, reject) => {
         const timeout = globalThis.setTimeout(() => reject(error("INVALID_OUTPUT", "Recorded video is not seekable near its end")), 2000);
@@ -123,7 +130,7 @@ async function inspectOutput(blob, plan, host, audioContext) {
         "Recorded audio track decoder timed out", { signal, code: "INVALID_OUTPUT" }); }
       catch (cause) { throw error("INVALID_OUTPUT", "Recorded audio track could not be decoded", cause); }
     }
-    return { actualMime, measuredDurationMs: durationMs, warnings: [] };
+    return { actualMime, measuredDurationMs: durationMs, warnings };
   } finally {
     video.removeAttribute?.("src");
     video.load?.();
@@ -202,11 +209,12 @@ async function probeOne({ canvas, width, height, fps, audioMode, mimeType, Media
       });
       video.src = url;
       await decoded;
-      if (video.videoWidth !== width || video.videoHeight !== height || !Number.isFinite(video.duration) || video.duration <= 0) {
+      if (video.videoWidth !== width || video.videoHeight !== height ||
+          (video.duration !== Infinity && finiteMediaDuration(video) === null)) {
         const measuredDuration = Number.isFinite(video.duration) ? `${video.duration.toFixed(3)}s` : String(video.duration);
-        throw error("INVALID_OUTPUT", `Probe output measured ${video.videoWidth}×${video.videoHeight}, ${measuredDuration}; expected ${width}×${height} with a positive duration`);
+        throw error("INVALID_OUTPUT", `Probe output measured ${video.videoWidth}×${video.videoHeight}, ${measuredDuration}; expected ${width}×${height} and valid duration metadata`);
       }
-      if (video.duration > 0.05) {
+      if (Number.isFinite(video.duration) && video.duration > 0.05) {
         const seek = new Promise((resolve, reject) => {
           const timer = globalThis.setTimeout(() => reject(error("INVALID_OUTPUT", "Probe output cannot seek near its end")), timeoutMs);
           video.addEventListener("seeked", () => { globalThis.clearTimeout(timer); resolve(); }, { once: true });

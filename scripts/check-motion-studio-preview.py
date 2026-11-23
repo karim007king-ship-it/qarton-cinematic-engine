@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import tempfile
 import math
+import re
 import struct
 import wave
 
@@ -475,7 +476,14 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             ], text=True))
             video_stream = next(stream for stream in probe["streams"] if stream["codec_type"] == "video")
             audio_stream = next(stream for stream in probe["streams"] if stream["codec_type"] == "audio")
-            assert video_stream["width"] == 480 and video_stream["height"] == 854, video_stream
+            viewport_text = sync_page.locator("#viewportValue").inner_text().split("·", 1)[0]
+            viewport_dimensions = [int(value) for value in re.findall(r"\d+", viewport_text)]
+            assert len(viewport_dimensions) >= 2, viewport_text
+            source_width, source_height = viewport_dimensions[:2]
+            scale = min(1, 480 / min(source_width, source_height), 854 / max(source_width, source_height))
+            expected_width = max(2, math.floor(source_width * scale / 2) * 2)
+            expected_height = max(2, math.floor(source_height * scale / 2) * 2)
+            assert video_stream["width"] == expected_width and video_stream["height"] == expected_height, (video_stream, (expected_width, expected_height))
             assert float(probe["format"]["duration"]) >= 2.85, probe["format"]
             video_start = float(video_stream.get("start_time", 0) or 0)
             audio_start = float(audio_stream.get("start_time", 0) or 0)

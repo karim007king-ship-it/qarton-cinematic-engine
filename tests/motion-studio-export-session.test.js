@@ -40,6 +40,21 @@ class FakeRecorder extends EventTarget {
 }
 class FakeMediaStream extends FakeStream {}
 
+class InfiniteDurationVideo extends EventTarget {
+  constructor(width, height) {
+    super();
+    this.videoWidth = width;
+    this.videoHeight = height;
+    this.duration = Infinity;
+    this.currentTime = 0;
+    this._src = "";
+  }
+  set src(value) { this._src = value; queueMicrotask(() => this.dispatchEvent(new Event("loadedmetadata"))); }
+  get src() { return this._src; }
+  removeAttribute(name) { if (name === "src") this._src = ""; }
+  load() {}
+}
+
 class FakeAudioContext extends EventTarget {
   constructor(log) { super(); this.state = "running"; this.currentTime = 3; this.log = log; this.nodes = []; this.destination = null; }
   resume() { this.log.push("resume"); return Promise.resolve(); }
@@ -89,6 +104,18 @@ test("recording uses exact absolute project samples, reports progress, validates
   assert.ok(progress.some(({ phase }) => phase === "validating"));
   assert.equal(canvas.track.stopped, true);
   assert.ok(canvas.track.requests > 0);
+});
+
+test("WebM without finite container duration metadata uses the shared recording clock and reports the limitation", async () => {
+  const plan = makePlan();
+  const video = new InfiniteDurationVideo(plan.viewport.width, plan.viewport.height);
+  const { host } = makeHost([], {
+    document: { createElement: name => name === "video" ? video : null },
+    URL: { createObjectURL: () => "blob:verified-webm", revokeObjectURL() {} }
+  });
+  const result = await startExport(plan, host);
+  assert.equal(result.measuredDurationMs, null);
+  assert.ok(result.warnings.some(value => /shared scene clock/u.test(value)));
 });
 
 test("AbortSignal cancels recording, discards partial output, and releases the export lock", async () => {
