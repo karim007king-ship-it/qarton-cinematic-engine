@@ -81,6 +81,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         effect_clip = page.locator(".visual-effect-clip")
         effect_clip.scroll_into_view_if_needed()
         effect_original = effect_clip.element_handle()
+        assert effect_box["width"] > 100, f"effects lane has an unusable drag width: {effect_box}"
         effect_box_clip = effect_clip.bounding_box()
         effect_start_x = effect_box_clip["x"] + effect_box_clip["width"] / 2
         effect_start_y = effect_box_clip["y"] + effect_box_clip["height"] / 2
@@ -96,7 +97,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
           const root = document.querySelector('#visualEffectsTracks');
           return root.dataset.dragging === 'true' && root.hasPointerCapture(window.lastEffectsPointerId);
         }""")
-        page.mouse.move(effect_start_x + effect_box["width"] * 0.05, effect_start_y, steps=5)
+        page.mouse.move(effect_start_x + effect_box["width"] * 0.15, effect_start_y, steps=5)
         assert effect_original.evaluate("el => !el.isConnected"), "effects drag redraw keeps capture on the stable timeline root"
         page.wait_for_function("""() => {
           const root = document.querySelector('#visualEffectsTracks');
@@ -104,9 +105,13 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
           return root.hasPointerCapture(window.lastEffectsPointerId) &&
             clip?.getAttribute('aria-pressed') === 'true' && document.activeElement === clip;
         }""")
+        page.wait_for_function("""() => {
+          const clip = document.querySelector('#visualEffectsTracks .visual-effect-clip');
+          return clip && !clip.getAttribute('aria-label').includes('00:00.50');
+        }""")
         page.mouse.up()
         moved_effect_label = page.locator(".visual-effect-clip").get_attribute("aria-label")
-        assert moved_effect_label != "Fade، يبدأ 00:00.50، المدة 00:01.50"
+        assert moved_effect_label != "Fade، يبدأ 00:00.50، المدة 00:01.50", moved_effect_label
         # Cancellation and capture loss stop future motion while retaining last committed time.
         effect_box_clip = page.locator(".visual-effect-clip").bounding_box()
         page.mouse.move(effect_box_clip["x"] + effect_box_clip["width"] / 2, effect_box_clip["y"] + effect_box_clip["height"] / 2)
