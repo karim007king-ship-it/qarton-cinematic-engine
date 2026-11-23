@@ -1,6 +1,6 @@
 import { compileProject, drawFrame, sampleFrame } from "@qarton/cinematic-engine/motion-studio";
-import { createRequestToken, makeProject, makeProjectFile, parseProjectFile, playbackTimeMs, VIEWPORT } from "./studio-model.js";
-import { decodeImageBitmap } from "./studio-image.js";
+import { createRequestToken, makeProject, makeProjectFile, parseProjectFile, playbackTimeMs, VIEWPORT } from "./studio-model.js?v=8d9c5e3-l4";
+import { decodeImageBitmap } from "./studio-image.js?v=8d9c5e3-l4";
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("stage");
