@@ -75,78 +75,11 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         page.wait_for_function("Number(document.querySelector('#seek').value) > 100", timeout=3000)
         page.locator("#playPauseButton").click()
         assert page.locator("#playPauseButton").inner_text() == "متابعة"
-        effect_lane = page.locator('#visualEffectsTracks .visual-effect-lane[data-effect-type="fade"]')
-        effect_lane.scroll_into_view_if_needed()
-        effect_clip = page.locator(".visual-effect-clip")
-        effect_clip.scroll_into_view_if_needed()
-        effect_box = effect_lane.bounding_box()
-        effect_original = effect_clip.element_handle()
-        assert effect_box["width"] > 100, f"effects lane has an unusable drag width: {effect_box}"
-        effect_box_clip = effect_clip.bounding_box()
-        effect_start_x = effect_box_clip["x"] + effect_box_clip["width"] / 2
-        effect_start_y = effect_box_clip["y"] + effect_box_clip["height"] / 2
-        page.evaluate("""() => {
-          window.lastEffectsPointerId = null;
-          window.effectsPointerMoves = 0;
-          const root = document.querySelector('#visualEffectsTracks');
-          root.addEventListener('pointerdown', event => {
-            window.lastEffectsPointerId = event.pointerId;
-          }, {capture: true});
-          root.addEventListener('pointermove', event => {
-            window.effectsPointerMoves += 1; window.effectsPointerMoveX = event.clientX;
-          }, {capture: true});
-        }""")
-        page.mouse.move(effect_start_x, effect_start_y)
-        page.evaluate("window.effectsPointerMoves = 0")
-        page.mouse.down()
-        page.wait_for_function("""() => {
-          const root = document.querySelector('#visualEffectsTracks');
-          return root.dataset.dragging === 'true' && root.hasPointerCapture(window.lastEffectsPointerId);
-        }""")
-        page.mouse.move(effect_start_x + effect_box["width"] * 0.15, effect_start_y, steps=5)
-        page.wait_for_function("window.effectsPointerMoves > 0")
-        assert effect_original.evaluate("el => !el.isConnected"), "effects drag redraw keeps capture on the stable timeline root"
-        page.wait_for_function("""() => {
-          const root = document.querySelector('#visualEffectsTracks');
-          const clip = root.querySelector('.visual-effect-clip');
-          return root.hasPointerCapture(window.lastEffectsPointerId) &&
-            clip?.getAttribute('aria-pressed') === 'true' && document.activeElement === clip;
-        }""")
-        page.wait_for_function("""() => {
-          const clip = document.querySelector('#visualEffectsTracks .visual-effect-clip');
-          return (clip && !clip.getAttribute('aria-label').includes('00:00.50')) ||
-            document.querySelector('#visualEffectsMessage').textContent.startsWith('تعذر نقل المؤثر:');
-        }""")
-        page.mouse.up()
-        moved_effect_label = page.locator(".visual-effect-clip").get_attribute("aria-label")
-        assert moved_effect_label != "Fade، يبدأ 00:00.50، المدة 00:01.50", page.locator("#visualEffectsMessage").inner_text()
-        # Cancellation and capture loss stop future motion while retaining last committed time.
-        effect_box_clip = page.locator(".visual-effect-clip").bounding_box()
-        page.mouse.move(effect_box_clip["x"] + effect_box_clip["width"] / 2, effect_box_clip["y"] + effect_box_clip["height"] / 2)
-        page.mouse.down()
-        page.wait_for_function("document.querySelector('#visualEffectsTracks').dataset.dragging === 'true'")
-        page.evaluate("""() => document.querySelector('#visualEffectsTracks').dispatchEvent(new PointerEvent('pointercancel', {
-          bubbles: true, pointerId: window.lastEffectsPointerId, pointerType: 'mouse', isPrimary: true
-        }))""")
-        assert not page.locator("#visualEffectsTracks").get_attribute("data-dragging")
-        assert "أُلغي السحب" in page.locator("#visualEffectsMessage").inner_text()
-        page.mouse.up()
-        page.locator(".visual-effect-clip").scroll_into_view_if_needed()
-        effect_box_clip = page.locator(".visual-effect-clip").bounding_box()
-        page.mouse.move(effect_box_clip["x"] + effect_box_clip["width"] / 2, effect_box_clip["y"] + effect_box_clip["height"] / 2)
-        page.mouse.down()
-        page.wait_for_function("document.querySelector('#visualEffectsTracks').hasPointerCapture(window.lastEffectsPointerId)")
-        page.evaluate("""() => document.querySelector('#visualEffectsTracks').dispatchEvent(new PointerEvent('lostpointercapture', {
-          bubbles: true, pointerId: window.lastEffectsPointerId, pointerType: 'mouse', isPrimary: true
-        }))""")
-        page.wait_for_function("!document.querySelector('#visualEffectsTracks').dataset.dragging")
-        assert "أُلغي السحب" in page.locator("#visualEffectsMessage").inner_text()
-        page.mouse.up()
         page.locator("#audioInput").set_input_files(str(audio_sample))
         page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('تم التحقق من الملف')")
         page.locator("#audioTrackType").select_option("dialogue")
         page.locator("#addAudioClip").click()
-        assert page.locator(".audio-clip").count() == 1
+        assert page.locator(".audio-clip").count() == 1, page.locator("#audioTimelineMessage").inner_text()
         page.locator("#audioClipStart").fill("500")
         page.locator("#audioClipStart").dispatch_event("change")
         page.locator("#seek").evaluate("""(el, value) => { el.value = String(value); el.dispatchEvent(new Event('input', {bubbles: true})); }""", 800)
@@ -407,8 +340,72 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
             assert page.locator("#exportVideo").is_hidden()
             assert "alternate-photo.png" in page.locator("#imageName").inner_text()
-        page.locator(".visual-effect-clip").scroll_into_view_if_needed()
-        effect_box_clip = page.locator(".visual-effect-clip").bounding_box()
+        effect_lane = page.locator('#visualEffectsTracks .visual-effect-lane[data-effect-type="fade"]')
+        effect_clip = page.locator(".visual-effect-clip")
+        effect_lane.scroll_into_view_if_needed()
+        effect_clip.scroll_into_view_if_needed()
+        effect_box = effect_lane.bounding_box()
+        assert effect_box["width"] > 100, f"effects lane has an unusable drag width: {effect_box}"
+        effect_box_clip = effect_clip.bounding_box()
+        effect_start_x = effect_box_clip["x"] + effect_box_clip["width"] / 2
+        effect_start_y = effect_box_clip["y"] + effect_box_clip["height"] / 2
+        initial_effect_label = effect_clip.get_attribute("aria-label")
+        effect_original = effect_clip.element_handle()
+        page.evaluate("""() => {
+          window.lastEffectsPointerId = null; window.effectsPointerMoves = 0;
+          const root = document.querySelector('#visualEffectsTracks');
+          root.addEventListener('pointerdown', event => { window.lastEffectsPointerId = event.pointerId; }, {capture: true});
+          root.addEventListener('pointermove', () => { window.effectsPointerMoves += 1; }, {capture: true});
+        }""")
+        page.mouse.move(effect_start_x, effect_start_y)
+        page.evaluate("window.effectsPointerMoves = 0")
+        page.mouse.down()
+        page.wait_for_function("""() => {
+          const root = document.querySelector('#visualEffectsTracks');
+          return root.dataset.dragging === 'true' && root.hasPointerCapture(window.lastEffectsPointerId);
+        }""")
+        page.mouse.move(effect_start_x + effect_box["width"] * 0.15, effect_start_y, steps=5)
+        page.wait_for_function("window.effectsPointerMoves > 0")
+        assert effect_original.evaluate("el => !el.isConnected"), "effects drag redraw keeps capture on the stable timeline root"
+        page.wait_for_function("""() => {
+          const root = document.querySelector('#visualEffectsTracks');
+          const clip = root.querySelector('.visual-effect-clip');
+          return root.hasPointerCapture(window.lastEffectsPointerId) &&
+            clip?.getAttribute('aria-pressed') === 'true' && document.activeElement === clip;
+        }""")
+        page.wait_for_function("""(initial) => {
+          const clip = document.querySelector('#visualEffectsTracks .visual-effect-clip');
+          return (clip && clip.getAttribute('aria-label') !== initial) ||
+            document.querySelector('#visualEffectsMessage').textContent.startsWith('تعذر نقل المؤثر:');
+        }""", arg=initial_effect_label)
+        page.mouse.up()
+        moved_effect_label = effect_clip.get_attribute("aria-label")
+        assert moved_effect_label != initial_effect_label, page.locator("#visualEffectsMessage").inner_text()
+        # Pointer cancellation, actual capture loss, and focus loss terminate further drags.
+        effect_clip.scroll_into_view_if_needed()
+        effect_box_clip = effect_clip.bounding_box()
+        page.mouse.move(effect_box_clip["x"] + effect_box_clip["width"] / 2, effect_box_clip["y"] + effect_box_clip["height"] / 2)
+        page.mouse.down()
+        page.wait_for_function("document.querySelector('#visualEffectsTracks').dataset.dragging === 'true'")
+        page.evaluate("""() => document.querySelector('#visualEffectsTracks').dispatchEvent(new PointerEvent('pointercancel', {
+          bubbles: true, pointerId: window.lastEffectsPointerId, pointerType: 'mouse', isPrimary: true
+        }))""")
+        assert not page.locator("#visualEffectsTracks").get_attribute("data-dragging")
+        assert "أُلغي السحب" in page.locator("#visualEffectsMessage").inner_text()
+        page.mouse.up()
+        effect_clip.scroll_into_view_if_needed()
+        effect_box_clip = effect_clip.bounding_box()
+        page.mouse.move(effect_box_clip["x"] + effect_box_clip["width"] / 2, effect_box_clip["y"] + effect_box_clip["height"] / 2)
+        page.mouse.down()
+        page.wait_for_function("document.querySelector('#visualEffectsTracks').hasPointerCapture(window.lastEffectsPointerId)")
+        page.evaluate("""() => document.querySelector('#visualEffectsTracks').dispatchEvent(new PointerEvent('lostpointercapture', {
+          bubbles: true, pointerId: window.lastEffectsPointerId, pointerType: 'mouse', isPrimary: true
+        }))""")
+        page.wait_for_function("!document.querySelector('#visualEffectsTracks').dataset.dragging")
+        assert "أُلغي السحب" in page.locator("#visualEffectsMessage").inner_text()
+        page.mouse.up()
+        effect_clip.scroll_into_view_if_needed()
+        effect_box_clip = effect_clip.bounding_box()
         page.mouse.move(effect_box_clip["x"] + effect_box_clip["width"] / 2, effect_box_clip["y"] + effect_box_clip["height"] / 2)
         page.mouse.down()
         page.wait_for_function("document.querySelector('#visualEffectsTracks').dataset.dragging === 'true'")
