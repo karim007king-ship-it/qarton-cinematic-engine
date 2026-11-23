@@ -29,6 +29,12 @@ tests/
 npm test
 ```
 
+### Motion Studio integrated export (L10-B)
+
+`@qarton/cinematic-engine/motion-studio` now exports `probeExport(options)`, `planExport(snapshot, request, verifiedCapabilities)`, and `startExport(plan, host, { signal, onProgress })`. `probeExport` records and decodes a short Canvas/Web Audio sample for an exact raster, frame rate, audio mode, and MIME type. `planExport` validates the immutable project snapshot, local audio metadata, scene range, output profile, missing assets, and output/PCM/Canvas budgets. `startExport` captures the shared scene clock and audio mix into one MediaRecorder file, validates its decoded dimensions, duration and audio, and cleans up on completion or cancellation.
+
+The integrated UI supports 480p, 720p, and 1080p without upscaling, MP4/WebM only when the selected device verifies the exact profile, and a 60-second editor range. Character motion, authored dialogue mouth cues, camera, and effects go through the same compositor for preview and export. Audio files remain local and must be reselected after loading project JSON. The original L5 video-only export stays available. GitHub Actions checks browser codecs and output synchronization; it does not certify any specific Android phone.
+
 ### اختبار المتصفح الحقيقي
 من جذر المستودع شغّل `python -m http.server` وافتح `/docs/`. التجربة الأصلية تختبر الانتقال والصوت بعد اللمس. تجربة المرصد تقرأ ملف JSON وصوراً خارجية وتعرض المشي والإيماءة وحركة الطبقات والكاميرا. يشغّل GitHub Actions التجربتين باستخدام Playwright في Chrome على سطح المكتب وبمحاكاة Pixel 7 قبل النشر.
 
