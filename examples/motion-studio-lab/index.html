@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#101118">
   <title>QARTON Motion Studio Lab</title>
-  <link rel="stylesheet" href="./studio.css?v=l4-flex-01">
+  <link rel="stylesheet" href="./studio.css?v=l5-export-01">
   <script type="importmap">
     {
       "imports": {
@@ -89,11 +89,51 @@
             <label class="field-label" for="endY">تحريك النهاية عموديًا <output id="endYValue">0 px</output><input id="endY" type="range" min="-800" max="800" step="1" value="0"></label>
           </div>
         </section>
+
+        <section class="control-card export-card" aria-labelledby="exportHeading">
+          <h2 id="exportHeading">تصدير الفيديو</h2>
+          <p class="hint">يُسجّل المشروع الحالي محليًا. افحص الصيغة على جهازك؛ توفر MediaRecorder يختلف بين المتصفحات.</p>
+          <label class="field-label" for="exportFormat">الصيغة
+            <select id="exportFormat" aria-label="صيغة الفيديو">
+              <option value="mp4">MP4</option>
+              <option value="webm">WebM</option>
+            </select>
+          </label>
+          <label class="field-label" for="exportDuration">مدة الفيديو
+            <select id="exportDuration" aria-label="مدة الفيديو">
+              <option value="project" selected>مدة المشروع كاملة</option>
+              <option value="3000">3 ثوانٍ</option>
+              <option value="10000">10 ثوانٍ</option>
+              <option value="30000">30 ثانية</option>
+              <option value="60000">60 ثانية</option>
+            </select>
+          </label>
+          <label class="field-label" for="exportQuality">الجودة
+            <select id="exportQuality" aria-label="جودة التصدير">
+              <option value="economy">اقتصادي · دقة قصوى 640</option>
+              <option value="standard" selected>متوازن · دقة قصوى 1280</option>
+              <option value="high">أعلى · دقة قصوى 1280</option>
+            </select>
+          </label>
+          <label class="audio-option"><input id="exportAudioEnabled" type="checkbox"> إضافة نبضات صوت اختبارية متزامنة</label>
+          <div class="export-actions">
+            <button id="exportButton" class="primary-button" type="button" disabled>إنشاء الفيديو</button>
+            <button id="cancelExportButton" class="secondary-button" type="button" hidden disabled>إلغاء التسجيل</button>
+          </div>
+          <progress id="exportProgress" max="1" value="0" aria-label="تقدم التصدير"></progress>
+          <p id="exportStatus" class="hint export-status" role="status" aria-live="polite">جارٍ فحص دعم الصيغ…</p>
+          <p id="exportError" class="error-message" role="alert" hidden></p>
+          <button id="tryWebmButton" class="secondary-button full-width-button" type="button" hidden>جرّب WebM بدل MP4</button>
+          <video id="exportVideo" class="export-video" controls playsinline hidden></video>
+          <p id="exportMetadata" class="export-metadata">لم يُنشأ فيديو بعد.</p>
+          <a id="exportDownload" class="download-link" hidden>حفظ الفيديو على الهاتف</a>
+          <p class="hint">تُحصر دقة التسجيل وحجمه للمحافظة على ذاكرة Android. اترك الصفحة مفتوحة أثناء التسجيل.</p>
+        </section>
       </div>
     </section>
     <p id="errorMessage" class="error-message" role="alert" hidden></p>
-    <footer>نسخة تجريبية · الفيديو لا يُصدّر في هذه المهمة · المشروع والصورة لا يُرفعان إلى خادم</footer>
+    <footer>نسخة تجريبية · التصدير محلي على الجهاز · اختبر الصيغة الناتجة قبل اعتمادها</footer>
   </main>
-  <script type="module" src="./studio.js?v=l4-flex-01"></script>
+  <script type="module" src="./studio.js?v=l5-export-01"></script>
 </body>
 </html>

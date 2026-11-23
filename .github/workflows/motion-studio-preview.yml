@@ -1,0 +1,51 @@
+name: Motion Studio L5 Android preview
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/motion-studio-preview.yml'
+      - 'examples/motion-studio-lab/**'
+      - 'examples/motion-studio-export-lab/export-lab-core.js'
+      - 'packages/motion-studio/**'
+      - 'src/camera/**'
+      - 'src/motion/**'
+      - 'scripts/build-motion-studio-preview.mjs'
+      - 'scripts/check-motion-studio-preview.py'
+  push:
+    branches: [feature/motion-studio-video-export-l5]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.ref == 'feature/motion-studio-video-export-l5'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Bundle the editor as a single offline HTML file
+        run: |
+          npm install --no-save --no-package-lock esbuild@0.25.12
+          node scripts/build-motion-studio-preview.mjs
+      - name: Check local-file startup and secure browser APIs
+        run: |
+          python -m pip install playwright==1.55.0
+          python scripts/check-motion-studio-preview.py
+      - name: Package Android preview ZIP
+        run: |
+          cd dist/motion-studio-l5-android-preview
+          zip -9 ../../motion-studio-l5-android-preview.zip index.html README.txt
+      - name: Upload Android preview artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: motion-studio-l5-android-preview
+          path: motion-studio-l5-android-preview.zip
+          if-no-files-found: error
+          retention-days: 30
