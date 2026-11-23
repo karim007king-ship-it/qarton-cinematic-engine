@@ -203,7 +203,8 @@ async function probeOne({ canvas, width, height, fps, audioMode, mimeType, Media
       video.src = url;
       await decoded;
       if (video.videoWidth !== width || video.videoHeight !== height || !Number.isFinite(video.duration) || video.duration <= 0) {
-        throw error("INVALID_OUTPUT", "Probe output dimensions or duration do not match the requested profile");
+        const measuredDuration = Number.isFinite(video.duration) ? `${video.duration.toFixed(3)}s` : String(video.duration);
+        throw error("INVALID_OUTPUT", `Probe output measured ${video.videoWidth}×${video.videoHeight}, ${measuredDuration}; expected ${width}×${height} with a positive duration`);
       }
       if (video.duration > 0.05) {
         const seek = new Promise((resolve, reject) => {
