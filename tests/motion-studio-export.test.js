@@ -120,6 +120,16 @@ test("recording captures chunks, reports the actual MIME and stops at its durati
   assert.equal(session.recorder.state, "inactive");
 });
 
+test("WebM and MP4 recorder regressions preserve the actual container MIME", async () => {
+  for (const mimeType of ["video/webm;codecs=vp8,opus", "video/mp4;codecs=avc1.42E01E,mp4a.40.2"]) {
+    const session = createRecordingSession({ stream: {}, mimeType, durationMs: 3000, MediaRecorderClass: FakeRecorder });
+    session.stop();
+    const result = await session.promise;
+    assert.equal(result.mimeType, mimeType);
+    assert.equal(extensionForMime(result.mimeType), mimeType.startsWith("video/mp4") ? "mp4" : "webm");
+  }
+});
+
 test("recording cancellation rejects, stops the recorder and releases its single-flight lock", async () => {
   const lock = createExportLock();
   const release = lock.acquire();
