@@ -456,7 +456,11 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
                         field.dispatch_event("change")
 
             sync_page.locator("#integratedProbeButton").click()
-            sync_page.wait_for_function("document.querySelector('#integratedStatus').textContent.includes('تم التحقق فعليًا')", timeout=15000)
+            sync_page.wait_for_function("""() => document.querySelector('#integratedStatus').textContent.includes('تم التحقق فعليًا') ||
+              !document.querySelector('#integratedError').hidden""", timeout=15000)
+            probe_status = sync_page.locator("#integratedStatus").inner_text()
+            probe_error = sync_page.locator("#integratedError").inner_text()
+            assert "تم التحقق فعليًا" in probe_status, f"exact-profile capability probe failed: {probe_status}; {probe_error}"
             assert not sync_page.locator("#integratedExportButton").is_disabled()
             sync_page.locator("#integratedExportButton").click()
             sync_page.get_by_text("اكتمل التصدير المتكامل؛ عاين الملف ثم احفظه على الهاتف.", exact=True).wait_for(timeout=25000)
