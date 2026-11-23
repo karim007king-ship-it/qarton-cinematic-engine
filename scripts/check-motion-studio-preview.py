@@ -68,11 +68,76 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         audio_lane = page.locator("#audioTracks .audio-track-lane[data-track-id='audio-dialogue']")
         audio_box = audio_lane.bounding_box()
         audio_clip = page.locator(".audio-clip")
-        audio_clip.dispatch_event("pointerdown", {"pointerId": 170, "pointerType": "touch", "isPrimary": True, "button": 0,
-            "clientX": audio_box["x"] + audio_box["width"] * 0.05, "clientY": audio_box["y"] + audio_box["height"] / 2})
-        audio_lane.dispatch_event("pointermove", {"pointerId": 170, "pointerType": "touch", "isPrimary": True, "button": 0,
-            "clientX": audio_box["x"] + audio_box["width"] * 0.12, "clientY": audio_box["y"] + audio_box["height"] / 2})
-        audio_lane.dispatch_event("pointercancel", {"pointerId": 170, "pointerType": "touch", "isPrimary": True, "button": 0})
+        page.evaluate("""() => {
+          window.lastAudioPointerId = null;
+          document.querySelector('#audioTracks').addEventListener('pointerdown', event => {
+            window.lastAudioPointerId = event.pointerId;
+          }, {capture: true});
+        }""")
+        audio_clip_box = audio_clip.bounding_box()
+        original_clip = audio_clip.element_handle()
+        start_x = audio_clip_box["x"] + audio_clip_box["width"] / 2
+        start_y = audio_clip_box["y"] + audio_clip_box["height"] / 2
+        page.mouse.move(start_x, start_y)
+        page.mouse.down()
+        page.wait_for_function("""() => {
+          const root = document.querySelector('#audioTracks');
+          return root.dataset.dragging === 'true' &&
+            root.hasPointerCapture(window.lastAudioPointerId);
+        }""")
+        page.mouse.move(start_x + audio_box["width"] * 0.07, start_y, steps=4)
+        assert original_clip.evaluate("el => !el.isConnected"), "drag redraw replaces the clip node while the stable root retains pointer capture"
+        page.wait_for_function("""() => {
+          const root = document.querySelector('#audioTracks');
+          const clip = root.querySelector('.audio-clip');
+          return root.hasPointerCapture(window.lastAudioPointerId) &&
+            clip?.getAttribute('aria-pressed') === 'true' && document.activeElement === clip;
+        }""", timeout=3000)
+        page.mouse.up()
+        assert "00:01.34" in page.locator(".audio-clip").get_attribute("aria-label"), "real Chromium drag moves the clip after clip-node replacement"
+
+        # Exercise pointercancel in the real browser document after a trusted pointerdown.
+        clip_box = page.locator(".audio-clip").bounding_box()
+        page.mouse.move(clip_box["x"] + clip_box["width"] / 2, clip_box["y"] + clip_box["height"] / 2)
+        page.mouse.down()
+        page.wait_for_function("document.querySelector('#audioTracks').dataset.dragging === 'true'")
+        page.evaluate("""() => {
+          const root = document.querySelector('#audioTracks');
+          root.dispatchEvent(new PointerEvent('pointercancel', {
+            bubbles: true, pointerId: window.lastAudioPointerId, pointerType: 'mouse', isPrimary: true
+          }));
+        }""")
+        assert not page.locator("#audioTracks").get_attribute("data-dragging")
+        assert "أُلغي السحب" in page.locator("#audioTimelineMessage").inner_text()
+        page.mouse.up()
+
+        # A real releasePointerCapture emits lostpointercapture and terminates the drag.
+        clip_box = page.locator(".audio-clip").bounding_box()
+        page.mouse.move(clip_box["x"] + clip_box["width"] / 2, clip_box["y"] + clip_box["height"] / 2)
+        page.mouse.down()
+        page.wait_for_function("document.querySelector('#audioTracks').hasPointerCapture(window.lastAudioPointerId)")
+        page.evaluate("""() => document.querySelector('#audioTracks').releasePointerCapture(window.lastAudioPointerId)""")
+        page.wait_for_function("!document.querySelector('#audioTracks').dataset.dragging")
+        assert "أُلغي السحب" in page.locator("#audioTimelineMessage").inner_text()
+        page.mouse.up()
+
+        # Locking export during a drag releases capture and rejects trailing movement.
+        clip_box = page.locator(".audio-clip").bounding_box()
+        audio_lane = page.locator("#audioTracks .audio-track-lane[data-track-id='audio-dialogue']")
+        audio_box = audio_lane.bounding_box()
+        drag_start = page.locator(".audio-clip").get_attribute("aria-label")
+        page.mouse.move(clip_box["x"] + clip_box["width"] / 2, clip_box["y"] + clip_box["height"] / 2)
+        page.mouse.down()
+        page.wait_for_function("document.querySelector('#audioTracks').dataset.dragging === 'true'")
+        page.locator("#exportButton").evaluate("el => el.click()")
+        page.wait_for_function("document.querySelector('#exportButton').disabled")
+        assert not page.locator("#audioTracks").get_attribute("data-dragging")
+        assert page.locator(".audio-clip").is_disabled()
+        page.mouse.move(audio_box["x"] + audio_box["width"] * 0.8, audio_box["y"] + audio_box["height"] / 2)
+        assert page.locator(".audio-clip").get_attribute("aria-label") == drag_start, "export lock ignores trailing pointer motion"
+        page.mouse.up()
+        page.locator("#cancelExportButton").click()
+        page.get_by_text("أُلغي التسجيل ونُظّفت موارده.", exact=True).wait_for(timeout=10000)
         assert "00:01.34" in page.locator(".audio-clip").get_attribute("aria-label"), "cancelled audio drag keeps its last valid timing"
         page.locator("#seek").evaluate("""(el, value) => { el.value = String(value); el.dispatchEvent(new Event('input', {bubbles: true})); }""", 0)
         page.locator("#playPauseButton").click()
@@ -113,15 +178,18 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         lane = page.locator("#timelineLane")
         lane_box = lane.bounding_box()
         drag_x = lane_box["x"] + lane_box["width"] * 7000 / 12000
-        page.locator('.keyframe-marker[data-key-time="4000"]').dispatch_event("pointerdown", {
-            "pointerId": 91, "pointerType": "touch", "isPrimary": True, "button": 0,
-            "clientX": lane_box["x"] + lane_box["width"] / 3, "clientY": lane_box["y"] + lane_box["height"] / 2
-        })
-        lane.dispatch_event("pointermove", {
-            "pointerId": 91, "pointerType": "touch", "isPrimary": True, "button": 0,
-            "clientX": drag_x, "clientY": lane_box["y"] + lane_box["height"] / 2
-        })
-        lane.dispatch_event("pointerup", {"pointerId": 91, "pointerType": "touch", "isPrimary": True, "button": 0})
+        page.evaluate("""() => {
+          window.lastCameraPointerId = null;
+          document.querySelector('#timelineLane').addEventListener('pointerdown', event => {
+            window.lastCameraPointerId = event.pointerId;
+          }, {capture: true});
+        }""")
+        key_box = page.locator('.keyframe-marker[data-key-time="4000"]').bounding_box()
+        page.mouse.move(key_box["x"] + key_box["width"] / 2, key_box["y"] + key_box["height"] / 2)
+        page.mouse.down()
+        page.wait_for_function("document.querySelector('#timelineLane').hasPointerCapture(window.lastCameraPointerId)")
+        page.mouse.move(drag_x, lane_box["y"] + lane_box["height"] / 2, steps=8)
+        page.mouse.up()
         assert page.locator('.keyframe-marker[data-key-time="7000"]').count() == 1
         page.locator("#deleteKeyframeButton").click()
         assert page.locator(".keyframe-marker").count() == 2
@@ -133,22 +201,27 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         lane = page.locator("#timelineLane")
         def drag_key(source_ms, target_ms, pointer_id, end_event=None, repeat=False):
             box = lane.bounding_box()
-            page.locator(f'.keyframe-marker[data-key-time="{source_ms}"]').dispatch_event("pointerdown", {
-                "pointerId": pointer_id, "pointerType": "touch", "isPrimary": True, "button": 0,
-                "clientX": box["x"] + box["width"] * source_ms / 12000,
-                "clientY": box["y"] + box["height"] / 2
-            })
+            key_box = page.locator(f'.keyframe-marker[data-key-time="{source_ms}"]').bounding_box()
+            page.mouse.move(key_box["x"] + key_box["width"] / 2, key_box["y"] + key_box["height"] / 2)
+            page.mouse.down()
+            page.wait_for_function("document.querySelector('#timelineLane').hasPointerCapture(window.lastCameraPointerId)")
             if source_ms != target_ms:
-                move_event = {
-                    "pointerId": pointer_id, "pointerType": "touch", "isPrimary": True, "button": 0,
-                    "clientX": box["x"] + box["width"] * target_ms / 12000,
-                    "clientY": box["y"] + box["height"] / 2
-                }
-                lane.dispatch_event("pointermove", move_event)
+                target_x = box["x"] + box["width"] * target_ms / 12000
+                page.mouse.move(target_x, box["y"] + box["height"] / 2, steps=6)
                 if repeat:
-                    lane.dispatch_event("pointermove", move_event)
+                    page.mouse.move(target_x, box["y"] + box["height"] / 2)
             if end_event:
-                lane.dispatch_event(end_event, {"pointerId": pointer_id, "pointerType": "touch", "isPrimary": True, "button": 0})
+                if end_event == "pointerup":
+                    page.mouse.up()
+                elif end_event == "pointercancel":
+                    page.evaluate("""() => document.querySelector('#timelineLane').dispatchEvent(new PointerEvent('pointercancel', {
+                      bubbles: true, pointerId: window.lastCameraPointerId, pointerType: 'mouse', isPrimary: true
+                    }))""")
+                    page.mouse.up()
+                elif end_event == "lostpointercapture":
+                    page.evaluate("""() => document.querySelector('#timelineLane').releasePointerCapture(window.lastCameraPointerId)""")
+                    page.wait_for_function("!document.querySelector('#timelineLane').hasPointerCapture(window.lastCameraPointerId)")
+                    page.mouse.up()
 
         drag_key(4000, 5000, 92, "pointercancel")
         assert page.locator('.keyframe-marker[data-key-time="5000"]').count() == 1
@@ -169,11 +242,13 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         page.locator("#exportQuality").select_option("economy")
         drag_key(7000, 8000, 96)
         assert page.locator("#timelineLane").get_attribute("data-dragging") == "true"
-        page.locator("#exportButton").click()
+        page.locator("#exportButton").evaluate("el => el.click()")
         page.wait_for_function("document.querySelector('#exportButton').disabled")
         assert not page.locator("#timelineLane").get_attribute("data-dragging"), "export lock cancels the active drag state"
-        lane.dispatch_event("pointermove", {"pointerId": 96, "pointerType": "touch", "isPrimary": True, "button": 0, "clientX": lane.bounding_box()["x"] + lane.bounding_box()["width"] * 9000 / 12000, "clientY": lane.bounding_box()["y"] + 20})
+        page.mouse.move(lane.bounding_box()["x"] + lane.bounding_box()["width"] * 9000 / 12000,
+                        lane.bounding_box()["y"] + 20)
         assert page.locator('.keyframe-marker[data-key-time="8000"]').count() == 1, "export lock rejects trailing pointer moves"
+        page.mouse.up()
         page.locator("#cancelExportButton").click()
         page.get_by_text("أُلغي التسجيل ونُظّفت موارده.", exact=True).wait_for(timeout=10000)
 

@@ -14,7 +14,10 @@ export function createStudioAudioTimeline({
   root.addEventListener("pointercancel", (event) => finishPointer(event, true));
   root.addEventListener("lostpointercapture", (event) => finishPointer(event, true));
 
-  function render() {
+  function render({ focusClipId = null } = {}) {
+    const focusedClipId = focusClipId ?? (root.contains(documentRef.activeElement)
+      ? documentRef.activeElement.closest?.(".audio-clip")?.dataset.clipId ?? null
+      : null);
     root.replaceChildren();
     const duration = getDuration();
     if (ruler) {
@@ -59,17 +62,22 @@ export function createStudioAudioTimeline({
           if (locked || !event.isPrimary || event.button !== 0) return;
           event.preventDefault(); event.stopPropagation();
           selected = { trackId: track.id, clipId: clip.id };
-          onSelect(selected); drag = { pointerId: event.pointerId, trackId: track.id, clipId: clip.id, lane, originX: event.clientX, originStart: clip.startMs, lastStart: clip.startMs };
-          lane.dataset.dragging = "true";
+          onSelect(selected); drag = { pointerId: event.pointerId, trackId: track.id, clipId: clip.id, originX: event.clientX, originStart: clip.startMs, lastStart: clip.startMs };
+          root.dataset.dragging = "true";
           const box = lane.getBoundingClientRect();
           drag.width = box.width;
           try { root.setPointerCapture(event.pointerId); } catch { /* Browser automation may synthesize a pointer without capture ownership. */ }
-          render();
+          render({ focusClipId: clip.id });
         });
         button.addEventListener("click", () => { selected = { trackId: track.id, clipId: clip.id }; onSelect(selected); render(); });
         lane.append(button);
       }
       row.append(lane); root.append(row);
+    }
+    if (focusedClipId) {
+      const focusedClip = [...root.querySelectorAll(".audio-clip")]
+        .find((button) => button.dataset.clipId === focusedClipId);
+      focusedClip?.focus({ preventScroll: true });
     }
   }
 
@@ -86,7 +94,7 @@ export function createStudioAudioTimeline({
 
   function finishPointer(event, cancelled = false) {
     if (!drag || event.pointerId !== drag.pointerId) return;
-    const { lane, pointerId } = drag; drag = null; delete lane.dataset.dragging;
+    const { pointerId } = drag; drag = null; delete root.dataset.dragging;
     try { if (root.hasPointerCapture(pointerId)) root.releasePointerCapture(pointerId); } catch { /* Already released by the platform. */ }
     onDragEnd?.({ cancelled }); render();
   }
@@ -94,8 +102,9 @@ export function createStudioAudioTimeline({
   function setBusy(value) {
     locked = Boolean(value);
     if (locked && drag) {
-      const { lane, pointerId } = drag; drag = null; delete lane.dataset.dragging;
+      const { pointerId } = drag; drag = null; delete root.dataset.dragging;
       try { if (root.hasPointerCapture(pointerId)) root.releasePointerCapture(pointerId); } catch { /* Pointer may be cancelled already. */ }
+      onDragEnd?.({ cancelled: true });
     }
     render();
   }

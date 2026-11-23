@@ -343,17 +343,12 @@ def exercise(context, url):
 
     lane = page.locator("#timelineLane")
     lane_box = lane.bounding_box()
-    page.locator('.keyframe-marker[data-key-time="5000"]').dispatch_event("pointerdown", {
-        "pointerId": 41, "pointerType": "touch", "isPrimary": True, "button": 0,
-        "clientX": lane_box["x"] + lane_box["width"] * 5000 / 12000,
-        "clientY": lane_box["y"] + lane_box["height"] / 2
-    })
-    lane.dispatch_event("pointermove", {
-        "pointerId": 41, "pointerType": "touch", "isPrimary": True, "button": 0,
-        "clientX": lane_box["x"] + lane_box["width"] * 7000 / 12000,
-        "clientY": lane_box["y"] + lane_box["height"] / 2
-    })
-    lane.dispatch_event("pointerup", {"pointerId": 41, "pointerType": "touch", "isPrimary": True, "button": 0})
+    key_box = page.locator('.keyframe-marker[data-key-time="5000"]').bounding_box()
+    page.mouse.move(key_box["x"] + key_box["width"] / 2, key_box["y"] + key_box["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(lane_box["x"] + lane_box["width"] * 7000 / 12000,
+                    lane_box["y"] + lane_box["height"] / 2, steps=8)
+    page.mouse.up()
     moved_camera_keys = page.locator(".keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")
     if page.locator('.keyframe-marker[data-key-time="7000"]').count() != 1:
         raise AssertionError({

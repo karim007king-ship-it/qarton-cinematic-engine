@@ -124,4 +124,8 @@ test("phone audio UI exposes three lanes, clip editing, manual visemes, and shar
   assert.match(module, /pointercancel/);
   assert.match(module, /lostpointercapture/);
   assert.match(module, /setPointerCapture/);
+  assert.match(module, /root\.dataset\.dragging = "true"/);
+  assert.match(module, /render\(\{ focusClipId: clip\.id \}\)/);
+  assert.match(module, /focusedClip\?\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(module, /onDragEnd\?\.\(\{ cancelled: true \}\)/);
 });
