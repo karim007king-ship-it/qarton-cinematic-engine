@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#11131a">
+  <title>QARTON — مختبر تصدير Motion Studio</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #11131a; color: #f5f2e9; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: max(16px, env(safe-area-inset-top)) 14px max(24px, env(safe-area-inset-bottom)); }
+    main { max-width: 1000px; margin: auto; }
+    h1 { font-size: clamp(1.25rem, 5vw, 2rem); margin: 0 0 6px; }
+    p { color: #c8c6c0; line-height: 1.55; }
+    .layout { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+    .panel { background: #1a1d27; border: 1px solid #303442; border-radius: 16px; padding: 14px; }
+    .stage { width: min(100%, 360px); margin-inline: auto; aspect-ratio: 9 / 16; background: #08090d; border-radius: 12px; overflow: hidden; }
+    canvas { display: block; width: 100%; height: 100%; }
+    label { display: block; margin: 12px 0 6px; font-weight: 650; }
+    input, select, button { font: inherit; }
+    input[type="file"], select { width: 100%; min-height: 46px; padding: 9px; color: inherit; background: #10121a; border: 1px solid #454a5c; border-radius: 10px; }
+    .buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 12px; }
+    button, .save-link { min-height: 46px; border: 0; border-radius: 10px; padding: 10px; background: #c8a95c; color: #17140c; font-weight: 750; text-align: center; text-decoration: none; cursor: pointer; }
+    button.secondary { background: #343949; color: #f5f2e9; }
+    button:disabled { opacity: .48; cursor: not-allowed; }
+    .full { grid-column: 1 / -1; }
+    .notice { border-inline-start: 3px solid #c8a95c; padding: 8px 12px; background: #22232a; border-radius: 6px; }
+    .diagnostics { display: grid; gap: 6px; margin: 0; }
+    .diagnostics div { display: grid; grid-template-columns: minmax(105px, .7fr) minmax(0, 1.3fr); gap: 8px; border-bottom: 1px solid #303442; padding: 6px 0; }
+    dt { color: #b8b9c2; } dd { margin: 0; overflow-wrap: anywhere; }
+    #errors { color: #ff9f9f; white-space: pre-wrap; }
+    video { display: block; width: min(100%, 360px); max-height: 70vh; margin: 12px auto 0; background: #08090d; border-radius: 10px; }
+    @media (min-width: 760px) { .layout { grid-template-columns: minmax(280px, .85fr) minmax(340px, 1.15fr); } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>مختبر تصدير Motion Studio</h1>
+  <p>تجربة مستقلة لتسجيل Canvas عمودي مع نبضة صوتية. افحص كل صيغة على الجهاز نفسه؛ قائمة الدعم لا تعني أن التسجيل أو الحفظ نجح.</p>
+  <p class="notice">اختر صورة من الهاتف. لا تُرفع الصورة إلى خادم. استخدم Chrome أولًا، ثم افتح الصفحة نفسها داخل WebView لاختبار التطبيق.</p>
+  <div class="layout">
+    <section class="panel" aria-label="المعاينة">
+      <div class="stage"><canvas id="stage" width="720" height="1280" aria-label="معاينة الفيديو 720 في 1280"></canvas></div>
+      <label for="imageInput">الصورة</label>
+      <input id="imageInput" type="file" accept="image/*">
+      <label for="format">الصيغة</label>
+      <select id="format">
+        <option value="webm">WebM (يُفحص فعليًا)</option>
+        <option value="mp4">MP4 (يُفحص فعليًا)</option>
+      </select>
+      <div class="buttons">
+        <button id="probeButton" class="secondary full" type="button">افحص WebM وMP4</button>
+        <button id="record3" type="button" disabled>سجّل 3 ثوانٍ</button>
+        <button id="record10" type="button" disabled>سجّل 10 ثوانٍ</button>
+      </div>
+    </section>
+    <section class="panel" aria-label="النتيجة والتشخيص">
+      <h2>النتيجة</h2>
+      <p id="status" role="status" aria-live="polite">اختر صورة لبدء التجربة.</p>
+      <div class="buttons">
+        <button id="saveButton" class="secondary" type="button" disabled>حفظ الفيديو</button>
+        <a id="downloadLink" class="save-link" hidden>تنزيل الملف</a>
+      </div>
+      <video id="playback" controls playsinline hidden></video>
+      <h2>التشخيص</h2>
+      <dl class="diagnostics">
+        <div><dt>Canvas</dt><dd>720×1280 — 24 fps</dd></div>
+        <div><dt>MediaRecorder</dt><dd id="recorderSupport">جارٍ الفحص…</dd></div>
+        <div><dt>اختبار WebM</dt><dd id="webmResult">لم يُجرَ بعد</dd></div>
+        <div><dt>اختبار MP4</dt><dd id="mp4Result">لم يُجرَ بعد</dd></div>
+        <div><dt>MIME الفعلي</dt><dd id="actualMime">—</dd></div>
+        <div><dt>حجم الملف</dt><dd id="fileSize">—</dd></div>
+        <div><dt>المدة المقاسة</dt><dd id="duration">—</dd></div>
+        <div><dt>الأخطاء</dt><dd id="errors">لا توجد</dd></div>
+      </dl>
+    </section>
+  </div>
+</main>
+<script type="module" src="./lab.js"></script>
+</body>
+</html>
