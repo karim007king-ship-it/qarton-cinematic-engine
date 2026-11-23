@@ -8,7 +8,8 @@ from playwright.sync_api import sync_playwright
 
 
 root = Path(__file__).resolve().parents[1]
-preview = root / "dist/motion-studio-l5-android-preview/index.html"
+preview_slug = environ.get("MOTION_STUDIO_PREVIEW_SLUG", "motion-studio-l5-android-preview")
+preview = root / "dist" / preview_slug / "index.html"
 sample = root / "examples/motion-studio-lab/preview-test.png"
 assert preview.is_file() and sample.is_file()
 html = preview.read_text()
@@ -41,6 +42,88 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         image_input = page.locator("#imageInput")
         image_input.set_input_files(str(sample))
         page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+        page.locator("#seek").evaluate("""(el, value) => {
+          el.value = String(value); el.dispatchEvent(new Event('input', {bubbles: true}));
+        }""", 4000)
+        page.locator("#addKeyframeButton").click()
+        assert page.locator(".keyframe-marker").count() == 3
+        assert page.locator(".keyframe-marker[aria-pressed=true]").get_attribute("data-key-time") == "4000"
+        page.locator("#seek").evaluate("""(el, value) => {
+          el.value = String(value); el.dispatchEvent(new Event('input', {bubbles: true}));
+        }""", 6000)
+        before_key_edit = page.locator("#stage").evaluate("el => el.toDataURL()")
+        page.locator("#keyframeZoom").fill("1.8")
+        page.locator("#keyframeZoom").dispatch_event("change")
+        page.wait_for_function("document.querySelector('#timelineMessage').textContent.includes('zoom')")
+        assert page.locator("#stage").evaluate("el => el.toDataURL()") != before_key_edit
+
+        lane = page.locator("#timelineLane")
+        lane_box = lane.bounding_box()
+        drag_x = lane_box["x"] + lane_box["width"] * 7000 / 12000
+        page.locator('.keyframe-marker[data-key-time="4000"]').dispatch_event("pointerdown", {
+            "pointerId": 91, "pointerType": "touch", "isPrimary": True, "button": 0,
+            "clientX": lane_box["x"] + lane_box["width"] / 3, "clientY": lane_box["y"] + lane_box["height"] / 2
+        })
+        lane.dispatch_event("pointermove", {
+            "pointerId": 91, "pointerType": "touch", "isPrimary": True, "button": 0,
+            "clientX": drag_x, "clientY": lane_box["y"] + lane_box["height"] / 2
+        })
+        lane.dispatch_event("pointerup", {"pointerId": 91, "pointerType": "touch", "isPrimary": True, "button": 0})
+        assert page.locator('.keyframe-marker[data-key-time="7000"]').count() == 1
+        page.locator("#deleteKeyframeButton").click()
+        assert page.locator(".keyframe-marker").count() == 2
+
+        page.locator("#seek").evaluate("""(el, value) => {
+          el.value = String(value); el.dispatchEvent(new Event('input', {bubbles: true}));
+        }""", 4000)
+        page.locator("#addKeyframeButton").click()
+        lane = page.locator("#timelineLane")
+        def drag_key(source_ms, target_ms, pointer_id, end_event=None, repeat=False):
+            box = lane.bounding_box()
+            page.locator(f'.keyframe-marker[data-key-time="{source_ms}"]').dispatch_event("pointerdown", {
+                "pointerId": pointer_id, "pointerType": "touch", "isPrimary": True, "button": 0,
+                "clientX": box["x"] + box["width"] * source_ms / 12000,
+                "clientY": box["y"] + box["height"] / 2
+            })
+            if source_ms != target_ms:
+                move_event = {
+                    "pointerId": pointer_id, "pointerType": "touch", "isPrimary": True, "button": 0,
+                    "clientX": box["x"] + box["width"] * target_ms / 12000,
+                    "clientY": box["y"] + box["height"] / 2
+                }
+                lane.dispatch_event("pointermove", move_event)
+                if repeat:
+                    lane.dispatch_event("pointermove", move_event)
+            if end_event:
+                lane.dispatch_event(end_event, {"pointerId": pointer_id, "pointerType": "touch", "isPrimary": True, "button": 0})
+
+        drag_key(4000, 5000, 92, "pointercancel")
+        assert page.locator('.keyframe-marker[data-key-time="5000"]').count() == 1
+        assert not page.locator("#timelineLane").get_attribute("data-dragging")
+        lane.dispatch_event("pointermove", {"pointerId": 92, "pointerType": "touch", "isPrimary": True, "button": 0, "clientX": lane.bounding_box()["x"] + lane.bounding_box()["width"] * 9000 / 12000, "clientY": lane.bounding_box()["y"] + 20})
+        assert page.locator('.keyframe-marker[data-key-time="5000"]').count() == 1, "pointercancel leaves no stale drag"
+
+        drag_key(5000, 6000, 93, "lostpointercapture")
+        assert page.locator('.keyframe-marker[data-key-time="6000"]').count() == 1
+        assert not page.locator("#timelineLane").get_attribute("data-dragging")
+        drag_key(6000, 12000, 94, "pointerup")
+        assert page.locator('.keyframe-marker[data-key-time="6000"]').count() == 1, "colliding target leaves source key intact"
+        drag_key(6000, 7000, 95, "pointerup", repeat=True)
+        assert [int(value) for value in page.locator(".keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")] == [0, 7000, 12000]
+        assert page.locator('.keyframe-marker[data-key-time="7000"]').evaluate("el => document.activeElement === el"), "selection focus survives marker rerender"
+
+        page.locator("#exportDuration").select_option("3000")
+        page.locator("#exportQuality").select_option("economy")
+        drag_key(7000, 8000, 96)
+        assert page.locator("#timelineLane").get_attribute("data-dragging") == "true"
+        page.locator("#exportButton").click()
+        page.wait_for_function("document.querySelector('#exportButton').disabled")
+        assert not page.locator("#timelineLane").get_attribute("data-dragging"), "export lock cancels the active drag state"
+        lane.dispatch_event("pointermove", {"pointerId": 96, "pointerType": "touch", "isPrimary": True, "button": 0, "clientX": lane.bounding_box()["x"] + lane.bounding_box()["width"] * 9000 / 12000, "clientY": lane.bounding_box()["y"] + 20})
+        assert page.locator('.keyframe-marker[data-key-time="8000"]').count() == 1, "export lock rejects trailing pointer moves"
+        page.locator("#cancelExportButton").click()
+        page.get_by_text("أُلغي التسجيل ونُظّفت موارده.", exact=True).wait_for(timeout=10000)
+
         page.locator("#aspectPreset").select_option("landscape")
         page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
         page.locator("#fitMode").select_option("fill")

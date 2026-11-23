@@ -5,7 +5,12 @@ import { build } from "esbuild";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sourceDirectory = resolve(root, "examples/motion-studio-lab");
-const outputDirectory = resolve(root, "dist/motion-studio-l5-android-preview");
+const previewSlug = process.env.MOTION_STUDIO_PREVIEW_SLUG || "motion-studio-l5-android-preview";
+const previewLabel = process.env.MOTION_STUDIO_PREVIEW_LABEL || "L5";
+if (!/^[a-z0-9-]+$/u.test(previewSlug) || !/^L[0-9]+(?:-[A-Z])?$/u.test(previewLabel)) {
+  throw new Error("Invalid Motion Studio preview slug or label");
+}
+const outputDirectory = resolve(root, "dist", previewSlug);
 const [htmlSource, css] = await Promise.all([
   readFile(resolve(sourceDirectory, "index.html"), "utf8"),
   readFile(resolve(sourceDirectory, "studio.css"), "utf8")
@@ -40,5 +45,5 @@ if (html === htmlSource || /<script type="importmap">|type="module" src=\.\/stud
 
 await mkdir(outputDirectory, { recursive: true });
 await writeFile(resolve(outputDirectory, "index.html"), html);
-await writeFile(resolve(outputDirectory, "README.txt"), `QARTON Motion Studio L5 — Android preview\n\n1. Extract this ZIP in Android Files.\n2. Tap index.html and open with Chrome. The preview is a single self-contained file; do not use the repository's multi-file index.html with file://.\n3. Allow photo selection. In Motion Studio, choose a supported format, then set 3 seconds + Economy for the first export. Keep Chrome open in the foreground.\n4. Preview and save the result. If MP4 is rejected, use “Try WebM instead” and retry.\n\nThe standalone file was checked for file:// startup and secure-context APIs in Chromium CI. Android encoding, audio synchronization, downloads, and device memory still require a real HONOR 400 Pro test.\n`);
+await writeFile(resolve(outputDirectory, "README.txt"), `QARTON Motion Studio ${previewLabel} — Android preview\n\n1. Download this branch's ${previewLabel} Android preview ZIP from its successful GitHub Actions run and extract it in Android Files.\n2. Tap index.html and open with Chrome. The preview is a single self-contained file; do not use the repository's multi-file index.html with file://.\n3. Allow photo selection. Set the project duration, choose the aspect ratio and Fit/Fill, then use the Timeline below the Canvas. Tap the track to seek, tap ＋ to add a key at the playhead, tap a diamond to select it, drag it horizontally to move it, edit X/Y/Zoom/Rotation, and delete only the selected key.\n4. To test export, choose WebM or MP4 when the device reports support, set 3 seconds + Economy first, optionally enable test audio, and keep Chrome in the foreground. Preview and save the result. If MP4 is rejected, use “Try WebM instead” and retry.\n\nThis one-file artifact can be opened from file:// in Chrome and was checked in desktop/touch Chromium CI. Android MediaRecorder behavior, touch feel, audio synchronization, saved-file opening, and device memory still require a real HONOR 400 Pro test.\n`);
 console.log(`Built self-contained preview at ${resolve(outputDirectory, "index.html")}`);

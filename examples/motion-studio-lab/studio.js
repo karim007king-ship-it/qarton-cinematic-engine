@@ -1,5 +1,5 @@
 import { compileProject, drawFrame, sampleFrame } from "@qarton/cinematic-engine/motion-studio";
-import { createRequestToken, makeProject, makeProjectFile, parseProjectFile, playbackTimeMs, prepareProjectUpdate, VIEWPORT } from "./studio-model.js?v=l6-keyframes-01";
+import { createRequestToken, makeProject, makeProjectFile, parseProjectFile, playbackTimeMs, prepareProjectUpdate, VIEWPORT } from "./studio-model.js?v=l6b-timeline-01";
 import { decodeImageBitmap } from "./studio-image.js?v=l4-flex-01";
 import { DEFAULT_OUTPUT_VIEWPORT, imageRect, inferAspectPreset, projectSizeForPreset, safePreviewSize } from "./studio-dimensions.js?v=l4-flex-01";
 import {
@@ -7,6 +7,7 @@ import {
   exportDurationMs, exportFrameCount, exportFrameTime, exportViewportFor, extensionForMime, projectForRaster, projectTimeAt,
   scheduleTestPulses, supportedCandidates
 } from "./studio-export-core.js?v=l5-export-01";
+import { createStudioTimeline } from "./studio-timeline.js?v=l6b-cleanup-01";
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("stage");
@@ -14,6 +15,15 @@ const context = canvas.getContext("2d", { alpha: false });
 const imageInput = $("imageInput");
 const projectInput = $("projectInput");
 const seek = $("seek");
+const timelineLane = $("timelineLane");
+const timelineRuler = $("timelineRuler");
+const timelinePlayhead = $("timelinePlayhead");
+const timelineKeyframes = $("timelineKeyframes");
+const timelineSelection = $("timelineSelection");
+const timelineMessage = $("timelineMessage");
+const addKeyframeButton = $("addKeyframeButton");
+const deleteKeyframeButton = $("deleteKeyframeButton");
+const keyframeFields = { x: $("keyframeX"), y: $("keyframeY"), zoom: $("keyframeZoom"), rotation: $("keyframeRotation") };
 const status = $("status");
 const errorMessage = $("errorMessage");
 const imageName = $("imageName");
@@ -67,6 +77,7 @@ canvas.style.aspectRatio = `${previewViewport.width} / ${previewViewport.height}
 
 const imageProvider = { get: (assetId) => project.layers.some((layer) => layer.assetId === assetId) ? imageSource : null };
 let compiled;
+let timelineEditor = null;
 
 function makePlaceholder(size) {
   const surface = document.createElement("canvas");
@@ -154,6 +165,7 @@ function setExportBusy(busy) {
   for (const id of ["imageInput", "projectInput", "aspectPreset", "fitMode", "duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "saveProjectButton", "loadProjectButton"]) {
     $(id).disabled = busy;
   }
+  timelineEditor?.setBusy(busy);
   exportButton.disabled = busy || !currentFileInfo || !exportCapability.mp4.length && !exportCapability.webm.length;
   exportFormat.disabled = busy;
   exportDuration.disabled = busy;
@@ -311,6 +323,7 @@ function renderAt(timeMs) {
   drawFrame(context, sampleFrame(compiled, currentMs));
   seek.value = String(currentMs);
   timeReadout.textContent = formatTime(currentMs);
+  timelineEditor?.renderPlayhead();
 }
 function inputNumber(id) { return Number($(id).value); }
 function syncOutputs() {
@@ -320,6 +333,27 @@ function syncOutputs() {
   ]) $(`${id}Value`).textContent = `${inputNumber(id).toFixed(digits)}${suffix}`;
   $("durationValue").textContent = `${inputNumber("duration")} ثانية`;
   $("viewportValue").textContent = `${project.viewport.width} × ${project.viewport.height} · معاينة ${previewViewport.width} × ${previewViewport.height}`;
+}
+function syncLegacyCameraInputs() {
+  const start = project.camera?.[0]?.value;
+  const end = project.camera?.at(-1)?.value;
+  if (start && end) {
+    for (const [id, value] of [["startZoom", start.zoom], ["endZoom", end.zoom], ["startX", start.x], ["endX", end.x], ["startY", start.y], ["endY", end.y]]) {
+      $(id).value = String(value);
+    }
+    syncOutputs();
+  }
+}
+function commitKeyframeProject(nextProject) {
+  if (activeExport) throw new Error("أوقف تصدير الفيديو قبل تعديل Keyframes.");
+  const nextCompiled = compileProject(projectForRaster(nextProject, previewViewport), {
+    get: (assetId) => nextProject.layers.some((layer) => layer.assetId === assetId) ? imageSource : null
+  });
+  project = nextProject;
+  compiled = nextCompiled;
+  syncLegacyCameraInputs();
+  renderAt(currentMs);
+  status.textContent = currentFileInfo ? "تم تحديث حركة الكاميرا" : "الحركة جاهزة؛ اختر صورة للمعاينة";
 }
 function applyCanvasDimensions(size) {
   previewViewport = size;
@@ -335,7 +369,7 @@ function setCanvasDimensions() {
     imageSource = placeholder;
   }
 }
-function updateProject({ resetPlayback = false, viewport = project.viewport } = {}) {
+function updateProject({ resetPlayback = false, viewport = project.viewport, editedControl = null } = {}) {
   invalidateExport("تغيّر المشروع؛ أُلغي التصدير السابق أو الجاري.");
   clearFailure();
   try {
@@ -343,21 +377,36 @@ function updateProject({ resetPlayback = false, viewport = project.viewport } = 
     const nextViewport = { width: viewport.width, height: viewport.height, fps: VIEWPORT.fps };
     const nextPreview = safePreviewSize(nextViewport.width, nextViewport.height);
     const nextImageSource = currentFileInfo ? imageSource : makePlaceholder(nextPreview);
+    const fallbackPose = { x: 0, y: 0, zoom: 1, rotation: 0 };
+    const startPose = { ...(project.camera?.[0]?.value ?? fallbackPose) };
+    const endPose = { ...(project.camera?.at(-1)?.value ?? fallbackPose) };
+    const controlEdit = {
+      startZoom: [startPose, "zoom"], endZoom: [endPose, "zoom"],
+      startX: [startPose, "x"], endX: [endPose, "x"],
+      startY: [startPose, "y"], endY: [endPose, "y"]
+    }[editedControl];
+    if (controlEdit) controlEdit[0][controlEdit[1]] = inputNumber(editedControl);
+    const selectedWasLast = timelineEditor?.getSelectedTime() !== null &&
+      timelineEditor?.getSelectedTime() === project.camera?.at(-1)?.atMs;
     const { project: nextProject, prepared: nextCompiled } = prepareProjectUpdate(project, {
       durationMs,
       viewport: nextViewport,
-      start: { x: inputNumber("startX"), y: inputNumber("startY"), zoom: inputNumber("startZoom") },
-      end: { x: inputNumber("endX"), y: inputNumber("endY"), zoom: inputNumber("endZoom") },
+      start: startPose,
+      end: endPose,
+      editedControl,
       prepare: (candidate) => compileProject(projectForRaster(candidate, nextPreview), {
         get: (assetId) => candidate.layers.some((layer) => layer.assetId === assetId) ? nextImageSource : null
       })
     });
     project = nextProject;
     compiled = nextCompiled;
+    if (selectedWasLast && project.camera?.length) timelineEditor.selectTime(project.camera.at(-1).atMs);
     if (!currentFileInfo) placeholder = imageSource = nextImageSource;
     applyCanvasDimensions(nextPreview);
     seek.max = String(durationMs);
     if (resetPlayback) stopPlayback();
+    syncLegacyCameraInputs();
+    timelineEditor?.render();
     renderAt(Math.min(currentMs, durationMs));
     status.textContent = currentFileInfo ? "المعاينة جاهزة" : "اختر صورة للبدء";
     syncOutputs();
@@ -454,8 +503,33 @@ seek.addEventListener("input", () => {
   if (isPlaying) playbackStartAt = performance.now() - currentMs;
   if (currentMs < project.durationMs && !isPlaying) playPauseButton.textContent = pausedAt === null ? "تشغيل" : "متابعة";
 });
+timelineEditor = createStudioTimeline({
+  lane: timelineLane,
+  ruler: timelineRuler,
+  playhead: timelinePlayhead,
+  markers: timelineKeyframes,
+  selectionLabel: timelineSelection,
+  message: timelineMessage,
+  addButton: addKeyframeButton,
+  deleteButton: deleteKeyframeButton,
+  fields: keyframeFields,
+  getProject: () => project,
+  getCompiled: () => compiled,
+  getCurrentTime: () => currentMs,
+  isBusy: () => Boolean(activeExport),
+  formatTime,
+  samplePose: (compiledProject, atMs) => sampleFrame(compiledProject, atMs).camera,
+  seek: (atMs) => renderAt(atMs),
+  syncPlaybackSeek: () => {
+    if (isPlaying) playbackStartAt = performance.now() - currentMs;
+    if (currentMs < project.durationMs && !isPlaying) {
+      playPauseButton.textContent = pausedAt === null ? "تشغيل" : "متابعة";
+    }
+  },
+  commitProject: commitKeyframeProject
+});
 for (const id of ["duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY"]) {
-  $(id).addEventListener("input", () => updateProject({ resetPlayback: id === "duration" }));
+  $(id).addEventListener("input", () => updateProject({ resetPlayback: id === "duration", editedControl: id }));
 }
 
 aspectSelect.addEventListener("change", () => {
@@ -532,6 +606,7 @@ projectInput.addEventListener("change", async () => {
     fitMode = parsed.settings?.fitMode ?? "fit";
     aspectSelect.value = aspectPreset;
     fitSelect.value = fitMode;
+    timelineEditor.clearSelection();
     project = parsed.project;
     selectedImageFile = null;
     selectedImageDimensions = null;
@@ -555,6 +630,7 @@ projectInput.addEventListener("change", async () => {
 });
 
 updateProject({ viewport: project.viewport });
+timelineEditor.render();
 renderAt(0);
 refreshExportControls();
 exportButton.addEventListener("click", () => { void exportVideoFile(); });

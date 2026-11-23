@@ -1,4 +1,4 @@
-import { normalizeCameraPose, validateCameraKeyframes } from "../../packages/motion-studio/keyframes.js";
+import { normalizeCameraPose, updateCameraKeyframe, validateCameraKeyframes } from "../../packages/motion-studio/keyframes.js";
 
 export const VIEWPORT = Object.freeze({ width: 720, height: 1280, fps: 24 });
 export const MIN_DURATION_MS = 3000;
@@ -67,27 +67,53 @@ export function setCameraEndpoints(project, { durationMs = project.durationMs, s
 }
 
 /** Prepare a complete project update before the caller commits any active UI state. */
-export function prepareProjectUpdate(project, { durationMs, viewport, start, end, prepare }) {
+export function prepareProjectUpdate(project, { durationMs, viewport, start, end, editedControl = null, prepare }) {
   if (typeof prepare !== "function") throw new TypeError("Project update requires a prepare callback");
   validateViewport(viewport);
   let candidate;
   if (project?.camera?.length) {
-    candidate = {
-      ...setCameraEndpoints(project, { durationMs, start, end }),
-      viewport: { ...viewport }
+    if (!Number.isInteger(durationMs) || durationMs < MIN_DURATION_MS || durationMs > MAX_DURATION_MS) {
+      throw new RangeError("مدة المشروع يجب أن تكون بين 3 و60 ثانية.");
+    }
+    const camera = project.camera.map(({ atMs, value }) => ({ atMs, value: { ...value } }));
+    if (durationMs !== project.durationMs && camera.length > 1 && camera.at(-1).atMs === project.durationMs) {
+      if (camera.slice(1, -1).some(({ atMs }) => atMs >= durationMs)) {
+        throw new RangeError("لا يمكن تغيير المدة لأن Keyframe وسيطًا سيصل إلى نقطة النهاية أو يتجاوزها؛ حرّكه أو احذفه أولًا.");
+      }
+      camera.at(-1).atMs = durationMs;
+    }
+    if (camera.some(({ atMs }) => atMs > durationMs)) {
+      throw new RangeError("لا يمكن تقصير المدة لأن Keyframe موجودًا يقع بعدها؛ حرّكه أو احذفه أولًا.");
+    }
+    candidate = { ...project, durationMs, viewport: { ...viewport }, camera };
+    if (durationMs !== project.durationMs) validateCameraKeyframes(candidate.camera, durationMs);
+    const controls = {
+      startZoom: [camera[0].atMs, "zoom"], endZoom: [camera.at(-1).atMs, "zoom"],
+      startX: [camera[0].atMs, "x"], endX: [camera.at(-1).atMs, "x"],
+      startY: [camera[0].atMs, "y"], endY: [camera.at(-1).atMs, "y"]
     };
+    // Only the slider that fired may change a pose field; stale legacy controls never overwrite other axes.
+    const selectedControl = controls[editedControl];
+    if (selectedControl) {
+      const [atMs, field] = selectedControl;
+      const value = field === "zoom" ? (editedControl === "startZoom" ? start.zoom : end.zoom)
+        : field === "x" ? (editedControl === "startX" ? start.x : end.x)
+          : editedControl === "startY" ? start.y : end.y;
+      candidate = updateCameraKeyframe(candidate, atMs, { [field]: value });
+    }
   } else {
     candidate = makeProject({
       durationMs,
       viewport,
       layers: project.layers,
-      startZoom: start.zoom,
-      endZoom: end.zoom,
-      startX: start.x,
-      endX: end.x,
-      startY: start.y,
-      endY: end.y
+      startZoom: 1,
+      endZoom: 1,
+      startX: 0,
+      endX: 0,
+      startY: 0,
+      endY: 0
     });
+    delete candidate.camera;
   }
   const prepared = prepare(candidate);
   return { project: candidate, prepared };
