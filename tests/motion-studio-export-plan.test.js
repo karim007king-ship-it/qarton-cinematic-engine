@@ -84,7 +84,8 @@ test("zero-volume clips preserve scene timing and visemes without allocating dec
   value.audioAssets = [{ id: "voice", name: "voice.wav", type: "audio/wav", size: 1024 }];
   value.audioAssetInfo = [{ id: "voice", durationMs: 4000, channels: 1, sampleRate: 48000 }];
   const result = planExport(value, {}, capabilities());
-  assert.equal(result.audioClips[0].volume, 0);
+  assert.equal(result.audioClips[0].volume, 1);
+  assert.equal(result.audioClips[0].trackVolume, 0);
   assert.equal(result.estimatedPcmBytes, 0);
   assert.equal(result.audioClips[0].visemes[0].viseme, "wide");
 });

@@ -191,7 +191,7 @@ export function planExport(snapshot, request = {}, capabilities = []) {
     id: clip.id, trackId: clip.trackId, type: clip.type, asset: clip.asset,
     clipStartMs: clip.startMs, clipEndMs: clip.endMs, startMs: Math.max(clip.startMs, range.startMs),
     endMs: Math.min(clip.endMs, range.endMs), offsetMs: Math.max(clip.startMs, range.startMs) - clip.startMs,
-    volume: clip.volume * clip.trackVolume * normalized.audioMasterVolume, loop: clip.loop,
+    volume: clip.volume, trackVolume: clip.trackVolume, loop: clip.loop,
     language: clip.language, visemes: clip.visemes
   }));
   const frozenSnapshot = deepFreeze({
@@ -208,6 +208,7 @@ export function planExport(snapshot, request = {}, capabilities = []) {
     audioClips: Object.freeze(clips), audioBitsPerSecond, videoBitsPerSecond: profile.videoBitsPerSecond,
     estimatedOutputBytes, outputBudgetBytes: EXPORT_LIMITS.outputBytes, estimatedPcmBytes: pcmBytes,
     pcmBudgetBytes: EXPORT_LIMITS.pcmBytes, estimatedCanvasBytes: raster.width * raster.height * 4,
-    peakConcurrentGain: concurrentPeak, headroomGain, headroomDb, missingAudioAssetIds: Object.freeze(missingAudio)
+    audioMasterVolume: normalized.audioMasterVolume, peakConcurrentGain: concurrentPeak,
+    headroomGain, headroomDb, missingAudioAssetIds: Object.freeze(missingAudio)
   });
 }
