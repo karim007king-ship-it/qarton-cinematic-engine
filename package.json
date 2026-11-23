@@ -21,7 +21,8 @@
     "./audio/html": "./src/audio/html-audio-adapter.js",
     "./character/stage": "./src/character/character-stage.js",
     "./runtime/director": "./src/runtime/cinematic-director.js",
-    "./camera": "./src/camera/camera-track.js"
+    "./camera": "./src/camera/camera-track.js",
+    "./motion-studio": "./packages/motion-studio/index.js"
   },
   "scripts": {
     "test": "node --test",
