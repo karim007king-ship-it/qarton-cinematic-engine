@@ -461,34 +461,40 @@ def exercise(context, url):
     # lostpointercapture after a valid move keeps that last valid position.
     character_lane = page.locator("#characterTimelineLane")
     character_box = character_lane.bounding_box()
-    page.locator('.character-keyframe-marker[data-key-time="6960"]').dispatch_event("pointerdown", {
-        "pointerId": 68, "pointerType": "touch", "isPrimary": True, "button": 0,
-        "clientX": character_box["x"] + character_box["width"] * .58,
-        "clientY": character_box["y"] + character_box["height"] / 2
-    })
+    key_box = page.locator('.character-keyframe-marker[data-key-time="6960"]').bounding_box()
+    page.mouse.move(key_box["x"] + key_box["width"] / 2, key_box["y"] + key_box["height"] / 2)
+    page.mouse.down()
+    page.wait_for_function("document.querySelector('#characterTimelineLane').hasPointerCapture(window.lastCharacterPointerId)")
     assert character_lane.get_attribute("data-scrubbing") is None, "marker pointerdown must not start lane scrubbing"
-    character_lane.dispatch_event("pointermove", {
-        "pointerId": 68, "pointerType": "touch", "isPrimary": True, "button": 0,
-        "clientX": character_box["x"] + character_box["width"] * (10000 / 12000),
-        "clientY": character_box["y"] + character_box["height"] / 2
-    })
+    page.mouse.move(character_box["x"] + character_box["width"] * (10000 / 12000),
+                    character_box["y"] + character_box["height"] / 2, steps=8)
     assert "يوجد مفتاح آخر" in page.locator("#characterTimelineMessage").inner_text()
-    character_lane.dispatch_event("lostpointercapture", {"pointerId": 68, "pointerType": "touch", "isPrimary": True, "button": 0})
-    assert page.locator('.character-keyframe-marker[data-key-time="6960"]').count() == 1
+    character_lane.evaluate("""(el, id) => el.dispatchEvent(new PointerEvent('lostpointercapture', {
+        bubbles: true, pointerId: id, pointerType: 'mouse', isPrimary: true
+    }))""", page.evaluate("window.lastCharacterPointerId"))
+    collision_times = [int(value) for value in page.locator(".character-keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")]
+    collision_candidates = [value for value in collision_times if 6960 < value < 10000]
+    assert len(collision_times) == 3 and len(set(collision_times)) == 3
+    assert collision_candidates, "failed occupied timestamp retains the last valid drag position"
+    page.mouse.up()
 
     character_box = character_lane.bounding_box()
+    collision_source = collision_candidates[-1]
+    key_box = page.locator(f'.character-keyframe-marker[data-key-time="{collision_source}"]').bounding_box()
     page.evaluate("""() => {
         window.lostCapturePointerId = null;
         document.querySelector('#characterTimelineLane').addEventListener('pointerdown', event => {
             window.lostCapturePointerId = event.pointerId;
         }, {capture: true, once: true});
     }""")
-    page.mouse.move(character_box["x"] + character_box["width"] * .58, character_box["y"] + character_box["height"] / 2)
+    page.mouse.move(key_box["x"] + key_box["width"] / 2, key_box["y"] + key_box["height"] / 2)
     page.mouse.down()
     lost_pointer_id = page.evaluate("window.lostCapturePointerId")
     assert lost_pointer_id is not None
     assert character_lane.evaluate("(el, id) => el.hasPointerCapture(id)", lost_pointer_id)
-    page.mouse.move(character_box["x"] + character_box["width"] * .67, character_box["y"] + character_box["height"] / 2)
+    target_x = character_box["x"] + character_box["width"] * (8040 / 12000)
+    page.mouse.move(target_x, character_box["y"] + character_box["height"] / 2)
+    assert page.locator('.character-keyframe-marker[data-key-time="8040"]').count() == 1
     character_lane.evaluate("""(el, id) => el.dispatchEvent(new PointerEvent('lostpointercapture', {
         bubbles: true, pointerId: id, pointerType: 'mouse', isPrimary: true
     }))""", lost_pointer_id)
