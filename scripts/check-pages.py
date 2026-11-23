@@ -450,6 +450,7 @@ def exercise(context, url):
         "clientX": character_box["x"] + character_box["width"] * (10000 / 12000),
         "clientY": character_box["y"] + character_box["height"] / 2
     })
+    assert "يوجد مفتاح آخر" in page.locator("#characterTimelineMessage").inner_text()
     character_lane.dispatch_event("lostpointercapture", {"pointerId": 68, "pointerType": "touch", "isPrimary": True, "button": 0})
     assert page.locator('.character-keyframe-marker[data-key-time="6960"]').count() == 1
 
@@ -468,7 +469,7 @@ def exercise(context, url):
     page.mouse.move(character_box["x"] + character_box["width"] * .67, character_box["y"] + character_box["height"] / 2)
     character_lane.evaluate("(el, id) => el.releasePointerCapture(id)", lost_pointer_id)
     assert page.locator('.character-keyframe-marker[data-key-time="8040"]').count() == 1
-    assert character_lane.get_attribute("data-dragging") is None
+    page.wait_for_function("!document.querySelector('#characterTimelineLane').hasAttribute('data-dragging')")
     page.mouse.up()
     assert page.locator('.character-keyframe-marker[data-key-time="8040"]').count() == 1
 
