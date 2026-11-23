@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import {
   MAX_DURATION_MS, MIN_DURATION_MS, createRequestToken, makeProject, makeProjectFile, parseProjectFile,
-  playbackTimeMs, setCameraEndpoints, VIEWPORT
+  playbackTimeMs, prepareProjectUpdate, setCameraEndpoints, VIEWPORT
 } from "../examples/motion-studio-lab/studio-model.js";
 import { decodeImageBitmap, IMAGE_DECODE_WIDTHS, MAX_PREVIEW_PIXELS } from "../examples/motion-studio-lab/studio-image.js";
 import { ASPECT_PRESETS, imageRect, inferAspectPreset, projectSizeForPreset, safePreviewSize } from "../examples/motion-studio-lab/studio-dimensions.js";
@@ -16,6 +16,12 @@ test("mobile interface exposes portrait preview, image input, camera controls an
   const html = await readFile(resolve(root, "examples/motion-studio-lab/index.html"), "utf8");
   for (const id of ["stage", "imageInput", "aspectPreset", "fitMode", "viewportValue", "duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "seek", "playPauseButton", "replayButton", "saveProjectButton", "loadProjectButton", "exportFormat", "exportDuration", "exportQuality", "exportAudioEnabled", "exportButton", "cancelExportButton", "tryWebmButton", "exportProgress", "exportVideo", "exportDownload", "exportMetadata"]) {
     assert.match(html, new RegExp(`id=["']${id}["']`), `missing interface control ${id}`);
+  }
+  for (const id of ["characterTimelineLane", "characterTimelineMarkers", "addCharacterKeyframe", "deleteCharacterKeyframe", "characterTimelinePlayhead"]) {
+    assert.match(html, new RegExp(`id=["']${id}["']`), `missing Character Track control ${id}`);
+  }
+  for (const channel of ["headRotation", "eyeX", "eyeY", "blink", "mouthOpen", "bodyRotation", "expression", "gesture"]) {
+    assert.match(html, new RegExp(`data-character-channel=["']${channel}["']`));
   }
   assert.match(html, /width="720" height="1280"/);
   assert.match(html, /value="original" selected/);
@@ -239,13 +245,44 @@ test("legacy start/end controls preserve intermediate imported keyframes and rej
   }), /Keyframe وسيطًا سيصل إلى نقطة النهاية/);
 });
 
+test("project control and duration updates preserve multi-key tracks and reject lossy truncation", () => {
+  const source = makeProject({ durationMs: 12000, startZoom: 1, endZoom: 1.5, startX: 0, endX: 90, startY: 0, endY: -60 });
+  const project = structuredClone(source);
+  project.camera.splice(1, 0,
+    { atMs: 4000, value: { x: 20, y: 8, zoom: 1.2, rotation: 4 } },
+    { atMs: 8000, value: { x: 55, y: -20, zoom: 1.35, rotation: -8 } });
+  const prepare = (candidate) => structuredClone(candidate);
+  const changed = prepareProjectUpdate(project, {
+    durationMs: 12000, viewport: { ...project.viewport, width: 1000 },
+    start: { x: 0, y: 0, zoom: 0.9 }, end: { x: 90, y: -60, zoom: 1.5 },
+    editedControl: "startZoom", prepare
+  });
+  assert.deepEqual(changed.project.camera.map(({ atMs }) => atMs), [0, 4000, 8000, 12000]);
+  assert.equal(changed.project.camera[0].value.zoom, 0.9);
+  assert.deepEqual(changed.project.camera.slice(1).map(({ value }) => value), project.camera.slice(1).map(({ value }) => value));
+  assert.deepEqual(changed.prepared.camera, changed.project.camera);
+  const shortened = prepareProjectUpdate(project, {
+    durationMs: 9000, viewport: project.viewport,
+    start: project.camera[0].value, end: project.camera.at(-1).value, prepare
+  });
+  assert.deepEqual(shortened.project.camera.map(({ atMs }) => atMs), [0, 4000, 8000, 9000]);
+  assert.deepEqual(project.camera.map(({ atMs }) => atMs), [0, 4000, 8000, 12000]);
+  assert.throws(() => prepareProjectUpdate(project, {
+    durationMs: 7000, viewport: project.viewport,
+    start: project.camera[0].value, end: project.camera.at(-1).value, prepare
+  }), /Keyframe وسيطًا/);
+  assert.deepEqual(project.camera.map(({ atMs }) => atMs), [0, 4000, 8000, 12000], "rejected update retains original keys");
+});
+
 test("browser module uses the engine sampling API and includes deterministic seek and replay paths", async () => {
   const source = await readFile(resolve(root, "examples/motion-studio-lab/studio.js"), "utf8");
-  assert.match(source, /import \{ compileProject, drawFrame, sampleFrame \} from "@qarton\/cinematic-engine\/motion-studio"/);
+  const timeline = await readFile(resolve(root, "examples/motion-studio-lab/studio-timeline.js"), "utf8");
+  const characterTimeline = await readFile(resolve(root, "examples/motion-studio-lab/studio-character-timeline.js"), "utf8");
+  assert.match(source, /import \{[^}]*compileProject[^}]*drawFrame[^}]*sampleFrame[^}]*\} from "@qarton\/cinematic-engine\/motion-studio"/);
   assert.match(source, /sampleFrame\(compiled, currentMs\)/);
   assert.match(source, /seek\.addEventListener\("input"/);
   assert.match(source, /function replay\(\)/);
-  assert.match(source, /renderAt\(0\);\s*play\(\);/);
+  assert.match(source, /audioPlayer\.replay\(\)/);
   assert.match(source, /decodeImageBitmap\(file/);
   assert.match(source, /imageRequest\.isCurrent\(requestToken\)/);
   assert.match(source, /projectInput\.addEventListener\("change"[\s\S]*?imageRequest\.begin\(\)/);
@@ -253,12 +290,32 @@ test("browser module uses the engine sampling API and includes deterministic see
   assert.doesNotMatch(source, /project\.layers\[0\]\.assetId\s*=\s*["']photo-1/);
   assert.match(source, /bitmap\.close/);
   assert.doesNotMatch(source, /createCameraTrack|sampleCameraTrack|createTimeline/);
+  assert.match(source, /createStudioTimeline/);
+  assert.match(source, /characterAnimation\.sample\(currentMs\)/);
+  assert.match(source, /exportCharacter\.sample\(projectMs\)/);
+  assert.match(source, /drawCharacter\(ctx/);
+  assert.match(source, /characterTimeline\?\.setBusy\(busy\)/);
+  assert.match(source, /makeProjectFile\(project, currentFileInfo, \{ aspectPreset, fitMode \}, characterTrack, audioTracks, audioAssets, audioMasterVolume\)/);
+  assert.match(characterTimeline, /pointercancel/);
+  assert.match(characterTimeline, /lostpointercapture/);
+  assert.match(characterTimeline, /moveCharacterKeyframe/);
+  assert.match(characterTimeline, /isBusy\(\)/);
+  assert.doesNotMatch(source, /pointerdown|pointermove|keyframeDrag/u, "timeline pointer state is isolated in its module");
+  for (const api of ["addCameraKeyframe", "updateCameraKeyframe", "moveCameraKeyframe", "deleteCameraKeyframe"]) {
+    assert.match(timeline, new RegExp(`${api}\\(`), `timeline must use L6-A ${api}`);
+  }
+  assert.match(timeline, /pointercancel/);
+  assert.match(timeline, /lostpointercapture/);
+  assert.match(timeline, /setPointerCapture/);
+  assert.match(timeline, /markers\.querySelector\([\s\S]*?\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(timeline, /if \(busy\) \{\s*const capturedPointerId = drag\?\.pointerId \?\? scrubPointerId;\s*drag = null;/);
 });
 
 test("UI prepares a candidate project before committing the active project and compiled frame", async () => {
   const source = await readFile(resolve(root, "examples/motion-studio-lab/studio.js"), "utf8");
-  const prepareIndex = source.indexOf("prepare: (candidate) => compileProject(projectForRaster(candidate, nextPreview)");
-  const commitIndex = source.indexOf("project = nextProject;");
+  const updateIndex = source.indexOf("function updateProject(");
+  const prepareIndex = source.indexOf("prepare: (candidate) => compileProject(projectForRaster(candidate, nextPreview)", updateIndex);
+  const commitIndex = source.indexOf("project = nextProject;", updateIndex);
   assert.notEqual(prepareIndex, -1);
   assert.notEqual(commitIndex, -1);
   assert.ok(prepareIndex < commitIndex, "candidate compilation runs before the active project is replaced");

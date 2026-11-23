@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101118">
+  <title>مختبر الصوت السينمائي — QARTON</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <p class="eyebrow">QARTON • تجربة مستقلة</p>
+      <h1>الصوت السينمائي وحركة الفم</h1>
+      <p>Dialogue وMusic وSFX على ساعة مشهد واحدة. بيانات الفم معدّة مسبقًا، ولا يوجد تعرف صوتي آلي.</p>
+    </header>
+
+    <section class="demo" aria-label="مشهد الشخصية">
+      <div class="scene-card">
+        <div class="stars" aria-hidden="true">✦　·　✧　·　✦</div>
+        <div id="character" class="character" data-viseme="rest" aria-label="شخصية تجريبية">
+          <div class="hair"></div>
+          <div class="face">
+            <div class="eyes"><i></i><i></i></div>
+            <div id="mouth" class="mouth" aria-hidden="true"></div>
+          </div>
+          <div class="body"></div>
+        </div>
+        <p id="lineText" class="line-text">السلام عليكم، شنوّة أخباركم اليوم؟</p>
+      </div>
+      <div class="transport">
+        <div class="buttons">
+          <button id="playButton" type="button">تشغيل</button>
+          <button id="pauseButton" type="button">إيقاف مؤقت</button>
+          <button id="replayButton" type="button">إعادة</button>
+        </div>
+        <label for="seek">الوقت: <output id="timeLabel">0.00</output> ثانية</label>
+        <input id="seek" type="range" min="0" max="10000" step="1" value="0">
+        <p id="visemeLabel" role="status">الفم: rest • phoneme: —</p>
+      </div>
+    </section>
+
+    <section class="mix" aria-label="مستويات الصوت">
+      <label>الصوت العام <input id="masterVolume" type="range" min="0" max="1" step="0.01" value="0.8"></label>
+      <label>الحوار <input id="dialogueVolume" type="range" min="0" max="1" step="0.01" value="1"></label>
+      <label>الموسيقى <input id="musicVolume" type="range" min="0" max="1" step="0.01" value="0.28"></label>
+      <label>المؤثرات <input id="sfxVolume" type="range" min="0" max="1" step="0.01" value="0.7"></label>
+    </section>
+    <p id="status" role="status" class="status">المشهد جاهز. اضغط تشغيل للسماح ببدء الصوت.</p>
+    <footer>الصوت نغمة تركيبية أصلية للتجربة فقط. أوقات الـViseme/Phoneme مكتوبة يدويًا لدعم العربية الفصحى أو التونسية.</footer>
+  </main>
+  <script type="module" src="./lab.js"></script>
+</body>
+</html>

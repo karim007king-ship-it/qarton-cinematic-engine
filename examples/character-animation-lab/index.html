@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#161018">
+  <title>نواة تحريك الشخصية | QARTON</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main>
+    <a class="back" href="../../docs/">QARTON TEST LAB</a>
+    <header><p class="eyebrow">L7-A · CHARACTER ANIMATION CORE</p><h1>مختبر تحريك الشخصية</h1>
+      <p>عينة 2D أصلية: ميل الرأس، حركة العينين، الرمش، التعابير، الإيماءات، وإطارات Sprite Sheet.</p></header>
+    <section class="stage-panel" aria-label="مشهد الشخصية">
+      <div id="stage" data-scene="greeting">
+        <div class="sun"></div><div class="ground"></div>
+        <svg id="character" viewBox="0 0 320 420" role="img" aria-label="شخصية قرطون التجريبية">
+          <ellipse cx="160" cy="397" rx="67" ry="10" fill="#0c0b10" opacity=".35"/>
+          <g id="body">
+            <path d="M116 239 Q160 214 204 239 L226 368 Q160 391 94 368 Z" fill="#8b3150" stroke="#451a30" stroke-width="7"/>
+            <path d="M130 363 L124 405 L150 405 L161 367 M190 363 L198 405 L171 405 L159 367" fill="#272638" stroke="#171622" stroke-width="7" stroke-linejoin="round"/>
+            <g id="leftArm"><path d="M113 253 Q82 269 77 317" fill="none" stroke="#d99d70" stroke-width="19" stroke-linecap="round"/><circle cx="77" cy="319" r="12" fill="#d99d70"/></g>
+            <g id="rightArm"><path d="M205 253 Q235 269 241 317" fill="none" stroke="#d99d70" stroke-width="19" stroke-linecap="round"/><circle cx="241" cy="319" r="12" fill="#d99d70"/></g>
+            <path d="M146 211 L146 246 L176 246 L176 211" fill="#c8835d"/>
+            <g id="head">
+              <path d="M105 112 Q108 44 166 43 Q227 47 221 124 L212 190 Q199 220 163 224 Q126 216 112 188 Z" fill="#e8b58e" stroke="#673c45" stroke-width="6"/>
+              <path d="M103 125 Q86 63 126 33 Q159 5 204 38 Q239 60 223 122 L211 102 Q190 102 173 75 Q152 105 111 107 Z" fill="#29243b" stroke="#181729" stroke-width="7"/>
+              <path d="M108 126 Q89 132 103 153" fill="none" stroke="#d89570" stroke-width="9" stroke-linecap="round"/>
+              <path d="M215 126 Q234 132 220 153" fill="none" stroke="#d89570" stroke-width="9" stroke-linecap="round"/>
+              <g id="eyes">
+                <g id="eyeLeft"><ellipse cx="139" cy="137" rx="12" ry="16" fill="#fff6e9"/><circle class="pupil" cx="141" cy="139" r="6" fill="#30324a"/></g>
+                <g id="eyeRight"><ellipse cx="185" cy="137" rx="12" ry="16" fill="#fff6e9"/><circle class="pupil" cx="187" cy="139" r="6" fill="#30324a"/></g>
+              </g>
+              <g id="lids" opacity="0"><path d="M125 137 Q139 125 153 137 M171 137 Q185 125 199 137" fill="none" stroke="#613a43" stroke-width="8" stroke-linecap="round"/></g>
+              <path id="browLeft" d="M126 113 Q139 107 151 113 M172 113 Q185 107 198 113" fill="none" stroke="#483044" stroke-width="6" stroke-linecap="round"/>
+              <path d="M158 143 Q153 160 162 162" fill="none" stroke="#bd795f" stroke-width="4" stroke-linecap="round"/>
+              <ellipse id="mouth" cx="162" cy="183" rx="12" ry="2" fill="#7d3645"/>
+              <path d="M127 194 Q161 207 195 194" fill="none" stroke="#ca8269" stroke-width="3" opacity=".65"/>
+            </g>
+          </g>
+        </svg>
+        <div class="scene-caption" id="expressionLabel">محايد</div>
+      </div>
+      <div class="sprite-row"><span>إطار Sprite Sheet</span><svg id="spritePreview" viewBox="0 0 80 60" aria-label="معاينة إطار الحركة"><image href="./gesture-sheet.svg" width="160" height="120"/></svg><span id="frameLabel">—</span></div>
+    </section>
+    <section class="controls" aria-label="أدوات التشغيل">
+      <div class="buttons">
+        <button id="play">تشغيل</button><button id="pause">إيقاف مؤقت</button><button id="replay">إعادة</button>
+        <button id="switch">تبديل المشهد</button>
+      </div>
+      <label for="seek">زمن المشهد <output id="time">0.00</output> ثانية</label>
+      <input id="seek" type="range" min="0" max="4000" step="10" value="0">
+      <p id="status" role="status" aria-live="polite">تهيئة الحركة…</p>
+    </section>
+    <details><summary>قنوات الحركة الحالية</summary><p id="channels">—</p></details>
+    <p class="note">هذه تجربة تأسيسية. الصوت ومزامنة الشفاه الكاملة ومحرر الشخصية ستأتي في مراحل لاحقة.</p>
+  </main>
+  <script type="module" src="./lab.js"></script>
+</body>
+</html>

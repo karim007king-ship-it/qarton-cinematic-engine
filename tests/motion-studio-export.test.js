@@ -82,6 +82,23 @@ test("export sampling and drawFrame use the same compiled Motion Studio camera f
   assert.equal(projectTimeAt(3000, 3000, 12000), 12000);
 });
 
+test("L6-B multi-key camera motion survives JSON and export raster compilation", () => {
+  const source = makeProject({ durationMs: 12000, startZoom: 1, endZoom: 1.5, startX: 0, endX: 90, startY: 0, endY: -60 });
+  source.camera.splice(1, 0,
+    { atMs: 3000, value: { x: 25, y: 5, zoom: 1.2, rotation: 4 } },
+    { atMs: 8500, value: { x: 62, y: -30, zoom: 1.36, rotation: -9 } });
+  const encoded = JSON.stringify(makeProjectFile(source));
+  const imported = parseProjectFile(encoded).project;
+  const raster = projectForRaster(imported, exportViewportFor(imported.viewport, "economy"));
+  const compiled = compileProject(raster, { get: () => ({ image: true }) });
+  assert.deepEqual(compiled.camera.keyframes.map(({ atMs }) => atMs), [0, 3000, 8500, 12000]);
+  const before = sampleFrame(compiled, 6000).camera;
+  const afterRepeatedSeek = sampleFrame(compiled, 6000).camera;
+  assert.deepEqual(afterRepeatedSeek, before);
+  assert.notEqual(before.x, sampleFrame(compiled, 2500).camera.x);
+  assert.notEqual(before.zoom, sampleFrame(compiled, 10000).camera.zoom);
+});
+
 test("duration mapping and output byte limits are bounded", () => {
   assert.equal(exportDurationMs("project", 12000), 12000);
   for (const [option, expected] of [["3000", 3000], ["10000", 10000], ["30000", 30000], ["60000", 60000]]) {

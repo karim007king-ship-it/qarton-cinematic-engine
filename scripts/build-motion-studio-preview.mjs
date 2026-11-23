@@ -5,7 +5,12 @@ import { build } from "esbuild";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sourceDirectory = resolve(root, "examples/motion-studio-lab");
-const outputDirectory = resolve(root, "dist/motion-studio-l5-android-preview");
+const previewSlug = process.env.MOTION_STUDIO_PREVIEW_SLUG || "motion-studio-l5-android-preview";
+const previewLabel = process.env.MOTION_STUDIO_PREVIEW_LABEL || "L5";
+if (!/^[a-z0-9-]+$/u.test(previewSlug) || !/^L[0-9]+(?:-[A-Z])?$/u.test(previewLabel)) {
+  throw new Error("Invalid Motion Studio preview slug or label");
+}
+const outputDirectory = resolve(root, "dist", previewSlug);
 const [htmlSource, css] = await Promise.all([
   readFile(resolve(sourceDirectory, "index.html"), "utf8"),
   readFile(resolve(sourceDirectory, "studio.css"), "utf8")
@@ -40,5 +45,5 @@ if (html === htmlSource || /<script type="importmap">|type="module" src=\.\/stud
 
 await mkdir(outputDirectory, { recursive: true });
 await writeFile(resolve(outputDirectory, "index.html"), html);
-await writeFile(resolve(outputDirectory, "README.txt"), `QARTON Motion Studio L5 — Android preview\n\n1. Extract this ZIP in Android Files.\n2. Tap index.html and open with Chrome. The preview is a single self-contained file; do not use the repository's multi-file index.html with file://.\n3. Allow photo selection. In Motion Studio, choose a supported format, then set 3 seconds + Economy for the first export. Keep Chrome open in the foreground.\n4. Preview and save the result. If MP4 is rejected, use “Try WebM instead” and retry.\n\nThe standalone file was checked for file:// startup and secure-context APIs in Chromium CI. Android encoding, audio synchronization, downloads, and device memory still require a real HONOR 400 Pro test.\n`);
+await writeFile(resolve(outputDirectory, "README.txt"), `QARTON Motion Studio ${previewLabel} — Android preview\n\n1. Download the L8-B Android preview ZIP from the successful GitHub Actions run attached to this Draft PR and extract it in Android Files.\n2. Tap index.html and open with Chrome. It is a single self-contained file; the editor can start from file:// without a computer.\n3. Choose a photo, duration, aspect ratio and Fit/Fill. Camera, character and audio playback use one scene timebase. Use their Timeline lanes to seek and edit.\n4. In “مسارات الصوت”, choose a local MP3, M4A/AAC, WAV, OGG or WebM file up to 20 MiB. Select Dialogue, Music or SFX and add the file at the playhead. Drag a clip or edit its start, duration and volume. Add dialogue mouth cues manually by choosing العربية الفصحى or التونسية and a Viseme at the playhead; no speech or lip-sync is generated automatically. Set track and master volume.\n5. Save JSON to keep project tracks and audio asset metadata. Audio bytes are not embedded. When reopening, reselect each linked local audio file from the phone; the app matches its filename/type/size and reconnects the saved asset identifier. Legacy L4/L5 JSON remains supported.\n6. To test video export, choose WebM or MP4 when MediaRecorder reports support, use 3 seconds + Economy first, optionally enable the existing test pulse, and keep Chrome in the foreground. Preview and save the result.\n\nThis one-file preview can open via file:// in Chrome. CI checks browser behavior and export, but HONOR 400 Pro codec/container support, touch feel, local audio decode/latency, audio synchronization, memory pressure, and saved-file playback still require a real phone test. Audio scheduling follows browser media/scene-clock timing; it is not sample-accurate. This integration branch stacks on PR #118/#116/#117 and merges PR #119's audio core as ancestry without changing those source branches.\n`);
 console.log(`Built self-contained preview at ${resolve(outputDirectory, "index.html")}`);

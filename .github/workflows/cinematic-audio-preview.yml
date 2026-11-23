@@ -1,0 +1,46 @@
+name: Cinematic Audio Android preview
+on:
+  pull_request:
+    paths:
+      - 'src/audio/**'
+      - 'src/motion/scene-clock.js'
+      - 'src/motion/timeline.js'
+      - 'src/index.js'
+      - 'package.json'
+      - 'examples/cinematic-audio-lab/**'
+      - 'tests/cinematic-audio-core.test.js'
+      - 'scripts/build-cinematic-audio-preview.mjs'
+      - 'scripts/check-cinematic-audio-preview.py'
+      - '.github/workflows/cinematic-audio-preview.yml'
+  push:
+    branches: [feature/cinematic-audio-lipsync-core-l8a]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cinematic-audio-preview-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+      - name: Bundle one-file Android preview
+        run: |
+          npm install --no-save --no-package-lock esbuild@0.25.12
+          node scripts/build-cinematic-audio-preview.mjs
+      - name: Check standalone preview in Chrome
+        run: |
+          python -m venv "$RUNNER_TEMP/qarton-audio-browser"
+          "$RUNNER_TEMP/qarton-audio-browser/bin/pip" install playwright==1.55.0
+          "$RUNNER_TEMP/qarton-audio-browser/bin/python" scripts/check-cinematic-audio-preview.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cinematic-audio-l8a-android-preview
+          path: dist/cinematic-audio-l8a-android-preview/
+          if-no-files-found: error
+          retention-days: 30

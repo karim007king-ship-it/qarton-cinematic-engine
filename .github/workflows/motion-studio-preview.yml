@@ -1,8 +1,8 @@
-name: Motion Studio L5 Android preview
+name: Motion Studio Android preview
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, integration/character-animation-timeline-l7]
     paths:
       - '.github/workflows/motion-studio-preview.yml'
       - 'examples/motion-studio-lab/**'
@@ -10,10 +10,16 @@ on:
       - 'packages/motion-studio/**'
       - 'src/camera/**'
       - 'src/motion/**'
+      - 'src/audio/**'
+      - 'tests/motion-studio-audio-timeline.test.js'
       - 'scripts/build-motion-studio-preview.mjs'
       - 'scripts/check-motion-studio-preview.py'
   push:
-    branches: [feature/motion-studio-video-export-l5]
+    branches:
+      - feature/motion-studio-video-export-l5
+      - feature/motion-studio-visual-timeline-l6b
+      - feature/character-animation-timeline-l7b
+      - feature/audio-dialogue-timeline-l8b
   workflow_dispatch:
 
 permissions:
@@ -21,7 +27,7 @@ permissions:
 
 jobs:
   preview:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.ref == 'feature/motion-studio-video-export-l5'
+    if: github.event_name != 'pull_request' || contains(fromJSON('["feature/motion-studio-video-export-l5","feature/motion-studio-visual-timeline-l6b","feature/character-animation-timeline-l7b","feature/audio-dialogue-timeline-l8b"]'), github.event.pull_request.head.ref)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout PR branch
@@ -30,22 +36,45 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Select isolated preview artifact name
+        id: preview
+        shell: bash
+        run: |
+          BRANCH_NAME='${{ github.head_ref || github.ref_name }}'
+          if [ "$BRANCH_NAME" = 'feature/motion-studio-visual-timeline-l6b' ]; then
+            PREVIEW_SLUG='motion-studio-l6b-android-preview'
+            PREVIEW_LABEL='L6-B'
+          elif [ "$BRANCH_NAME" = 'feature/character-animation-timeline-l7b' ]; then
+            PREVIEW_SLUG='motion-studio-l7b-android-preview'
+            PREVIEW_LABEL='L7-B'
+          elif [ "$BRANCH_NAME" = 'feature/audio-dialogue-timeline-l8b' ]; then
+            PREVIEW_SLUG='motion-studio-l8b-android-preview'
+            PREVIEW_LABEL='L8-B'
+          else
+            PREVIEW_SLUG='motion-studio-l5-android-preview'
+            PREVIEW_LABEL='L5'
+          fi
+          echo "MOTION_STUDIO_PREVIEW_SLUG=$PREVIEW_SLUG" >> "$GITHUB_ENV"
+          echo "MOTION_STUDIO_PREVIEW_LABEL=$PREVIEW_LABEL" >> "$GITHUB_ENV"
+          echo "slug=$PREVIEW_SLUG" >> "$GITHUB_OUTPUT"
       - name: Bundle the editor as a single offline HTML file
         run: |
           npm install --no-save --no-package-lock esbuild@0.25.12
           node scripts/build-motion-studio-preview.mjs
+      - name: Run Node regressions
+        run: npm test
       - name: Check local-file startup and secure browser APIs
         run: |
           python -m pip install playwright==1.55.0
           python scripts/check-motion-studio-preview.py
       - name: Package Android preview ZIP
         run: |
-          cd dist/motion-studio-l5-android-preview
-          zip -9 ../../motion-studio-l5-android-preview.zip index.html README.txt
+          cd "dist/$MOTION_STUDIO_PREVIEW_SLUG"
+          zip -9 "../../$MOTION_STUDIO_PREVIEW_SLUG.zip" index.html README.txt
       - name: Upload Android preview artifact
         uses: actions/upload-artifact@v4
         with:
-          name: motion-studio-l5-android-preview
-          path: motion-studio-l5-android-preview.zip
+          name: ${{ steps.preview.outputs.slug }}
+          path: ${{ steps.preview.outputs.slug }}.zip
           if-no-files-found: error
           retention-days: 30

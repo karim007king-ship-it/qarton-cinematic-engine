@@ -41,6 +41,34 @@ test("DOM character renderer mounts, updates pose, and switches expression sprit
   assert.equal(root.children.length, 0);
 });
 
+test("DOM character renderer reuses a loaded sprite sheet while changing its clipped frame", async () => {
+  const document = new Document();
+  const root = new Element("main", document);
+  let loads = 0;
+  const renderer = createDOMCharacterRenderer({ root, resolveSprite: key => {
+    loads += 1;
+    return `https://assets.test/${key}`;
+  } });
+  const handle = await renderer.mount({ id: "hero", sprites: { default: "fallback.svg" } });
+  const state = { id: "hero", x: 0, y: 0, opacity: 1, scale: 1, rotation: 0, expression: "neutral", state: "idle" };
+  await renderer.update(handle, { ...state, spriteFrame: {
+    asset: "hero-sheet.svg", x: 80, y: 60, width: 80, height: 60, columns: 2, rows: 2, index: 3
+  } });
+  assert.equal(handle.children[0].src, "https://assets.test/hero-sheet.svg");
+  assert.equal(handle.dataset.spriteFrame, "3");
+  assert.equal(handle.children[0].style.width, "200%");
+  assert.equal(handle.children[0].style.height, "200%");
+  assert.equal(handle.children[0].style.transform, "translate(-50%, -50%)");
+  await renderer.update(handle, { ...state, spriteFrame: {
+    asset: "hero-sheet.svg", x: 0, y: 0, width: 80, height: 60, columns: 2, rows: 2, index: 0
+  } });
+  assert.equal(handle.children[0].src, "https://assets.test/hero-sheet.svg");
+  assert.equal(handle.children[0].style.transform, "translate(0%, 0%)");
+  assert.equal(loads, 2); // one fallback on mount, one sheet; moving between cells loads nothing
+  renderer.destroy();
+  assert.equal(root.children.length, 0);
+});
+
 test("stale asynchronous sprite loads cannot overwrite a newer expression", async () => {
   const document = new Document();
   const root = new Element("main", document);
