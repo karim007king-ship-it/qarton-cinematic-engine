@@ -40,6 +40,7 @@ test("keyframe APIs reject duplicate, missing, out-of-range, and malformed edits
   assert.throws(() => addCameraKeyframe(project, { atMs: 0, value: project.camera[0].value }), /already exists/);
   assert.throws(() => addCameraKeyframe(project, { atMs: 6001, value: project.camera[0].value }), /integer in/);
   assert.throws(() => addCameraKeyframe(project, { atMs: 1500, value: { ...project.camera[0].value, zoom: 65 } }), /zoom/);
+  assert.throws(() => addCameraKeyframe(project, { atMs: 1500, value: project.camera[0].value, ignored: true }), /only atMs and value/);
   assert.throws(() => updateCameraKeyframe(project, 0, { zoom: 0 }), /zoom/);
   assert.throws(() => updateCameraKeyframe(project, 250, { alpha: 1 }), /x, y, zoom, or rotation/);
   assert.throws(() => updateCameraKeyframe(project, 250, { x: 1 }), /No keyframe/);
