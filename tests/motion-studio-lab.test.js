@@ -14,12 +14,15 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 test("mobile interface exposes portrait preview, image input, camera controls and timeline", async () => {
   const html = await readFile(resolve(root, "examples/motion-studio-lab/index.html"), "utf8");
-  for (const id of ["stage", "imageInput", "aspectPreset", "fitMode", "viewportValue", "duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "seek", "playPauseButton", "replayButton", "saveProjectButton", "loadProjectButton"]) {
+  for (const id of ["stage", "imageInput", "aspectPreset", "fitMode", "viewportValue", "duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "seek", "playPauseButton", "replayButton", "saveProjectButton", "loadProjectButton", "exportFormat", "exportDuration", "exportQuality", "exportAudioEnabled", "exportButton", "cancelExportButton", "exportProgress", "exportVideo", "exportDownload", "exportMetadata"]) {
     assert.match(html, new RegExp(`id=["']${id}["']`), `missing interface control ${id}`);
   }
   assert.match(html, /width="720" height="1280"/);
   assert.match(html, /value="original" selected/);
   assert.match(html, /value="fit" selected/);
+  assert.match(html, /<h2 id="exportHeading">تصدير الفيديو<\/h2>/);
+  assert.match(html, /value="mp4"/);
+  assert.match(html, /value="webm"/);
   assert.match(html, /viewport" content="width=device-width, initial-scale=1/);
 });
 
@@ -226,4 +229,16 @@ test("browser module uses the engine sampling API and includes deterministic see
   assert.doesNotMatch(source, /project\.layers\[0\]\.assetId\s*=\s*["']photo-1/);
   assert.match(source, /bitmap\.close/);
   assert.doesNotMatch(source, /createCameraTrack|sampleCameraTrack|createTimeline/);
+});
+
+test("video export uses Motion Studio sampling, cancellation, resource cleanup and real MIME probes", async () => {
+  const source = await readFile(resolve(root, "examples/motion-studio-lab/studio.js"), "utf8");
+  assert.match(source, /compileProject\(projectForRaster\(project, rasterViewport\), imageProvider\)/);
+  assert.match(source, /drawFrame\(ctx, sampleFrame\(exportCompiled, projectMs\)\)/);
+  assert.match(source, /supportedCandidates\(RecorderClass, "mp4"\)/);
+  assert.match(source, /supportedCandidates\(RecorderClass, "webm"\)/);
+  assert.match(source, /controller\.abort\(abortError\)/);
+  assert.match(source, /stream\?\.getTracks\(\)\.forEach\(\(track\) => track\.stop\(\)\)/);
+  assert.match(source, /audioGraph\.audio\.close\(\)/);
+  assert.match(source, /window\.addEventListener\("pagehide"/);
 });
