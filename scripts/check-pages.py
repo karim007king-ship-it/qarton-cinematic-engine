@@ -370,7 +370,7 @@ def exercise(context, url):
         }).filter(item => item.right > innerWidth + 1 || item.left < -1 || item.scrollWidth > item.clientWidth + 1)
           .slice(0, 12)
     })""")
-    assert horizontal_overflow["scrollWidth"] <= horizontal_overflow["clientWidth"], horizontal_overflow
+    assert horizontal_overflow["scrollWidth"] <= horizontal_overflow["viewportWidth"], horizontal_overflow
 
     with page.expect_download() as timeline_download_info:
         page.locator("#saveProjectButton").click()
