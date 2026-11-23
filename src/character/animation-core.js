@@ -88,9 +88,8 @@ export function createCharacterAnimation({
   const initialPose = Object.keys(initialValues).length === 0
     ? Object.freeze({ ...INITIAL_POSE, expression: character.initial?.expression ?? INITIAL_POSE.expression })
     : checkedPose(initialValues, INITIAL_POSE, "Initial character pose");
-  let previous = initialPose;
   const seen = new Set();
-  const timeline = createTimeline(keyframes.map((keyframe, index) => {
+  const orderedKeyframes = keyframes.map((keyframe, index) => {
     if (!plainObject(keyframe) || Reflect.ownKeys(keyframe).some(key =>
       typeof key !== "string" || !["atMs", "values", "easing"].includes(key))) {
       throw new TypeError(`Character keyframe ${index} must contain only atMs, values, and easing`);
@@ -104,13 +103,18 @@ export function createCharacterAnimation({
     if (typeof easing !== "string" || !Object.hasOwn(EASING, easing)) {
       throw new TypeError(`Character keyframe ${index} has an unsupported easing`);
     }
-    const pose = checkedPose(keyframe.values, previous, `Character keyframe ${index}`);
+    return { atMs: keyframe.atMs, values: keyframe.values, easing, index };
+  }).sort((a, b) => a.atMs - b.atMs || a.index - b.index);
+
+  let previous = initialPose;
+  const timeline = createTimeline(orderedKeyframes.map(keyframe => {
+    const pose = checkedPose(keyframe.values, previous, `Character keyframe ${keyframe.index}`);
     previous = pose;
     return {
       id: `character-key-${keyframe.atMs}`,
       atMs: keyframe.atMs,
       type: "character-pose",
-      payload: Object.freeze({ pose, easing })
+      payload: Object.freeze({ pose, easing: keyframe.easing })
     };
   }));
   const keys = timeline.events.map(event => Object.freeze({

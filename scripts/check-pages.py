@@ -372,6 +372,36 @@ def exercise(context, url):
     page.wait_for_function("Number(document.querySelector('#seek').value) > 0")
     page.locator("#switch").click()
     assert page.locator("#character").count() == 1
+    browser_keyframes = page.evaluate("""async () => {
+        const { createCharacterAnimation } = await import(
+            new URL('../../src/character/animation-core.js', location.href));
+        const animation = createCharacterAnimation({
+            character: { id: 'browser-order', initial: { headRotation: -5, eyeY: 0.25 } },
+            durationMs: 2000,
+            keyframes: [
+                { atMs: 1000, values: { headRotation: 30 } },
+                { atMs: 1500, values: { eyeY: -0.5 } },
+                { atMs: 0, values: { eyeX: 0.5 } },
+                { atMs: 500, values: { headRotation: 10, mouthOpen: 0.4 }, easing: 'linear' }
+            ]
+        });
+        const result = [250, 750, 1250].map(time => animation.sample(time));
+        animation.sample(0);
+        const repeated = animation.sample(750);
+        return {
+            times: animation.timeline.events.map(event => event.atMs),
+            headAt250: result[0].headRotation,
+            headAt750: result[1].headRotation,
+            eyeXAt750: result[1].eyeX,
+            mouthAt750: result[1].mouthOpen,
+            eyeYAt1250: result[2].eyeY,
+            seekStable: JSON.stringify(result[1]) === JSON.stringify(repeated)
+        };
+    }""")
+    assert browser_keyframes == {
+        "times": [0, 500, 1000, 1500], "headAt250": 2.5, "headAt750": 20,
+        "eyeXAt750": 0.5, "mouthAt750": 0.4, "eyeYAt1250": -0.125, "seekStable": True
+    }
     assert not errors, errors
 
 
