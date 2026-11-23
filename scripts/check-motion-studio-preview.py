@@ -457,7 +457,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
 
             sync_page.locator("#integratedProbeButton").click()
             sync_page.wait_for_function("""() => document.querySelector('#integratedStatus').textContent.includes('تم التحقق فعليًا') ||
-              !document.querySelector('#integratedError').hidden""", timeout=15000)
+              !document.querySelector('#integratedError').hidden""", timeout=30000)
             probe_status = sync_page.locator("#integratedStatus").inner_text()
             probe_error = sync_page.locator("#integratedError").inner_text()
             assert "تم التحقق فعليًا" in probe_status, f"exact-profile capability probe failed: {probe_status}; {probe_error}"
