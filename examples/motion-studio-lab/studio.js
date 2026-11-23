@@ -234,11 +234,16 @@ function createTestAudioGraph() {
   gain.connect(destination);
   return { audio, stream: destination.stream, gain };
 }
-function renderExportFrame(ctx, exportCompiled, exportCharacter, exportEffects, elapsedMs, exportLengthMs) {
+function renderExportFrame(ctx, exportCompiled, exportCharacter, exportAudio, exportEffects, elapsedMs, exportLengthMs) {
   const projectMs = projectTimeAt(elapsedMs, exportLengthMs, exportCompiled.durationMs);
   const effectSample = sampleVisualEffects(exportEffects, projectMs);
   drawFrame(ctx, { ...sampleFrame(exportCompiled, projectMs), camera: effectSample.camera });
-  if (characterTrack.keyframes.length) drawCharacterWithCamera(ctx, exportCharacter.sample(projectMs), exportCompiled.viewport.width, exportCompiled.viewport.height, effectSample.camera);
+  const dialogue = exportAudio.sample(projectMs).dialogue;
+  if (characterTrack.keyframes.length || dialogue.length) {
+    const pose = { ...exportCharacter.sample(projectMs) };
+    if (dialogue.length) pose.mouthOpen = Math.max(...dialogue.map(({ mouthOpen }) => mouthOpen));
+    drawCharacterWithCamera(ctx, pose, exportCompiled.viewport.width, exportCompiled.viewport.height, effectSample.camera);
+  }
   drawEffectOverlays(ctx, effectSample);
 }
 async function exportVideoFile() {
@@ -282,8 +287,9 @@ async function exportVideoFile() {
     if (!exportContext) throw new Error("لم تتوفر ذاكرة كافية لإنشاء Canvas التصدير.");
     const exportCompiled = compileProject(projectForRaster(project, rasterViewport), imageProvider);
     const exportCharacter = compileCharacterTrack(characterTrack, exportCompiled.durationMs);
+    const exportAudio = compileAudioTracks(audioTracks, exportCompiled.durationMs);
     const exportEffects = compilePreviewEffects(visualEffectsTrack, project, rasterViewport);
-    renderExportFrame(exportContext, exportCompiled, exportCharacter, exportEffects, 0, exportLengthMs);
+    renderExportFrame(exportContext, exportCompiled, exportCharacter, exportAudio, exportEffects, 0, exportLengthMs);
     stream = exportCanvas.captureStream(rasterViewport.fps);
     if (exportAudioEnabled.checked) {
       audioGraph = createTestAudioGraph();
@@ -307,7 +313,7 @@ async function exportVideoFile() {
     const presentFrame = (frameIndex) => {
       if (frameIndex <= lastFrameIndex) return;
       const frameMs = exportFrameTime(frameIndex, rasterViewport.fps, exportLengthMs);
-      renderExportFrame(exportContext, exportCompiled, exportCharacter, exportEffects, frameMs, exportLengthMs);
+      renderExportFrame(exportContext, exportCompiled, exportCharacter, exportAudio, exportEffects, frameMs, exportLengthMs);
       try { videoTrack?.requestFrame?.(); } catch { /* timed captureStream(fps) remains the fallback */ }
       lastFrameIndex = frameIndex;
     };
@@ -441,21 +447,30 @@ function renderAudioInspector() {
 function selectedVisualEffect() {
   return visualEffectsTrack.clips.find(({ id }) => id === visualEffectSelection) ?? null;
 }
-function commitVisualEffectsTrack(nextTrack, message = "تم تحديث المؤثر المرئي.") {
+function commitVisualEffectsTrack(nextTrack, message = "تم تحديث المؤثر المرئي.", { refreshTimeline = true, refreshInspector = true } = {}) {
   if (activeExport) throw new Error("أوقف تصدير الفيديو قبل تعديل المؤثرات المرئية.");
   const nextCompiled = compilePreviewEffects(nextTrack, project, previewViewport);
   visualEffectsTrack = nextTrack;
   visualEffectsCompiled = nextCompiled;
-  visualEffectsTimeline?.render();
-  renderVisualEffectInspector();
+  if (refreshTimeline) visualEffectsTimeline?.render();
+  if (refreshInspector) renderVisualEffectInspector();
   renderAt(currentMs);
   $("visualEffectsMessage").textContent = message;
 }
-function commitVisualEffectPatch(patch) {
+function commitVisualEffectPatch(patch, options) {
   const selected = selectedVisualEffect();
   if (!selected) return;
-  commitVisualEffectsTrack(editVisualEffect(visualEffectsTrack, project, selected.id, patch));
-  visualEffectsTimeline?.select(selected.id);
+  commitVisualEffectsTrack(editVisualEffect(visualEffectsTrack, project, selected.id, patch), undefined, options);
+  if (options?.refreshTimeline !== false) visualEffectsTimeline?.select(selected.id);
+}
+
+function readEffectNumber(input) {
+  const valueText = input.value.trim();
+  if (!valueText) throw new TypeError("أدخل قيمة رقمية قبل حفظ التعديل.");
+  if (input.validity?.badInput) throw new TypeError("القيمة الرقمية غير صالحة.");
+  const value = Number(valueText);
+  if (!Number.isFinite(value)) throw new TypeError("القيمة الرقمية غير صالحة.");
+  return value;
 }
 function renderVisualEffectInspector() {
   const selected = selectedVisualEffect();
@@ -792,11 +807,11 @@ visualEffectsTimeline = createStudioVisualEffectsTimeline({
   getDuration: () => project.durationMs, getCurrentTime: () => currentMs,
   isBusy: () => Boolean(activeExport), formatTime,
   onSelect: (id) => { visualEffectSelection = id; renderVisualEffectInspector(); },
-  onMove: (id, atMs) => commitVisualEffectsTrack(moveVisualEffect(visualEffectsTrack, project, id, atMs), "تم نقل المؤثر على المسار."),
+  onMove: (id, atMs) => commitVisualEffectsTrack(moveVisualEffect(visualEffectsTrack, project, id, atMs), "تم نقل المؤثر على المسار.", { refreshTimeline: false, refreshInspector: false }),
   onSeek: (atMs) => seekTo(atMs),
   onDragEnd: ({ cancelled, error }) => {
     if (error) $("visualEffectsMessage").textContent = `تعذر نقل المؤثر: ${errorText(error)}`;
-    else if (cancelled) $("visualEffectsMessage").textContent = "أُلغي السحب؛ حُفظ آخر توقيت صالح للمؤثر.";
+    else if (cancelled) $("visualEffectsMessage").textContent = "أُلغي السحب؛ أُعيد المؤثر إلى توقيته الأصلي.";
   }
 });
 visualEffectsTimeline.render();
@@ -824,8 +839,8 @@ $("deleteVisualEffect").addEventListener("click", () => {
 for (const [id, field] of [["visualEffectStart", "atMs"], ["visualEffectDuration", "durationMs"], ["visualEffectEasing", "easing"]]) {
   $(id).addEventListener("change", () => {
     if (!selectedVisualEffect() || activeExport) return;
-    try { commitVisualEffectPatch({ [field]: field === "easing" ? $(id).value : Number($(id).value) }); }
-    catch (error) { $("visualEffectsMessage").textContent = errorText(error); renderVisualEffectInspector(); }
+    try { commitVisualEffectPatch({ [field]: field === "easing" ? $(id).value : readEffectNumber($(id)) }); }
+    catch (error) { $("visualEffectsMessage").textContent = errorText(error); }
   });
 }
 for (const source of ["visualEffectFrom", "visualEffectTo"]) {
@@ -835,8 +850,9 @@ for (const source of ["visualEffectFrom", "visualEffectTo"]) {
     try {
       const channel = VISUAL_EFFECT_CHANNELS[selectedVisualEffect().type].find(({ key }) => key === input.dataset.effectField);
       if (!channel) throw new TypeError("قناة المؤثر غير معروفة.");
-      commitVisualEffectPatch({ [input.dataset.effectSource]: { [channel.key]: channel.kind === "color" ? input.value : Number(input.value) } });
-    } catch (error) { $("visualEffectsMessage").textContent = errorText(error); renderVisualEffectInspector(); }
+      commitVisualEffectPatch({ [input.dataset.effectSource]: { [channel.key]: channel.kind === "color" ? input.value : readEffectNumber(input) } }, { refreshTimeline: false, refreshInspector: false });
+      input.removeAttribute("aria-invalid");
+    } catch (error) { input.setAttribute("aria-invalid", "true"); $("visualEffectsMessage").textContent = errorText(error); }
   });
 }
 function renderCharacterRuler() {

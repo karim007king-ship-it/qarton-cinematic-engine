@@ -60,9 +60,70 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         page.locator("#visualEffectDuration").dispatch_event("change")
         page.locator("#visualEffectEasing").select_option("linear")
         from_opacity = page.locator('#visualEffectFrom [data-effect-field="opacity"]')
+        from_opacity.fill("")
+        from_opacity.dispatch_event("change")
+        assert from_opacity.get_attribute("aria-invalid") == "true", "empty numeric fields are rejected instead of converted to zero"
+        assert from_opacity.evaluate("el => el.isConnected && document.activeElement === el"), "invalid From value keeps its input and focus"
         from_opacity.fill("0.2")
         from_opacity.dispatch_event("change")
+        assert from_opacity.get_attribute("aria-invalid") is None
+        assert from_opacity.evaluate("el => el.isConnected && document.activeElement === el"), "From edits retain keyboard focus without replacing the input"
         assert page.locator(".visual-effect-clip").get_attribute("aria-label").startswith("Fade، يبدأ 00:00.50")
+
+        # Exercise trusted visual-effect drag cancellation and release in Chromium.
+        effect_root = page.locator("#visualEffectsTracks")
+        effect_lane = page.locator("#visualEffectsTracks .visual-effect-lane[data-effect-type='fade']")
+        effect_clip = page.locator(".visual-effect-clip")
+        original_effect_label = effect_clip.get_attribute("aria-label")
+        page.evaluate("""() => {
+          window.lastEffectPointerId = null;
+          document.querySelector('#visualEffectsTracks').addEventListener('pointerdown', event => {
+            window.lastEffectPointerId = event.pointerId;
+          }, {capture: true});
+        }""")
+        effect_box = effect_clip.bounding_box()
+        lane_box = effect_lane.bounding_box()
+        start_x = effect_box["x"] + effect_box["width"] / 2
+        start_y = effect_box["y"] + effect_box["height"] / 2
+        page.mouse.move(start_x, start_y)
+        page.mouse.down()
+        page.wait_for_function("""() => {
+          const root = document.querySelector('#visualEffectsTracks');
+          return root.dataset.dragging === 'true' && root.hasPointerCapture(window.lastEffectPointerId) &&
+            document.activeElement?.classList.contains('visual-effect-clip');
+        }""")
+        page.mouse.move(start_x + lane_box["width"] * 0.04, start_y, steps=3)
+        page.keyboard.press("Escape")
+        assert page.locator(".visual-effect-clip").get_attribute("aria-label") == original_effect_label, "Escape restores the committed start time"
+        assert not effect_root.get_attribute("data-dragging")
+        page.mouse.up()
+
+        effect_box = page.locator(".visual-effect-clip").bounding_box()
+        page.mouse.move(effect_box["x"] + effect_box["width"] / 2, effect_box["y"] + effect_box["height"] / 2)
+        page.mouse.down()
+        page.wait_for_function("document.querySelector('#visualEffectsTracks').dataset.dragging === 'true'")
+        page.evaluate("""() => document.querySelector('#visualEffectsTracks').dispatchEvent(new PointerEvent('pointercancel', {
+          bubbles: true, pointerId: window.lastEffectPointerId, pointerType: 'mouse', isPrimary: true
+        }))""")
+        assert page.locator(".visual-effect-clip").get_attribute("aria-label") == original_effect_label, "pointercancel restores the committed start time"
+        page.mouse.up()
+
+        effect_box = page.locator(".visual-effect-clip").bounding_box()
+        page.mouse.move(effect_box["x"] + effect_box["width"] / 2, effect_box["y"] + effect_box["height"] / 2)
+        page.mouse.down()
+        page.wait_for_function("document.querySelector('#visualEffectsTracks').hasPointerCapture(window.lastEffectPointerId)")
+        page.evaluate("""() => document.querySelector('#visualEffectsTracks').dispatchEvent(new PointerEvent('lostpointercapture', {
+          bubbles: true, pointerId: window.lastEffectPointerId, pointerType: 'mouse', isPrimary: true
+        }))""")
+        assert page.locator(".visual-effect-clip").get_attribute("aria-label") == original_effect_label, "lost capture restores the committed start time"
+        page.mouse.up()
+
+        effect_box = page.locator(".visual-effect-clip").bounding_box()
+        page.mouse.move(effect_box["x"] + effect_box["width"] / 2, effect_box["y"] + effect_box["height"] / 2)
+        page.mouse.down()
+        page.mouse.move(effect_box["x"] + effect_box["width"] / 2 + lane_box["width"] * 0.04, effect_box["y"] + effect_box["height"] / 2, steps=4)
+        page.mouse.up()
+        assert page.locator(".visual-effect-clip").get_attribute("aria-label") != original_effect_label, "successful drag commits its new start time"
         page.locator("#seek").evaluate("""(el, value) => { el.value = String(value); el.dispatchEvent(new Event('input', {bubbles: true})); }""", 4000)
         effect_head = page.locator("#visualEffectsTracks .visual-effect-playhead").first
         assert abs(float(effect_head.evaluate("el => parseFloat(el.style.left)")) - 100 / 3) < 0.01
@@ -351,6 +412,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         effect_start_x = effect_box_clip["x"] + effect_box_clip["width"] / 2
         effect_start_y = effect_box_clip["y"] + effect_box_clip["height"] / 2
         initial_effect_label = effect_clip.get_attribute("aria-label")
+        initial_effect_left = effect_clip.evaluate("el => getComputedStyle(el).getPropertyValue('--effect-left')")
         effect_original = effect_clip.element_handle()
         page.evaluate("""() => {
           window.lastEffectsPointerId = null; window.effectsPointerMoves = 0;
@@ -367,18 +429,18 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         }""")
         page.mouse.move(effect_start_x + effect_box["width"] * 0.15, effect_start_y, steps=5)
         page.wait_for_function("window.effectsPointerMoves > 0")
-        assert effect_original.evaluate("el => !el.isConnected"), "effects drag redraw keeps capture on the stable timeline root"
-        page.wait_for_function("""() => {
+        assert effect_original.evaluate("el => el.isConnected"), "effects drag keeps the existing clip node instead of rebuilding the lane DOM"
+        page.wait_for_function("""(initial) => {
           const root = document.querySelector('#visualEffectsTracks');
           const clip = root.querySelector('.visual-effect-clip');
           return root.hasPointerCapture(window.lastEffectsPointerId) &&
-            clip?.getAttribute('aria-pressed') === 'true' && document.activeElement === clip;
-        }""")
+            clip?.getAttribute('aria-pressed') === 'true' && document.activeElement === clip &&
+            getComputedStyle(clip).getPropertyValue('--effect-left') !== initial;
+        }""", arg=initial_effect_left)
         page.wait_for_function("""(initial) => {
           const clip = document.querySelector('#visualEffectsTracks .visual-effect-clip');
-          return (clip && clip.getAttribute('aria-label') !== initial) ||
-            document.querySelector('#visualEffectsMessage').textContent.startsWith('تعذر نقل المؤثر:');
-        }""", arg=initial_effect_label)
+          return clip && getComputedStyle(clip).getPropertyValue('--effect-left') !== initial;
+        }""", arg=initial_effect_left)
         page.mouse.up()
         moved_effect_label = effect_clip.get_attribute("aria-label")
         assert moved_effect_label != initial_effect_label, page.locator("#visualEffectsMessage").inner_text()

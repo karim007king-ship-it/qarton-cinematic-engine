@@ -26,6 +26,12 @@ Each object has a closed schema: unknown keys, null optional values, missing cha
 
 All clips interpolate from/to values linearly unless `easing` is `easeInOutCubic` (the shared easing helper). Colors use `#RRGGBB` and switch at the midpoint.
 
+## Clip lifetime and overlap
+
+`durationMs` is the time used to interpolate from `from` to `to`; it does not automatically remove a clip's final state. A started Fade or Dissolve clip remains at its final state until another later-started clip of the same type takes over. Vignette and Letterbox use the greatest sampled intensity/ratio among started clips, and Flash uses the greatest sampled intensity. Tint uses the greatest sampled strength. Equal-strength overlaps use timeline order, so the later-started clip supplies the color. These rules are independent of sampling order and remain stable through seek and replay.
+
+To fade an effect away, author its `to` intensity/strength/ratio as `0` (and for Fade use opacity `1`); to make a persistent effect weaker, lower its `to` value. When several Vignette, Letterbox, Flash, or Tint clips overlap, reducing one clip cannot undercut a stronger overlapping clip; edit that clip too or delete it. Deleting a clip removes only that clip's contribution. A zero-duration clip steps directly to its `to` value at `atMs` and holds it under the same rules.
+
 | Type | `from` and `to` fields | Behavior |
 |---|---|---|
 | `fade` | `opacity` 0–1, `color` | Scene overlay from opaque to clear or reverse |

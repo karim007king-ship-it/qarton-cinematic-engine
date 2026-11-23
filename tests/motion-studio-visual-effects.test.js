@@ -6,6 +6,9 @@ import {
   makeVisualEffectsTrack, moveVisualEffect, sampleVisualEffects, VISUAL_EFFECT_TYPES
 } from "../examples/motion-studio-lab/studio-visual-effects-model.js";
 import { compileCinematicEffects, drawCinematicEffects, sampleCinematicEffects } from "../src/effects/cinematic-effects.js";
+import { createCameraTrack, sampleCameraTrack } from "../src/camera/camera-track.js";
+import { projectForRaster, exportViewportFor } from "../examples/motion-studio-lab/studio-export-core.js";
+import { compileAudioTracks, makeAudioTracks, setAudioViseme } from "../examples/motion-studio-lab/studio-audio-model.js";
 
 const project = (options = {}) => makeProject({ durationMs: 12_000, viewport: { width: 720, height: 1280, fps: 24 }, startZoom: 1, endZoom: 1, startX: 0, endX: 0, startY: 0, endY: 0, ...options });
 const clip = (type = "fade", overrides = {}) => ({
@@ -77,6 +80,59 @@ test("overlapping seeded camera shakes are deterministic after seek and replay",
   assert.notDeepEqual(first.shake, { x: 0, y: 0, rotation: 0 });
 });
 
+test("Vignette, Letterbox, Tint, and Flash can be reduced or removed under overlap", () => {
+  const base = makeVisualEffectsTrack();
+  let track = base;
+  for (const type of ["vignette", "letterbox", "tint", "flash"]) track = addVisualEffect(track, project(), type, 0);
+  const ids = Object.fromEntries(track.clips.map(item => [item.type, item.id]));
+  track = editVisualEffect(track, project(), ids.vignette, { to: { intensity: 0.1 } });
+  track = editVisualEffect(track, project(), ids.letterbox, { to: { ratio: 0.02 } });
+  track = editVisualEffect(track, project(), ids.tint, { to: { strength: 0.05 } });
+  track = editVisualEffect(track, project(), ids.flash, { to: { intensity: 0.05 } });
+  let sample = sampleVisualEffects(compileVisualEffectsTrack(track, project()), 1000);
+  assert.equal(sample.vignette, 0.1);
+  assert.equal(sample.letterbox, 0.02);
+  assert.ok(Math.abs(sample.tint.strength - 0.05) < 1e-12);
+  assert.ok(Math.abs(sample.flash.intensity - 0.05) < 1e-12);
+  track = deleteVisualEffect(track, project(), ids.vignette);
+  track = deleteVisualEffect(track, project(), ids.letterbox);
+  track = deleteVisualEffect(track, project(), ids.tint);
+  track = deleteVisualEffect(track, project(), ids.flash);
+  sample = sampleVisualEffects(compileVisualEffectsTrack(track, project()), 1000);
+  assert.equal(sample.vignette, 0);
+  assert.equal(sample.letterbox, 0);
+  assert.equal(sample.tint.strength, 0);
+  assert.equal(sample.flash.intensity, 0);
+});
+
+test("legacy camera results stay identical and raster changes scale camera translation", () => {
+  const legacy = project({ startX: 80, endX: -40, startY: 32, endY: -16, startZoom: 1.1, endZoom: 1.4 });
+  const legacyCamera = createCameraTrack(legacy.camera.map(({ atMs, value }) => ({ atMs, ...value })));
+  const plain = compileVisualEffectsTrack(makeVisualEffectsTrack(), legacy);
+  assert.deepEqual(sampleVisualEffects(plain, 4300).camera, sampleCameraTrack(legacyCamera, 4300));
+  const previewRaster = { width: 540, height: 960, fps: 24 };
+  const exportRaster = exportViewportFor(legacy.viewport, "economy");
+  const preview = compileVisualEffectsTrack(makeVisualEffectsTrack(), projectForRaster(legacy, previewRaster));
+  const exported = compileVisualEffectsTrack(makeVisualEffectsTrack(), projectForRaster(legacy, exportRaster));
+  const a = sampleVisualEffects(preview, 4300).camera;
+  const b = sampleVisualEffects(exported, 4300).camera;
+  assert.ok(Math.abs(b.x / exportRaster.width - a.x / previewRaster.width) < 1e-12);
+  assert.ok(Math.abs(b.y / exportRaster.height - a.y / previewRaster.height) < 1e-12);
+  assert.equal(a.zoom, b.zoom);
+  assert.equal(a.rotation, b.rotation);
+});
+
+test("dialogue Viseme mouth samples are shared by absolute scene time for replay and export", () => {
+  let tracks = makeAudioTracks();
+  tracks[0].clips.push({ id: "line", asset: "voice", startMs: 1000, durationMs: 2000, language: "ar", volume: 1, loop: false });
+  tracks = setAudioViseme(tracks, 12_000, "audio-dialogue", "line", 500, "wide");
+  const compiled = compileAudioTracks(tracks, 12_000);
+  const first = compiled.sample(1600).dialogue[0].mouthOpen;
+  assert.equal(first, 1);
+  assert.equal(compiled.sample(9000).dialogue.length, 0);
+  assert.equal(compiled.sample(1600).dialogue[0].mouthOpen, first);
+});
+
 test("project JSON saves effects, loads legacy projects, and rejects malformed effect records", () => {
   const baseProject = project();
   const track = addVisualEffect(makeVisualEffectsTrack(9), baseProject, "tint", 1000);
@@ -110,5 +166,7 @@ test("Motion Studio host exposes effect controls and uses the shared scene time"
   for (const id of ["visualEffectType", "addVisualEffect", "deleteVisualEffect", "visualEffectsTracks", "visualEffectStart", "visualEffectDuration", "visualEffectEasing", "visualEffectFrom", "visualEffectTo"]) assert.match(html, new RegExp(`id="${id}"`));
   assert.match(host, /sampleVisualEffects\(visualEffectsCompiled, currentMs\)/);
   assert.match(host, /makeProjectFile\([^\n]*visualEffectsTrack/);
+  assert.match(host, /exportAudio\.sample\(projectMs\)\.dialogue/);
+  assert.match(host, /compileAudioTracks\(audioTracks, exportCompiled\.durationMs\)/);
   assert.match(host, /visualEffectsTimeline\?\.setBusy\(busy\)/);
 });

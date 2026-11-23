@@ -4,22 +4,24 @@ const LABELS=Object.freeze({fade:"Fade",dissolve:"Dissolve",vignette:"Vignette",
 const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
 
 /** Touch-first effect lanes; state and validation stay owned by the Studio host. */
-export function createStudioVisualEffectsTimeline({root,ruler,getTrack,getDuration,getCurrentTime,isBusy,onSelect,onMove,onSeek,onDragEnd,documentRef=document,formatTime=ms=>`${(ms/1000).toFixed(2)}s`}){
+export function createStudioVisualEffectsTimeline({root,ruler,getTrack,getDuration,getCurrentTime,isBusy,onSelect,onMove,onSeek,onDragEnd,documentRef=document,requestFrame=globalThis.requestAnimationFrame?.bind(globalThis)??(callback=>setTimeout(callback,16)),cancelFrame=globalThis.cancelAnimationFrame?.bind(globalThis)??clearTimeout,formatTime=ms=>`${(ms/1000).toFixed(2)}s`}){
   const required={root,getTrack,getDuration,getCurrentTime,isBusy,onSelect,onMove};
   for(const [name,value] of Object.entries(required))if(value===null||value===undefined)throw new TypeError(`Visual Effects Timeline requires ${name}`);
-  let selectedId=null,drag=null,locked=Boolean(isBusy());
+  let selectedId=null,drag=null,locked=Boolean(isBusy()),renderedDuration=null;
   root.addEventListener("pointermove",movePointer);
   root.addEventListener("pointerup",event=>finishPointer(event,false));
   root.addEventListener("pointercancel",event=>finishPointer(event,true));
   root.addEventListener("lostpointercapture",event=>finishPointer(event,true));
   root.addEventListener("keydown",event=>{if(event.key==="Escape"&&drag){event.preventDefault();cancelDrag();}});
-  documentRef.addEventListener("visibilitychange",()=>{if(documentRef.hidden)cancelDrag();});
-  documentRef.defaultView?.addEventListener("blur",cancelDrag);
+  documentRef.addEventListener("visibilitychange",()=>{if(documentRef.hidden)cancelDrag({restoreFocus:false});});
+  documentRef.defaultView?.addEventListener("blur",()=>cancelDrag({restoreFocus:false}));
 
   function renderRuler(){
-    if(!ruler)return;
+    const duration=getDuration();
+    if(!ruler||renderedDuration===duration)return;
+    renderedDuration=duration;
     ruler.replaceChildren();
-    for(let i=0;i<=4;i++){const label=documentRef.createElement("span");label.textContent=formatTime(Math.round(getDuration()*i/4));ruler.append(label);}
+    for(let i=0;i<=4;i++){const label=documentRef.createElement("span");label.textContent=formatTime(Math.round(duration*i/4));ruler.append(label);}
   }
   function renderPlayhead(){
     const position=`${clamp(getCurrentTime()/getDuration()*100,0,100)}%`;
@@ -27,6 +29,7 @@ export function createStudioVisualEffectsTimeline({root,ruler,getTrack,getDurati
   }
   function render({focusId=null}={}){
     const focused=focusId??(root.contains(documentRef.activeElement)?documentRef.activeElement.closest?.(".visual-effect-clip")?.dataset.effectId:null);
+    renderRuler();
     root.replaceChildren();
     const duration=getDuration(),track=getTrack();
     for(const type of VISUAL_EFFECT_TYPES){
@@ -50,7 +53,8 @@ export function createStudioVisualEffectsTimeline({root,ruler,getTrack,getDurati
           const box=lane.getBoundingClientRect();drag={pointerId:event.pointerId,id:clip.id,type,originX:event.clientX,originStart:clip.atMs,durationMs:clip.durationMs,width:box.width,lastStart:clip.atMs};
           root.dataset.dragging="true";
           try{root.setPointerCapture(event.pointerId);}catch{/* Automation may synthesize pointers without capture ownership. */}
-          render({focusId:clip.id});
+          for(const item of root.querySelectorAll(".visual-effect-clip"))item.setAttribute("aria-pressed",String(item.dataset.effectId===clip.id));
+          button.focus({preventScroll:true});
         });
         button.addEventListener("click",event=>{event.stopPropagation();selectedId=clip.id;onSelect(clip.id);render({focusId:clip.id});});
         lane.append(button);
@@ -66,20 +70,33 @@ export function createStudioVisualEffectsTimeline({root,ruler,getTrack,getDurati
     const delta=drag.width>0?Math.round((event.clientX-drag.originX)/drag.width*getDuration()):0;
     const next=clamp(drag.originStart+delta,0,getDuration()-drag.durationMs);
     if(next===drag.lastStart)return;
-    try{onMove(drag.id,next);drag.lastStart=next;render({focusId:drag.id});}
-    catch(error){onDragEnd?.({cancelled:false,error});}
+    drag.lastStart=next;
+    if(drag.frame)return;
+    drag.frame=requestFrame(()=>{
+      if(!drag)return;
+      drag.frame=0;
+      const button=Array.from(root.querySelectorAll(".visual-effect-clip")).find(item=>item.dataset.effectId===drag.id);
+      button?.style.setProperty("--effect-left",`${drag.lastStart/getDuration()*100}%`);
+    });
   }
   function finishPointer(event,cancelled=false){
     if(!drag||event.pointerId!==drag.pointerId)return;
-    const {pointerId}=drag;drag=null;delete root.dataset.dragging;
-    try{if(root.hasPointerCapture(pointerId))root.releasePointerCapture(pointerId);}catch{/* Capture may already be lost. */}
-    onDragEnd?.({cancelled});render();
+    const finished=drag;drag=null;delete root.dataset.dragging;
+    if(finished.frame)cancelFrame(finished.frame);
+    try{if(root.hasPointerCapture(finished.pointerId))root.releasePointerCapture(finished.pointerId);}catch{/* Capture may already be lost. */}
+    if(!cancelled&&finished.lastStart!==finished.originStart){
+      try{onMove(finished.id,finished.lastStart);}
+      catch(error){onDragEnd?.({cancelled:false,error,originStart:finished.originStart,finalStart:finished.lastStart});render({focusId:finished.id});return;}
+    }
+    onDragEnd?.({cancelled,originStart:finished.originStart,finalStart:cancelled?finished.originStart:finished.lastStart});render({focusId:finished.id});
   }
-  function cancelDrag(){
+  function cancelDrag({restoreFocus=true}={}){
     if(!drag)return;
-    const pointerId=drag.pointerId;drag=null;delete root.dataset.dragging;
+    const finished=drag;drag=null;delete root.dataset.dragging;
+    if(finished.frame)cancelFrame(finished.frame);
+    const pointerId=finished.pointerId;
     try{if(root.hasPointerCapture(pointerId))root.releasePointerCapture(pointerId);}catch{/* Platform already released capture. */}
-    onDragEnd?.({cancelled:true});render();
+    onDragEnd?.({cancelled:true,originStart:finished.originStart,finalStart:finished.originStart});render({focusId:restoreFocus?finished.id:false});
   }
   function setBusy(value){
     locked=Boolean(value);

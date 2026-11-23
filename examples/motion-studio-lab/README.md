@@ -15,13 +15,16 @@ An Android-first Motion Studio editor built around the `StudioProjectV1` core. I
 ## L9-B Visual Effects Timeline
 
 - Seven touch-editable lanes are available: Fade, Dissolve, Vignette, Letterbox, Shake, Flash, and Tint. Add at the scene playhead, tap a clip to select it, drag horizontally to move it, then edit start, duration, easing, and strict `from`/`to` channels. Delete removes only the selected clip.
-- Camera, character, audio, visual effects preview, and export frames sample the same absolute scene time. Playback remains driven by the existing audio-backed Studio clock; effects do not introduce a second clock. Seek and replay produce the same sample for the same timestamp and seed.
+- Camera, character, audio, visual effects preview, and export frames sample the same absolute scene time. Playback remains driven by the existing audio-backed Studio clock; effects do not introduce a second clock. Dialogue Viseme cues drive the character mouth in preview and export at the same scene timestamp. Seek and replay produce the same sample for the same timestamp and seed.
 - Effects are serialized under optional `visualEffectsTrack` in the existing version-1 JSON envelope. Old projects load with an empty default track; an empty default track is omitted when saving. Unknown effect fields and invalid/fractional clip boundaries or seeds are rejected.
 - Export uses the existing L5 recorder and scheduling unchanged. The Studio frame compositor samples and draws L9 effects into each Canvas 2D frame; the export scheduling/core module is not modified. Audio timeline tracks still are not muxed into exported video.
-- Timeline clips use stable-root Pointer Capture; pointer cancellation, lost capture, page focus loss, and export locking terminate active drags while retaining the last valid committed time. Dynamic value controls and clip selection are disabled during export.
+- Timeline clips use stable-root Pointer Capture. A successful drag commits once on release; Escape, pointercancel, lost capture, page focus loss, and export locking cancel the pending move and restore its original start time. Pointer motion updates only the dragged clip's position in requestAnimationFrame, without recompiling the effect track or rebuilding lane DOM on each event. Dynamic value controls and clip selection are disabled during export.
+- Effect duration controls interpolation time. Effects hold their final value after the clip ends. Vignette, Letterbox, Flash, and Tint combine by maximum intensity, ratio, or strength; the strongest overlapping clip controls the result. Lower or delete every stronger overlapping clip to reduce or remove the visible result. Fade and Dissolve use the most recently started clip and hold its final value until another clip starts.
+- Numeric effect fields reject blank, malformed, or out-of-range values. From/To edits keep their existing input nodes and keyboard focus while the scene recompiles.
+- Camera translations are scaled with the raster viewport for preview and export; zoom and rotation stay unchanged. This keeps camera and character framing consistent when export resolution differs from the source project.
 - Rendering uses Canvas 2D and no offscreen effect buffers or WebGL. The preview surface is capped at 921,600 pixels (about 3.52 MiB for one RGBA backing surface); export surfaces are capped at 921,600 pixels for Standard/High and 307,200 pixels for Economy (about 3.52 MiB / 1.17 MiB per RGBA surface). Browser compositing and recorder buffers require additional device memory. Dissolve is bounded to 144 reveal cells per sample; vignette uses one radial gradient. On low-memory phones, prefer Economy and short exports, then test the actual WebView/Chrome build.
 
-The sample image `preview-test.png` is used only by automated browser checks. Face animation and lip sync are outside this lab.
+The sample image `preview-test.png` is used only by automated browser checks. Mouth movement uses authored animation keys or dialogue Viseme cues; automatic speech recognition and automatic lip sync are outside this lab.
 
 ## L8-B audio and dialogue timeline
 
@@ -29,7 +32,7 @@ The sample image `preview-test.png` is used only by automated browser checks. Fa
 - Add clips at the playhead, select and drag them, edit start/duration and clip/track/master volume. Clips must fit inside the project length. Lost pointer capture and cancelled drags keep the last valid committed position; export locks editing.
 - Dialogue clips can use `ar` (Modern Standard Arabic) or `tn` (Tunisian). Add manual `rest`, `open`, `wide`, `round`, `closed`, or `teeth` Viseme cues at the playhead, with an optional short phoneme label. This is authored timing data, not automatic speech recognition or automatic lip-sync.
 - JSON stores tracks, cues, language, volumes and audio asset metadata, never audio bytes. After reopening, choose each linked local file again. Filename, MIME type and size reconnect it to its saved `assetId`; if those differ, it remains unlinked until corrected.
-- The existing L5 video export flow remains unchanged and does not render these new audio tracks into exported video. Export integration requires a separate reviewed task. Browser media-element scheduling is not sample-accurate and varies across Android devices.
+- The existing L5 video export flow remains unchanged and does not mix the audio tracks into exported video. Authored dialogue Viseme cues still drive exported character mouth poses from scene time. Automatic speech recognition and audio-to-video muxing remain separate work. Browser media-element scheduling is not sample-accurate and varies across Android devices.
 
 ## Editor module boundaries
 
