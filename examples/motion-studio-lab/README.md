@@ -4,7 +4,7 @@ An Android-first, image-only preview editor for the S2-B `StudioProjectV1` core.
 
 ## Try it on Android
 
-1. For this Draft PR, download the `motion-studio-l5-android-preview` artifact from the latest successful **Motion Studio L5 Android preview** Actions run, extract it in Android Files, and open its single `index.html` with Chrome. That generated file bundles its CSS and JavaScript and is designed for `file://`; do not open the repository's regular multi-file `examples/motion-studio-lab/index.html` from `file://`, because it uses ES modules and an import map. The artifact is separate from the official Pages deployment and expires after 30 days.
+1. For this Draft PR, download the `motion-studio-l6b-android-preview` artifact from the latest successful **Motion Studio Android preview** Actions run for PR #116, extract it in Android Files, and open its single `index.html` with Chrome. That generated file bundles its CSS and JavaScript and is designed for `file://`; do not open the repository's regular multi-file `examples/motion-studio-lab/index.html` from `file://`, because it uses ES modules and an import map. The artifact is separate from the official Pages deployment and expires after 30 days.
 2. In Chrome on Android, tap **اختر صورة من الهاتف** and select a local JPG, PNG, WebP, AVIF, or GIF. Image bytes stay in the browser; the lab makes a safe preview surface matching the selected aspect ratio.
 3. Set a duration from 3 to 60 seconds and choose the image aspect and Fit/Fill mode. The Timeline below the preview has a time ruler, playhead, and one diamond per camera key. Tap the ruler lane to seek; tap **＋ مفتاح عند المؤشر** to add a key at that time; tap a diamond to select it; drag a diamond horizontally to move it; edit its X, Y, Zoom, or Rotation fields; use **حذف المفتاح المحدد** to remove only that key.
 4. Use Play/Pause and Replay to check playback. The Canvas samples the same compiled project at absolute timestamps; repeated seeks to the same time are deterministic. Legacy start/end sliders remain available and update only their respective endpoint value without dropping intermediate keys.
@@ -28,7 +28,7 @@ The sample image `preview-test.png` is used only by automated browser checks. Fa
 - When the browser decoder honors `createImageBitmap` resize options, it returns a smaller bitmap before the lab creates its preview. If a decoder ignores the requested resize or cannot decode the file safely, the lab reports a decode/memory error instead of drawing an oversized bitmap. Decoder behavior varies by image format and WebView version, so very unusual panoramas may be rejected.
 - JSON files are capped at 128 KiB and use a separate `qarton-motion-studio-project` envelope around `StudioProjectV1` metadata. A saved project references an opaque asset ID and records only the source name/type/size; reselect the source file after import.
 - The browser owns a single preview surface and one image surface. Decode, Canvas allocation, schema, and memory-related errors are shown in the page.
-- This PR targets `main` after PR #109 was squash-merged. It reuses the integrated S2-B core; PRs #107 and #108 and all games remain unchanged.
+- This PR targets `main` after L6-A PR #115 was squash-merged. It reuses the integrated S2-B core; PRs #107 and #108 and all games remain unchanged.
 
 ## Video export bounds and testing
 
