@@ -153,6 +153,7 @@ test("mixed recording resumes audio before async preparation and starts audio on
   const result = await startExport(plan, host);
   assert.ok(result.blob.size > 0);
   assert.ok(log.indexOf("resume") < log.indexOf("resolve"));
+  assert.equal(log.filter(item => item === "decode").length, 1, "only the source audio asset is decoded; the multiplexed WebM is validated through its tracks");
   const scheduled = log.find(item => Array.isArray(item) && item[0] === "audio-start");
   assert.ok(scheduled, "audio source was scheduled on the recorder clock");
   assert.ok(scheduled[1] >= 3.03 && scheduled[1] <= 3.05);
