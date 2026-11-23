@@ -1,4 +1,4 @@
-import { compileProject, drawFrame, sampleFrame } from "@qarton/cinematic-engine/motion-studio";
+import { compileProject, sampleFrame, planExport, rasterForQuality, probeExport, startExport } from "@qarton/cinematic-engine/motion-studio";
 import { createRequestToken, makeProject, makeProjectFile, parseProjectFile, prepareProjectUpdate, VIEWPORT } from "./studio-model.js?v=l7b-character-01";
 import { decodeImageBitmap } from "./studio-image.js?v=l4-flex-01";
 import { DEFAULT_OUTPUT_VIEWPORT, imageRect, inferAspectPreset, projectSizeForPreset, safePreviewSize } from "./studio-dimensions.js?v=l4-flex-01";
@@ -8,14 +8,14 @@ import {
   scheduleTestPulses, supportedCandidates
 } from "./studio-export-core.js?v=l5-export-01";
 import { createStudioTimeline } from "./studio-timeline.js?v=l6b-cleanup-01";
-import { compileCharacterTrack, drawCharacter, makeCharacterTrack } from "./studio-character-track.js?v=l7b-character-01";
+import { compileCharacterTrack, makeCharacterTrack } from "./studio-character-track.js?v=l7b-character-01";
 import { createCharacterTimeline } from "./studio-character-timeline.js?v=l7b-character-01";
 import { compileAudioTracks, makeAudioTracks, addAudioClip, editAudioClip, deleteAudioClip, setAudioTrackVolume, setAudioViseme, makeAudioAssetMetadata, validateAudioFile, readAudioDuration } from "./studio-audio-model.js?v=l8b-audio-timeline-01";
 import { createStudioAudioTimeline } from "./studio-audio-timeline.js?v=l8b-audio-timeline-01";
 import { createCinematicAudioPlayer } from "../../src/audio/cinematic-audio-core.js";
-import { addVisualEffect, deleteVisualEffect, editVisualEffect, moveVisualEffect, makeVisualEffectsTrack, compileVisualEffectsTrack, sampleVisualEffects, VISUAL_EFFECT_CHANNELS, VISUAL_EFFECT_TYPES } from "./studio-visual-effects-model.js?v=l9b-effects-01";
+import { addVisualEffect, deleteVisualEffect, editVisualEffect, moveVisualEffect, makeVisualEffectsTrack, compileVisualEffectsTrack, VISUAL_EFFECT_CHANNELS, VISUAL_EFFECT_TYPES } from "./studio-visual-effects-model.js?v=l9b-effects-01";
 import { createStudioVisualEffectsTimeline } from "./studio-visual-effects-timeline.js?v=l9b-effects-01";
-import { drawCinematicEffects } from "../../src/effects/cinematic-effects.js";
+import { drawStudioScene } from "./studio-scene-renderer.js?v=l10b-integrated-01";
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("stage");
@@ -55,9 +55,25 @@ const exportDownload = $("exportDownload");
 const exportMetadata = $("exportMetadata");
 const exportError = $("exportError");
 const tryWebmButton = $("tryWebmButton");
+const integratedQuality = $("integratedQuality");
+const integratedFormat = $("integratedFormat");
+const integratedAudio = $("integratedAudio");
+const integratedMissingAudio = $("integratedMissingAudio");
+const integratedFrom = $("integratedFrom");
+const integratedTo = $("integratedTo");
+const integratedProbeButton = $("integratedProbeButton");
+const integratedExportButton = $("integratedExportButton");
+const integratedProgress = $("integratedProgress");
+const integratedStatus = $("integratedStatus");
+const integratedError = $("integratedError");
+const integratedVideo = $("integratedVideo");
+const integratedDownload = $("integratedDownload");
+const integratedMetadata = $("integratedMetadata");
 let activeExport = null;
 let exportVideoUrl = null;
+let integratedVideoUrl = null;
 let exportCapability = { mp4: [], webm: [] };
+const integratedCapabilities = new Map();
 let exportFormatInitialized = false;
 let pendingImageRequest = null;
 let exportStatusHasResult = false;
@@ -109,21 +125,6 @@ function compilePreviewEffects(track, sourceProject = project, viewport = previe
   return compileVisualEffectsTrack(track, projectForRaster(sourceProject, viewport));
 }
 
-function drawCharacterWithCamera(ctx, pose, width, height, camera) {
-  ctx.save();
-  try {
-    ctx.translate(width / 2 + camera.x, height / 2 + camera.y);
-    ctx.rotate(camera.rotation * Math.PI / 180);
-    ctx.scale(camera.zoom, camera.zoom);
-    ctx.translate(-width / 2, -height / 2);
-    drawCharacter(ctx, pose, width, height);
-  } finally { ctx.restore(); }
-}
-
-function drawEffectOverlays(ctx, sample) {
-  drawCinematicEffects(ctx, { ...sample, camera: { x: 0, y: 0, zoom: 1, rotation: 0 }, layers: [] });
-}
-
 function makePlaceholder(size) {
   const surface = document.createElement("canvas");
   surface.width = size.width;
@@ -165,6 +166,20 @@ function clearExportResult() {
   if (exportVideoUrl) URL.revokeObjectURL(exportVideoUrl);
   exportVideoUrl = null;
 }
+function clearIntegratedResult() {
+  integratedError.hidden = true;
+  integratedError.textContent = "";
+  integratedProgress.value = 0;
+  integratedVideo.pause();
+  integratedVideo.removeAttribute("src");
+  integratedVideo.load();
+  integratedVideo.hidden = true;
+  integratedDownload.hidden = true;
+  integratedDownload.removeAttribute("href");
+  integratedMetadata.textContent = "لم يُنشأ تصدير متكامل بعد.";
+  if (integratedVideoUrl) URL.revokeObjectURL(integratedVideoUrl);
+  integratedVideoUrl = null;
+}
 function cancelActiveExport(reason = "تغير المشروع أثناء التصدير.") {
   const running = activeExport;
   if (!running) return;
@@ -173,11 +188,13 @@ function cancelActiveExport(reason = "تغير المشروع أثناء الت�
   running.session?.cancel(abortError);
   if (running.rafId) cancelAnimationFrame(running.rafId);
   if (running.stopTimer) clearTimeout(running.stopTimer);
-  exportStatus.textContent = "جارٍ إيقاف التسجيل وتنظيف الموارد…";
+  if (running.kind === "integrated") integratedStatus.textContent = "جارٍ إلغاء التصدير وتنظيف موارد الصوت والصورة…";
+  else exportStatus.textContent = "جارٍ إيقاف التسجيل وتنظيف الموارد…";
 }
 function invalidateExport(reason) {
   cancelActiveExport(reason);
   clearExportResult();
+  clearIntegratedResult();
   refreshExportControls();
 }
 function refreshExportControls() {
@@ -205,9 +222,26 @@ function refreshExportControls() {
         ? `فحص MediaRecorder: MP4 ${exportCapability.mp4.length ? "مدعوم" : "غير مدعوم"}، WebM ${exportCapability.webm.length ? "مدعوم" : "غير مدعوم"}. قد يرفض الجهاز بدء التسجيل رغم الفحص.`
         : "لا يدعم هذا المتصفح WebM ولا MP4 عبر MediaRecorder.";
   }
+  refreshIntegratedControls();
+}
+function integratedRaster() {
+  return rasterForQuality(project.viewport, integratedQuality.value);
+}
+function integratedCapabilityKey() {
+  const raster = integratedRaster();
+  return `${raster.width}x${raster.height}:${project.viewport.fps}:${integratedAudio.value}:${integratedFormat.value}`;
+}
+function refreshIntegratedControls() {
+  let hasVerified = false;
+  try { hasVerified = getVerifiedIntegratedCapabilities().length > 0; }
+  catch { hasVerified = false; }
+  const blocked = Boolean(activeExport || pendingImageRequest !== null || pendingAudioRequest !== null || !currentFileInfo);
+  integratedProbeButton.disabled = blocked;
+  integratedExportButton.disabled = blocked || !hasVerified;
+  for (const control of [integratedQuality, integratedFormat, integratedAudio, integratedMissingAudio, integratedFrom, integratedTo]) control.disabled = Boolean(activeExport);
 }
 function setExportBusy(busy) {
-  for (const id of ["imageInput", "projectInput", "audioInput", "audioTrackType", "addAudioClip", "deleteAudioClip", "audioClipStart", "audioClipDuration", "audioClipVolume", "dialogueLanguage", "visemeType", "phonemeLabel", "addViseme", "audioMasterVolume", "visualEffectType", "addVisualEffect", "deleteVisualEffect", "visualEffectStart", "visualEffectDuration", "visualEffectEasing", "aspectPreset", "fitMode", "duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "saveProjectButton", "loadProjectButton"]) {
+  for (const id of ["imageInput", "projectInput", "audioInput", "audioTrackType", "addAudioClip", "deleteAudioClip", "audioClipStart", "audioClipDuration", "audioClipVolume", "dialogueLanguage", "visemeType", "phonemeLabel", "addViseme", "audioMasterVolume", "visualEffectType", "addVisualEffect", "deleteVisualEffect", "visualEffectStart", "visualEffectDuration", "visualEffectEasing", "aspectPreset", "fitMode", "duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "saveProjectButton", "loadProjectButton", "integratedQuality", "integratedFormat", "integratedAudio", "integratedMissingAudio", "integratedFrom", "integratedTo"]) {
     $(id).disabled = busy;
   }
   timelineEditor?.setBusy(busy);
@@ -223,6 +257,8 @@ function setExportBusy(busy) {
   exportAudioEnabled.disabled = busy;
   cancelExportButton.hidden = !busy;
   cancelExportButton.disabled = !busy;
+  integratedProbeButton.disabled = busy || !currentFileInfo || pendingImageRequest !== null || pendingAudioRequest !== null;
+  integratedExportButton.disabled = busy || !currentFileInfo || getVerifiedIntegratedCapabilities().length === 0;
 }
 function createTestAudioGraph() {
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -236,15 +272,9 @@ function createTestAudioGraph() {
 }
 function renderExportFrame(ctx, exportCompiled, exportCharacter, exportAudio, exportEffects, elapsedMs, exportLengthMs) {
   const projectMs = projectTimeAt(elapsedMs, exportLengthMs, exportCompiled.durationMs);
-  const effectSample = sampleVisualEffects(exportEffects, projectMs);
-  drawFrame(ctx, { ...sampleFrame(exportCompiled, projectMs), camera: effectSample.camera });
-  const dialogue = exportAudio.sample(projectMs).dialogue;
-  if (characterTrack.keyframes.length || dialogue.length) {
-    const pose = { ...exportCharacter.sample(projectMs) };
-    if (dialogue.length) pose.mouthOpen = Math.max(...dialogue.map(({ mouthOpen }) => mouthOpen));
-    drawCharacterWithCamera(ctx, pose, exportCompiled.viewport.width, exportCompiled.viewport.height, effectSample.camera);
-  }
-  drawEffectOverlays(ctx, effectSample);
+  return drawStudioScene({ ctx, compiledProject: exportCompiled, timeMs: projectMs,
+    characterAnimation: exportCharacter, characterTrack, audioSample: exportAudio.sample(projectMs),
+    visualEffectsCompiled: exportEffects, viewport: exportCompiled.viewport });
 }
 async function exportVideoFile() {
   const unlock = exportLock.acquire();
@@ -264,7 +294,7 @@ async function exportVideoFile() {
   clearFailure();
   clearExportResult();
   const controller = new AbortController();
-  const running = { controller, session: null, rafId: 0, stopTimer: 0 };
+  const running = { kind: "legacy", controller, session: null, rafId: 0, stopTimer: 0 };
   activeExport = running;
   setExportBusy(true);
   exportError.hidden = true;
@@ -377,6 +407,145 @@ async function exportVideoFile() {
     unlock();
     setExportBusy(false);
     refreshExportControls();
+  }
+}
+function readRequiredMilliseconds(input, label) {
+  const text = input.value.trim();
+  if (!text || input.validity?.badInput) throw new TypeError(`${label}: أدخل وقتًا صحيحًا بالميلي ثانية.`);
+  const value = Number(text);
+  if (!Number.isSafeInteger(value)) throw new TypeError(`${label}: أدخل وقتًا صحيحًا بالميلي ثانية.`);
+  return value;
+}
+function makeIntegratedSnapshot() {
+  return {
+    project: structuredClone(project),
+    audioTracks: structuredClone(audioTracks),
+    audioAssets: structuredClone(audioAssets),
+    audioAssetInfo: audioAssets.flatMap(({ id }) => {
+      const local = audioFiles.get(id);
+      return local?.durationMs ? [{ id, durationMs: Math.max(1, Math.round(local.durationMs)), channels: 2, sampleRate: 48_000 }] : [];
+    }),
+    audioMasterVolume,
+    characterTrack: structuredClone(characterTrack),
+    visualEffectsTrack: structuredClone(visualEffectsTrack)
+  };
+}
+function getVerifiedIntegratedCapabilities() {
+  const capabilities = integratedCapabilities.get(integratedCapabilityKey()) ?? [];
+  return capabilities.filter(({ verification, mimeType }) => verification === "verified" &&
+    (integratedFormat.value === "auto" || mimeType.startsWith(`video/${integratedFormat.value}`)));
+}
+function setIntegratedProgress(progress) {
+  if (!Number.isFinite(progress.targetMs) || progress.targetMs <= 0) return;
+  integratedProgress.value = Math.max(0, Math.min(1, progress.elapsedMs / progress.targetMs));
+  const labels = { "preparing-audio": "جارٍ فك الملفات الصوتية…", recording: "جارٍ تسجيل الصورة والصوت…",
+    finalizing: "جارٍ إنهاء ملف التسجيل…", validating: "جارٍ فحص الملف الناتج…" };
+  integratedStatus.textContent = `${labels[progress.phase] ?? progress.phase} ${Math.round(integratedProgress.value * 100)}%`;
+}
+async function probeIntegratedExport() {
+  if (activeExport || !currentFileInfo) return;
+  const raster = integratedRaster();
+  const audioMode = integratedAudio.value;
+  const formats = integratedFormat.value === "auto" ? ["mp4", "webm"] : [integratedFormat.value];
+  integratedProbeButton.disabled = true;
+  integratedExportButton.disabled = true;
+  for (const control of [integratedQuality, integratedFormat, integratedAudio, integratedMissingAudio, integratedFrom, integratedTo]) control.disabled = true;
+  integratedStatus.textContent = `جارٍ فحص ${raster.width}×${raster.height} عند ${project.viewport.fps} إطارًا/ث…`;
+  integratedError.hidden = true;
+  try {
+    const capabilities = await probeExport({ width: raster.width, height: raster.height,
+      fps: project.viewport.fps, audioMode, formats, durationMs: 800 });
+    integratedCapabilities.set(integratedCapabilityKey(), capabilities);
+    const verified = capabilities.filter(({ verification }) => verification === "verified");
+    integratedStatus.textContent = verified.length
+      ? `تم التحقق فعليًا من ${verified.map(({ mimeType }) => mimeType).join(" و")} على هذه الدقة. الفحص يثبت التشغيل وفك الوسائط للمقطع القصير فقط.`
+      : "لم ينجح تسجيل وفك الملف التجريبي على هذه الدقة والصيغة؛ جرّب دقة أقل أو فيديو فقط.";
+    if (!verified.length) {
+      integratedError.textContent = capabilities.map(({ mimeType, reason }) => `${mimeType}: ${reason}`).join(" · ") || "لا توجد صيغة معلنة لهذا الجهاز.";
+      integratedError.hidden = false;
+    }
+  } catch (error) {
+    integratedError.textContent = errorText(error);
+    integratedError.hidden = false;
+    integratedStatus.textContent = "تعذر فحص إمكانيات التصدير.";
+  } finally { refreshIntegratedControls(); }
+}
+async function exportIntegratedProject() {
+  if (activeExport) return;
+  const verified = getVerifiedIntegratedCapabilities();
+  if (!verified.length) {
+    integratedError.textContent = "افحص دعم الصيغة والدقة المحددتين أولًا.";
+    integratedError.hidden = false;
+    return;
+  }
+  clearIntegratedResult();
+  const controller = new AbortController();
+  const running = { kind: "integrated", controller, session: null, rafId: 0, stopTimer: 0 };
+  activeExport = running;
+  setExportBusy(true);
+  stopPlayback();
+  let result = null;
+  try {
+    const snapshot = makeIntegratedSnapshot();
+    const range = { startMs: readRequiredMilliseconds(integratedFrom, "البداية"),
+      endMs: readRequiredMilliseconds(integratedTo, "النهاية") };
+    if (range.endMs <= range.startMs) throw new RangeError("نهاية النطاق يجب أن تكون بعد بدايته.");
+    const plan = planExport(snapshot, { range, quality: integratedQuality.value, fps: project.viewport.fps,
+      format: integratedFormat.value, audio: integratedAudio.value, missingAudio: integratedMissingAudio.value }, verified);
+    const rasterProject = projectForRaster(snapshot.project, plan.viewport);
+    const compiledProject = compileProject(rasterProject, imageProvider);
+    const compiledCharacter = compileCharacterTrack(snapshot.characterTrack, snapshot.project.durationMs);
+    const compiledAudio = compileAudioTracks(snapshot.audioTracks, snapshot.project.durationMs);
+    const compiledEffects = compilePreviewEffects(snapshot.visualEffectsTrack, snapshot.project, plan.viewport);
+    const missingAudio = new Set(plan.missingAudioAssetIds);
+    const audioInfo = new Map(snapshot.audioAssetInfo.map(({ id, durationMs }) => [id, durationMs]));
+    const unavailableDialogueClips = new Set(compiledAudio.clips.filter(clip => clip.type === "dialogue" &&
+      plan.audio === "mix" && (missingAudio.has(clip.asset) || (!clip.loop && audioInfo.has(clip.asset) &&
+        clip.startMs + audioInfo.get(clip.asset) < clip.endMs))).map(({ id }) => id));
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    const host = {
+      document, window, MediaRecorderClass: typeof MediaRecorder === "function" ? MediaRecorder : null,
+      MediaStreamClass: window.MediaStream ?? globalThis.MediaStream,
+      createCanvas: (width, height) => Object.assign(document.createElement("canvas"), { width, height }),
+      createAudioContext: () => {
+        if (!AudioContextClass) throw new Error("Web Audio غير متاح على هذا الجهاز.");
+        return new AudioContextClass();
+      },
+      resolveAudio: async assetId => audioFiles.get(assetId)?.file ?? null,
+      renderFrame: (ctx, timeMs, viewport, frameContext) => {
+        let sample = compiledAudio.sample(timeMs);
+        if (plan.audio === "mix" && unavailableDialogueClips.size) sample = Object.freeze({ ...sample,
+          dialogue: Object.freeze(sample.dialogue.filter(cue => !unavailableDialogueClips.has(cue.clipId))) });
+        return drawStudioScene({ ctx, compiledProject, timeMs, characterAnimation: compiledCharacter,
+          characterTrack: snapshot.characterTrack, audioSample: sample, visualEffectsCompiled: compiledEffects, viewport, frameContext });
+      }
+    };
+    integratedStatus.textContent = `جارٍ تحضير ${plan.format.toUpperCase()} ${plan.viewport.width}×${plan.viewport.height} لمدة ${(plan.durationMs / 1000).toFixed(2)} ث…`;
+    result = await startExport(plan, host, { signal: controller.signal, onProgress: setIntegratedProgress });
+    if (activeExport !== running || controller.signal.aborted) return;
+    integratedVideoUrl = URL.createObjectURL(result.blob);
+    integratedVideo.src = integratedVideoUrl;
+    integratedVideo.hidden = false;
+    integratedDownload.href = integratedVideoUrl;
+    integratedDownload.download = `qarton-cinematic-${Date.now()}.${result.extension}`;
+    integratedDownload.textContent = `حفظ ${result.extension.toUpperCase()} على الهاتف`;
+    integratedDownload.hidden = false;
+    integratedProgress.value = 1;
+    integratedMetadata.textContent = `${result.mimeType} · ${result.width}×${result.height} · ${(result.bytes / 1024 / 1024).toFixed(2)} MiB · ${result.measuredDurationMs === null ? "مدة الملف غير مقاسة" : `${(result.measuredDurationMs / 1000).toFixed(2)} ث`} · ${result.renderedFrames} إطارًا · ${result.droppedFrames} إطارًا فائتًا`;
+    integratedStatus.textContent = "اكتمل التصدير المتكامل؛ عاين الملف ثم احفظه على الهاتف.";
+  } catch (error) {
+    if (controller.signal.aborted || error?.name === "AbortError") integratedStatus.textContent = "أُلغي التصدير ونُظّفت موارده.";
+    else {
+      integratedError.textContent = error?.details?.assetIds
+        ? `${errorText(error)}: ${error.details.assetIds.join(", ")}` : errorText(error);
+      integratedError.hidden = false;
+      integratedStatus.textContent = "فشل التصدير؛ راجع الملفات والصيغة وحدود الذاكرة.";
+    }
+  } finally {
+    if (activeExport === running) activeExport = null;
+    setExportBusy(false);
+    refreshExportControls();
+    renderAt(currentMs);
   }
 }
 function audioAdapterPlay(assetId, options) {
@@ -509,15 +678,9 @@ function renderVisualEffectInspector() {
 }
 function renderAt(timeMs, preparedAudioSample = null) {
   currentMs = Math.max(0, Math.min(project.durationMs, timeMs));
-  const effectSample = sampleVisualEffects(visualEffectsCompiled, currentMs);
-  drawFrame(context, { ...sampleFrame(compiled, currentMs), camera: effectSample.camera });
   const audioSample = preparedAudioSample ?? audioPlayer?.sample(currentMs);
-  if (characterTrack.keyframes.length || audioSample?.dialogue?.length) {
-    const pose = { ...characterAnimation.sample(currentMs) };
-    if (audioSample?.dialogue?.length) pose.mouthOpen = Math.max(...audioSample.dialogue.map(({ mouthOpen }) => mouthOpen));
-    drawCharacterWithCamera(context, pose, previewViewport.width, previewViewport.height, effectSample.camera);
-  }
-  drawEffectOverlays(context, effectSample);
+  drawStudioScene({ ctx: context, compiledProject: compiled, timeMs: currentMs,
+    characterAnimation, characterTrack, audioSample, visualEffectsCompiled, viewport: previewViewport });
   seek.value = String(currentMs);
   timeReadout.textContent = formatTime(currentMs);
   timelineEditor?.renderPlayhead();
@@ -583,6 +746,7 @@ function updateProject({ resetPlayback = false, viewport = project.viewport, edi
   invalidateExport("تغيّر المشروع؛ أُلغي التصدير السابق أو الجاري.");
   clearFailure();
   try {
+    const previousDurationMs = project.durationMs;
     const durationMs = inputNumber("duration") * 1000;
     compileAudioTracks(audioTracks, durationMs);
     const nextViewport = { width: viewport.width, height: viewport.height, fps: VIEWPORT.fps };
@@ -621,6 +785,10 @@ function updateProject({ resetPlayback = false, viewport = project.viewport, edi
     if (!currentFileInfo) placeholder = imageSource = nextImageSource;
     applyCanvasDimensions(nextPreview);
     seek.max = String(durationMs);
+    integratedFrom.max = String(Math.max(0, durationMs - 1));
+    integratedTo.max = String(durationMs);
+    if (Number(integratedTo.value) === previousDurationMs || Number(integratedTo.value) > durationMs) integratedTo.value = String(durationMs);
+    if (Number(integratedFrom.value) >= durationMs) integratedFrom.value = String(Math.max(0, durationMs - 1));
     syncLegacyCameraInputs();
     timelineEditor?.render();
     refreshCharacterTimeline();
@@ -629,6 +797,7 @@ function updateProject({ resetPlayback = false, viewport = project.viewport, edi
     renderAt(Math.min(currentMs, durationMs));
     status.textContent = currentFileInfo ? "المعاينة جاهزة" : "اختر صورة للبدء";
     syncOutputs();
+    refreshIntegratedControls();
   } catch (error) { fail(error); }
 }
 function stopPlayback() {
@@ -1069,6 +1238,17 @@ tryWebmButton.addEventListener("click", () => {
   exportFormat.value = "webm";
   exportFormat.dispatchEvent(new Event("change", { bubbles: true }));
 });
+integratedProbeButton.addEventListener("click", () => { void probeIntegratedExport(); });
+integratedExportButton.addEventListener("click", () => { void exportIntegratedProject(); });
+for (const control of [integratedQuality, integratedFormat, integratedAudio, integratedMissingAudio, integratedFrom, integratedTo]) {
+  control.addEventListener("change", () => {
+    clearIntegratedResult();
+    integratedError.hidden = true;
+    integratedError.textContent = "";
+    integratedStatus.textContent = "تغيرت إعدادات التصدير. أعد فحص الصيغة والدقة قبل البدء.";
+    refreshIntegratedControls();
+  });
+}
 for (const control of [exportFormat, exportDuration, exportQuality, exportAudioEnabled]) {
   control.addEventListener("change", () => {
     clearExportResult();
@@ -1083,4 +1263,6 @@ window.addEventListener("pagehide", () => {
   audioFiles.clear();
   if (exportVideoUrl) URL.revokeObjectURL(exportVideoUrl);
   exportVideoUrl = null;
+  if (integratedVideoUrl) URL.revokeObjectURL(integratedVideoUrl);
+  integratedVideoUrl = null;
 });
