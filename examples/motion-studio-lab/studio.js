@@ -1,5 +1,6 @@
 import { compileProject, drawFrame, sampleFrame } from "@qarton/cinematic-engine/motion-studio";
 import { createRequestToken, makeProject, makeProjectFile, parseProjectFile, playbackTimeMs, VIEWPORT } from "./studio-model.js";
+import { decodeImageBitmap } from "./studio-image.js";
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("stage");
@@ -127,20 +128,13 @@ for (const id of ["duration", "startZoom", "endZoom", "startX", "endX", "startY"
   $(id).addEventListener("input", () => updateProject({ resetPlayback: id === "duration" }));
 }
 
-async function decodeFile(file) {
-  if (!file || !file.type.startsWith("image/")) throw new TypeError("الملف المختار ليس صورة مدعومة.");
-  if (file.size <= 0 || file.size > 20 * 1024 * 1024) throw new RangeError("حجم الصورة يجب أن يكون أقل من 20 ميغابايت.");
-  if (typeof createImageBitmap !== "function") throw new Error("فك الصور غير متاح في هذا المتصفح. افتح المختبر في Chrome أو WebView حديث.");
-  let bitmap;
-  try { bitmap = await createImageBitmap(file); }
-  catch { throw new Error("تعذر فك ترميز الصورة. جرّب صورة JPG أو PNG أو WebP سليمة."); }
+async function decodeFile(file, requestToken) {
+  const bitmap = await decodeImageBitmap(file, {
+    isCurrent: () => imageRequest.isCurrent(requestToken)
+  });
   try {
     const width = bitmap.width;
     const height = bitmap.height;
-    if (!Number.isInteger(width) || !Number.isInteger(height) || width < 16 || height < 16 ||
-        width > 4096 || height > 4096 || width * height > 8_388_608) {
-      throw new RangeError("أبعاد الصورة غير مناسبة. الحد الأعلى 4096 بكسل لكل ضلع و8.3 ميغابكسل.");
-    }
     const surface = typeof OffscreenCanvas === "function"
       ? new OffscreenCanvas(VIEWPORT.width, VIEWPORT.height)
       : Object.assign(document.createElement("canvas"), { width: VIEWPORT.width, height: VIEWPORT.height });
@@ -166,7 +160,7 @@ imageInput.addEventListener("change", async () => {
   if (!file) return;
   status.textContent = "جارٍ تحميل الصورة…";
   try {
-    const prepared = await decodeFile(file);
+    const prepared = await decodeFile(file, requestToken);
     if (!imageRequest.isCurrent(requestToken)) {
       prepared.width = 0;
       prepared.height = 0;

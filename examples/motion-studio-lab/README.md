@@ -15,7 +15,8 @@ The sample image `preview-test.png` is used only by automated browser checks. Vi
 ## Resource and format bounds
 
 - Project canvas is fixed at 720×1280 and 24 fps; duration is 3,000–60,000 ms.
-- Input file is limited to 20 MiB, each image side to 4,096 px, and decoded image area to 8,388,608 pixels. Images are downsampled to one 720×1280 surface, and the temporary `ImageBitmap` is closed after preparation.
+- Input file is limited to 20 MiB. The lab asks the browser decoder for progressively smaller widths (starting at 1,280 px) and keeps a temporary decoded bitmap below 2,048 px per side and 2,621,440 pixels before drawing it into the 720×1280 preview surface. Oversized intermediate bitmaps are closed before retrying; the source `File` is never rewritten or embedded in JSON.
+- When the browser decoder honors `createImageBitmap` resize options, it returns a smaller bitmap before the lab creates its preview. If a decoder ignores the requested resize or cannot decode the file safely, the lab reports a decode/memory error instead of drawing an oversized bitmap. Decoder behavior varies by image format and WebView version, so very unusual panoramas may be rejected.
 - JSON files are capped at 128 KiB and use a separate `qarton-motion-studio-project` envelope around `StudioProjectV1` metadata. A saved project references an opaque asset ID and records only the source name/type/size; reselect the source file after import.
 - The browser owns a single preview surface and one image surface. Decode, Canvas allocation, schema, and memory-related errors are shown in the page.
 - This PR targets `main` after PR #109 was squash-merged. It reuses the integrated S2-B core; PRs #107 and #108 and all games remain unchanged.
