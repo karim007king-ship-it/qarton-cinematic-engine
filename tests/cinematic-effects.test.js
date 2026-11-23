@@ -36,6 +36,15 @@ test("absolute-time sampling is deterministic across seek and replay", () => {
   assert.ok(a.layers[1].x > a.layers[0].x);
 });
 
+test("clips use shared Timeline ordering with stable order for simultaneous events", () => {
+  const scene=compileCinematicEffects({version:"CinematicEffectsV1",width:20,height:20,durationMs:100,layers:[],clips:[
+    {id:"late",type:"flash",atMs:50,durationMs:0,from:{intensity:0,color:"#ffffff"},to:{intensity:0,color:"#ffffff"}},
+    {id:"first",type:"vignette",atMs:0,durationMs:0,from:{intensity:0},to:{intensity:0}},
+    {id:"same-time",type:"letterbox",atMs:0,durationMs:0,from:{ratio:0},to:{ratio:0}}
+  ]});
+  assert.deepEqual(scene.clips.map(clip=>clip.id),["first","same-time","late"]);
+});
+
 test("samples all authored effects and camera/parallax movement at exact boundaries", () => {
   const scene = demo();
   const start = sampleCinematicEffects(scene, 0);

@@ -74,6 +74,8 @@ function validateProject(project) {
       from: Object.freeze({...clip.from}), to: Object.freeze({...clip.to}), easing: clip.easing ?? "linear" });
   });
   const timeline = createTimeline(clips.map(({id, atMs, type}) => ({id, atMs, type})));
+  const clipsById = new Map(clips.map(clip => [clip.id, clip]));
+  const orderedClips = timeline.events.map(event => clipsById.get(event.id));
   const cameraFrames = project.camera ?? [{atMs: 0}];
   if (!Array.isArray(cameraFrames) || cameraFrames.length === 0) throw new TypeError("camera must contain at least one keyframe");
   cameraFrames.forEach((frame, index) => {
@@ -86,7 +88,7 @@ function validateProject(project) {
   const camera = createCameraTrack(cameraFrames);
   if (camera.keyframes.some(frame => frame.atMs > project.durationMs)) throw new RangeError("camera keyframe exceeds scene duration");
   return Object.freeze({ version: project.version, width: project.width, height: project.height,
-    durationMs: project.durationMs, seed: project.seed ?? 1, layers: Object.freeze(layers), clips: Object.freeze(clips), timeline, camera });
+    durationMs: project.durationMs, seed: project.seed ?? 1, layers: Object.freeze(layers), clips: Object.freeze(orderedClips), timeline, camera });
 }
 
 /** Validate and compile a serializable CinematicEffectsV1 scene. Compilation is renderer-independent. */
