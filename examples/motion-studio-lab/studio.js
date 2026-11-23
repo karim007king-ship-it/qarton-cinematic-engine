@@ -13,7 +13,7 @@ import { createCharacterTimeline } from "./studio-character-timeline.js?v=l7b-ch
 import { compileAudioTracks, makeAudioTracks, addAudioClip, editAudioClip, deleteAudioClip, setAudioTrackVolume, setAudioViseme, makeAudioAssetMetadata, validateAudioFile, readAudioDuration } from "./studio-audio-model.js?v=l8b-audio-timeline-01";
 import { createStudioAudioTimeline } from "./studio-audio-timeline.js?v=l8b-audio-timeline-01";
 import { createCinematicAudioPlayer } from "../../src/audio/cinematic-audio-core.js";
-import { addVisualEffect, deleteVisualEffect, editVisualEffect, makeVisualEffectsTrack, compileVisualEffectsTrack, sampleVisualEffects, VISUAL_EFFECT_CHANNELS, VISUAL_EFFECT_TYPES } from "./studio-visual-effects-model.js?v=l9b-effects-01";
+import { addVisualEffect, deleteVisualEffect, editVisualEffect, moveVisualEffect, makeVisualEffectsTrack, compileVisualEffectsTrack, sampleVisualEffects, VISUAL_EFFECT_CHANNELS, VISUAL_EFFECT_TYPES } from "./studio-visual-effects-model.js?v=l9b-effects-01";
 import { createStudioVisualEffectsTimeline } from "./studio-visual-effects-timeline.js?v=l9b-effects-01";
 import { drawCinematicEffects } from "../../src/effects/cinematic-effects.js";
 
