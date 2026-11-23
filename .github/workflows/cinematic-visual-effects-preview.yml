@@ -1,0 +1,51 @@
+name: L9-A Cinematic Visual Effects Preview
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/cinematic-visual-effects-preview.yml'
+      - 'examples/visual-effects-lab/**'
+      - 'src/effects/**'
+      - 'src/camera/**'
+      - 'src/motion/**'
+      - 'scripts/build-visual-effects-preview.mjs'
+      - 'scripts/check-visual-effects-preview.py'
+      - 'tests/cinematic-effects.test.js'
+      - 'src/index.js'
+  push:
+    branches: [feature/cinematic-visual-effects-l9a]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chromium-and-android-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run Node suite
+        run: npm test
+      - name: Bundle self-contained Android preview
+        run: |
+          npm install --no-save --no-package-lock esbuild@0.25.12
+          node scripts/build-visual-effects-preview.mjs
+      - name: Verify Android preview in mobile Chromium
+        run: |
+          python -m pip install playwright==1.55.0
+          python -m playwright install --with-deps chromium
+          python scripts/check-visual-effects-preview.py
+      - name: Package Android preview ZIP
+        run: |
+          cd dist/cinematic-visual-effects-l9a
+          zip -9 ../../qarton-cinematic-visual-effects-l9a-android-preview.zip index.html README.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qarton-cinematic-visual-effects-l9a-android-preview
+          path: qarton-cinematic-visual-effects-l9a-android-preview.zip
+          if-no-files-found: error
+          retention-days: 30
