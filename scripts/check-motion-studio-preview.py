@@ -77,9 +77,9 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         assert page.locator("#playPauseButton").inner_text() == "متابعة"
         effect_lane = page.locator('#visualEffectsTracks .visual-effect-lane[data-effect-type="fade"]')
         effect_lane.scroll_into_view_if_needed()
-        effect_box = effect_lane.bounding_box()
         effect_clip = page.locator(".visual-effect-clip")
         effect_clip.scroll_into_view_if_needed()
+        effect_box = effect_lane.bounding_box()
         effect_original = effect_clip.element_handle()
         assert effect_box["width"] > 100, f"effects lane has an unusable drag width: {effect_box}"
         effect_box_clip = effect_clip.bounding_box()
@@ -87,8 +87,13 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         effect_start_y = effect_box_clip["y"] + effect_box_clip["height"] / 2
         page.evaluate("""() => {
           window.lastEffectsPointerId = null;
-          document.querySelector('#visualEffectsTracks').addEventListener('pointerdown', event => {
+          window.effectsPointerMoves = 0;
+          const root = document.querySelector('#visualEffectsTracks');
+          root.addEventListener('pointerdown', event => {
             window.lastEffectsPointerId = event.pointerId;
+          }, {capture: true});
+          root.addEventListener('pointermove', event => {
+            window.effectsPointerMoves += 1; window.effectsPointerMoveX = event.clientX;
           }, {capture: true});
         }""")
         page.mouse.move(effect_start_x, effect_start_y)
@@ -98,6 +103,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
           return root.dataset.dragging === 'true' && root.hasPointerCapture(window.lastEffectsPointerId);
         }""")
         page.mouse.move(effect_start_x + effect_box["width"] * 0.15, effect_start_y, steps=5)
+        page.wait_for_function("window.effectsPointerMoves > 0")
         assert effect_original.evaluate("el => !el.isConnected"), "effects drag redraw keeps capture on the stable timeline root"
         page.wait_for_function("""() => {
           const root = document.querySelector('#visualEffectsTracks');

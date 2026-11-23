@@ -67,7 +67,7 @@ export function createStudioVisualEffectsTimeline({root,ruler,getTrack,getDurati
     const next=clamp(drag.originStart+delta,0,getDuration()-drag.durationMs);
     if(next===drag.lastStart)return;
     try{onMove(drag.id,next);drag.lastStart=next;render({focusId:drag.id});}
-    catch{/* Preserve last valid move; editor reports validation failures through the host. */}
+    catch(error){onDragEnd?.({cancelled:false,error});}
   }
   function finishPointer(event,cancelled=false){
     if(!drag||event.pointerId!==drag.pointerId)return;

@@ -794,7 +794,10 @@ visualEffectsTimeline = createStudioVisualEffectsTimeline({
   onSelect: (id) => { visualEffectSelection = id; renderVisualEffectInspector(); },
   onMove: (id, atMs) => commitVisualEffectsTrack(moveVisualEffect(visualEffectsTrack, project, id, atMs), "تم نقل المؤثر على المسار."),
   onSeek: (atMs) => seekTo(atMs),
-  onDragEnd: ({ cancelled }) => { if (cancelled) $("visualEffectsMessage").textContent = "أُلغي السحب؛ حُفظ آخر توقيت صالح للمؤثر."; }
+  onDragEnd: ({ cancelled, error }) => {
+    if (error) $("visualEffectsMessage").textContent = `تعذر نقل المؤثر: ${errorText(error)}`;
+    else if (cancelled) $("visualEffectsMessage").textContent = "أُلغي السحب؛ حُفظ آخر توقيت صالح للمؤثر.";
+  }
 });
 visualEffectsTimeline.render();
 renderVisualEffectInspector();
