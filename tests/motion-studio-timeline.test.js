@@ -26,7 +26,8 @@ test("Timeline drag lifecycle guards repeated commits, cancellation, collisions,
   assert.match(source, /pointercancel/);
   assert.match(source, /lostpointercapture/);
   assert.match(source, /if \(busy \|\| isBusy\(\)\) \{\s*finishPointer\(event, true\)/);
-  assert.match(source, /if \(busy\) \{\s*drag = null;/);
+  assert.match(source, /if \(busy\) \{\s*const capturedPointerId = drag\?\.pointerId \?\? scrubPointerId;\s*drag = null;/);
+  assert.match(source, /lane\.releasePointerCapture\(capturedPointerId\)/);
   assert.match(source, /markers\.querySelector\([\s\S]*?\.focus\(\{ preventScroll: true \}\)/);
   assert.match(source, /marker\.addEventListener\("click", \(\) => select\(frame\.atMs/);
 });

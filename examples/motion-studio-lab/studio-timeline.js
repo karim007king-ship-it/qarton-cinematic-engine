@@ -237,9 +237,15 @@ export function createStudioTimeline({
     lane.style.pointerEvents = busy ? "none" : "";
     lane.setAttribute("aria-disabled", String(busy));
     if (busy) {
+      const capturedPointerId = drag?.pointerId ?? scrubPointerId;
       drag = null;
       scrubPointerId = null;
       delete lane.dataset.dragging;
+      try {
+        if (capturedPointerId !== undefined && capturedPointerId !== null && lane.hasPointerCapture(capturedPointerId)) {
+          lane.releasePointerCapture(capturedPointerId);
+        }
+      } catch { /* The browser may already have released a cancelled pointer. */ }
     }
     renderMarkers();
   }

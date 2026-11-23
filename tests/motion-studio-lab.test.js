@@ -292,7 +292,7 @@ test("browser module uses the engine sampling API and includes deterministic see
   assert.match(timeline, /lostpointercapture/);
   assert.match(timeline, /setPointerCapture/);
   assert.match(timeline, /markers\.querySelector\([\s\S]*?\.focus\(\{ preventScroll: true \}\)/);
-  assert.match(timeline, /if \(busy\) \{\s*drag = null;/);
+  assert.match(timeline, /if \(busy\) \{\s*const capturedPointerId = drag\?\.pointerId \?\? scrubPointerId;\s*drag = null;/);
 });
 
 test("UI prepares a candidate project before committing the active project and compiled frame", async () => {
