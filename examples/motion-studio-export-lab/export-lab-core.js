@@ -38,3 +38,12 @@ export function measuredDurationMs(startedAt, endedAt) {
 export function extensionForMime(mime) {
   return /^video\/mp4(?:;|$)/i.test(String(mime)) ? 'mp4' : 'webm';
 }
+
+
+export function createRequestToken() {
+  let current = 0;
+  return Object.freeze({
+    begin() { current += 1; return current; },
+    isCurrent(requestId) { return requestId === current; }
+  });
+}

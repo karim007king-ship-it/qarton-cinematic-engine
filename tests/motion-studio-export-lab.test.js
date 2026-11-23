@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import {
   OUTPUT_SIZE,
+  createRequestToken,
   RECORDING_DURATIONS_MS,
   extensionForMime,
   mimeCandidates,
@@ -44,6 +45,39 @@ test('duration validation rejects invalid or reversed timestamps', () => {
   assert.equal(measuredDurationMs('bad', 10), null);
 });
 
+test('slow image A finishing after fast image B cannot replace B or its ready state', async () => {
+  const requests = createRequestToken();
+  let currentImage = null;
+  let ready = false;
+  let reportedErrors = 0;
+  const commitLoad = (requestId, name) => {
+    if (!requests.isCurrent(requestId)) return;
+    currentImage = name;
+    ready = true;
+  };
+  const commitError = (requestId) => {
+    if (!requests.isCurrent(requestId)) return;
+    reportedErrors += 1;
+    ready = false;
+  };
+
+  const slowARequest = requests.begin();
+  let finishSlowA;
+  const slowALoad = new Promise((resolve) => { finishSlowA = () => resolve('A'); })
+    .then((name) => commitLoad(slowARequest, name));
+  const fastBRequest = requests.begin();
+  commitLoad(fastBRequest, 'B');
+  assert.equal(currentImage, 'B');
+  assert.equal(ready, true);
+
+  finishSlowA();
+  await slowALoad;
+  commitError(slowARequest);
+  assert.equal(currentImage, 'B');
+  assert.equal(ready, true);
+  assert.equal(reportedErrors, 0);
+});
+
 test('actual MIME determines the suggested file extension', () => {
   assert.equal(extensionForMime('video/mp4;codecs=avc1'), 'mp4');
   assert.equal(extensionForMime('video/webm;codecs=vp8,opus'), 'webm');
@@ -66,4 +100,7 @@ test('browser module parses and contains recording plus audio track capture', as
   assert.match(source, /createMediaStreamDestination\(\)/);
   assert.match(source, /new MediaRecorder\(stream, \{ mimeType \}\)/);
   assert.match(source, /supportedCandidates\(MediaRecorder, format\)/);
+  assert.match(source, /const requestId = imageRequest\.begin\(\)/);
+  assert.match(source, /candidate\.onload = \(\) => \{\s*if \(!imageRequest\.isCurrent\(requestId\)\)/);
+  assert.match(source, /candidate\.onerror = \(\) => \{\s*if \(!imageRequest\.isCurrent\(requestId\)\)/);
 });

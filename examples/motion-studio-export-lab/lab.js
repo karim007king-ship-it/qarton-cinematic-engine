@@ -1,5 +1,6 @@
 import {
   OUTPUT_SIZE,
+  createRequestToken,
   RECORDING_DURATIONS_MS,
   extensionForMime,
   supportedCandidates
@@ -26,6 +27,7 @@ let recording = false;
 let rafId = 0;
 let lastBlob = null;
 let lastMime = '';
+const imageRequest = createRequestToken();
 
 const errorText = (error) => `${error?.name || 'Error'}: ${error?.message || String(error)}`;
 function reportError(error) {
@@ -103,6 +105,7 @@ function clearPreviousVideo() {
 }
 
 imageInput.addEventListener('change', async () => {
+  const requestId = imageRequest.begin();
   clearError();
   clearPreviousVideo();
   if (imageUrl) URL.revokeObjectURL(imageUrl);
@@ -110,17 +113,28 @@ imageInput.addEventListener('change', async () => {
   image = null;
   setReady(false);
   if (!file) { status.textContent = 'اختر صورة لبدء التجربة.'; drawFrame(); return; }
-  if (!file.type.startsWith('image/')) { reportError(new Error('الملف المختار ليس صورة.')); return; }
-  imageUrl = URL.createObjectURL(file);
+  if (!file.type.startsWith('image/')) { reportError(new Error('الملف المختار ليس صورة.')); drawFrame(); return; }
+  const candidateUrl = URL.createObjectURL(file);
+  imageUrl = candidateUrl;
   const candidate = new Image();
   candidate.onload = () => {
+    if (!imageRequest.isCurrent(requestId)) {
+      URL.revokeObjectURL(candidateUrl);
+      return;
+    }
     image = candidate;
     setReady(typeof MediaRecorder !== 'undefined' && typeof canvas.captureStream === 'function');
     status.textContent = `تم تحميل الصورة: ${file.name} (${candidate.naturalWidth}×${candidate.naturalHeight}).`;
     drawFrame();
   };
-  candidate.onerror = () => reportError(new Error('تعذر فك ترميز الصورة. جرّب صورة JPEG أو PNG.'));
-  candidate.src = imageUrl;
+  candidate.onerror = () => {
+    if (!imageRequest.isCurrent(requestId)) {
+      URL.revokeObjectURL(candidateUrl);
+      return;
+    }
+    reportError(new Error('تعذر فك ترميز الصورة. جرّب صورة JPEG أو PNG.'));
+  };
+  candidate.src = candidateUrl;
 });
 
 function makeAudioGraph() {
