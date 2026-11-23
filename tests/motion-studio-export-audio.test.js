@@ -69,12 +69,24 @@ test("music loop offsets wrap to the source duration while one-shot clips preser
     { id: "loop", asset: "tone", startMs: 0, durationMs: 8000, loop: true },
     { id: "shot", asset: "tone", startMs: 0, durationMs: 8000, loop: false }
   ] }];
-  const plan = makePlan({ tracks: looping, info: [{ id: "tone", durationMs: 1000, channels: 2, sampleRate: 48_000 }], range: { startMs: 3000, endMs: 5000 } });
+  const plan = makePlan({ tracks: looping, info: [{ id: "tone", durationMs: 1000, channels: 2, sampleRate: 48_000 }], range: { startMs: 500, endMs: 1500 } });
   const context = new FakeAudioContext();
   const mix = await prepareAudioMix(plan, { audioContext: context, resolveAudio: async () => new Blob(["tone"]) });
   const scheduled = mix.schedule(3);
-  assert.deepEqual(scheduled.map(item => item.offset), [0, 3]);
+  assert.deepEqual(scheduled.map(item => item.offset), [0.5, 0.5]);
   assert.deepEqual(scheduled.map(item => item.loop), [true, false]);
+  mix.stop();
+});
+
+test("one-shot dialogue is not scheduled when a seek starts after the decoded source ends", async () => {
+  const dialogue = [{ id: "dialogue", type: "dialogue", clips: [
+    { id: "late", asset: "short", startMs: 0, durationMs: 8000, language: "ar", visemes: [] }
+  ] }];
+  const plan = makePlan({ tracks: dialogue, info: [{ id: "short", durationMs: 1000, channels: 1, sampleRate: 48_000 }], range: { startMs: 3000, endMs: 5000 } });
+  const context = new FakeAudioContext();
+  const mix = await prepareAudioMix(plan, { audioContext: context, resolveAudio: async () => new Blob(["voice"]) });
+  assert.deepEqual(mix.schedule(3), []);
+  assert.equal(context.sources.length, 0);
   mix.stop();
 });
 
@@ -84,6 +96,15 @@ test("missing or undecodable local sources fail preflight preparation with typed
   const context = new FakeAudioContext();
   context.decodeAudioData = async () => { throw new Error("corrupt fixture"); };
   await assert.rejects(prepareAudioMix(plan, { audioContext: context, resolveAudio: async () => new Blob(["bad"]) }), { code: "DECODE_FAILED" });
+});
+
+test("audio decode that never settles fails within its bounded preparation window", async () => {
+  const plan = makePlan({ tracks: [tracks[0]], info: [assetInfo[0]] });
+  const context = new FakeAudioContext();
+  context.decodeAudioData = () => new Promise(() => {});
+  await assert.rejects(prepareAudioMix(plan, { audioContext: context, resolveAudio: async () => new Blob(["shared"]) },
+    { decodeTimeoutMs: 10 }), { code: "DECODE_FAILED" });
+  assert.equal(context.destination, null);
 });
 
 test("aborting during local audio resolution prevents later decode and exposes no destination", async () => {

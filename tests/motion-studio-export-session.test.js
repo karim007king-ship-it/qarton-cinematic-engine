@@ -28,7 +28,7 @@ class FakeCanvas {
   captureStream(fps) { this.captureFps = fps; return new FakeStream([this.track]); }
 }
 class FakeRecorder extends EventTarget {
-  static isTypeSupported(type) { return type.startsWith("video/webm"); }
+  static isTypeSupported(type) { return type === "video/webm;codecs=vp8,opus"; }
   constructor(stream, options) { super(); this.stream = stream; this.mimeType = options.mimeType; this.state = "inactive"; }
   start() { this.state = "recording"; queueMicrotask(() => this.dispatchEvent(new Event("start"))); }
   stop() {
@@ -47,6 +47,10 @@ class FakeAudioContext extends EventTarget {
   createGain() { const node = { gain: { value: 1, setValueAtTime() {}, linearRampToValueAtTime() {} }, connect() {}, disconnect() {} }; this.nodes.push(node); return node; }
   createBufferSource() { const source = { connect() {}, disconnect() {}, start: (...args) => this.log.push(["audio-start", ...args]), stop() {} }; return source; }
   createMediaStreamDestination() { const destination = { connect() {}, disconnect() {}, stream: new FakeStream([new FakeTrack("audio")]) }; this.destination = destination; return destination; }
+}
+class HangingResumeAudioContext extends FakeAudioContext {
+  constructor() { super([]); }
+  resume() { return new Promise(() => {}); }
 }
 
 function makeHost(rendered, overrides = {}) {
@@ -132,10 +136,21 @@ test("only one export runs per host and recorder constructor failures surface ty
   await assert.rejects(startExport(makePlan(), invalid), { code: "UNSUPPORTED_FORMAT" });
 });
 
-test("capability probe validates exact profile arguments and returns only verified real recorder outputs", async () => {
+test("capability probe validates the exact profile and records failure instead of claiming unsupported verification", async () => {
   await assert.rejects(probeExport({ width: 0, height: 640 }), RangeError);
   const result = await probeExport({ width: 360, height: 640, fps: 24, audioMode: "none", durationMs: 200,
     MediaRecorderClass: FakeRecorder, formats: ["webm"], createCanvas: () => new FakeCanvas(), document: {} });
   assert.ok(result.every(capability => capability.verification === "failed" || capability.verification === "verified"));
+  assert.equal(result.length, 1, "unverified advertised formats continue through fallback candidates, then report the result");
+  assert.equal(result[0].verification, "failed", "the fake probe has no output decoder, so it cannot claim verified support");
   assert.ok(result.every(capability => capability.width === 360 && capability.height === 640 && capability.fps === 24));
+});
+
+test("capability probe bounds a Web Audio resume that never settles", async () => {
+  const result = await probeExport({ width: 360, height: 640, fps: 24, audioMode: "mix", durationMs: 200,
+    timeoutMs: 1000, MediaRecorderClass: FakeRecorder, AudioContextClass: HangingResumeAudioContext,
+    MediaStreamClass: FakeMediaStream, formats: ["webm"], createCanvas: () => new FakeCanvas(), document: {} });
+  assert.equal(result.length, 1);
+  assert.equal(result[0].verification, "failed");
+  assert.match(result[0].reason, /did not resume in time/u);
 });

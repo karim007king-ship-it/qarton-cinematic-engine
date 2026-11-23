@@ -15,6 +15,22 @@ function fail(code, message, cause) {
   throw error;
 }
 
+function awaitAudioWork(work, timeoutMs, signal, code, message) {
+  return new Promise((resolve, reject) => {
+    let timer;
+    const cleanup = () => {
+      if (timer !== undefined) clearTimeout(timer);
+      signal?.removeEventListener("abort", aborted);
+    };
+    const finish = callback => value => { cleanup(); callback(value); };
+    const aborted = () => finish(reject)(abortError(signal));
+    signal?.addEventListener("abort", aborted, { once: true });
+    if (signal?.aborted) { aborted(); return; }
+    timer = setTimeout(() => finish(reject)(new ExportError(code, message)), timeoutMs);
+    Promise.resolve(work).then(finish(resolve), finish(reject));
+  });
+}
+
 function audioBytes(buffer) {
   return buffer.length * buffer.numberOfChannels * EXPORT_LIMITS.audioBytesPerSample;
 }
@@ -44,7 +60,7 @@ function makeGain(context, value, atTime) {
 }
 
 /** Decode each unique local asset once, then schedule every clip against the recorder's shared epoch. */
-export async function prepareAudioMix(plan, { audioContext, resolveAudio } = {}, { signal, onProgress } = {}) {
+export async function prepareAudioMix(plan, { audioContext, resolveAudio } = {}, { signal, onProgress, decodeTimeoutMs = 30_000 } = {}) {
   if (!plan || plan.audio !== "mix") return Object.freeze({ stream: null, schedule: () => {}, stop: () => {}, decodedBytes: 0 });
   if (!audioContext || typeof audioContext.decodeAudioData !== "function" ||
       typeof audioContext.createMediaStreamDestination !== "function" || typeof resolveAudio !== "function") {
@@ -69,7 +85,8 @@ export async function prepareAudioMix(plan, { audioContext, resolveAudio } = {},
     checkAbort(signal);
     if (!blob || typeof blob.arrayBuffer !== "function" || blob.size === 0) fail("ASSET_MISSING", `Local audio asset is unavailable: ${assetId}`);
     let buffer;
-    try { buffer = await audioContext.decodeAudioData(await blob.arrayBuffer()); }
+    try { buffer = await awaitAudioWork(audioContext.decodeAudioData(await blob.arrayBuffer()), decodeTimeoutMs,
+      signal, "DECODE_FAILED", `Audio decode timed out for asset: ${assetId}`); }
     catch (error) { checkAbort(signal); fail("DECODE_FAILED", `Unable to decode audio asset: ${assetId}`, error); }
     checkAbort(signal);
     if (!buffer || !Number.isSafeInteger(buffer.length) || buffer.length < 1 ||
@@ -136,16 +153,18 @@ export async function prepareAudioMix(plan, { audioContext, resolveAudio } = {},
         const when = epoch + (clip.startMs - plan.range.startMs) / 1000;
         const endAt = epoch + (clip.endMs - plan.range.startMs) / 1000;
         if (endAt <= when) continue;
+        const startOffset = clip.offsetMs / 1000;
+        const shouldLoop = clip.loop === true && clip.type === "music";
+        if (!shouldLoop && startOffset >= buffer.duration) continue;
         const source = audioContext.createBufferSource();
         const clipGain = makeGain(audioContext, 0, Math.max(zeroTime, when));
         rampClipGain(clipGain.gain, clip.volume, when, endAt);
         clipGains.add(clipGain);
         source.buffer = buffer;
-        source.loop = clip.loop === true && clip.type === "music";
+        source.loop = shouldLoop;
         if (clip.type === "music" && clip.loop !== true) source.loop = false;
         source.connect(clipGain);
         clipGain.connect(trackGain);
-        const startOffset = clip.offsetMs / 1000;
         const offset = source.loop ? startOffset % buffer.duration : startOffset;
         sources.add(source);
         source.onended = () => { sources.delete(source); try { source.disconnect(); } catch {} try { clipGain.disconnect(); } catch {} clipGains.delete(clipGain); };

@@ -17,6 +17,21 @@ function abortError(signal) {
   return new DOMException("The export was cancelled", "AbortError");
 }
 function checkAbort(signal) { if (signal?.aborted) throw abortError(signal); }
+function awaitWork(work, timeoutMs, message, { signal, code = "CAPTURE_FAILED" } = {}) {
+  return new Promise((resolve, reject) => {
+    let timer;
+    const cleanup = () => {
+      if (timer !== undefined) globalThis.clearTimeout(timer);
+      signal?.removeEventListener("abort", aborted);
+    };
+    const settle = callback => value => { cleanup(); callback(value); };
+    const aborted = () => settle(reject)(abortError(signal));
+    signal?.addEventListener("abort", aborted, { once: true });
+    if (signal?.aborted) { aborted(); return; }
+    timer = globalThis.setTimeout(() => settle(reject)(error(code, message)), timeoutMs);
+    Promise.resolve(work).then(settle(resolve), settle(reject));
+  });
+}
 function recorderCtor(host) { return host.MediaRecorderClass ?? globalThis.MediaRecorder; }
 function mediaStreamCtor(host) { return host.MediaStreamClass ?? globalThis.MediaStream; }
 function dom(host) { return host.document ?? globalThis.document; }
@@ -104,7 +119,8 @@ async function inspectOutput(blob, plan, host, audioContext) {
     }
     if (plan.audio === "mix") {
       if (!audioContext?.decodeAudioData) throw error("INVALID_OUTPUT", "Audio output cannot be verified without Web Audio decoding");
-      try { await audioContext.decodeAudioData(await blob.arrayBuffer()); }
+      try { await awaitWork(audioContext.decodeAudioData(await blob.arrayBuffer()), host.audioValidationTimeoutMs ?? 10_000,
+        "Recorded audio track decoder timed out", { signal, code: "INVALID_OUTPUT" }); }
       catch (cause) { throw error("INVALID_OUTPUT", "Recorded audio track could not be decoded", cause); }
     }
     return { actualMime, measuredDurationMs: durationMs, warnings: [] };
@@ -132,7 +148,7 @@ async function probeOne({ canvas, width, height, fps, audioMode, mimeType, Media
     if (audioMode === "mix") {
       if (typeof AudioContextClass !== "function") throw error("UNSUPPORTED_FORMAT", "Web Audio is unavailable");
       audioContext = new AudioContextClass();
-      await audioContext.resume?.();
+      await awaitWork(audioContext.resume?.(), timeoutMs, "Probe AudioContext did not resume in time");
       if (audioContext.state !== "running") throw error("CAPTURE_FAILED", "Probe AudioContext did not start");
       const destination = audioContext.createMediaStreamDestination();
       oscillator = audioContext.createOscillator();
@@ -182,8 +198,17 @@ async function probeOne({ canvas, width, height, fps, audioMode, mimeType, Media
       if (video.videoWidth !== width || video.videoHeight !== height || !Number.isFinite(video.duration) || video.duration <= 0) {
         throw error("INVALID_OUTPUT", "Probe output dimensions or duration do not match the requested profile");
       }
+      if (video.duration > 0.05) {
+        const seek = new Promise((resolve, reject) => {
+          const timer = globalThis.setTimeout(() => reject(error("INVALID_OUTPUT", "Probe output cannot seek near its end")), timeoutMs);
+          video.addEventListener("seeked", () => { globalThis.clearTimeout(timer); resolve(); }, { once: true });
+          video.addEventListener("error", () => { globalThis.clearTimeout(timer); reject(error("INVALID_OUTPUT", "Probe output seek failed")); }, { once: true });
+        });
+        video.currentTime = Math.max(0, video.duration - 0.02);
+        await seek;
+      }
       if (audioMode === "mix") {
-        try { await audioContext.decodeAudioData(await blob.arrayBuffer()); }
+        try { await awaitWork(audioContext.decodeAudioData(await blob.arrayBuffer()), timeoutMs, "Probe audio decoder timed out", { code: "INVALID_OUTPUT" }); }
         catch (cause) { throw error("INVALID_OUTPUT", "Probe audio track could not be decoded", cause); }
       }
       return Object.freeze({ verification: "verified", mimeType: recorder.mimeType || mimeType, width, height, fps, audioMode });
@@ -204,6 +229,7 @@ export async function probeExport(options = {}) {
   for (const [label, value, min, max] of [["width", width, 2, 4096], ["height", height, 2, 4096], ["fps", fps, 1, 60], ["durationMs", durationMs, 200, 2000]]) {
     if (!Number.isSafeInteger(value) || value < min || value > max) throw new RangeError(`${label} must be an integer in [${min}, ${max}]`);
   }
+  if (width * height > 8_388_608) throw new RangeError("Probe dimensions exceed the Canvas pixel budget");
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 30_000) throw new RangeError("timeoutMs must be in [1000, 30000]");
   if (!Array.isArray(formats) || formats.some(format => !Object.hasOwn(MIME_CANDIDATES, format))) throw new TypeError("formats must contain mp4 and/or webm");
   if (audioMode !== "mix" && audioMode !== "none") throw new TypeError("audioMode must be mix or none");
@@ -213,19 +239,25 @@ export async function probeExport(options = {}) {
   const document = options.document ?? globalThis.document;
   const capabilities = [];
   for (const format of formats) {
+    let formatVerified = false;
     for (const mimeType of MIME_CANDIDATES[format]) {
-      if (!MediaRecorderClass?.isTypeSupported?.(mimeType)) continue;
+      let advertised = false;
+      try { advertised = Boolean(MediaRecorderClass?.isTypeSupported?.(mimeType)); } catch { advertised = false; }
+      if (!advertised) continue;
       const canvas = options.createCanvas?.(width, height) ?? document?.createElement?.("canvas");
       if (!canvas) throw error("CAPTURE_FAILED", "Probe host could not create a Canvas");
       canvas.width = width;
       canvas.height = height;
       try {
-        capabilities.push(await probeOne({ canvas, width, height, fps, audioMode, mimeType, MediaRecorderClass,
-          AudioContextClass, MediaStreamClass, document, durationMs, timeoutMs }));
+        const capability = await probeOne({ canvas, width, height, fps, audioMode, mimeType, MediaRecorderClass,
+          AudioContextClass, MediaStreamClass, document, durationMs, timeoutMs });
+        capabilities.push(capability);
+        formatVerified = true;
       } catch (cause) {
         capabilities.push(Object.freeze({ verification: "failed", mimeType, width, height, fps, audioMode,
           reason: cause?.message ?? String(cause) }));
       }
+      if (formatVerified) break;
     }
   }
   return Object.freeze(capabilities);
@@ -297,8 +329,8 @@ export async function startExport(plan, host = {}, { signal, onProgress } = {}) 
       audioContext = host.audioContext ?? host.createAudioContext?.();
       if (!audioContext) throw error("CAPTURE_FAILED", "Host must provide a Web Audio context for mixed export");
       // Invoke resume synchronously from the initiating user gesture before awaiting preflight.
-      const resumed = audioContext.resume?.();
-      if (resumed?.then) await resumed;
+      await awaitWork(audioContext.resume?.(), host.audioContextTimeoutMs ?? 10_000,
+        "AudioContext did not resume before its timeout", { signal });
       checkAbort(signal);
       if (audioContext.state !== "running") throw error("CAPTURE_FAILED", "AudioContext did not enter the running state");
       audioContext.addEventListener?.("statechange", onAudioStateChange);
