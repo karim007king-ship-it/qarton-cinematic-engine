@@ -164,21 +164,24 @@ export function sampleCinematicEffects(compiled, timeMs) {
     switch (clip.type) {
       case "fade": result.fade = {opacity: read("opacity"), color: read("color")}; break;
       case "dissolve": result.dissolve = {progress: read("progress"), color: read("color")}; break;
-      case "vignette": vignette = Math.max(vignette, read("intensity")); break;
-      case "letterbox": letterbox = Math.max(letterbox, read("ratio")); break;
+      // Clips arrive in start-time order; each started clip replaces the prior
+      // state so a newer clip can lower or clear an existing effect.
+      case "vignette": vignette = read("intensity"); break;
+      case "letterbox": letterbox = read("ratio"); break;
       case "shake": {
         if (clip.durationMs === 0 && timeMs > clip.atMs) break;
         const duration = Math.max(1, clip.durationMs);
         const shake = sampleCameraShake({timeMs: Math.min(clip.durationMs, Math.max(0, timeMs - clip.atMs)), durationMs: duration,
           amplitude: read("amplitude"), frequencyHz: read("frequencyHz"), seed: read("seed") + compiled.seed});
-        result.shake.x += shake.x; result.shake.y += shake.y; result.shake.rotation += shake.rotation; break;
+        const pixelScale = Math.min(compiled.width, compiled.height) / 720;
+        result.shake.x += shake.x * pixelScale; result.shake.y += shake.y * pixelScale;
+        result.shake.rotation += shake.rotation; break;
       }
       case "flash": {
-        const intensity = read("intensity");
-        if (intensity >= flash) { flash = intensity; result.flash.color = read("color"); }
+        flash = read("intensity"); result.flash.color = read("color");
         break;
       }
-      case "tint": if (read("strength") >= tintStrength) { tintStrength = read("strength"); result.tint.color = read("color"); } break;
+      case "tint": tintStrength = read("strength"); result.tint.color = read("color"); break;
     }
   }
   cameraX = camera.x + result.shake.x;

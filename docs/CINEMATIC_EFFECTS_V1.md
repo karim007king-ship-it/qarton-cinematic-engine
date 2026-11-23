@@ -28,9 +28,9 @@ All clips interpolate from/to values linearly unless `easing` is `easeInOutCubic
 
 ## Clip lifetime and overlap
 
-`durationMs` is the time used to interpolate from `from` to `to`; it does not automatically remove a clip's final state. A started Fade or Dissolve clip remains at its final state until another later-started clip of the same type takes over. Vignette and Letterbox use the greatest sampled intensity/ratio among started clips, and Flash uses the greatest sampled intensity. Tint uses the greatest sampled strength. Equal-strength overlaps use timeline order, so the later-started clip supplies the color. These rules are independent of sampling order and remain stable through seek and replay.
+`durationMs` is the time used to interpolate from `from` to `to`; it does not automatically remove a clip's final state. For Fade, Dissolve, Vignette, Letterbox, Flash, and Tint, the started clip with the latest `atMs` controls that effect's interpolated channels. A newer clip replaces the previous state even when its value is lower or zero, then holds its final value after its duration. When starts tie, the later clip in the project's `clips` array wins. Zero-duration clips step to `to` at `atMs` and hold that state until a later-priority clip takes over. This absolute-time rule is deterministic across forward/backward seeks and replay.
 
-To fade an effect away, author its `to` intensity/strength/ratio as `0` (and for Fade use opacity `1`); to make a persistent effect weaker, lower its `to` value. When several Vignette, Letterbox, Flash, or Tint clips overlap, reducing one clip cannot undercut a stronger overlapping clip; edit that clip too or delete it. Deleting a clip removes only that clip's contribution. A zero-duration clip steps directly to its `to` value at `atMs` and holds it under the same rules.
+To fade an effect away, author its winning clip's `to` intensity/strength/ratio as `0` (and for Fade use opacity `1`); to weaken it, lower that clip's `to` value. A later-started clip can also transition from the current value to a lower value. Deleting the winning clip lets the next-priority started clip determine the sample. Shake clips remain additive; each clip is sampled deterministically and contributes to the combined camera offset.
 
 | Type | `from` and `to` fields | Behavior |
 |---|---|---|
@@ -38,7 +38,7 @@ To fade an effect away, author its `to` intensity/strength/ratio as `0` (and for
 | `dissolve` | `progress` 0–1, `color` | Seed-independent 12×12 ordered color reveal, bounded to 144 cells |
 | `vignette` | `intensity` 0–1 | Radial edge darkening |
 | `letterbox` | `ratio` 0–0.2 | Black top and bottom bars as a fraction of scene height |
-| `shake` | `amplitude` 0–64, `frequencyHz` 0–60, `seed` ±1,000,000 | Deterministic camera offset sampled using clip-local time plus project seed |
+| `shake` | `amplitude` 0–64, `frequencyHz` 0–60, `seed` ±1,000,000 | Deterministic additive camera offset sampled using clip-local time plus project seed; pixel translation scales by `min(width, height) / 720`, while rotation stays in degrees |
 | `flash` | `intensity` 0–1, `color` | Screen-space color flash |
 | `tint` | `strength` 0–1, `color` | Screen-space color tint |
 

@@ -93,18 +93,99 @@ test("samples exact effect boundaries and zero-duration clips as instantaneous s
   assert.deepEqual(sampleCinematicEffects(scene,31).shake,{x:0,y:0,rotation:0});
 });
 
-test("overlapping effects combine deterministically without order-dependent maxima", () => {
-  const scene=compileCinematicEffects({version:"CinematicEffectsV1",width:24,height:40,durationMs:100,layers:[],clips:[
-    {id:"vignette-a",type:"vignette",atMs:0,durationMs:100,from:{intensity:.1},to:{intensity:.7}},
-    {id:"vignette-b",type:"vignette",atMs:25,durationMs:50,from:{intensity:.5},to:{intensity:.8}},
-    {id:"flash-a",type:"flash",atMs:0,durationMs:100,from:{intensity:.3,color:"#ffffff"},to:{intensity:.7,color:"#ffffff"}},
-    {id:"flash-b",type:"flash",atMs:25,durationMs:50,from:{intensity:.6,color:"#ffccaa"},to:{intensity:.9,color:"#ffccaa"}}
+test("newer Vignette, Letterbox, Tint, and Flash clips can fade and clear overlapping effects", () => {
+  const scene=compileCinematicEffects({version:"CinematicEffectsV1",width:720,height:1280,durationMs:200,layers:[],clips:[
+    {id:"vignette-base",type:"vignette",atMs:0,durationMs:100,from:{intensity:0},to:{intensity:1}},
+    {id:"vignette-lower",type:"vignette",atMs:25,durationMs:50,from:{intensity:.8},to:{intensity:0}},
+    {id:"vignette-restore",type:"vignette",atMs:80,durationMs:20,from:{intensity:0},to:{intensity:.4}},
+    {id:"vignette-remove",type:"vignette",atMs:100,durationMs:0,from:{intensity:.4},to:{intensity:0}},
+    {id:"letterbox-base",type:"letterbox",atMs:0,durationMs:100,from:{ratio:0},to:{ratio:.2}},
+    {id:"letterbox-lower",type:"letterbox",atMs:25,durationMs:50,from:{ratio:.16},to:{ratio:0}},
+    {id:"letterbox-restore",type:"letterbox",atMs:80,durationMs:20,from:{ratio:0},to:{ratio:.08}},
+    {id:"letterbox-remove",type:"letterbox",atMs:100,durationMs:0,from:{ratio:.08},to:{ratio:0}},
+    {id:"flash-base",type:"flash",atMs:0,durationMs:100,from:{intensity:0,color:"#ffffff"},to:{intensity:1,color:"#ffffff"}},
+    {id:"flash-lower",type:"flash",atMs:25,durationMs:50,from:{intensity:.8,color:"#ffccaa"},to:{intensity:0,color:"#ffccaa"}},
+    {id:"flash-restore",type:"flash",atMs:80,durationMs:20,from:{intensity:0,color:"#ffccaa"},to:{intensity:.5,color:"#ffccaa"}},
+    {id:"flash-remove",type:"flash",atMs:100,durationMs:0,from:{intensity:.5,color:"#ffccaa"},to:{intensity:0,color:"#ffccaa"}},
+    {id:"tint-base",type:"tint",atMs:0,durationMs:100,from:{strength:0,color:"#ffffff"},to:{strength:1,color:"#ffffff"}},
+    {id:"tint-lower",type:"tint",atMs:25,durationMs:50,from:{strength:.8,color:"#e24848"},to:{strength:0,color:"#e24848"}},
+    {id:"tint-restore",type:"tint",atMs:80,durationMs:20,from:{strength:0,color:"#e24848"},to:{strength:.4,color:"#e24848"}},
+    {id:"tint-remove",type:"tint",atMs:100,durationMs:0,from:{strength:.4,color:"#e24848"},to:{strength:0,color:"#e24848"}}
   ]});
-  const sample=sampleCinematicEffects(scene,50);
-  assert.equal(sample.vignette,.65);
-  assert.equal(sample.flash.intensity,.75);
-  assert.equal(sample.flash.color,"#ffccaa");
-  assert.deepEqual(sample,sampleCinematicEffects(scene,50));
+  const at50=sampleCinematicEffects(scene,50);
+  assert.equal(at50.vignette,.4);
+  assert.equal(at50.letterbox,.08);
+  assert.equal(at50.flash.intensity,.4);
+  assert.equal(at50.flash.color,"#ffccaa");
+  assert.equal(at50.tint.strength,.4);
+  assert.equal(at50.tint.color,"#e24848");
+  const at75=sampleCinematicEffects(scene,75);
+  assert.equal(at75.vignette,0);
+  assert.equal(at75.letterbox,0);
+  assert.equal(at75.flash.intensity,0);
+  assert.equal(at75.tint.strength,0);
+  const at90=sampleCinematicEffects(scene,90);
+  assert.equal(at90.vignette,.2);
+  assert.equal(at90.letterbox,.04);
+  assert.equal(at90.flash.intensity,.25);
+  assert.equal(at90.tint.strength,.2);
+  const cleared=sampleCinematicEffects(scene,100);
+  assert.equal(cleared.vignette,0);
+  assert.equal(cleared.letterbox,0);
+  assert.equal(cleared.flash.intensity,0);
+  assert.equal(cleared.tint.strength,0);
+  assert.equal(sampleCinematicEffects(scene,125).vignette,0,"a zero-duration removal holds after the event");
+  assert.deepEqual(sampleCinematicEffects(scene,50),at50,"seeking to the same time remains deterministic");
+
+  let now=0;
+  const player=createCinematicEffectsPlayer(scene,{now:()=>now});
+  player.seek(75);
+  assert.equal(player.sample().tint.strength,0);
+  player.seek(50);
+  assert.deepEqual(player.sample(),at50);
+  player.replay();
+  player.seek(50);
+  assert.deepEqual(player.sample(),at50);
+});
+
+test("equal-start effects use the later serialized clip, including a zero-duration replacement", () => {
+  const scene=compileCinematicEffects({version:"CinematicEffectsV1",width:720,height:1280,durationMs:100,layers:[],clips:[
+    {id:"first",type:"vignette",atMs:10,durationMs:20,from:{intensity:0},to:{intensity:.2}},
+    {id:"later-entry",type:"vignette",atMs:10,durationMs:20,from:{intensity:.8},to:{intensity:1}},
+    {id:"zero",type:"vignette",atMs:40,durationMs:0,from:{intensity:1},to:{intensity:0}}
+  ]});
+  assert.equal(sampleCinematicEffects(scene,10).vignette,.8);
+  assert.equal(sampleCinematicEffects(scene,40).vignette,0);
+  assert.equal(sampleCinematicEffects(scene,41).vignette,0);
+});
+
+test("Fade and Dissolve keep their existing latest-started replacement behavior", () => {
+  const scene=compileCinematicEffects({version:"CinematicEffectsV1",width:720,height:1280,durationMs:100,layers:[],clips:[
+    {id:"fade-old",type:"fade",atMs:0,durationMs:100,from:{opacity:0,color:"#000000"},to:{opacity:1,color:"#000000"}},
+    {id:"fade-new",type:"fade",atMs:50,durationMs:50,from:{opacity:.8,color:"#ffffff"},to:{opacity:1,color:"#ffffff"}},
+    {id:"dissolve-old",type:"dissolve",atMs:0,durationMs:100,from:{progress:0,color:"#000000"},to:{progress:1,color:"#000000"}},
+    {id:"dissolve-new",type:"dissolve",atMs:50,durationMs:50,from:{progress:.8,color:"#ffffff"},to:{progress:1,color:"#ffffff"}}
+  ]});
+  const sample=sampleCinematicEffects(scene,75);
+  assert.equal(sample.fade.opacity,.9);
+  assert.equal(sample.fade.color,"#ffffff");
+  assert.equal(sample.dissolve.progress,.9);
+  assert.equal(sample.dissolve.color,"#ffffff");
+});
+
+test("camera shake translation scales with canvas size while angular movement remains consistent", () => {
+  const project={version:"CinematicEffectsV1",width:720,height:1280,durationMs:1000,layers:[],clips:[
+    {id:"shake",type:"shake",atMs:0,durationMs:1000,from:{amplitude:40,frequencyHz:8,seed:12},to:{amplitude:40,frequencyHz:8,seed:12}}
+  ]};
+  const baseline=sampleCinematicEffects(compileCinematicEffects(project),125).shake;
+  const small=sampleCinematicEffects(compileCinematicEffects({...project,width:360,height:640}),125).shake;
+  const large=sampleCinematicEffects(compileCinematicEffects({...project,width:1080,height:1920}),125).shake;
+  assert.ok(Math.abs(small.x/360-baseline.x/720)<1e-12);
+  assert.ok(Math.abs(small.y/640-baseline.y/1280)<1e-12);
+  assert.ok(Math.abs(large.x/1080-baseline.x/720)<1e-12);
+  assert.ok(Math.abs(large.y/1920-baseline.y/1280)<1e-12);
+  assert.equal(small.rotation,baseline.rotation);
+  assert.equal(large.rotation,baseline.rotation);
 });
 
 test("Scene Clock transport pauses, seeks, replays, and clamps at the scene end", () => {
