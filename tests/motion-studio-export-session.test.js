@@ -115,7 +115,7 @@ test("WebM without finite container duration metadata uses the shared recording 
   });
   const result = await startExport(plan, host);
   assert.equal(result.measuredDurationMs, null);
-  assert.ok(result.warnings.some(value => /shared scene clock/u.test(value)));
+  assert.ok(result.warnings.some(value => /file duration could not be measured/u.test(value)));
 });
 
 test("AbortSignal cancels recording, discards partial output, and releases the export lock", async () => {

@@ -41,6 +41,14 @@ function mimeMatches(actual, expected) {
 function finiteMediaDuration(video) {
   return Number.isFinite(video?.duration) && video.duration > 0 ? video.duration * 1000 : null;
 }
+function seekableMediaDuration(video) {
+  try {
+    const ranges = video?.seekable;
+    if (!ranges?.length) return null;
+    const end = ranges.end(ranges.length - 1);
+    return Number.isFinite(end) && end > 0 ? end * 1000 : null;
+  } catch { return null; }
+}
 function waitForEvent(target, name, { signal, timeoutMs = 5000, errorNames = [] } = {}) {
   return new Promise((resolve, reject) => {
     let timer;
@@ -106,11 +114,11 @@ async function inspectOutput(blob, plan, host, audioContext) {
     if ((video.duration !== Infinity && finiteMediaDuration(video) === null) || video.videoWidth < 1 || video.videoHeight < 1) {
       throw error("INVALID_OUTPUT", "Recorded video has invalid dimensions or duration");
     }
-    const durationMs = finiteMediaDuration(video);
+    const durationMs = finiteMediaDuration(video) ?? seekableMediaDuration(video);
     const warnings = [];
     if (durationMs === null) {
       if (video.duration !== Infinity) throw error("INVALID_OUTPUT", "Recorded video has no usable duration metadata");
-      warnings.push("Container duration metadata is unavailable; recording duration is controlled by the shared scene clock.");
+      warnings.push("Container duration and end seek are unavailable in this browser; file duration could not be measured.");
     } else if (Math.abs(durationMs - plan.durationMs) > Math.max(150, 1000 / plan.fps)) {
       throw error("INVALID_OUTPUT", `Recorded duration ${durationMs.toFixed(0)}ms differs from the ${plan.durationMs}ms target`);
     }
@@ -209,25 +217,30 @@ async function probeOne({ canvas, width, height, fps, audioMode, mimeType, Media
       });
       video.src = url;
       await decoded;
+      const measuredDurationMs = finiteMediaDuration(video) ?? seekableMediaDuration(video);
       if (video.videoWidth !== width || video.videoHeight !== height ||
-          (video.duration !== Infinity && finiteMediaDuration(video) === null)) {
+          (video.duration !== Infinity && measuredDurationMs === null)) {
         const measuredDuration = Number.isFinite(video.duration) ? `${video.duration.toFixed(3)}s` : String(video.duration);
         throw error("INVALID_OUTPUT", `Probe output measured ${video.videoWidth}×${video.videoHeight}, ${measuredDuration}; expected ${width}×${height} and valid duration metadata`);
       }
-      if (Number.isFinite(video.duration) && video.duration > 0.05) {
+      if (measuredDurationMs !== null && Math.abs(measuredDurationMs - durationMs) > Math.max(150, 1000 / fps)) {
+        throw error("INVALID_OUTPUT", `Probe output duration ${measuredDurationMs.toFixed(0)}ms differs from the ${durationMs}ms probe window`);
+      }
+      if (measuredDurationMs !== null && measuredDurationMs > 50) {
         const seek = new Promise((resolve, reject) => {
           const timer = globalThis.setTimeout(() => reject(error("INVALID_OUTPUT", "Probe output cannot seek near its end")), timeoutMs);
           video.addEventListener("seeked", () => { globalThis.clearTimeout(timer); resolve(); }, { once: true });
           video.addEventListener("error", () => { globalThis.clearTimeout(timer); reject(error("INVALID_OUTPUT", "Probe output seek failed")); }, { once: true });
         });
-        video.currentTime = Math.max(0, video.duration - 0.02);
+        video.currentTime = Math.max(0, measuredDurationMs / 1000 - 0.02);
         await seek;
       }
       if (audioMode === "mix") {
         try { await awaitWork(audioContext.decodeAudioData(await blob.arrayBuffer()), timeoutMs, "Probe audio decoder timed out", { code: "INVALID_OUTPUT" }); }
         catch (cause) { throw error("INVALID_OUTPUT", "Probe audio track could not be decoded", cause); }
       }
-      return Object.freeze({ verification: "verified", mimeType: recorder.mimeType || mimeType, width, height, fps, audioMode });
+      return Object.freeze({ verification: "verified", mimeType: recorder.mimeType || mimeType, width, height, fps, audioMode,
+        durationMetadata: measuredDurationMs === null ? "unavailable" : "verified" });
     } finally { URLApi.revokeObjectURL(url); }
   } finally {
     if (interval !== undefined) globalThis.clearInterval(interval);

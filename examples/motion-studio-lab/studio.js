@@ -458,7 +458,7 @@ async function probeIntegratedExport() {
     integratedCapabilities.set(integratedCapabilityKey(), capabilities);
     const verified = capabilities.filter(({ verification }) => verification === "verified");
     integratedStatus.textContent = verified.length
-      ? `تم التحقق فعليًا من ${verified.map(({ mimeType }) => mimeType).join(" و")} على هذه الدقة. الفحص يثبت التشغيل وفك الوسائط للمقطع القصير فقط.`
+      ? `تم التحقق فعليًا من ${verified.map(({ mimeType }) => mimeType).join(" و")} على هذه الدقة. الفحص يثبت التشغيل وفك الوسائط للمقطع القصير فقط.${verified.some(({ durationMetadata }) => durationMetadata === "unavailable") ? " مدة الحاوية والبحث قرب النهاية غير متاحين لهذا المتصفح." : ""}`
       : "لم ينجح تسجيل وفك الملف التجريبي على هذه الدقة والصيغة؛ جرّب دقة أقل أو فيديو فقط.";
     if (!verified.length) {
       integratedError.textContent = capabilities.map(({ mimeType, reason }) => `${mimeType}: ${reason}`).join(" · ") || "لا توجد صيغة معلنة لهذا الجهاز.";
@@ -531,7 +531,7 @@ async function exportIntegratedProject() {
     integratedDownload.textContent = `حفظ ${result.extension.toUpperCase()} على الهاتف`;
     integratedDownload.hidden = false;
     integratedProgress.value = 1;
-    integratedMetadata.textContent = `${result.mimeType} · ${result.width}×${result.height} · ${(result.bytes / 1024 / 1024).toFixed(2)} MiB · ${result.measuredDurationMs === null ? "مدة الملف غير مقاسة" : `${(result.measuredDurationMs / 1000).toFixed(2)} ث`} · ${result.renderedFrames} إطارًا · ${result.droppedFrames} إطارًا فائتًا`;
+    integratedMetadata.textContent = `${result.mimeType} · ${result.width}×${result.height} · ${(result.bytes / 1024 / 1024).toFixed(2)} MiB · ${result.measuredDurationMs === null ? "مدة الملف غير مقاسة" : `${(result.measuredDurationMs / 1000).toFixed(2)} ث`} · ${result.renderedFrames} إطارًا · ${result.droppedFrames} إطارًا فائتًا${result.warnings.some(value => /file duration could not be measured/u.test(value)) ? " · تعذر قياس مدة الحاوية أو البحث قرب النهاية في هذا المتصفح." : ""}`;
     integratedStatus.textContent = "اكتمل التصدير المتكامل؛ عاين الملف ثم احفظه على الهاتف.";
   } catch (error) {
     if (controller.signal.aborted || error?.name === "AbortError") integratedStatus.textContent = "أُلغي التصدير ونُظّفت موارده.";

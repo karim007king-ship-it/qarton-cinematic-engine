@@ -464,7 +464,11 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             assert "تم التحقق فعليًا" in probe_status, f"exact-profile capability probe failed: {probe_status}; {probe_error}"
             assert not sync_page.locator("#integratedExportButton").is_disabled()
             sync_page.locator("#integratedExportButton").click()
-            sync_page.get_by_text("اكتمل التصدير المتكامل؛ عاين الملف ثم احفظه على الهاتف.", exact=True).wait_for(timeout=25000)
+            sync_page.wait_for_function("""() => document.querySelector('#integratedStatus').textContent.includes('اكتمل التصدير المتكامل') ||
+              !document.querySelector('#integratedError').hidden""", timeout=30000)
+            integrated_status = sync_page.locator("#integratedStatus").inner_text()
+            integrated_error = sync_page.locator("#integratedError").inner_text()
+            assert "اكتمل التصدير المتكامل" in integrated_status, f"integrated export failed: {integrated_status}; {integrated_error}; page errors: {errors}"
             with sync_page.expect_download() as sync_download_info:
                 sync_page.locator("#integratedDownload").click()
             sync_output = Path(tmp) / "integrated-av-sync.webm"
