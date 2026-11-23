@@ -5,7 +5,7 @@ import { makeProject, makeProjectFile, parseProjectFile } from "../examples/moti
 import { createCinematicAudioPlayer } from "../src/audio/cinematic-audio-core.js";
 import {
   AUDIO_MAX_FILE_BYTES, addAudioClip, compileAudioTracks, deleteAudioClip, editAudioClip,
-  makeAudioTracks, setAudioTrackVolume, setAudioViseme, validateAudioFile
+  makeAudioAssetMetadata, makeAudioTracks, setAudioTrackVolume, setAudioViseme, validateAudioFile
 } from "../examples/motion-studio-lab/studio-audio-model.js";
 
 const audioAsset = { id: "asset-voice-1", name: "dialogue.wav", type: "audio/wav", size: 2048 };
@@ -88,6 +88,8 @@ test("audio file import validates MIME, known extensions, nonzero size and Andro
   assert.throws(() => validateAudioFile({ name: "voice.exe", type: "application/octet-stream", size: 256 }), /صيغة الصوت/);
   assert.throws(() => validateAudioFile({ name: "voice.wav", type: "audio/wav", size: AUDIO_MAX_FILE_BYTES + 1 }), /20 MiB/);
   assert.throws(() => validateAudioFile({ name: "empty.wav", type: "audio/wav", size: 0 }), /20 MiB/);
+  assert.deepEqual(makeAudioAssetMetadata("asset-1", { name: "voice.wav", type: "audio/wav", size: 100 }),
+    { id: "asset-1", name: "voice.wav", type: "audio/wav", size: 100 });
 });
 
 test("JSON stores only audio metadata and tracks and old L4/L5 envelopes default to empty audio", () => {

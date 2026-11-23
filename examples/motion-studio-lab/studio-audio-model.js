@@ -83,6 +83,12 @@ export function validateAudioFile(file) {
   return { mime: AUDIO_FORMATS.includes(mime) ? mime : byExtension[extension], name: file.name.slice(0, 180), size: file.size };
 }
 
+export function makeAudioAssetMetadata(id, file) {
+  if (typeof id !== "string" || !id.trim() || id.length > 128) throw new TypeError("معرّف ملف الصوت غير صالح.");
+  const { mime, name, size } = validateAudioFile(file);
+  return { id, name, type: mime, size };
+}
+
 export async function readAudioDuration(file, { AudioClass = globalThis.Audio, timeoutMs = 10000 } = {}) {
   if (typeof AudioClass !== "function") throw new Error("لا يتوفر قارئ بيانات الصوت في هذا المتصفح.");
   const url = URL.createObjectURL(file);

@@ -10,7 +10,7 @@ import {
 import { createStudioTimeline } from "./studio-timeline.js?v=l6b-cleanup-01";
 import { compileCharacterTrack, drawCharacter, makeCharacterTrack } from "./studio-character-track.js?v=l7b-character-01";
 import { createCharacterTimeline } from "./studio-character-timeline.js?v=l7b-character-01";
-import { compileAudioTracks, makeAudioTracks, addAudioClip, editAudioClip, deleteAudioClip, setAudioTrackVolume, setAudioViseme, validateAudioFile, readAudioDuration } from "./studio-audio-model.js?v=l8b-audio-timeline-01";
+import { compileAudioTracks, makeAudioTracks, addAudioClip, editAudioClip, deleteAudioClip, setAudioTrackVolume, setAudioViseme, makeAudioAssetMetadata, validateAudioFile, readAudioDuration } from "./studio-audio-model.js?v=l8b-audio-timeline-01";
 import { createStudioAudioTimeline } from "./studio-audio-timeline.js?v=l8b-audio-timeline-01";
 import { createCinematicAudioPlayer } from "../../src/audio/cinematic-audio-core.js";
 
@@ -716,7 +716,7 @@ $("audioInput").addEventListener("change", async () => {
     const previous = audioFiles.get(id);
     if (previous?.url) URL.revokeObjectURL(previous.url);
     audioFiles.set(id, { file, url, durationMs });
-    if (!known) audioAssets = [...audioAssets, { id, ...metadata }];
+    if (!known) audioAssets = [...audioAssets, makeAudioAssetMetadata(id, file)];
     activeAudioAssetId = id;
     rebuildAudioPlayer({ resume: isPlaying });
     $("audioFileName").textContent = `${metadata.name} · ${(metadata.size / 1024 / 1024).toFixed(2)} MiB · ${(durationMs / 1000).toFixed(2)} ث`;
