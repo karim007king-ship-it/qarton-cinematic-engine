@@ -14,6 +14,12 @@ An Android-first, image-only preview editor for the S2-B `StudioProjectV1` core.
 
 The sample image `preview-test.png` is used only by automated browser checks. Face animation and lip sync are outside this lab.
 
+## Editor module boundaries
+
+- `studio.js` wires project/image state, Canvas preview, playback, and the existing L5 export flow.
+- `studio-timeline.js` owns Timeline rendering, selection, touch/pointer lifecycle, keyboard focus restoration, and keyframe edits through the L6-A APIs. It receives the active project, compiled sample, seek, and commit operations through callbacks; it does not implement camera interpolation or export logic.
+- `studio-model.js` validates project/JSON updates transactionally; `studio-export-core.js` retains the existing L5 export scheduling and recorder helpers.
+
 ## Project and preview dimensions
 
 - The aspect menu offers Original, 1:1, 9:16, 16:9, 4:5, 4:3, and 3:4. Original uses the selected image's aspect ratio; its project viewport is normalized to a maximum long edge of 1,920 px. The other presets use 1,080–1,920 px project dimensions.

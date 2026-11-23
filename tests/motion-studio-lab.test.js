@@ -7,7 +7,6 @@ import {
   MAX_DURATION_MS, MIN_DURATION_MS, createRequestToken, makeProject, makeProjectFile, parseProjectFile,
   playbackTimeMs, prepareProjectUpdate, setCameraEndpoints, VIEWPORT
 } from "../examples/motion-studio-lab/studio-model.js";
-import { addCameraKeyframe, moveCameraKeyframe, updateCameraKeyframe, deleteCameraKeyframe } from "../packages/motion-studio/keyframes.js";
 import { decodeImageBitmap, IMAGE_DECODE_WIDTHS, MAX_PREVIEW_PIXELS } from "../examples/motion-studio-lab/studio-image.js";
 import { ASPECT_PRESETS, imageRect, inferAspectPreset, projectSizeForPreset, safePreviewSize } from "../examples/motion-studio-lab/studio-dimensions.js";
 
@@ -240,27 +239,12 @@ test("legacy start/end controls preserve intermediate imported keyframes and rej
   }), /Keyframe وسيطًا سيصل إلى نقطة النهاية/);
 });
 
-test("timeline edits add, move, update and delete one key without mutating the source", () => {
-  const original = makeProject({ durationMs: 12000, startZoom: 1, endZoom: 1.5, startX: 0, endX: 90, startY: 0, endY: -60 });
-  const withMiddle = addCameraKeyframe(original, { atMs: 4000, value: { x: 20, y: 8, zoom: 1.2, rotation: 4 } });
-  const withThree = addCameraKeyframe(withMiddle, { atMs: 8000, value: { x: 55, y: -20, zoom: 1.35, rotation: -8 } });
-  const moved = moveCameraKeyframe(withThree, 4000, 5000);
-  const edited = updateCameraKeyframe(moved, 5000, { x: 32, zoom: 1.28, rotation: 12 });
-  const deleted = deleteCameraKeyframe(edited, 8000);
-  assert.deepEqual(original.camera.map(({ atMs }) => atMs), [0, 12000]);
-  assert.deepEqual(withThree.camera.map(({ atMs }) => atMs), [0, 4000, 8000, 12000]);
-  assert.deepEqual(edited.camera.map(({ atMs }) => atMs), [0, 5000, 8000, 12000]);
-  assert.deepEqual(edited.camera[1].value, { x: 32, y: 8, zoom: 1.28, rotation: 12 });
-  assert.deepEqual(deleted.camera.map(({ atMs }) => atMs), [0, 5000, 12000]);
-  assert.throws(() => moveCameraKeyframe(edited, 5000, 8000), /already exists/);
-  assert.deepEqual(edited.camera.map(({ atMs }) => atMs), [0, 5000, 8000, 12000], "failed collision leaves the project intact");
-});
-
 test("project control and duration updates preserve multi-key tracks and reject lossy truncation", () => {
   const source = makeProject({ durationMs: 12000, startZoom: 1, endZoom: 1.5, startX: 0, endX: 90, startY: 0, endY: -60 });
-  const project = addCameraKeyframe(addCameraKeyframe(source, {
-    atMs: 4000, value: { x: 20, y: 8, zoom: 1.2, rotation: 4 }
-  }), { atMs: 8000, value: { x: 55, y: -20, zoom: 1.35, rotation: -8 } });
+  const project = structuredClone(source);
+  project.camera.splice(1, 0,
+    { atMs: 4000, value: { x: 20, y: 8, zoom: 1.2, rotation: 4 } },
+    { atMs: 8000, value: { x: 55, y: -20, zoom: 1.35, rotation: -8 } });
   const prepare = (candidate) => structuredClone(candidate);
   const changed = prepareProjectUpdate(project, {
     durationMs: 12000, viewport: { ...project.viewport, width: 1000 },
@@ -286,6 +270,7 @@ test("project control and duration updates preserve multi-key tracks and reject 
 
 test("browser module uses the engine sampling API and includes deterministic seek and replay paths", async () => {
   const source = await readFile(resolve(root, "examples/motion-studio-lab/studio.js"), "utf8");
+  const timeline = await readFile(resolve(root, "examples/motion-studio-lab/studio-timeline.js"), "utf8");
   assert.match(source, /import \{[^}]*compileProject[^}]*drawFrame[^}]*sampleFrame[^}]*\} from "@qarton\/cinematic-engine\/motion-studio"/);
   assert.match(source, /sampleFrame\(compiled, currentMs\)/);
   assert.match(source, /seek\.addEventListener\("input"/);
@@ -298,12 +283,16 @@ test("browser module uses the engine sampling API and includes deterministic see
   assert.doesNotMatch(source, /project\.layers\[0\]\.assetId\s*=\s*["']photo-1/);
   assert.match(source, /bitmap\.close/);
   assert.doesNotMatch(source, /createCameraTrack|sampleCameraTrack|createTimeline/);
+  assert.match(source, /createStudioTimeline/);
+  assert.doesNotMatch(source, /pointerdown|pointermove|keyframeDrag/u, "timeline pointer state is isolated in its module");
   for (const api of ["addCameraKeyframe", "updateCameraKeyframe", "moveCameraKeyframe", "deleteCameraKeyframe"]) {
-    assert.match(source, new RegExp(`${api}\\(`), `timeline must use L6-A ${api}`);
+    assert.match(timeline, new RegExp(`${api}\\(`), `timeline must use L6-A ${api}`);
   }
-  assert.match(source, /pointerdown/);
-  assert.match(source, /pointermove/);
-  assert.match(source, /setPointerCapture/);
+  assert.match(timeline, /pointercancel/);
+  assert.match(timeline, /lostpointercapture/);
+  assert.match(timeline, /setPointerCapture/);
+  assert.match(timeline, /markers\.querySelector\([\s\S]*?\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(timeline, /if \(busy\) \{\s*drag = null;/);
 });
 
 test("UI prepares a candidate project before committing the active project and compiled frame", async () => {

@@ -73,6 +73,57 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         page.locator("#deleteKeyframeButton").click()
         assert page.locator(".keyframe-marker").count() == 2
 
+        page.locator("#seek").evaluate("""(el, value) => {
+          el.value = String(value); el.dispatchEvent(new Event('input', {bubbles: true}));
+        }""", 4000)
+        page.locator("#addKeyframeButton").click()
+        lane = page.locator("#timelineLane")
+        def drag_key(source_ms, target_ms, pointer_id, end_event=None, repeat=False):
+            box = lane.bounding_box()
+            page.locator(f'.keyframe-marker[data-key-time="{source_ms}"]').dispatch_event("pointerdown", {
+                "pointerId": pointer_id, "pointerType": "touch", "isPrimary": True, "button": 0,
+                "clientX": box["x"] + box["width"] * source_ms / 12000,
+                "clientY": box["y"] + box["height"] / 2
+            })
+            if source_ms != target_ms:
+                move_event = {
+                    "pointerId": pointer_id, "pointerType": "touch", "isPrimary": True, "button": 0,
+                    "clientX": box["x"] + box["width"] * target_ms / 12000,
+                    "clientY": box["y"] + box["height"] / 2
+                }
+                lane.dispatch_event("pointermove", move_event)
+                if repeat:
+                    lane.dispatch_event("pointermove", move_event)
+            if end_event:
+                lane.dispatch_event(end_event, {"pointerId": pointer_id, "pointerType": "touch", "isPrimary": True, "button": 0})
+
+        drag_key(4000, 5000, 92, "pointercancel")
+        assert page.locator('.keyframe-marker[data-key-time="5000"]').count() == 1
+        assert not page.locator("#timelineLane").get_attribute("data-dragging")
+        lane.dispatch_event("pointermove", {"pointerId": 92, "pointerType": "touch", "isPrimary": True, "button": 0, "clientX": lane.bounding_box()["x"] + lane.bounding_box()["width"] * 9000 / 12000, "clientY": lane.bounding_box()["y"] + 20})
+        assert page.locator('.keyframe-marker[data-key-time="5000"]').count() == 1, "pointercancel leaves no stale drag"
+
+        drag_key(5000, 6000, 93, "lostpointercapture")
+        assert page.locator('.keyframe-marker[data-key-time="6000"]').count() == 1
+        assert not page.locator("#timelineLane").get_attribute("data-dragging")
+        drag_key(6000, 12000, 94, "pointerup")
+        assert page.locator('.keyframe-marker[data-key-time="6000"]').count() == 1, "colliding target leaves source key intact"
+        drag_key(6000, 7000, 95, "pointerup", repeat=True)
+        assert [int(value) for value in page.locator(".keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")] == [0, 7000, 12000]
+        assert page.locator('.keyframe-marker[data-key-time="7000"]').evaluate("el => document.activeElement === el"), "selection focus survives marker rerender"
+
+        page.locator("#exportDuration").select_option("3000")
+        page.locator("#exportQuality").select_option("economy")
+        drag_key(7000, 8000, 96)
+        assert page.locator("#timelineLane").get_attribute("data-dragging") == "true"
+        page.locator("#exportButton").click()
+        page.wait_for_function("document.querySelector('#exportButton').disabled")
+        assert not page.locator("#timelineLane").get_attribute("data-dragging"), "export lock cancels the active drag state"
+        lane.dispatch_event("pointermove", {"pointerId": 96, "pointerType": "touch", "isPrimary": True, "button": 0, "clientX": lane.bounding_box()["x"] + lane.bounding_box()["width"] * 9000 / 12000, "clientY": lane.bounding_box()["y"] + 20})
+        assert page.locator('.keyframe-marker[data-key-time="8000"]').count() == 1, "export lock rejects trailing pointer moves"
+        page.locator("#cancelExportButton").click()
+        page.get_by_text("أُلغي التسجيل ونُظّفت موارده.", exact=True).wait_for(timeout=10000)
+
         page.locator("#aspectPreset").select_option("landscape")
         page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
         page.locator("#fitMode").select_option("fill")
