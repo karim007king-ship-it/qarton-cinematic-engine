@@ -4,7 +4,9 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 from os import environ
 from pathlib import Path
+import struct
 from threading import Thread
+import zlib
 
 from playwright.sync_api import sync_playwright
 
@@ -162,14 +164,31 @@ def exercise(context, url):
 
     page.add_init_script("""(() => {
         const nativeCreateImageBitmap = window.createImageBitmap.bind(window);
+        window.labBitmapCalls = [];
         window.createImageBitmap = async (source, ...options) => {
             if (source?.name === 'preview-test-slow.png')
                 await new Promise(resolve => setTimeout(resolve, 700));
-            return nativeCreateImageBitmap(source, ...options);
+            const bitmap = await nativeCreateImageBitmap(source, ...options);
+            window.labBitmapCalls.push({name: source?.name, options: options[0] || {}, width: bitmap.width, height: bitmap.height});
+            return bitmap;
         };
     })();""")
     page.goto(url + "examples/motion-studio-lab/")
     image_input = page.locator("#imageInput")
+    image_input.set_input_files(str(site / "examples/motion-studio-lab/preview-large.png"))
+    page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+    assert "preview-large.png" in page.locator("#imageName").inner_text()
+    large_decode = page.evaluate("labBitmapCalls.find(call => call.name === 'preview-large.png')")
+    assert large_decode and large_decode["options"].get("resizeWidth") == 1280
+    assert large_decode["width"] * large_decode["height"] <= 2_621_440
+    assert large_decode["width"] <= 2048 and large_decode["height"] <= 2048
+
+    image_input.set_input_files(str(site / "examples/motion-studio-lab/preview-test.png"))
+    page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+    assert "preview-test.png" in page.locator("#imageName").inner_text()
+    normal_decode = page.evaluate("labBitmapCalls.find(call => call.name === 'preview-test.png')")
+    assert normal_decode and normal_decode["width"] <= 2048 and normal_decode["height"] <= 2048
+
     image_input.set_input_files({
         "name": "preview-test-slow.png", "mimeType": "image/png",
         "buffer": (site / "examples/motion-studio-lab/preview-test.png").read_bytes()
@@ -242,6 +261,20 @@ def exercise(context, url):
 if __name__ == "__main__":
     site = Path("_site").resolve()
     assert (site / "index.html").is_file()
+    def png_chunk(kind, payload):
+        return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", zlib.crc32(kind + payload) & 0xffffffff)
+
+    width, height = 6000, 4000
+    compressor = zlib.compressobj(1)
+    row = b"\x00" + b"\x30\x90\xd0\xff" * width
+    compressed_rows = bytearray()
+    for _ in range(height):
+        compressed_rows.extend(compressor.compress(row))
+    compressed_rows.extend(compressor.flush())
+    large_png = (b"\x89PNG\r\n\x1a\n" +
+                 png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)) +
+                 png_chunk(b"IDAT", bytes(compressed_rows)) + png_chunk(b"IEND", b""))
+    (site / "examples/motion-studio-lab/preview-large.png").write_bytes(large_png)
     handler = partial(SimpleHTTPRequestHandler, directory=site.parent)
     with ThreadingHTTPServer(("127.0.0.1", 0), handler) as server, sync_playwright() as pw:
         Thread(target=server.serve_forever, daemon=True).start()

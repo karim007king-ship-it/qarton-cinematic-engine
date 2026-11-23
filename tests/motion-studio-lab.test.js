@@ -7,6 +7,7 @@ import {
   MAX_DURATION_MS, MIN_DURATION_MS, createRequestToken, makeProject, makeProjectFile, parseProjectFile,
   playbackTimeMs, VIEWPORT
 } from "../examples/motion-studio-lab/studio-model.js";
+import { decodeImageBitmap, IMAGE_DECODE_WIDTHS, MAX_PREVIEW_PIXELS } from "../examples/motion-studio-lab/studio-image.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -47,6 +48,75 @@ test("new image selection invalidates an older asynchronous decode result", () =
   const fastImageRequest = request.begin();
   assert.equal(request.isCurrent(fastImageRequest), true);
   assert.equal(request.isCurrent(slowImageRequest), false);
+});
+
+test("large images request a bounded decode and progressively reduce unusual dimensions", async () => {
+  const file = { name: "camera-photo.jpg", type: "image/jpeg", size: 4_000_000 };
+  const original = { ...file };
+  const calls = [];
+  const closed = [];
+  const bitmap = await decodeImageBitmap(file, {
+    createBitmap: async (source, options) => {
+      calls.push(options.resizeWidth);
+      const scale = Math.min(1, options.resizeWidth / 1000);
+      const result = { width: Math.round(1000 * scale), height: Math.round(6000 * scale), close() { closed.push(this); } };
+      return result;
+    }
+  });
+  assert.deepEqual(calls, IMAGE_DECODE_WIDTHS);
+  assert.ok(bitmap.width * bitmap.height <= MAX_PREVIEW_PIXELS);
+  assert.ok(bitmap.width <= 2048 && bitmap.height <= 2048);
+  assert.equal(closed.length, calls.length - 1);
+  assert.deepEqual(file, original, "the selected source file metadata remains untouched");
+  bitmap.close();
+});
+
+test("ordinary images are accepted on the first bounded decode", async () => {
+  const file = { name: "small.png", type: "image/png", size: 1200 };
+  const calls = [];
+  const bitmap = await decodeImageBitmap(file, {
+    createBitmap: async (_source, options) => {
+      calls.push(options.resizeWidth);
+      return { width: 96, height: 96, close() {} };
+    }
+  });
+  assert.deepEqual(calls, [IMAGE_DECODE_WIDTHS[0]]);
+  assert.deepEqual([bitmap.width, bitmap.height], [96, 96]);
+});
+
+test("decoding failures and ignored resize requests produce a clear safe error", async () => {
+  const file = { name: "large.png", type: "image/png", size: 9000 };
+  await assert.rejects(decodeImageBitmap(file, { createBitmap: async () => { throw new Error("decoder failed"); } }), /تعذر فك ترميز الصورة أو تصغيرها/);
+  let attempts = 0;
+  await assert.rejects(decodeImageBitmap(file, {
+    createBitmap: async () => {
+      attempts++;
+      return { width: 6000, height: 4000, close() {} };
+    }
+  }), /تعذر فك ترميز الصورة أو تصغيرها/);
+  assert.equal(attempts, 1, "a decoder that ignored resize is not asked to allocate another full bitmap");
+});
+
+test("a slow older image selection is aborted and its decoded bitmap is closed", async () => {
+  const request = createRequestToken();
+  let releaseSlow;
+  let staleClosed = false;
+  const slow = new Promise((resolve) => { releaseSlow = resolve; });
+  const oldToken = request.begin();
+  const oldLoad = decodeImageBitmap({ name: "slow.jpg", type: "image/jpeg", size: 2000 }, {
+    isCurrent: () => request.isCurrent(oldToken),
+    createBitmap: () => slow
+  });
+  const newToken = request.begin();
+  const current = await decodeImageBitmap({ name: "fast.png", type: "image/png", size: 1000 }, {
+    isCurrent: () => request.isCurrent(newToken),
+    createBitmap: async () => ({ width: 96, height: 96, close() {} })
+  });
+  releaseSlow({ width: 1280, height: 853, close() { staleClosed = true; } });
+  await assert.rejects(oldLoad, { name: "AbortError" });
+  assert.equal(staleClosed, true);
+  assert.deepEqual([current.width, current.height], [96, 96]);
+  assert.equal(request.isCurrent(newToken), true);
 });
 
 test("opening a project invalidates any pending image decode", () => {
@@ -103,7 +173,7 @@ test("browser module uses the engine sampling API and includes deterministic see
   assert.match(source, /seek\.addEventListener\("input"/);
   assert.match(source, /function replay\(\)/);
   assert.match(source, /renderAt\(0\);\s*play\(\);/);
-  assert.match(source, /createImageBitmap\(file\)/);
+  assert.match(source, /decodeImageBitmap\(file/);
   assert.match(source, /imageRequest\.isCurrent\(requestToken\)/);
   assert.match(source, /projectInput\.addEventListener\("change"[\s\S]*?imageRequest\.begin\(\)/);
   assert.match(source, /get: \(assetId\) => project\.layers\.some\(\(layer\) => layer\.assetId === assetId\) \? imageSource : null/);
