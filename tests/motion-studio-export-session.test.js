@@ -23,14 +23,14 @@ class FakeStream {
   getAudioTracks() { return this.tracks.filter(track => track.kind === "audio"); }
 }
 class FakeCanvas {
-  constructor() { this.width = 0; this.height = 0; this.track = new FakeTrack("video"); this.context = { canvas: this, fillRect() {} }; }
+  constructor() { this.width = 0; this.height = 0; this.paintCount = 0; this.track = new FakeTrack("video"); this.track.owner = this; this.context = { canvas: this, fillRect: () => { this.paintCount++; } }; }
   getContext() { return this.context; }
   captureStream(fps) { this.captureFps = fps; return new FakeStream([this.track]); }
 }
 class FakeRecorder extends EventTarget {
   static isTypeSupported(type) { return type === "video/webm;codecs=vp8,opus"; }
   constructor(stream, options) { super(); this.stream = stream; this.mimeType = options.mimeType; this.state = "inactive"; }
-  start() { this.state = "recording"; queueMicrotask(() => this.dispatchEvent(new Event("start"))); }
+  start() { this.state = "recording"; FakeRecorder.paintCountAtStart = this.stream.getVideoTracks()[0]?.owner?.paintCount ?? 0; queueMicrotask(() => this.dispatchEvent(new Event("start"))); }
   stop() {
     if (this.state !== "recording") return;
     this.state = "inactive";
@@ -139,8 +139,10 @@ test("only one export runs per host and recorder constructor failures surface ty
 
 test("capability probe validates the exact profile and records failure instead of claiming unsupported verification", async () => {
   await assert.rejects(probeExport({ width: 0, height: 640 }), RangeError);
+  const canvas = new FakeCanvas();
   const result = await probeExport({ width: 360, height: 640, fps: 24, audioMode: "none", durationMs: 200,
-    MediaRecorderClass: FakeRecorder, formats: ["webm"], createCanvas: () => new FakeCanvas(), document: {} });
+    MediaRecorderClass: FakeRecorder, formats: ["webm"], createCanvas: () => canvas, document: {} });
+  assert.ok(FakeRecorder.paintCountAtStart > 0, "the probe paints a frame before recorder start");
   assert.ok(result.every(capability => capability.verification === "failed" || capability.verification === "verified"));
   assert.equal(result.length, 1, "unverified advertised formats continue through fallback candidates, then report the result");
   assert.equal(result[0].verification, "failed", "the fake probe has no output decoder, so it cannot claim verified support");

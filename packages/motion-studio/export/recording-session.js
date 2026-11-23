@@ -144,6 +144,9 @@ async function probeOne({ canvas, width, height, fps, audioMode, mimeType, Media
     const context = canvas.getContext("2d");
     if (!context) throw error("CAPTURE_FAILED", "Probe Canvas has no 2D context");
     videoStream = canvas.captureStream(fps);
+    context.fillStyle = "#213";
+    context.fillRect(0, 0, width, height);
+    try { videoStream.getVideoTracks()[0]?.requestFrame?.(); } catch {}
     let audioStream = null;
     if (audioMode === "mix") {
       if (typeof AudioContextClass !== "function") throw error("UNSUPPORTED_FORMAT", "Web Audio is unavailable");
