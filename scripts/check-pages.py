@@ -454,17 +454,22 @@ def exercise(context, url):
     assert page.locator('.character-keyframe-marker[data-key-time="6960"]').count() == 1
 
     character_box = character_lane.bounding_box()
-    page.locator('.character-keyframe-marker[data-key-time="6960"]').dispatch_event("pointerdown", {
-        "pointerId": 69, "pointerType": "touch", "isPrimary": True, "button": 0,
-        "clientX": character_box["x"] + character_box["width"] * .58,
-        "clientY": character_box["y"] + character_box["height"] / 2
-    })
-    character_lane.dispatch_event("pointermove", {
-        "pointerId": 69, "pointerType": "touch", "isPrimary": True, "button": 0,
-        "clientX": character_box["x"] + character_box["width"] * .67,
-        "clientY": character_box["y"] + character_box["height"] / 2
-    })
-    character_lane.dispatch_event("lostpointercapture", {"pointerId": 69, "pointerType": "touch", "isPrimary": True, "button": 0})
+    page.evaluate("""() => {
+        window.lostCapturePointerId = null;
+        document.querySelector('#characterTimelineLane').addEventListener('pointerdown', event => {
+            window.lostCapturePointerId = event.pointerId;
+        }, {capture: true, once: true});
+    }""")
+    page.mouse.move(character_box["x"] + character_box["width"] * .58, character_box["y"] + character_box["height"] / 2)
+    page.mouse.down()
+    lost_pointer_id = page.evaluate("window.lostCapturePointerId")
+    assert lost_pointer_id is not None
+    assert character_lane.evaluate("(el, id) => el.hasPointerCapture(id)", lost_pointer_id)
+    page.mouse.move(character_box["x"] + character_box["width"] * .67, character_box["y"] + character_box["height"] / 2)
+    character_lane.evaluate("(el, id) => el.releasePointerCapture(id)", lost_pointer_id)
+    assert page.locator('.character-keyframe-marker[data-key-time="8040"]').count() == 1
+    assert character_lane.get_attribute("data-dragging") is None
+    page.mouse.up()
     assert page.locator('.character-keyframe-marker[data-key-time="8040"]').count() == 1
 
     character_box = character_lane.bounding_box()
