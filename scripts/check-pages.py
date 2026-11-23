@@ -457,8 +457,8 @@ def exercise(context, url):
     assert page.locator("#characterTimelineLane").get_attribute("data-scrubbing") is None
     page.mouse.up()
 
-    # A drag into an occupied timestamp fails atomically, while a native
-    # lostpointercapture after a valid move keeps that last valid position.
+    # A drag into an occupied timestamp fails atomically, while a
+    # lostpointercapture event after a valid move keeps that last valid position.
     character_lane = page.locator("#characterTimelineLane")
     character_box = character_lane.bounding_box()
     key_box = page.locator('.character-keyframe-marker[data-key-time="6960"]').bounding_box()
@@ -504,17 +504,13 @@ def exercise(context, url):
     assert page.locator('.character-keyframe-marker[data-key-time="8040"]').count() == 1
 
     character_box = character_lane.bounding_box()
-    page.locator('.character-keyframe-marker[data-key-time="8040"]').dispatch_event("pointerdown", {
-        "pointerId": 70, "pointerType": "touch", "isPrimary": True, "button": 0,
-        "clientX": character_box["x"] + character_box["width"] * .67,
-        "clientY": character_box["y"] + character_box["height"] / 2
-    })
-    character_lane.dispatch_event("pointermove", {
-        "pointerId": 70, "pointerType": "touch", "isPrimary": True, "button": 0,
-        "clientX": character_box["x"] + character_box["width"] * .625,
-        "clientY": character_box["y"] + character_box["height"] / 2
-    })
-    character_lane.dispatch_event("pointerup", {"pointerId": 70, "pointerType": "touch", "isPrimary": True, "button": 0})
+    key_box = page.locator('.character-keyframe-marker[data-key-time="8040"]').bounding_box()
+    page.mouse.move(key_box["x"] + key_box["width"] / 2, key_box["y"] + key_box["height"] / 2)
+    page.mouse.down()
+    page.wait_for_function("document.querySelector('#characterTimelineLane').hasPointerCapture(window.lastCharacterPointerId)")
+    page.mouse.move(character_box["x"] + character_box["width"] * (7500 / 12000),
+                    character_box["y"] + character_box["height"] / 2)
+    page.mouse.up()
     assert page.locator('.character-keyframe-marker[data-key-time="7500"]').count() == 1
 
     # Use a real browser pointer to begin a lane scrub, then acquire the export
