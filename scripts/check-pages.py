@@ -4,6 +4,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 from os import environ
 from pathlib import Path
+import re
 import struct
 from threading import Thread
 import zlib
@@ -182,12 +183,34 @@ def exercise(context, url):
     assert large_decode and large_decode["options"].get("resizeWidth") == 1280
     assert large_decode["width"] * large_decode["height"] <= 2_621_440
     assert large_decode["width"] <= 2048 and large_decode["height"] <= 2048
+    native_project = re.search(r"(\d+) × (\d+) · معاينة (\d+) × (\d+)", page.locator("#viewportValue").evaluate("el => el.textContent"))
+    assert native_project
+    assert abs(int(native_project.group(1)) / int(native_project.group(2)) - large_decode["width"] / large_decode["height"]) < 0.003
 
     image_input.set_input_files(str(site / "examples/motion-studio-lab/preview-test.png"))
     page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
     assert "preview-test.png" in page.locator("#imageName").inner_text()
     normal_decode = page.evaluate("labBitmapCalls.find(call => call.name === 'preview-test.png')")
     assert normal_decode and normal_decode["width"] <= 2048 and normal_decode["height"] <= 2048
+    square_project = re.search(r"(\d+) × (\d+) · معاينة (\d+) × (\d+)", page.locator("#viewportValue").evaluate("el => el.textContent"))
+    assert square_project and square_project.group(1) == square_project.group(2)
+
+    assert page.locator("#aspectPreset").input_value() == "original"
+    assert page.locator("#fitMode").input_value() == "fit"
+    page.locator("#aspectPreset").select_option("portrait")
+    page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+    preview_dimension = page.locator("#stage").evaluate("el => [el.width, el.height]")
+    assert preview_dimension == [720, 1280]
+    assert "1080 × 1920" in page.locator("#viewportValue").inner_text()
+    fit_frame = page.locator("#stage").evaluate("el => el.toDataURL()")
+    page.locator("#fitMode").select_option("fill")
+    page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+    fill_frame = page.locator("#stage").evaluate("el => el.toDataURL()")
+    assert fit_frame != fill_frame
+
+    page.locator("#endZoom").evaluate("el => { el.value = '1.4'; el.dispatchEvent(new Event('input', {bubbles:true})); }")
+    page.locator("#endX").evaluate("el => { el.value = '42'; el.dispatchEvent(new Event('input', {bubbles:true})); }")
+    page.locator("#endY").evaluate("el => { el.value = '-21'; el.dispatchEvent(new Event('input', {bubbles:true})); }")
 
     image_input.set_input_files({
         "name": "preview-test-slow.png", "mimeType": "image/png",
@@ -213,8 +236,18 @@ def exercise(context, url):
     page.wait_for_function("Number(document.querySelector('#seek').value) > 6200")
     page.locator("#playPauseButton").click()
     paused_value = studio_seek.input_value()
+    page.locator("#aspectPreset").select_option("landscape")
+    page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+    assert studio_seek.input_value() == paused_value
+    assert page.locator("#playPauseButton").inner_text() == "متابعة"
+    assert page.locator("#stage").evaluate("el => [el.width, el.height]") == [1280, 720]
     page.wait_for_timeout(140)
     assert studio_seek.input_value() == paused_value
+    page.locator("#aspectPreset").select_option("post")
+    page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+    assert studio_seek.input_value() == paused_value
+    assert page.locator("#playPauseButton").inner_text() == "متابعة"
+    assert page.locator("#stage").evaluate("el => [el.width, el.height]") == [858, 1073]
     page.locator("#replayButton").click()
     page.wait_for_function("Number(document.querySelector('#seek').value) > 0")
     page.wait_for_function("Number(document.querySelector('#seek').value) < 1000")
@@ -228,12 +261,19 @@ def exercise(context, url):
     assert "preview-test.png" in project_json
     assert "<svg" not in project_json
     project_data = json.loads(project_json)
+    assert project_data["settings"] == {"aspectPreset": "post", "fitMode": "fill"}
+    assert project_data["project"]["viewport"]["width"] == 1080
+    assert project_data["project"]["viewport"]["height"] == 1350
+    assert project_data["project"]["camera"][1]["value"]["x"] == 42
+    assert project_data["project"]["camera"][1]["value"]["y"] == -21
     project_data["project"]["layers"][0]["assetId"] = "imported-portrait-42"
     project_path.write_text(json.dumps(project_data))
     page.locator("#loadProjectButton").click()
     page.locator("#projectInput").set_input_files(str(project_path))
     page.get_by_text("فُتح المشروع؛ اختر الصورة المرتبطة به", exact=True).wait_for()
     assert "أعد اختيار الصورة" in page.locator("#imageName").inner_text()
+    assert page.locator("#aspectPreset").input_value() == "post"
+    assert page.locator("#fitMode").input_value() == "fill"
     page.locator("#imageInput").set_input_files(str(site / "examples/motion-studio-lab/preview-test.png"))
     page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
     with page.expect_download() as rebound_download_info:
@@ -242,6 +282,18 @@ def exercise(context, url):
     rebound_download_info.value.save_as(rebound_path)
     rebound_data = json.loads(rebound_path.read_text())
     assert rebound_data["project"]["layers"][0]["assetId"] == "imported-portrait-42"
+
+    legacy_data = json.loads(project_json)
+    legacy_data["project"]["viewport"] = {"width": 720, "height": 1280, "fps": 24}
+    legacy_data["project"]["camera"][1]["atMs"] = legacy_data["project"]["durationMs"]
+    legacy_data.pop("settings")
+    legacy_path = Path("/tmp/qarton-motion-studio-legacy.json")
+    legacy_path.write_text(json.dumps(legacy_data))
+    page.locator("#loadProjectButton").click()
+    page.locator("#projectInput").set_input_files(str(legacy_path))
+    page.get_by_text("فُتح المشروع؛ اختر الصورة المرتبطة به", exact=True).wait_for()
+    assert page.locator("#aspectPreset").input_value() == "portrait"
+    assert page.locator("#fitMode").input_value() == "fit"
 
     image_input.set_input_files({
         "name": "preview-test-slow.png", "mimeType": "image/png",

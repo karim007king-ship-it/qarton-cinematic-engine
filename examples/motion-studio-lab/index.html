@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#101118">
   <title>QARTON Motion Studio Lab</title>
-  <link rel="stylesheet" href="./studio.css?v=8d9c5e3-l4">
+  <link rel="stylesheet" href="./studio.css?v=l4-flex-01">
   <script type="importmap">
     {
       "imports": {
@@ -26,7 +26,7 @@
 
     <section class="workspace" aria-label="مساحة العمل">
       <div class="preview-panel">
-        <div class="preview-heading"><div><span class="eyebrow">معاينة عمودية</span><strong>720 × 1280</strong></div><span id="timeReadout">00:00.00</span></div>
+        <div class="preview-heading"><div><span class="eyebrow">معاينة المشروع</span><strong id="viewportValue">1080 × 1920 · معاينة 720 × 1280</strong></div><span id="timeReadout">00:00.00</span></div>
         <div class="stage-wrap"><canvas id="stage" width="720" height="1280" aria-label="معاينة الصورة المتحركة 720 في 1280"></canvas></div>
         <div class="transport" aria-label="تحكم المعاينة">
           <button id="replayButton" class="icon-button" type="button" aria-label="إعادة التشغيل من البداية">↺</button>
@@ -47,6 +47,28 @@
             <input id="projectInput" class="sr-only" type="file" accept="application/json,.json">
           </div>
           <p class="hint">ملف المشروع يحفظ الحركة فقط. بعد فتحه، اختر الصورة الأصلية من جديد.</p>
+        </section>
+
+        <section class="control-card">
+          <h2>أبعاد المشروع والصورة</h2>
+          <label class="field-label" for="aspectPreset">نسبة الأبعاد
+            <select id="aspectPreset" aria-label="نسبة أبعاد المشروع">
+              <option value="original" selected>الأصلية — نفس نسبة الصورة</option>
+              <option value="square">مربع 1:1</option>
+              <option value="portrait">عمودي 9:16</option>
+              <option value="landscape">أفقي 16:9</option>
+              <option value="post">منشورات 4:5</option>
+              <option value="classic-landscape">كلاسيكي 4:3</option>
+              <option value="classic-portrait">كلاسيكي 3:4</option>
+            </select>
+          </label>
+          <label class="field-label" for="fitMode">طريقة عرض الصورة
+            <select id="fitMode" aria-label="طريقة عرض الصورة">
+              <option value="fit" selected>احتواء Fit — إظهار الصورة كاملة</option>
+              <option value="fill">ملء Fill — قص الأطراف عند الحاجة</option>
+            </select>
+          </label>
+          <p class="hint">الدقة الظاهرة للمشروع محفوظة مستقلة عن دقة المعاينة الآمنة للهاتف.</p>
         </section>
 
         <section class="control-card">
@@ -72,6 +94,6 @@
     <p id="errorMessage" class="error-message" role="alert" hidden></p>
     <footer>نسخة تجريبية · الفيديو لا يُصدّر في هذه المهمة · المشروع والصورة لا يُرفعان إلى خادم</footer>
   </main>
-  <script type="module" src="./studio.js?v=8d9c5e3-l4"></script>
+  <script type="module" src="./studio.js?v=l4-flex-01"></script>
 </body>
 </html>
