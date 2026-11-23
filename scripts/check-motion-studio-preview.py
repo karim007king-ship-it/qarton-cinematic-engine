@@ -64,7 +64,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         from_opacity.dispatch_event("change")
         assert page.locator(".visual-effect-clip").get_attribute("aria-label").startswith("Fade، يبدأ 00:00.50")
         page.locator("#seek").evaluate("""(el, value) => { el.value = String(value); el.dispatchEvent(new Event('input', {bubbles: true})); }""", 4000)
-        effect_head = page.locator("#visualEffectsTracks .visual-effect-playhead")
+        effect_head = page.locator("#visualEffectsTracks .visual-effect-playhead").first
         assert abs(float(effect_head.evaluate("el => parseFloat(el.style.left)")) - 100 / 3) < 0.01
         page.locator("#seek").evaluate("""(el, value) => { el.value = String(value); el.dispatchEvent(new Event('input', {bubbles: true})); }""", 2400)
         frame_at_time = page.locator("#stage").evaluate("el => el.toDataURL()")
