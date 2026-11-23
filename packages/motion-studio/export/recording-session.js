@@ -218,7 +218,7 @@ async function probeOne({ canvas, width, height, fps, audioMode, mimeType, Media
     try { if (recorder?.state === "recording") recorder.stop(); } catch {}
     try { oscillator?.stop(); } catch {}
     for (const track of new Set([...(stream?.getTracks?.() ?? []), ...(videoStream?.getTracks?.() ?? [])])) { try { track.stop(); } catch {} }
-    try { await audioContext?.close?.(); } catch {}
+    try { await awaitWork(audioContext?.close?.(), Math.min(timeoutMs, 1000), "Probe AudioContext cleanup timed out"); } catch {}
   }
 }
 
@@ -292,7 +292,7 @@ export async function startExport(plan, host = {}, { signal, onProgress } = {}) 
   const now = () => (host.performance ?? globalThis.performance)?.now?.() ?? Date.now();
   const window = host.window ?? globalThis.window;
   const boundTracks = [];
-  const cleanup = () => {
+  const cleanup = async () => {
     if (released) return;
     released = true;
     if (rafId !== null) (caf ?? clearTimeout)(rafId);
@@ -304,6 +304,7 @@ export async function startExport(plan, host = {}, { signal, onProgress } = {}) 
     for (const [track, listener] of boundTracks) track.removeEventListener?.("ended", listener);
     try { mixer?.stop(); } catch {}
     for (const track of stream?.getTracks?.() ?? []) { try { track.stop(); } catch {} }
+    try { await awaitWork(audioContext?.close?.(), host.audioContextCloseTimeoutMs ?? 1000, "AudioContext cleanup timed out"); } catch {}
     if (canvas) { canvas.width = 1; canvas.height = 1; }
     chunks = [];
     activeHosts.delete(host);
@@ -454,7 +455,7 @@ export async function startExport(plan, host = {}, { signal, onProgress } = {}) 
   } catch (cause) {
     if (cause instanceof ExportError || cause?.name === "AbortError") throw cause;
     throw error("CAPTURE_FAILED", cause?.message ?? "Export failed", cause);
-  } finally { cleanup(); }
+  } finally { await cleanup(); }
 }
 
 export { MIME_CANDIDATES };

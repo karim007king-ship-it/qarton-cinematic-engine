@@ -51,6 +51,7 @@ class FakeAudioContext extends EventTarget {
 class HangingResumeAudioContext extends FakeAudioContext {
   constructor() { super([]); }
   resume() { return new Promise(() => {}); }
+  close() { return new Promise(() => {}); }
 }
 
 function makeHost(rendered, overrides = {}) {
@@ -146,7 +147,7 @@ test("capability probe validates the exact profile and records failure instead o
   assert.ok(result.every(capability => capability.width === 360 && capability.height === 640 && capability.fps === 24));
 });
 
-test("capability probe bounds a Web Audio resume that never settles", async () => {
+test("capability probe bounds Web Audio resume and cleanup when their promises never settle", async () => {
   const result = await probeExport({ width: 360, height: 640, fps: 24, audioMode: "mix", durationMs: 200,
     timeoutMs: 1000, MediaRecorderClass: FakeRecorder, AudioContextClass: HangingResumeAudioContext,
     MediaStreamClass: FakeMediaStream, formats: ["webm"], createCanvas: () => new FakeCanvas(), document: {} });
