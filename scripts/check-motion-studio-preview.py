@@ -237,8 +237,11 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         assert page.locator('.keyframe-marker[data-key-time="6000"]').count() == 1
         assert not page.locator("#timelineLane").get_attribute("data-dragging")
         drag_key(6000, 12000, 94, "pointerup")
-        assert page.locator('.keyframe-marker[data-key-time="6000"]').count() == 1, "colliding target leaves source key intact"
-        drag_key(6000, 7000, 95, "pointerup", repeat=True)
+        collision_times = [int(value) for value in page.locator(".keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")]
+        movable_times = [value for value in collision_times if value not in (0, 12000)]
+        assert len(collision_times) == 3 and len(set(collision_times)) == 3, "collision preserves all keys without duplicate times"
+        assert movable_times and 6000 < movable_times[0] < 12000, "failed final position retains the last valid drag time"
+        drag_key(movable_times[0], 7000, 95, "pointerup", repeat=True)
         assert [int(value) for value in page.locator(".keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")] == [0, 7000, 12000]
         assert page.locator('.keyframe-marker[data-key-time="7000"]').evaluate("el => document.activeElement === el"), "selection focus survives marker rerender"
 

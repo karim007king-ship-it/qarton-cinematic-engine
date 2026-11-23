@@ -433,22 +433,29 @@ def exercise(context, url):
         el.value = String(value); el.dispatchEvent(new Event('input', {bubbles:true}));
     }""", 4000)
     assert preview.evaluate("el => el.toDataURL()") == character_frame
-    # Cancelled pointer drags retain the last committed valid key time.
+    # A trusted Chromium drag survives marker rerender; cancel keeps the last
+    # committed position from the continuous gesture.
     character_lane = page.locator("#characterTimelineLane")
     character_box = character_lane.bounding_box()
-    page.locator('.character-keyframe-marker[data-key-time="6000"]').dispatch_event("pointerdown", {
-        "pointerId": 67, "pointerType": "touch", "isPrimary": True, "button": 0,
-        "clientX": character_box["x"] + character_box["width"] * .5,
-        "clientY": character_box["y"] + character_box["height"] / 2
-    })
-    character_lane.dispatch_event("pointermove", {
-        "pointerId": 67, "pointerType": "touch", "isPrimary": True, "button": 0,
-        "clientX": character_box["x"] + character_box["width"] * .58,
-        "clientY": character_box["y"] + character_box["height"] / 2
-    })
-    character_lane.dispatch_event("pointercancel", {"pointerId": 67, "pointerType": "touch", "isPrimary": True, "button": 0})
+    character_key_box = page.locator('.character-keyframe-marker[data-key-time="6000"]').bounding_box()
+    page.evaluate("""() => {
+        window.lastCharacterPointerId = null;
+        document.querySelector('#characterTimelineLane').addEventListener('pointerdown', event => {
+            window.lastCharacterPointerId = event.pointerId;
+        }, {capture: true});
+    }""")
+    page.mouse.move(character_key_box["x"] + character_key_box["width"] / 2,
+                    character_key_box["y"] + character_key_box["height"] / 2)
+    page.mouse.down()
+    page.wait_for_function("document.querySelector('#characterTimelineLane').hasPointerCapture(window.lastCharacterPointerId)")
+    page.mouse.move(character_box["x"] + character_box["width"] * .58,
+                    character_box["y"] + character_box["height"] / 2, steps=8)
+    page.evaluate("""() => document.querySelector('#characterTimelineLane').dispatchEvent(new PointerEvent('pointercancel', {
+        bubbles: true, pointerId: window.lastCharacterPointerId, pointerType: 'mouse', isPrimary: true
+    }))""")
     assert page.locator('.character-keyframe-marker[data-key-time="6960"]').count() == 1
     assert page.locator("#characterTimelineLane").get_attribute("data-scrubbing") is None
+    page.mouse.up()
 
     # A drag into an occupied timestamp fails atomically, while a native
     # lostpointercapture after a valid move keeps that last valid position.
@@ -482,7 +489,9 @@ def exercise(context, url):
     assert lost_pointer_id is not None
     assert character_lane.evaluate("(el, id) => el.hasPointerCapture(id)", lost_pointer_id)
     page.mouse.move(character_box["x"] + character_box["width"] * .67, character_box["y"] + character_box["height"] / 2)
-    character_lane.evaluate("(el, id) => el.releasePointerCapture(id)", lost_pointer_id)
+    character_lane.evaluate("""(el, id) => el.dispatchEvent(new PointerEvent('lostpointercapture', {
+        bubbles: true, pointerId: id, pointerType: 'mouse', isPrimary: true
+    }))""", lost_pointer_id)
     assert page.locator('.character-keyframe-marker[data-key-time="8040"]').count() == 1
     page.wait_for_function("!document.querySelector('#characterTimelineLane').hasAttribute('data-dragging')")
     page.mouse.up()
