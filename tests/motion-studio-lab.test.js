@@ -8,19 +8,22 @@ import {
   playbackTimeMs, VIEWPORT
 } from "../examples/motion-studio-lab/studio-model.js";
 import { decodeImageBitmap, IMAGE_DECODE_WIDTHS, MAX_PREVIEW_PIXELS } from "../examples/motion-studio-lab/studio-image.js";
+import { ASPECT_PRESETS, imageRect, inferAspectPreset, projectSizeForPreset, safePreviewSize } from "../examples/motion-studio-lab/studio-dimensions.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 test("mobile interface exposes portrait preview, image input, camera controls and timeline", async () => {
   const html = await readFile(resolve(root, "examples/motion-studio-lab/index.html"), "utf8");
-  for (const id of ["stage", "imageInput", "duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "seek", "playPauseButton", "replayButton", "saveProjectButton", "loadProjectButton"]) {
+  for (const id of ["stage", "imageInput", "aspectPreset", "fitMode", "viewportValue", "duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "seek", "playPauseButton", "replayButton", "saveProjectButton", "loadProjectButton"]) {
     assert.match(html, new RegExp(`id=["']${id}["']`), `missing interface control ${id}`);
   }
   assert.match(html, /width="720" height="1280"/);
+  assert.match(html, /value="original" selected/);
+  assert.match(html, /value="fit" selected/);
   assert.match(html, /viewport" content="width=device-width, initial-scale=1/);
 });
 
-test("project model keeps the 720x1280 engine schema and enforces the supported duration", () => {
+test("project model defaults to the legacy portrait viewport, accepts supported sizes and enforces duration", () => {
   const project = makeProject({ durationMs: 12000, startZoom: 1, endZoom: 1.4, startX: 0, endX: 28, startY: 0, endY: -18 });
   assert.deepEqual(project.viewport, VIEWPORT);
   assert.equal(project.durationMs, 12000);
@@ -30,6 +33,33 @@ test("project model keeps the 720x1280 engine schema and enforces the supported 
   assert.equal(MAX_DURATION_MS, 60000);
   assert.throws(() => makeProject({ durationMs: 2999 }), RangeError);
   assert.throws(() => makeProject({ durationMs: 60001 }), RangeError);
+  const landscape = makeProject({ durationMs: 12000, viewport: { width: 1920, height: 1080, fps: 24 }, startZoom: 1, endZoom: 1.2, startX: 0, endX: 10, startY: 0, endY: 0 });
+  assert.deepEqual(landscape.viewport, { width: 1920, height: 1080, fps: 24 });
+  assert.throws(() => makeProject({ durationMs: 12000, viewport: { width: 4096, height: 4096, fps: 24 } }), RangeError);
+});
+
+test("aspect presets retain their ratios and phone previews stay within a pixel budget", () => {
+  assert.deepEqual(ASPECT_PRESETS.map(({ value }) => value), ["original", "square", "portrait", "landscape", "post", "classic-landscape", "classic-portrait"]);
+  const ratios = { square: 1, portrait: 9 / 16, landscape: 16 / 9, post: 4 / 5, "classic-landscape": 4 / 3, "classic-portrait": 3 / 4 };
+  for (const [preset, ratio] of Object.entries(ratios)) {
+    const size = projectSizeForPreset(preset);
+    assert.ok(Math.abs(size.width / size.height - ratio) < 0.001, preset);
+    const preview = safePreviewSize(size.width, size.height);
+    assert.ok(preview.width * preview.height <= 921_600);
+    assert.ok(Math.max(preview.width, preview.height) <= 1280);
+  }
+  assert.equal(inferAspectPreset(720, 1280), "portrait");
+  assert.equal(projectSizeForPreset("original", 3000, 2000).width / projectSizeForPreset("original", 3000, 2000).height, 1.5);
+});
+
+test("Fit contains all image bounds while Fill covers the frame and crops as needed", () => {
+  const fit = imageRect(1600, 900, 900, 1600, "fit");
+  assert.equal(fit.width, 900);
+  assert.equal(fit.height, 506.25);
+  const fill = imageRect(1600, 900, 900, 1600, "fill");
+  assert.equal(fill.width, 2844.4444444444443);
+  assert.equal(fill.height, 1600);
+  assert.ok(fill.x < 0);
 });
 
 test("camera edits retain the imported layer and opaque asset identifier", () => {
@@ -149,10 +179,26 @@ test("project JSON stores metadata only and requires relinking the source image"
   const decoded = parseProjectFile(encoded);
   assert.deepEqual(decoded.project, project);
   assert.deepEqual(decoded.image, { name: "portrait.png", type: "image/png", size: 3500 });
+  assert.deepEqual(decoded.settings, { aspectPreset: "original", fitMode: "fit" });
   assert.ok(encoded.length < 4000);
   assert.throws(() => parseProjectFile("not json"), /JSON/);
   assert.throws(() => parseProjectFile(JSON.stringify({ format: "unknown", version: 1, project, image: null })), TypeError);
   assert.throws(() => parseProjectFile(" ".repeat(128 * 1024 + 1)), RangeError);
+});
+
+test("project JSON persists flexible dimensions and fit mode while loading legacy files", () => {
+  const project = makeProject({ durationMs: 9000, viewport: { width: 1920, height: 1080, fps: 24 }, startZoom: 1, endZoom: 1.4, startX: 0, endX: 42, startY: 0, endY: -21 });
+  const encoded = JSON.stringify(makeProjectFile(project, null, { aspectPreset: "landscape", fitMode: "fill" }));
+  const loaded = parseProjectFile(encoded);
+  assert.deepEqual(loaded.project.viewport, { width: 1920, height: 1080, fps: 24 });
+  assert.deepEqual(loaded.settings, { aspectPreset: "landscape", fitMode: "fill" });
+
+  const legacy = makeProject({ durationMs: 12000, startZoom: 1, endZoom: 1.2, startX: 0, endX: 0, startY: 0, endY: 0 });
+  const legacyFile = makeProjectFile(legacy);
+  delete legacyFile.settings;
+  const legacyLoaded = parseProjectFile(JSON.stringify(legacyFile));
+  assert.deepEqual(legacyLoaded.project.viewport, VIEWPORT);
+  assert.equal(legacyLoaded.settings, null);
 });
 
 test("JSON import rejects extra or displaced camera keys before slider editing", () => {
