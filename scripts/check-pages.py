@@ -1,6 +1,8 @@
 """Exercise the staged Pages site in desktop and touch Chromium contexts."""
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+import json
+from os import environ
 from pathlib import Path
 from threading import Thread
 
@@ -157,6 +159,83 @@ def exercise(context, url):
     move_to(1900)
     assert page.locator(".camera").evaluate("e => e.style.transform") == camera
     assert page.locator(".cast img").get_attribute("src").endswith("walk-0.svg")
+
+    page.add_init_script("""(() => {
+        const nativeCreateImageBitmap = window.createImageBitmap.bind(window);
+        window.createImageBitmap = async (source, ...options) => {
+            if (source?.name === 'preview-test-slow.png')
+                await new Promise(resolve => setTimeout(resolve, 700));
+            return nativeCreateImageBitmap(source, ...options);
+        };
+    })();""")
+    page.goto(url + "examples/motion-studio-lab/")
+    image_input = page.locator("#imageInput")
+    image_input.set_input_files({
+        "name": "preview-test-slow.png", "mimeType": "image/png",
+        "buffer": (site / "examples/motion-studio-lab/preview-test.png").read_bytes()
+    })
+    image_input.set_input_files(str(site / "examples/motion-studio-lab/preview-test.png"))
+    page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+    assert "preview-test.png" in page.locator("#imageName").inner_text()
+    page.wait_for_timeout(760)
+    assert "preview-test.png" in page.locator("#imageName").inner_text()
+    preview = page.locator("#stage")
+    studio_seek = page.locator("#seek")
+    def set_studio_time(ms):
+        studio_seek.evaluate("""(el, value) => {
+            el.value = String(value); el.dispatchEvent(new Event('input', {bubbles: true}));
+        }""", ms)
+    set_studio_time(6000)
+    at_middle = preview.evaluate("el => el.toDataURL()")
+    set_studio_time(0)
+    set_studio_time(6000)
+    assert preview.evaluate("el => el.toDataURL()") == at_middle
+    page.locator("#playPauseButton").click()
+    page.wait_for_function("Number(document.querySelector('#seek').value) > 6200")
+    page.locator("#playPauseButton").click()
+    paused_value = studio_seek.input_value()
+    page.wait_for_timeout(140)
+    assert studio_seek.input_value() == paused_value
+    page.locator("#replayButton").click()
+    page.wait_for_function("Number(document.querySelector('#seek').value) > 0")
+    page.wait_for_function("Number(document.querySelector('#seek').value) < 1000")
+    with page.expect_download() as download_info:
+        page.locator("#saveProjectButton").click()
+    project_download = download_info.value
+    project_path = Path("/tmp/qarton-motion-studio-check.json")
+    project_download.save_as(project_path)
+    project_json = project_path.read_text()
+    assert "qarton-motion-studio-project" in project_json
+    assert "preview-test.png" in project_json
+    assert "<svg" not in project_json
+    project_data = json.loads(project_json)
+    project_data["project"]["layers"][0]["assetId"] = "imported-portrait-42"
+    project_path.write_text(json.dumps(project_data))
+    page.locator("#loadProjectButton").click()
+    page.locator("#projectInput").set_input_files(str(project_path))
+    page.get_by_text("فُتح المشروع؛ اختر الصورة المرتبطة به", exact=True).wait_for()
+    assert "أعد اختيار الصورة" in page.locator("#imageName").inner_text()
+    page.locator("#imageInput").set_input_files(str(site / "examples/motion-studio-lab/preview-test.png"))
+    page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+    with page.expect_download() as rebound_download_info:
+        page.locator("#saveProjectButton").click()
+    rebound_path = Path("/tmp/qarton-motion-studio-rebound.json")
+    rebound_download_info.value.save_as(rebound_path)
+    rebound_data = json.loads(rebound_path.read_text())
+    assert rebound_data["project"]["layers"][0]["assetId"] == "imported-portrait-42"
+
+    image_input.set_input_files({
+        "name": "preview-test-slow.png", "mimeType": "image/png",
+        "buffer": (site / "examples/motion-studio-lab/preview-test.png").read_bytes()
+    })
+    page.locator("#loadProjectButton").click()
+    page.locator("#projectInput").set_input_files(str(project_path))
+    page.get_by_text("فُتح المشروع؛ اختر الصورة المرتبطة به", exact=True).wait_for()
+    relink_label = page.locator("#imageName").inner_text()
+    relink_frame = preview.evaluate("el => el.toDataURL()")
+    page.wait_for_timeout(760)
+    assert page.locator("#imageName").inner_text() == relink_label
+    assert preview.evaluate("el => el.toDataURL()") == relink_frame
     assert not errors, errors
 
 
@@ -167,7 +246,8 @@ if __name__ == "__main__":
     with ThreadingHTTPServer(("127.0.0.1", 0), handler) as server, sync_playwright() as pw:
         Thread(target=server.serve_forever, daemon=True).start()
         url = f"http://127.0.0.1:{server.server_port}/{site.name}/"
-        browser = pw.chromium.launch(channel="chrome")
+        executable = environ.get("CHROMIUM_EXECUTABLE_PATH")
+        browser = pw.chromium.launch(executable_path=executable) if executable else pw.chromium.launch(channel="chrome")
         for device in [None, "Pixel 7"]:
             with browser.new_context(**(pw.devices[device] if device else {})) as context:
                 exercise(context, url)

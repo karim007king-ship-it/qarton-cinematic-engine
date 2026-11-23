@@ -1,0 +1,49 @@
+:root { color-scheme: dark; font-family: system-ui, -apple-system, "Noto Sans Arabic", sans-serif; background: #101118; color: #f2eee5; --gold: #e7bd69; --line: #34333b; --muted: #a8a6ad; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: radial-gradient(ellipse at 18% 0%, #27212a 0, transparent 38%), #101118; }
+button, input { font: inherit; }
+button { color: inherit; cursor: pointer; }
+.studio { width: min(1120px, 100%); margin: auto; padding: max(18px, env(safe-area-inset-top)) 18px max(20px, env(safe-area-inset-bottom)); }
+.topbar, .preview-heading, .transport, .button-row, .field-label { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.topbar { margin-bottom: 18px; }
+h1, h2, p { margin: 0; }
+h1 { font-size: clamp(23px, 4vw, 32px); letter-spacing: -.04em; }
+h2 { margin-bottom: 14px; font-size: 16px; }
+.eyebrow { color: var(--gold); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.status-pill { max-width: 52%; padding: 8px 11px; border: 1px solid #514637; border-radius: 99px; color: #e7d3aa; font-size: 12px; }
+.workspace { display: grid; grid-template-columns: minmax(230px, .8fr) minmax(330px, 1.2fr); gap: 16px; align-items: start; }
+.preview-panel, .control-card { border: 1px solid var(--line); border-radius: 16px; background: #191a22eF; box-shadow: 0 12px 34px #0003; }
+.preview-panel { padding: 14px; position: sticky; top: 10px; }
+.preview-heading { margin-bottom: 10px; }
+.preview-heading div { display: grid; gap: 2px; }
+.preview-heading strong { font-size: 12px; }
+#timeReadout { font-variant-numeric: tabular-nums; color: var(--gold); font-size: 13px; }
+.stage-wrap { width: min(100%, 360px); max-height: 68vh; margin: auto; display: flex; align-items: center; justify-content: center; background: #090a0f; border-radius: 8px; overflow: hidden; }
+canvas { width: 100%; height: auto; max-height: 68vh; object-fit: contain; display: block; }
+.transport { margin-top: 12px; }
+.transport input { flex: 1; min-width: 0; }
+.primary-button, .secondary-button, .icon-button { border: 1px solid transparent; border-radius: 10px; min-height: 42px; padding: 8px 14px; }
+.primary-button { color: #1b1710; background: var(--gold); font-weight: 700; min-width: 92px; }
+.secondary-button, .icon-button { background: #292a33; border-color: #43434d; }
+.icon-button { width: 42px; padding: 0; font-size: 24px; color: var(--gold); }
+.controls-panel { display: grid; gap: 12px; }
+.control-card { padding: 16px; }
+.file-picker { min-height: 66px; padding: 10px 12px; display: flex; align-items: center; gap: 11px; border: 1px dashed #66583d; border-radius: 12px; cursor: pointer; background: #211f22; }
+.file-picker > span:first-child { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; color: #221b0f; background: var(--gold); font-size: 24px; }
+.file-picker strong, .file-picker small { display: block; }
+.file-picker strong { font-size: 13px; }
+.file-picker small, .hint { margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.55; }
+.button-row { margin-top: 10px; }
+.button-row button { flex: 1; }
+.field-label { align-items: baseline; flex-wrap: wrap; font-size: 12px; color: #dfdde3; }
+output { margin-inline-start: auto; color: var(--gold); font-variant-numeric: tabular-nums; }
+input[type="range"] { width: 100%; accent-color: var(--gold); }
+.control-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px 14px; }
+.control-grid label { display: block; }
+.control-grid input { display: block; margin-top: 8px; }
+.hint { margin-bottom: 10px; }
+.error-message { margin-top: 14px; padding: 12px; border: 1px solid #773b45; border-radius: 10px; color: #ffdce0; background: #371e25; font-size: 13px; }
+footer { margin-top: 16px; color: #898790; font-size: 11px; text-align: center; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@media (max-width: 700px) { .studio { padding-inline: 12px; } .workspace { grid-template-columns: 1fr; } .preview-panel { position: static; } .stage-wrap { width: min(62vw, 330px); max-height: 48vh; } canvas { max-height: 48vh; } .control-grid { gap: 12px; } .status-pill { font-size: 10px; } }
+@media (max-width: 360px) { .control-grid { grid-template-columns: 1fr; } .topbar { align-items: flex-start; flex-direction: column; } .status-pill { max-width: 100%; } }
