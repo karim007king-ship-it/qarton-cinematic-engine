@@ -8,7 +8,8 @@ from playwright.sync_api import sync_playwright
 
 
 root = Path(__file__).resolve().parents[1]
-preview = root / "dist/motion-studio-l5-android-preview/index.html"
+preview_slug = environ.get("MOTION_STUDIO_PREVIEW_SLUG", "motion-studio-l5-android-preview")
+preview = root / "dist" / preview_slug / "index.html"
 sample = root / "examples/motion-studio-lab/preview-test.png"
 assert preview.is_file() and sample.is_file()
 html = preview.read_text()
@@ -41,6 +42,37 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         image_input = page.locator("#imageInput")
         image_input.set_input_files(str(sample))
         page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+        page.locator("#seek").evaluate("""(el, value) => {
+          el.value = String(value); el.dispatchEvent(new Event('input', {bubbles: true}));
+        }""", 4000)
+        page.locator("#addKeyframeButton").click()
+        assert page.locator(".keyframe-marker").count() == 3
+        assert page.locator(".keyframe-marker[aria-pressed=true]").get_attribute("data-key-time") == "4000"
+        page.locator("#seek").evaluate("""(el, value) => {
+          el.value = String(value); el.dispatchEvent(new Event('input', {bubbles: true}));
+        }""", 6000)
+        before_key_edit = page.locator("#stage").evaluate("el => el.toDataURL()")
+        page.locator("#keyframeZoom").fill("1.8")
+        page.locator("#keyframeZoom").dispatch_event("change")
+        page.wait_for_function("document.querySelector('#timelineMessage').textContent.includes('zoom')")
+        assert page.locator("#stage").evaluate("el => el.toDataURL()") != before_key_edit
+
+        lane = page.locator("#timelineLane")
+        lane_box = lane.bounding_box()
+        drag_x = lane_box["x"] + lane_box["width"] * 7000 / 12000
+        page.locator('.keyframe-marker[data-key-time="4000"]').dispatch_event("pointerdown", {
+            "pointerId": 91, "pointerType": "touch", "isPrimary": True, "button": 0,
+            "clientX": lane_box["x"] + lane_box["width"] / 3, "clientY": lane_box["y"] + lane_box["height"] / 2
+        })
+        lane.dispatch_event("pointermove", {
+            "pointerId": 91, "pointerType": "touch", "isPrimary": True, "button": 0,
+            "clientX": drag_x, "clientY": lane_box["y"] + lane_box["height"] / 2
+        })
+        lane.dispatch_event("pointerup", {"pointerId": 91, "pointerType": "touch", "isPrimary": True, "button": 0})
+        assert page.locator('.keyframe-marker[data-key-time="7000"]').count() == 1
+        page.locator("#deleteKeyframeButton").click()
+        assert page.locator(".keyframe-marker").count() == 2
+
         page.locator("#aspectPreset").select_option("landscape")
         page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
         page.locator("#fitMode").select_option("fill")

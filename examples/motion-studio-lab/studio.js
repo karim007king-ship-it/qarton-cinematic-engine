@@ -1,5 +1,5 @@
-import { compileProject, drawFrame, sampleFrame } from "@qarton/cinematic-engine/motion-studio";
-import { createRequestToken, makeProject, makeProjectFile, parseProjectFile, playbackTimeMs, prepareProjectUpdate, VIEWPORT } from "./studio-model.js?v=l6-keyframes-01";
+import { addCameraKeyframe, compileProject, deleteCameraKeyframe, drawFrame, moveCameraKeyframe, sampleFrame, updateCameraKeyframe } from "@qarton/cinematic-engine/motion-studio";
+import { createRequestToken, makeProject, makeProjectFile, parseProjectFile, playbackTimeMs, prepareProjectUpdate, VIEWPORT } from "./studio-model.js?v=l6b-timeline-01";
 import { decodeImageBitmap } from "./studio-image.js?v=l4-flex-01";
 import { DEFAULT_OUTPUT_VIEWPORT, imageRect, inferAspectPreset, projectSizeForPreset, safePreviewSize } from "./studio-dimensions.js?v=l4-flex-01";
 import {
@@ -14,6 +14,15 @@ const context = canvas.getContext("2d", { alpha: false });
 const imageInput = $("imageInput");
 const projectInput = $("projectInput");
 const seek = $("seek");
+const timelineLane = $("timelineLane");
+const timelineRuler = $("timelineRuler");
+const timelinePlayhead = $("timelinePlayhead");
+const timelineKeyframes = $("timelineKeyframes");
+const timelineSelection = $("timelineSelection");
+const timelineMessage = $("timelineMessage");
+const addKeyframeButton = $("addKeyframeButton");
+const deleteKeyframeButton = $("deleteKeyframeButton");
+const keyframeFields = { x: $("keyframeX"), y: $("keyframeY"), zoom: $("keyframeZoom"), rotation: $("keyframeRotation") };
 const status = $("status");
 const errorMessage = $("errorMessage");
 const imageName = $("imageName");
@@ -60,6 +69,9 @@ let isPlaying = false;
 let playbackStartAt = 0;
 let pausedAt = null;
 let rafId = 0;
+let selectedKeyMs = null;
+let keyframeDrag = null;
+let timelineScrubPointerId = null;
 
 canvas.width = previewViewport.width;
 canvas.height = previewViewport.height;
@@ -154,6 +166,12 @@ function setExportBusy(busy) {
   for (const id of ["imageInput", "projectInput", "aspectPreset", "fitMode", "duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "saveProjectButton", "loadProjectButton"]) {
     $(id).disabled = busy;
   }
+  timelineLane.style.pointerEvents = busy ? "none" : "";
+  timelineLane.setAttribute("aria-disabled", String(busy));
+  addKeyframeButton.disabled = busy;
+  deleteKeyframeButton.disabled = busy || selectedKeyMs === null;
+  for (const field of Object.values(keyframeFields)) field.disabled = busy || selectedKeyMs === null;
+  renderTimelineKeyframes();
   exportButton.disabled = busy || !currentFileInfo || !exportCapability.mp4.length && !exportCapability.webm.length;
   exportFormat.disabled = busy;
   exportDuration.disabled = busy;
@@ -311,6 +329,7 @@ function renderAt(timeMs) {
   drawFrame(context, sampleFrame(compiled, currentMs));
   seek.value = String(currentMs);
   timeReadout.textContent = formatTime(currentMs);
+  renderTimelinePlayhead();
 }
 function inputNumber(id) { return Number($(id).value); }
 function syncOutputs() {
@@ -320,6 +339,148 @@ function syncOutputs() {
   ]) $(`${id}Value`).textContent = `${inputNumber(id).toFixed(digits)}${suffix}`;
   $("durationValue").textContent = `${inputNumber("duration")} ثانية`;
   $("viewportValue").textContent = `${project.viewport.width} × ${project.viewport.height} · معاينة ${previewViewport.width} × ${previewViewport.height}`;
+}
+function timelinePercent(timeMs) {
+  return project.durationMs ? Math.max(0, Math.min(100, (timeMs / project.durationMs) * 100)) : 0;
+}
+function timelineTimeFromX(clientX) {
+  const rect = timelineLane.getBoundingClientRect();
+  if (!rect.width) return currentMs;
+  const fraction = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  return Math.round(fraction * project.durationMs);
+}
+function renderTimelinePlayhead() {
+  if (!timelinePlayhead) return;
+  timelinePlayhead.style.left = `${timelinePercent(currentMs)}%`;
+  timelineLane.setAttribute("aria-label", `Timeline الكاميرا. المؤشر عند ${formatTime(currentMs)} من ${formatTime(project.durationMs)}. المس التدريج للانتقال، واسحب المفتاح لتغيير توقيته.`);
+}
+function renderTimelineRuler() {
+  timelineRuler.replaceChildren();
+  for (let index = 0; index <= 4; index++) {
+    const label = document.createElement("span");
+    label.textContent = formatTime(Math.round(project.durationMs * index / 4));
+    timelineRuler.append(label);
+  }
+}
+function renderKeyframeEditor() {
+  const key = project.camera?.find(({ atMs }) => atMs === selectedKeyMs) ?? null;
+  if (!key) selectedKeyMs = null;
+  timelineSelection.textContent = key ? `المحدد · ${formatTime(key.atMs)}` : "لا يوجد مفتاح محدد";
+  addKeyframeButton.disabled = Boolean(activeExport);
+  deleteKeyframeButton.disabled = Boolean(activeExport) || !key;
+  for (const [field, input] of Object.entries(keyframeFields)) {
+    input.disabled = Boolean(activeExport) || !key;
+    input.value = key ? String(key.value[field]) : "";
+  }
+}
+function renderTimelineKeyframes() {
+  if (!timelineKeyframes) return;
+  const frames = project.camera ?? [];
+  if (selectedKeyMs !== null && !frames.some(({ atMs }) => atMs === selectedKeyMs)) selectedKeyMs = null;
+  timelineKeyframes.replaceChildren();
+  for (const frame of frames) {
+    const marker = document.createElement("button");
+    marker.type = "button";
+    marker.className = "keyframe-marker";
+    marker.style.setProperty("--key-position", `${timelinePercent(frame.atMs)}%`);
+    marker.dataset.keyTime = String(frame.atMs);
+    marker.setAttribute("aria-label", `Keyframe عند ${formatTime(frame.atMs)}`);
+    marker.setAttribute("aria-pressed", String(frame.atMs === selectedKeyMs));
+    marker.disabled = Boolean(activeExport);
+    marker.title = `${formatTime(frame.atMs)} · X ${frame.value.x} · Y ${frame.value.y} · Zoom ${frame.value.zoom} · Rotation ${frame.value.rotation}`;
+    marker.addEventListener("pointerdown", (event) => {
+      if (activeExport || !event.isPrimary || event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      selectKeyframe(frame.atMs, { seekToKey: true });
+      keyframeDrag = { pointerId: event.pointerId, fromMs: frame.atMs, sourceProject: project };
+      try { timelineLane.setPointerCapture(event.pointerId); } catch { /* Synthetic test pointers do not own a browser pointer. */ }
+    });
+    marker.addEventListener("click", () => selectKeyframe(frame.atMs, { seekToKey: true }));
+    timelineKeyframes.append(marker);
+  }
+  renderKeyframeEditor();
+}
+function selectKeyframe(atMs, { seekToKey = false } = {}) {
+  selectedKeyMs = atMs;
+  timelineMessage.textContent = "عدّل القيم أو اسحب المفتاح أفقيًا. التوقيت المكرر غير مسموح.";
+  renderTimelineKeyframes();
+  if (seekToKey) {
+    renderAt(atMs);
+    if (isPlaying) playbackStartAt = performance.now() - currentMs;
+  }
+}
+function syncLegacyCameraInputs() {
+  const start = project.camera?.[0]?.value;
+  const end = project.camera?.at(-1)?.value;
+  if (start && end) {
+    for (const [id, value] of [["startZoom", start.zoom], ["endZoom", end.zoom], ["startX", start.x], ["endX", end.x], ["startY", start.y], ["endY", end.y]]) {
+      $(id).value = String(value);
+    }
+    syncOutputs();
+  }
+}
+function commitKeyframeProject(nextProject, nextSelection = selectedKeyMs) {
+  if (activeExport) throw new Error("أوقف تصدير الفيديو قبل تعديل Keyframes.");
+  const nextCompiled = compileProject(projectForRaster(nextProject, previewViewport), {
+    get: (assetId) => nextProject.layers.some((layer) => layer.assetId === assetId) ? imageSource : null
+  });
+  project = nextProject;
+  compiled = nextCompiled;
+  selectedKeyMs = nextSelection;
+  syncLegacyCameraInputs();
+  renderTimelineRuler();
+  renderTimelineKeyframes();
+  renderAt(currentMs);
+  status.textContent = currentFileInfo ? "تم تحديث حركة الكاميرا" : "الحركة جاهزة؛ اختر صورة للمعاينة";
+}
+function addKeyframeAtPlayhead() {
+  if (activeExport) return;
+  try {
+    const pose = sampleFrame(compiled, currentMs).camera;
+    const next = addCameraKeyframe(project, { atMs: currentMs, value: { ...pose } });
+    commitKeyframeProject(next, currentMs);
+    timelineMessage.textContent = `أُضيف مفتاح عند ${formatTime(currentMs)}.`;
+  } catch (error) {
+    timelineMessage.textContent = errorText(error);
+  }
+}
+function deleteSelectedKeyframe() {
+  if (activeExport || selectedKeyMs === null) return;
+  try {
+    const removedAt = selectedKeyMs;
+    const remaining = (project.camera ?? []).filter(({ atMs }) => atMs !== removedAt);
+    const nearest = remaining.reduce((best, key) => !best || Math.abs(key.atMs - removedAt) < Math.abs(best.atMs - removedAt) ? key : best, null);
+    const next = deleteCameraKeyframe(project, removedAt);
+    commitKeyframeProject(next, nearest?.atMs ?? null);
+    timelineMessage.textContent = remaining.length ? `حُذف المفتاح عند ${formatTime(removedAt)} وبقيت المفاتيح الأخرى.` : "حُذف آخر مفتاح؛ الحركة الآن بوضعية الهوية.";
+  } catch (error) {
+    timelineMessage.textContent = errorText(error);
+  }
+}
+function editSelectedKeyframe(field) {
+  if (activeExport || selectedKeyMs === null) return;
+  const value = Number(keyframeFields[field].value);
+  try {
+    const next = updateCameraKeyframe(project, selectedKeyMs, { [field]: value });
+    commitKeyframeProject(next, selectedKeyMs);
+    timelineMessage.textContent = `تم تحديث ${field} للمفتاح عند ${formatTime(selectedKeyMs)}.`;
+  } catch (error) {
+    timelineMessage.textContent = errorText(error);
+    renderKeyframeEditor();
+  }
+}
+function handleTimelinePointerMove(event) {
+  if (!keyframeDrag || activeExport || event.pointerId !== keyframeDrag.pointerId) return;
+  const toMs = timelineTimeFromX(event.clientX);
+  if (toMs === selectedKeyMs) return;
+  try {
+    const next = moveCameraKeyframe(keyframeDrag.sourceProject, keyframeDrag.fromMs, toMs);
+    commitKeyframeProject(next, toMs);
+    timelineMessage.textContent = `المفتاح الآن عند ${formatTime(toMs)}.`;
+  } catch (error) {
+    timelineMessage.textContent = errorText(error);
+  }
 }
 function applyCanvasDimensions(size) {
   previewViewport = size;
@@ -335,7 +496,7 @@ function setCanvasDimensions() {
     imageSource = placeholder;
   }
 }
-function updateProject({ resetPlayback = false, viewport = project.viewport } = {}) {
+function updateProject({ resetPlayback = false, viewport = project.viewport, editedControl = null } = {}) {
   invalidateExport("تغيّر المشروع؛ أُلغي التصدير السابق أو الجاري.");
   clearFailure();
   try {
@@ -343,21 +504,36 @@ function updateProject({ resetPlayback = false, viewport = project.viewport } = 
     const nextViewport = { width: viewport.width, height: viewport.height, fps: VIEWPORT.fps };
     const nextPreview = safePreviewSize(nextViewport.width, nextViewport.height);
     const nextImageSource = currentFileInfo ? imageSource : makePlaceholder(nextPreview);
+    const fallbackPose = { x: 0, y: 0, zoom: 1, rotation: 0 };
+    const startPose = { ...(project.camera?.[0]?.value ?? fallbackPose) };
+    const endPose = { ...(project.camera?.at(-1)?.value ?? fallbackPose) };
+    const controlEdit = {
+      startZoom: [startPose, "zoom"], endZoom: [endPose, "zoom"],
+      startX: [startPose, "x"], endX: [endPose, "x"],
+      startY: [startPose, "y"], endY: [endPose, "y"]
+    }[editedControl];
+    if (controlEdit) controlEdit[0][controlEdit[1]] = inputNumber(editedControl);
+    const selectedWasLast = selectedKeyMs !== null && selectedKeyMs === project.camera?.at(-1)?.atMs;
     const { project: nextProject, prepared: nextCompiled } = prepareProjectUpdate(project, {
       durationMs,
       viewport: nextViewport,
-      start: { x: inputNumber("startX"), y: inputNumber("startY"), zoom: inputNumber("startZoom") },
-      end: { x: inputNumber("endX"), y: inputNumber("endY"), zoom: inputNumber("endZoom") },
+      start: startPose,
+      end: endPose,
+      editedControl,
       prepare: (candidate) => compileProject(projectForRaster(candidate, nextPreview), {
         get: (assetId) => candidate.layers.some((layer) => layer.assetId === assetId) ? nextImageSource : null
       })
     });
     project = nextProject;
     compiled = nextCompiled;
+    if (selectedWasLast && project.camera?.length) selectedKeyMs = project.camera.at(-1).atMs;
     if (!currentFileInfo) placeholder = imageSource = nextImageSource;
     applyCanvasDimensions(nextPreview);
     seek.max = String(durationMs);
     if (resetPlayback) stopPlayback();
+    syncLegacyCameraInputs();
+    renderTimelineRuler();
+    renderTimelineKeyframes();
     renderAt(Math.min(currentMs, durationMs));
     status.textContent = currentFileInfo ? "المعاينة جاهزة" : "اختر صورة للبدء";
     syncOutputs();
@@ -454,8 +630,48 @@ seek.addEventListener("input", () => {
   if (isPlaying) playbackStartAt = performance.now() - currentMs;
   if (currentMs < project.durationMs && !isPlaying) playPauseButton.textContent = pausedAt === null ? "تشغيل" : "متابعة";
 });
+timelineLane.addEventListener("pointerdown", (event) => {
+  if (activeExport || !event.isPrimary || event.button !== 0 || event.target.closest(".keyframe-marker")) return;
+  event.preventDefault();
+  timelineScrubPointerId = event.pointerId;
+  try { timelineLane.setPointerCapture(event.pointerId); } catch { /* Synthetic test pointers do not own a browser pointer. */ }
+  renderAt(timelineTimeFromX(event.clientX));
+  if (isPlaying) playbackStartAt = performance.now() - currentMs;
+});
+timelineLane.addEventListener("pointermove", (event) => {
+  if (keyframeDrag) handleTimelinePointerMove(event);
+  else if (!activeExport && timelineScrubPointerId === event.pointerId) {
+    renderAt(timelineTimeFromX(event.clientX));
+    if (isPlaying) playbackStartAt = performance.now() - currentMs;
+  }
+});
+function endTimelinePointer(event) {
+  if (keyframeDrag?.pointerId === event.pointerId) {
+    keyframeDrag = null;
+    renderTimelineKeyframes();
+  }
+  if (timelineScrubPointerId === event.pointerId) timelineScrubPointerId = null;
+}
+timelineLane.addEventListener("pointerup", endTimelinePointer);
+timelineLane.addEventListener("pointercancel", endTimelinePointer);
+timelineLane.addEventListener("lostpointercapture", endTimelinePointer);
+timelineLane.addEventListener("keydown", (event) => {
+  if (activeExport) return;
+  const step = Math.max(1, Math.round(project.durationMs / 100));
+  if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "Home" || event.key === "End") {
+    event.preventDefault();
+    const delta = event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0;
+    renderAt(event.key === "Home" ? 0 : event.key === "End" ? project.durationMs : currentMs + delta);
+    if (isPlaying) playbackStartAt = performance.now() - currentMs;
+  }
+});
+addKeyframeButton.addEventListener("click", addKeyframeAtPlayhead);
+deleteKeyframeButton.addEventListener("click", deleteSelectedKeyframe);
+for (const field of Object.keys(keyframeFields)) {
+  keyframeFields[field].addEventListener("change", () => editSelectedKeyframe(field));
+}
 for (const id of ["duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY"]) {
-  $(id).addEventListener("input", () => updateProject({ resetPlayback: id === "duration" }));
+  $(id).addEventListener("input", () => updateProject({ resetPlayback: id === "duration", editedControl: id }));
 }
 
 aspectSelect.addEventListener("change", () => {
@@ -532,6 +748,7 @@ projectInput.addEventListener("change", async () => {
     fitMode = parsed.settings?.fitMode ?? "fit";
     aspectSelect.value = aspectPreset;
     fitSelect.value = fitMode;
+    selectedKeyMs = null;
     project = parsed.project;
     selectedImageFile = null;
     selectedImageDimensions = null;
@@ -555,6 +772,8 @@ projectInput.addEventListener("change", async () => {
 });
 
 updateProject({ viewport: project.viewport });
+renderTimelineRuler();
+renderTimelineKeyframes();
 renderAt(0);
 refreshExportControls();
 exportButton.addEventListener("click", () => { void exportVideoFile(); });

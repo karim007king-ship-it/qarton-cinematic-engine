@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#101118">
   <title>QARTON Motion Studio Lab</title>
-  <link rel="stylesheet" href="./studio.css?v=l5-export-01">
+  <link rel="stylesheet" href="./studio.css?v=l6b-timeline-01">
   <script type="importmap">
     {
       "imports": {
@@ -34,6 +34,34 @@
           <label class="sr-only" for="seek">موضع المعاينة</label>
           <input id="seek" type="range" min="0" max="60000" step="1" value="0">
         </div>
+
+        <section class="timeline-card" aria-labelledby="timelineHeading">
+          <div class="timeline-heading">
+            <div>
+              <span class="eyebrow">تحرير حركة الكاميرا</span>
+              <h2 id="timelineHeading">Timeline</h2>
+            </div>
+            <span id="timelineSelection" class="timeline-selection">لا يوجد مفتاح محدد</span>
+          </div>
+          <div id="timelineRuler" class="timeline-ruler" aria-hidden="true"></div>
+          <div id="timelineLane" class="timeline-lane" role="group" tabindex="0" aria-label="Timeline الكاميرا. المس مكانًا لتحريك Playhead، واسحب المفتاح لتغيير توقيته.">
+            <div class="timeline-grid" aria-hidden="true"></div>
+            <div id="timelinePlayhead" class="timeline-playhead" aria-hidden="true"></div>
+            <div id="timelineKeyframes" class="timeline-keyframes" aria-label="مفاتيح الكاميرا"></div>
+          </div>
+          <div class="timeline-actions">
+            <button id="addKeyframeButton" class="secondary-button" type="button">＋ مفتاح عند المؤشر</button>
+            <button id="deleteKeyframeButton" class="secondary-button" type="button" disabled>حذف المفتاح المحدد</button>
+          </div>
+          <div class="keyframe-editor" aria-labelledby="keyframeEditorHeading">
+            <h3 id="keyframeEditorHeading">قيم المفتاح المحدد</h3>
+            <label for="keyframeX">X <input id="keyframeX" type="number" min="-32768" max="32768" step="1" inputmode="decimal" disabled></label>
+            <label for="keyframeY">Y <input id="keyframeY" type="number" min="-32768" max="32768" step="1" inputmode="decimal" disabled></label>
+            <label for="keyframeZoom">Zoom <input id="keyframeZoom" type="number" min="0.01" max="64" step="0.01" inputmode="decimal" disabled></label>
+            <label for="keyframeRotation">Rotation <input id="keyframeRotation" type="number" min="-36000" max="36000" step="1" inputmode="decimal" disabled></label>
+          </div>
+          <p id="timelineMessage" class="timeline-message" role="status" aria-live="polite">المس التدريج للانتقال، أو أضف مفتاحًا عند Playhead.</p>
+        </section>
       </div>
 
       <div class="controls-panel">
@@ -134,6 +162,6 @@
     <p id="errorMessage" class="error-message" role="alert" hidden></p>
     <footer>نسخة تجريبية · التصدير محلي على الجهاز · اختبر الصيغة الناتجة قبل اعتمادها</footer>
   </main>
-  <script type="module" src="./studio.js?v=l5-export-01"></script>
+  <script type="module" src="./studio.js?v=l6b-timeline-01"></script>
 </body>
 </html>

@@ -5,8 +5,9 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import {
   MAX_DURATION_MS, MIN_DURATION_MS, createRequestToken, makeProject, makeProjectFile, parseProjectFile,
-  playbackTimeMs, setCameraEndpoints, VIEWPORT
+  playbackTimeMs, prepareProjectUpdate, setCameraEndpoints, VIEWPORT
 } from "../examples/motion-studio-lab/studio-model.js";
+import { addCameraKeyframe, moveCameraKeyframe, updateCameraKeyframe, deleteCameraKeyframe } from "../packages/motion-studio/keyframes.js";
 import { decodeImageBitmap, IMAGE_DECODE_WIDTHS, MAX_PREVIEW_PIXELS } from "../examples/motion-studio-lab/studio-image.js";
 import { ASPECT_PRESETS, imageRect, inferAspectPreset, projectSizeForPreset, safePreviewSize } from "../examples/motion-studio-lab/studio-dimensions.js";
 
@@ -239,9 +240,53 @@ test("legacy start/end controls preserve intermediate imported keyframes and rej
   }), /Keyframe وسيطًا سيصل إلى نقطة النهاية/);
 });
 
+test("timeline edits add, move, update and delete one key without mutating the source", () => {
+  const original = makeProject({ durationMs: 12000, startZoom: 1, endZoom: 1.5, startX: 0, endX: 90, startY: 0, endY: -60 });
+  const withMiddle = addCameraKeyframe(original, { atMs: 4000, value: { x: 20, y: 8, zoom: 1.2, rotation: 4 } });
+  const withThree = addCameraKeyframe(withMiddle, { atMs: 8000, value: { x: 55, y: -20, zoom: 1.35, rotation: -8 } });
+  const moved = moveCameraKeyframe(withThree, 4000, 5000);
+  const edited = updateCameraKeyframe(moved, 5000, { x: 32, zoom: 1.28, rotation: 12 });
+  const deleted = deleteCameraKeyframe(edited, 8000);
+  assert.deepEqual(original.camera.map(({ atMs }) => atMs), [0, 12000]);
+  assert.deepEqual(withThree.camera.map(({ atMs }) => atMs), [0, 4000, 8000, 12000]);
+  assert.deepEqual(edited.camera.map(({ atMs }) => atMs), [0, 5000, 8000, 12000]);
+  assert.deepEqual(edited.camera[1].value, { x: 32, y: 8, zoom: 1.28, rotation: 12 });
+  assert.deepEqual(deleted.camera.map(({ atMs }) => atMs), [0, 5000, 12000]);
+  assert.throws(() => moveCameraKeyframe(edited, 5000, 8000), /already exists/);
+  assert.deepEqual(edited.camera.map(({ atMs }) => atMs), [0, 5000, 8000, 12000], "failed collision leaves the project intact");
+});
+
+test("project control and duration updates preserve multi-key tracks and reject lossy truncation", () => {
+  const source = makeProject({ durationMs: 12000, startZoom: 1, endZoom: 1.5, startX: 0, endX: 90, startY: 0, endY: -60 });
+  const project = addCameraKeyframe(addCameraKeyframe(source, {
+    atMs: 4000, value: { x: 20, y: 8, zoom: 1.2, rotation: 4 }
+  }), { atMs: 8000, value: { x: 55, y: -20, zoom: 1.35, rotation: -8 } });
+  const prepare = (candidate) => structuredClone(candidate);
+  const changed = prepareProjectUpdate(project, {
+    durationMs: 12000, viewport: { ...project.viewport, width: 1000 },
+    start: { x: 0, y: 0, zoom: 0.9 }, end: { x: 90, y: -60, zoom: 1.5 },
+    editedControl: "startZoom", prepare
+  });
+  assert.deepEqual(changed.project.camera.map(({ atMs }) => atMs), [0, 4000, 8000, 12000]);
+  assert.equal(changed.project.camera[0].value.zoom, 0.9);
+  assert.deepEqual(changed.project.camera.slice(1).map(({ value }) => value), project.camera.slice(1).map(({ value }) => value));
+  assert.deepEqual(changed.prepared.camera, changed.project.camera);
+  const shortened = prepareProjectUpdate(project, {
+    durationMs: 9000, viewport: project.viewport,
+    start: project.camera[0].value, end: project.camera.at(-1).value, prepare
+  });
+  assert.deepEqual(shortened.project.camera.map(({ atMs }) => atMs), [0, 4000, 8000, 9000]);
+  assert.deepEqual(project.camera.map(({ atMs }) => atMs), [0, 4000, 8000, 12000]);
+  assert.throws(() => prepareProjectUpdate(project, {
+    durationMs: 7000, viewport: project.viewport,
+    start: project.camera[0].value, end: project.camera.at(-1).value, prepare
+  }), /Keyframe وسيطًا/);
+  assert.deepEqual(project.camera.map(({ atMs }) => atMs), [0, 4000, 8000, 12000], "rejected update retains original keys");
+});
+
 test("browser module uses the engine sampling API and includes deterministic seek and replay paths", async () => {
   const source = await readFile(resolve(root, "examples/motion-studio-lab/studio.js"), "utf8");
-  assert.match(source, /import \{ compileProject, drawFrame, sampleFrame \} from "@qarton\/cinematic-engine\/motion-studio"/);
+  assert.match(source, /import \{[^}]*compileProject[^}]*drawFrame[^}]*sampleFrame[^}]*\} from "@qarton\/cinematic-engine\/motion-studio"/);
   assert.match(source, /sampleFrame\(compiled, currentMs\)/);
   assert.match(source, /seek\.addEventListener\("input"/);
   assert.match(source, /function replay\(\)/);
@@ -253,12 +298,19 @@ test("browser module uses the engine sampling API and includes deterministic see
   assert.doesNotMatch(source, /project\.layers\[0\]\.assetId\s*=\s*["']photo-1/);
   assert.match(source, /bitmap\.close/);
   assert.doesNotMatch(source, /createCameraTrack|sampleCameraTrack|createTimeline/);
+  for (const api of ["addCameraKeyframe", "updateCameraKeyframe", "moveCameraKeyframe", "deleteCameraKeyframe"]) {
+    assert.match(source, new RegExp(`${api}\\(`), `timeline must use L6-A ${api}`);
+  }
+  assert.match(source, /pointerdown/);
+  assert.match(source, /pointermove/);
+  assert.match(source, /setPointerCapture/);
 });
 
 test("UI prepares a candidate project before committing the active project and compiled frame", async () => {
   const source = await readFile(resolve(root, "examples/motion-studio-lab/studio.js"), "utf8");
-  const prepareIndex = source.indexOf("prepare: (candidate) => compileProject(projectForRaster(candidate, nextPreview)");
-  const commitIndex = source.indexOf("project = nextProject;");
+  const updateIndex = source.indexOf("function updateProject(");
+  const prepareIndex = source.indexOf("prepare: (candidate) => compileProject(projectForRaster(candidate, nextPreview)", updateIndex);
+  const commitIndex = source.indexOf("project = nextProject;", updateIndex);
   assert.notEqual(prepareIndex, -1);
   assert.notEqual(commitIndex, -1);
   assert.ok(prepareIndex < commitIndex, "candidate compilation runs before the active project is replaced");

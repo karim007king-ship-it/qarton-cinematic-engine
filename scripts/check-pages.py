@@ -325,6 +325,62 @@ def exercise(context, url):
     page.wait_for_timeout(760)
     assert page.locator("#imageName").inner_text() == relink_label
     assert preview.evaluate("el => el.toDataURL()") == relink_frame
+
+    studio_seek = page.locator("#seek")
+    studio_seek.evaluate("""(el, value) => {
+        el.value = String(value); el.dispatchEvent(new Event('input', {bubbles:true}));
+    }""", 5000)
+    page.locator("#addKeyframeButton").click()
+    assert page.locator(".keyframe-marker").count() == 3
+    assert page.locator('.keyframe-marker[aria-pressed="true"]').get_attribute("data-key-time") == "5000"
+    studio_seek.evaluate("""(el, value) => {
+        el.value = String(value); el.dispatchEvent(new Event('input', {bubbles:true}));
+    }""", 6000)
+    before_edit = preview.evaluate("el => el.toDataURL()")
+    page.locator("#keyframeZoom").fill("1.9")
+    page.locator("#keyframeZoom").dispatch_event("change")
+    assert preview.evaluate("el => el.toDataURL()") != before_edit
+
+    lane = page.locator("#timelineLane")
+    lane_box = lane.bounding_box()
+    page.locator('.keyframe-marker[data-key-time="5000"]').dispatch_event("pointerdown", {
+        "pointerId": 41, "pointerType": "touch", "isPrimary": True, "button": 0,
+        "clientX": lane_box["x"] + lane_box["width"] * 5000 / 12000,
+        "clientY": lane_box["y"] + lane_box["height"] / 2
+    })
+    lane.dispatch_event("pointermove", {
+        "pointerId": 41, "pointerType": "touch", "isPrimary": True, "button": 0,
+        "clientX": lane_box["x"] + lane_box["width"] * 7000 / 12000,
+        "clientY": lane_box["y"] + lane_box["height"] / 2
+    })
+    lane.dispatch_event("pointerup", {"pointerId": 41, "pointerType": "touch", "isPrimary": True, "button": 0})
+    assert page.locator('.keyframe-marker[data-key-time="7000"]').count() == 1
+    assert page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
+
+    with page.expect_download() as timeline_download_info:
+        page.locator("#saveProjectButton").click()
+    timeline_path = Path("/tmp/qarton-motion-studio-l6b.json")
+    timeline_download_info.value.save_as(timeline_path)
+    timeline_data = json.loads(timeline_path.read_text())
+    assert [key["atMs"] for key in timeline_data["project"]["camera"]] == [0, 7000, 12000]
+    page.locator("#loadProjectButton").click()
+    page.locator("#projectInput").set_input_files(str(timeline_path))
+    page.get_by_text("فُتح المشروع؛ اختر الصورة المرتبطة به", exact=True).wait_for()
+    assert page.locator(".keyframe-marker").count() == 3
+    page.locator("#imageInput").set_input_files(str(site / "examples/motion-studio-lab/preview-test.png"))
+    page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+    studio_seek.evaluate("""(el, value) => {
+        el.value = String(value); el.dispatchEvent(new Event('input', {bubbles:true}));
+    }""", 6000)
+    repeat_frame = preview.evaluate("el => el.toDataURL()")
+    studio_seek.evaluate("""(el, value) => {
+        el.value = '0'; el.dispatchEvent(new Event('input', {bubbles:true}));
+        el.value = String(value); el.dispatchEvent(new Event('input', {bubbles:true}));
+    }""", 6000)
+    assert preview.evaluate("el => el.toDataURL()") == repeat_frame
+    page.locator('.keyframe-marker[data-key-time="7000"]').evaluate("el => el.click()")
+    page.locator("#deleteKeyframeButton").click()
+    assert [int(value) for value in page.locator(".keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")] == [0, 12000]
     assert not errors, errors
 
 
