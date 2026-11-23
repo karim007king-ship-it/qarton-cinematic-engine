@@ -1,5 +1,5 @@
 import { compileProject, drawFrame, sampleFrame } from "@qarton/cinematic-engine/motion-studio";
-import { createRequestToken, makeProject, makeProjectFile, parseProjectFile, playbackTimeMs, VIEWPORT } from "./studio-model.js?v=l4-flex-01";
+import { createRequestToken, makeProject, makeProjectFile, parseProjectFile, playbackTimeMs, setCameraEndpoints, validateViewport, VIEWPORT } from "./studio-model.js?v=l6-keyframes-01";
 import { decodeImageBitmap } from "./studio-image.js?v=l4-flex-01";
 import { DEFAULT_OUTPUT_VIEWPORT, imageRect, inferAspectPreset, projectSizeForPreset, safePreviewSize } from "./studio-dimensions.js?v=l4-flex-01";
 import {
@@ -337,14 +337,22 @@ function updateProject({ resetPlayback = false, viewport = project.viewport } = 
   clearFailure();
   try {
     const durationMs = inputNumber("duration") * 1000;
-    project = makeProject({
-      durationMs,
-      viewport: { width: viewport.width, height: viewport.height, fps: VIEWPORT.fps },
-      layers: project.layers,
-      startZoom: inputNumber("startZoom"), endZoom: inputNumber("endZoom"),
-      startX: inputNumber("startX"), endX: inputNumber("endX"),
-      startY: inputNumber("startY"), endY: inputNumber("endY")
-    });
+    const nextViewport = { width: viewport.width, height: viewport.height, fps: VIEWPORT.fps };
+    validateViewport(nextViewport);
+    if (!project.camera?.length) {
+      project = makeProject({
+        durationMs, viewport: nextViewport, layers: project.layers,
+        startZoom: inputNumber("startZoom"), endZoom: inputNumber("endZoom"),
+        startX: inputNumber("startX"), endX: inputNumber("endX"),
+        startY: inputNumber("startY"), endY: inputNumber("endY")
+      });
+    } else {
+      project = { ...setCameraEndpoints(project, {
+        durationMs,
+        start: { x: inputNumber("startX"), y: inputNumber("startY"), zoom: inputNumber("startZoom") },
+        end: { x: inputNumber("endX"), y: inputNumber("endY"), zoom: inputNumber("endZoom") }
+      }), viewport: nextViewport };
+    }
     setCanvasDimensions();
     compiled = compileProject(projectForRaster(project, previewViewport), imageProvider);
     seek.max = String(durationMs);
