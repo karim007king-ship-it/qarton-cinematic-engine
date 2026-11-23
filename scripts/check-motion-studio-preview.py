@@ -97,6 +97,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
           }, {capture: true});
         }""")
         page.mouse.move(effect_start_x, effect_start_y)
+        page.evaluate("window.effectsPointerMoves = 0")
         page.mouse.down()
         page.wait_for_function("""() => {
           const root = document.querySelector('#visualEffectsTracks');
@@ -113,11 +114,12 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         }""")
         page.wait_for_function("""() => {
           const clip = document.querySelector('#visualEffectsTracks .visual-effect-clip');
-          return clip && !clip.getAttribute('aria-label').includes('00:00.50');
+          return (clip && !clip.getAttribute('aria-label').includes('00:00.50')) ||
+            document.querySelector('#visualEffectsMessage').textContent.startsWith('تعذر نقل المؤثر:');
         }""")
         page.mouse.up()
         moved_effect_label = page.locator(".visual-effect-clip").get_attribute("aria-label")
-        assert moved_effect_label != "Fade، يبدأ 00:00.50، المدة 00:01.50", moved_effect_label
+        assert moved_effect_label != "Fade، يبدأ 00:00.50، المدة 00:01.50", page.locator("#visualEffectsMessage").inner_text()
         # Cancellation and capture loss stop future motion while retaining last committed time.
         effect_box_clip = page.locator(".visual-effect-clip").bounding_box()
         page.mouse.move(effect_box_clip["x"] + effect_box_clip["width"] / 2, effect_box_clip["y"] + effect_box_clip["height"] / 2)
