@@ -2,12 +2,70 @@
 from pathlib import Path
 from os import environ
 import shutil
+import subprocess
 import tempfile
 import math
+import re
 import struct
 import wave
 
 from playwright.sync_api import sync_playwright
+
+
+def measure_media_timeline(entries, timestamp_fields, duration_fields):
+    """Measure a stream timeline from frame/packet timestamps, with final-unit fallback."""
+    samples = []
+    for entry in entries:
+        timestamp = None
+        for field in timestamp_fields:
+            try:
+                candidate = float(entry[field])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if math.isfinite(candidate):
+                timestamp = candidate
+                break
+        if timestamp is None:
+            continue
+        duration = None
+        for field in duration_fields:
+            try:
+                candidate = float(entry[field])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if math.isfinite(candidate) and candidate > 0:
+                duration = candidate
+                break
+        samples.append((timestamp, duration))
+
+    assert samples, f"ffprobe returned no usable timestamps for {timestamp_fields}"
+    timestamps = sorted({timestamp for timestamp, _ in samples})
+    intervals = [right - left for left, right in zip(timestamps, timestamps[1:]) if right > left]
+    if intervals:
+        ordered = sorted(intervals)
+        middle = len(ordered) // 2
+        final_unit = ordered[middle] if len(ordered) % 2 else (ordered[middle - 1] + ordered[middle]) / 2
+    else:
+        final_unit = None
+
+    start = timestamps[0]
+    end_candidates = [timestamp + duration for timestamp, duration in samples if duration is not None]
+    end = max(end_candidates, default=timestamps[-1])
+    if final_unit is not None:
+        end = max(end, timestamps[-1] + final_unit)
+    assert end > start, f"ffprobe timestamps do not establish a positive timeline for {timestamp_fields}"
+    return {"start": start, "end": end, "duration": end - start}
+
+
+# Regression coverage for streams without container or packet-duration metadata.
+assert abs(measure_media_timeline(
+    [{"best_effort_timestamp_time": value} for value in ("0", "1", "2")],
+    ("best_effort_timestamp_time",), ("pkt_duration_time", "duration_time")
+)["duration"] - 3.0) < 1e-9
+assert abs(measure_media_timeline(
+    [{"pts_time": str(value / 2), "duration_time": "0.5"} for value in range(6)],
+    ("pts_time", "dts_time"), ("duration_time",)
+)["duration"] - 3.0) < 1e-9
 
 
 root = Path(__file__).resolve().parents[1]
@@ -28,6 +86,24 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         wav.setsampwidth(2)
         wav.setframerate(22050)
         wav.writeframes(b"".join(struct.pack("<h", int(900 * math.sin(2 * math.pi * 440 * i / 22050))) for i in range(22050 * 2)))
+    sync_audio_sample = Path(tmp) / "av-sync.wav"
+    sync_marks = [0.25, 1.0, 2.0]
+    with wave.open(str(sync_audio_sample), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(48000)
+        samples = []
+        for index in range(48000 * 3):
+            at = index / 48000
+            pulse = next((start for start in sync_marks if start <= at < start + 0.08), None)
+            if pulse is None:
+                sample_value = 0
+            else:
+                edge = min(at - pulse, pulse + 0.08 - at)
+                envelope = min(1.0, max(0.0, edge / 0.004))
+                sample_value = int(10000 * envelope * math.sin(2 * math.pi * 440 * at))
+            samples.append(struct.pack("<h", sample_value))
+        wav.writeframes(b"".join(samples))
     with sync_playwright() as pw:
         executable = environ.get("CHROMIUM_EXECUTABLE_PATH")
         browser = pw.chromium.launch(executable_path=executable) if executable else pw.chromium.launch(channel="chrome")
@@ -402,6 +478,184 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
             assert page.locator("#exportVideo").is_hidden()
             assert "alternate-photo.png" in page.locator("#imageName").inner_text()
+
+        # Measure synchronization from one actual L10 recording. Audio contains three
+        # short sine bursts; zero-duration flash state clips mark the same scene times.
+        if support["webm"]:
+            sync_page = browser.new_page(accept_downloads=True)
+            sync_page.on("pageerror", lambda error: errors.append(str(error)))
+            sync_page.goto(preview.as_uri())
+            sync_page.wait_for_function("document.querySelector('#stage')?.width === 720")
+            sync_page.locator("#imageInput").set_input_files(str(sample))
+            sync_page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+            sync_page.locator("#audioInput").set_input_files(str(sync_audio_sample))
+            sync_page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('تم التحقق من الملف')")
+            sync_page.locator("#audioTrackType").select_option("dialogue")
+            sync_page.locator("#seek").evaluate("""el => { el.value = '0'; el.dispatchEvent(new Event('input', {bubbles: true})); }""")
+            sync_page.locator("#addAudioClip").click()
+            assert sync_page.locator(".audio-clip").count() == 1
+            sync_page.locator("#integratedFrom").fill("0")
+            sync_page.locator("#integratedTo").fill("3000")
+            sync_page.locator("#integratedQuality").select_option("480p")
+            sync_page.locator("#integratedFormat").select_option("webm")
+            sync_page.locator("#integratedAudio").select_option("mix")
+
+            for mark in sync_marks:
+                for at, intensity in ((mark, "1"), (mark + 0.16, "0")):
+                    sync_page.locator("#seek").evaluate("""(el, ms) => { el.value = String(ms); el.dispatchEvent(new Event('input', {bubbles: true})); }""", round(at * 1000))
+                    sync_page.locator("#visualEffectType").select_option("flash")
+                    sync_page.locator("#addVisualEffect").click()
+                    sync_page.locator("#visualEffectDuration").fill("0")
+                    sync_page.locator("#visualEffectDuration").dispatch_event("change")
+                    for source in ("visualEffectFrom", "visualEffectTo"):
+                        field = sync_page.locator(f'#{source} [data-effect-field="intensity"]')
+                        field.fill(intensity)
+                        field.dispatch_event("change")
+
+            sync_page.locator("#integratedProbeButton").click()
+            sync_page.wait_for_function("""() => document.querySelector('#integratedStatus').textContent.includes('تم التحقق فعليًا') ||
+              !document.querySelector('#integratedError').hidden""", timeout=30000)
+            probe_status = sync_page.locator("#integratedStatus").inner_text()
+            probe_error = sync_page.locator("#integratedError").inner_text()
+            assert "تم التحقق فعليًا" in probe_status, f"exact-profile capability probe failed: {probe_status}; {probe_error}"
+            assert not sync_page.locator("#integratedExportButton").is_disabled()
+            sync_page.locator("#integratedExportButton").click()
+            sync_page.wait_for_function("""() => document.querySelector('#integratedStatus').textContent.includes('اكتمل التصدير المتكامل') ||
+              !document.querySelector('#integratedError').hidden""", timeout=30000)
+            integrated_status = sync_page.locator("#integratedStatus").inner_text()
+            integrated_error = sync_page.locator("#integratedError").inner_text()
+            assert "اكتمل التصدير المتكامل" in integrated_status, f"integrated export failed: {integrated_status}; {integrated_error}; page errors: {errors}"
+            with sync_page.expect_download() as sync_download_info:
+                sync_page.locator("#integratedDownload").click()
+            sync_output = Path(tmp) / "integrated-av-sync.webm"
+            sync_download_info.value.save_as(sync_output)
+            assert sync_output.is_file() and sync_output.stat().st_size > 0
+
+            probe = __import__("json").loads(subprocess.check_output([
+                "ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(sync_output)
+            ], text=True, timeout=60))
+            video_stream = next(stream for stream in probe["streams"] if stream["codec_type"] == "video")
+            audio_stream = next(stream for stream in probe["streams"] if stream["codec_type"] == "audio")
+            video_frames = __import__("json").loads(subprocess.check_output([
+                "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_frames",
+                "-show_entries", "frame=best_effort_timestamp_time,pkt_duration_time,duration_time",
+                "-of", "json", str(sync_output)
+            ], text=True, timeout=60)).get("frames", [])
+            audio_packets = __import__("json").loads(subprocess.check_output([
+                "ffprobe", "-v", "error", "-select_streams", "a:0", "-show_packets",
+                "-show_entries", "packet=pts_time,dts_time,duration_time",
+                "-of", "json", str(sync_output)
+            ], text=True, timeout=60)).get("packets", [])
+            video_timeline = measure_media_timeline(
+                video_frames, ("best_effort_timestamp_time", "pts_time"), ("pkt_duration_time", "duration_time"))
+            audio_timeline = measure_media_timeline(
+                audio_packets, ("pts_time", "dts_time"), ("duration_time",))
+            # WebM commonly omits format.duration. Require both encoded tracks and the
+            # complete A/V envelope to stay within the L10-A 150 ms recording tolerance.
+            target_duration_s = 3.0
+            duration_tolerance_s = max(0.150, 1000 / 24 / 1000)
+            av_timeline_duration = max(video_timeline["end"], audio_timeline["end"]) - min(
+                video_timeline["start"], audio_timeline["start"])
+            for label, measured in (("video", video_timeline["duration"]),
+                                    ("audio", audio_timeline["duration"]),
+                                    ("A/V envelope", av_timeline_duration)):
+                assert abs(measured - target_duration_s) <= duration_tolerance_s, (
+                    label, measured, target_duration_s, duration_tolerance_s,
+                    video_timeline, audio_timeline)
+            # The browser reports Infinity for some valid WebM files. Check actual
+            # playback and use a real seek range when exposed by the media element.
+            viewport_text = sync_page.locator("#viewportValue").inner_text().split("·", 1)[0]
+            viewport_dimensions = [int(value) for value in re.findall(r"\d+", viewport_text)]
+            assert len(viewport_dimensions) >= 2, viewport_text
+            source_width, source_height = viewport_dimensions[:2]
+            scale = min(1, 480 / min(source_width, source_height), 854 / max(source_width, source_height))
+            expected_width = max(2, math.floor(source_width * scale / 2) * 2)
+            expected_height = max(2, math.floor(source_height * scale / 2) * 2)
+            integrated_video = sync_page.locator("#integratedVideo")
+            sync_page.wait_for_function("document.querySelector('#integratedVideo').readyState >= 1", timeout=10000)
+            media_state = integrated_video.evaluate("""video => ({
+              readyState: video.readyState, videoWidth: video.videoWidth, videoHeight: video.videoHeight,
+              seekable: Array.from({length: video.seekable.length}, (_, index) =>
+                [video.seekable.start(index), video.seekable.end(index)])
+            })""")
+            assert media_state["readyState"] >= 1 and media_state["videoWidth"] == expected_width and \
+                media_state["videoHeight"] == expected_height, media_state
+            integrated_video.evaluate("""video => {
+              video.muted = true;
+              return Promise.race([
+                video.play(),
+                new Promise((_, reject) => setTimeout(() => reject(new Error("WebM playback did not start within 5 seconds")), 5000))
+              ]);
+            }""")
+            sync_page.wait_for_function("document.querySelector('#integratedVideo').currentTime > 0.1", timeout=5000)
+            integrated_video.evaluate("video => video.pause()")
+            finite_seekable = [(start, end) for start, end in media_state["seekable"]
+                               if math.isfinite(start) and math.isfinite(end) and end > start]
+            if finite_seekable:
+                seek_start, seek_end = finite_seekable[-1]
+                seek_target = max(seek_start, seek_end - 0.2)
+            elif media_state["seekable"]:
+                # Some Chromium WebM demuxers mark the live range end as +Infinity.
+                # The tested file has a finite frame-derived duration, so seek inside
+                # that measured interval instead of forwarding Infinity to currentTime.
+                seek_target = max(0, video_timeline["duration"] - 0.2)
+            else:
+                seek_target = None
+            if seek_target is not None:
+                assert math.isfinite(seek_target), seek_target
+                integrated_video.evaluate("(video, target) => { video.currentTime = target; }", seek_target)
+                sync_page.wait_for_function(
+                    "(target) => Math.abs(document.querySelector('#integratedVideo').currentTime - target) < 0.08",
+                    arg=seek_target, timeout=5000)
+                playback_navigation = "seeked"
+            else:
+                playback_navigation = "playback-only (no seekable range)"
+            print(f"L10-B playback: played; navigation={playback_navigation}")
+            assert video_stream["width"] == expected_width and video_stream["height"] == expected_height, (video_stream, (expected_width, expected_height))
+            video_start = video_timeline["start"]
+            audio_start = audio_timeline["start"]
+            frame_pts = [float(value) for value in subprocess.check_output([
+                "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "frame=best_effort_timestamp_time",
+                "-of", "csv=p=0", str(sync_output)
+            ], text=True, timeout=60).splitlines() if value.strip()]
+            luma_raw = subprocess.check_output([
+                "ffmpeg", "-v", "error", "-i", str(sync_output), "-map", "0:v:0", "-vf", "scale=1:1,format=gray",
+                "-vsync", "0", "-f", "rawvideo", "-"
+            ], timeout=60)
+            assert len(luma_raw) == len(frame_pts), (len(luma_raw), len(frame_pts))
+            bright_frames = [frame_pts[index] - video_start for index, value in enumerate(luma_raw) if value >= 225]
+            bright_groups = []
+            for timestamp in bright_frames:
+                if not bright_groups or timestamp - bright_groups[-1][-1] > 0.10:
+                    bright_groups.append([timestamp])
+                else:
+                    bright_groups[-1].append(timestamp)
+            flash_times = [sum(group) / len(group) for group in bright_groups if len(group) >= 2]
+            pcm = subprocess.check_output([
+                "ffmpeg", "-v", "error", "-i", str(sync_output), "-map", "0:a:0", "-ac", "1", "-ar", "48000",
+                "-f", "s16le", "-"
+            ], timeout=60)
+            pcm_values = struct.unpack("<" + "h" * (len(pcm) // 2), pcm)
+            window = 480  # 10 ms RMS windows at 48 kHz.
+            loud_windows = []
+            for offset in range(0, len(pcm_values) - window, window):
+                rms = math.sqrt(sum(value * value for value in pcm_values[offset:offset + window]) / window)
+                if rms > 1200:
+                    loud_windows.append(audio_start + offset / 48000)
+            audio_groups = []
+            for timestamp in loud_windows:
+                if not audio_groups or timestamp - audio_groups[-1][-1] > 0.10:
+                    audio_groups.append([timestamp])
+                else:
+                    audio_groups[-1].append(timestamp)
+            audio_times = [sum(group) / len(group) for group in audio_groups if len(group) >= 3]
+            assert len(flash_times) == len(sync_marks), (flash_times, bright_groups)
+            assert len(audio_times) == len(sync_marks), audio_times
+            drifts = [round((video - audio) * 1000, 1) for video, audio in zip(flash_times, audio_times)]
+            assert max(abs(value) for value in drifts) <= 100, drifts
+            assert max(drifts) - min(drifts) <= 50, drifts
+            print(f"L10-B output sync: markers={len(sync_marks)}, drift_ms={drifts}, streams={video_stream['codec_name']}/{audio_stream['codec_name']}")
+            sync_page.close()
         effect_lane = page.locator('#visualEffectsTracks .visual-effect-lane[data-effect-type="fade"]')
         effect_clip = page.locator(".visual-effect-clip")
         effect_lane.scroll_into_view_if_needed()

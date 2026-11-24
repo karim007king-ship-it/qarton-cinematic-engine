@@ -163,10 +163,11 @@ test("Motion Studio host exposes effect controls and uses the shared scene time"
   const { readFile } = await import("node:fs/promises");
   const html = await readFile(new URL("../examples/motion-studio-lab/index.html", import.meta.url), "utf8");
   const host = await readFile(new URL("../examples/motion-studio-lab/studio.js", import.meta.url), "utf8");
+  const renderer = await readFile(new URL("../examples/motion-studio-lab/studio-scene-renderer.js", import.meta.url), "utf8");
   for (const id of ["visualEffectType", "addVisualEffect", "deleteVisualEffect", "visualEffectsTracks", "visualEffectStart", "visualEffectDuration", "visualEffectEasing", "visualEffectFrom", "visualEffectTo"]) assert.match(html, new RegExp(`id="${id}"`));
-  assert.match(host, /sampleVisualEffects\(visualEffectsCompiled, currentMs\)/);
+  assert.match(renderer, /sampleVisualEffects\(visualEffectsCompiled, timeMs\)/);
   assert.match(host, /makeProjectFile\([^\n]*visualEffectsTrack/);
-  assert.match(host, /exportAudio\.sample\(projectMs\)\.dialogue/);
+  assert.match(host, /audioSample: exportAudio\.sample\(projectMs\)/);
   assert.match(host, /compileAudioTracks\(audioTracks, exportCompiled\.durationMs\)/);
   assert.match(host, /visualEffectsTimeline\?\.setBusy\(busy\)/);
 });

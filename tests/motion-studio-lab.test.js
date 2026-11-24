@@ -14,7 +14,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 test("mobile interface exposes portrait preview, image input, camera controls and timeline", async () => {
   const html = await readFile(resolve(root, "examples/motion-studio-lab/index.html"), "utf8");
-  for (const id of ["stage", "imageInput", "aspectPreset", "fitMode", "viewportValue", "duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "seek", "playPauseButton", "replayButton", "saveProjectButton", "loadProjectButton", "exportFormat", "exportDuration", "exportQuality", "exportAudioEnabled", "exportButton", "cancelExportButton", "tryWebmButton", "exportProgress", "exportVideo", "exportDownload", "exportMetadata"]) {
+  for (const id of ["stage", "imageInput", "aspectPreset", "fitMode", "viewportValue", "duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "seek", "playPauseButton", "replayButton", "saveProjectButton", "loadProjectButton", "exportFormat", "exportDuration", "exportQuality", "exportAudioEnabled", "exportButton", "cancelExportButton", "tryWebmButton", "exportProgress", "exportVideo", "exportDownload", "exportMetadata", "integratedFrom", "integratedTo", "integratedQuality", "integratedFormat", "integratedAudio", "integratedMissingAudio", "integratedProbeButton", "integratedExportButton", "integratedProgress", "integratedVideo", "integratedDownload"]) {
     assert.match(html, new RegExp(`id=["']${id}["']`), `missing interface control ${id}`);
   }
   for (const id of ["characterTimelineLane", "characterTimelineMarkers", "addCharacterKeyframe", "deleteCharacterKeyframe", "characterTimelinePlayhead"]) {
@@ -26,7 +26,8 @@ test("mobile interface exposes portrait preview, image input, camera controls an
   assert.match(html, /width="720" height="1280"/);
   assert.match(html, /value="original" selected/);
   assert.match(html, /value="fit" selected/);
-  assert.match(html, /<h2 id="exportHeading">تصدير الفيديو<\/h2>/);
+  assert.match(html, /<h2 id="exportHeading">تصدير الفيديو · L5<\/h2>/);
+  assert.match(html, /<h2 id="integratedExportHeading">تصدير سينمائي متكامل · L10-B<\/h2>/);
   assert.match(html, /value="mp4"/);
   assert.match(html, /value="webm"/);
   assert.match(html, /viewport" content="width=device-width, initial-scale=1/);
@@ -278,8 +279,7 @@ test("browser module uses the engine sampling API and includes deterministic see
   const source = await readFile(resolve(root, "examples/motion-studio-lab/studio.js"), "utf8");
   const timeline = await readFile(resolve(root, "examples/motion-studio-lab/studio-timeline.js"), "utf8");
   const characterTimeline = await readFile(resolve(root, "examples/motion-studio-lab/studio-character-timeline.js"), "utf8");
-  assert.match(source, /import \{[^}]*compileProject[^}]*drawFrame[^}]*sampleFrame[^}]*\} from "@qarton\/cinematic-engine\/motion-studio"/);
-  assert.match(source, /sampleFrame\(compiled, currentMs\)/);
+  assert.match(source, /import \{[^}]*compileProject[^}]*sampleFrame[^}]*\} from "@qarton\/cinematic-engine\/motion-studio"/);
   assert.match(source, /seek\.addEventListener\("input"/);
   assert.match(source, /function replay\(\)/);
   assert.match(source, /audioPlayer\.replay\(\)/);
@@ -291,9 +291,12 @@ test("browser module uses the engine sampling API and includes deterministic see
   assert.match(source, /bitmap\.close/);
   assert.doesNotMatch(source, /createCameraTrack|sampleCameraTrack|createTimeline/);
   assert.match(source, /createStudioTimeline/);
-  assert.match(source, /characterAnimation\.sample\(currentMs\)/);
-  assert.match(source, /exportCharacter\.sample\(projectMs\)/);
-  assert.match(source, /drawCharacter\(ctx/);
+  const renderer = await readFile(resolve(root, "examples/motion-studio-lab/studio-scene-renderer.js"), "utf8");
+  assert.match(renderer, /sampleFrame\(compiledProject, timeMs\)/);
+  assert.match(source, /drawStudioScene\(\{ ctx: context, compiledProject: compiled, timeMs: currentMs/);
+  assert.match(source, /drawStudioScene\(\{ ctx, compiledProject: exportCompiled, timeMs: projectMs/);
+  assert.match(renderer, /characterAnimation\.sample\(timeMs\)/);
+  assert.match(renderer, /drawCharacterWithCamera\(ctx, pose/);
   assert.match(source, /characterTimeline\?\.setBusy\(busy\)/);
   assert.match(source, /makeProjectFile\(project, currentFileInfo, \{ aspectPreset, fitMode \}, characterTrack, audioTracks, audioAssets, audioMasterVolume, visualEffectsTrack\)/);
   assert.match(characterTimeline, /pointercancel/);
@@ -324,8 +327,11 @@ test("UI prepares a candidate project before committing the active project and c
 
 test("video export uses Motion Studio sampling, cancellation, resource cleanup and real MIME probes", async () => {
   const source = await readFile(resolve(root, "examples/motion-studio-lab/studio.js"), "utf8");
+  const renderer = await readFile(resolve(root, "examples/motion-studio-lab/studio-scene-renderer.js"), "utf8");
   assert.match(source, /compileProject\(projectForRaster\(project, rasterViewport\), imageProvider\)/);
-  assert.match(source, /drawFrame\(ctx, \{ \.\.\.sampleFrame\(exportCompiled, projectMs\), camera: effectSample\.camera \}\)/);
+  assert.match(renderer, /drawFrame\(ctx, \{ \.\.\.sampleFrame\(compiledProject, timeMs\), camera: effectSample\.camera \}\)/);
+  assert.match(source, /startExport\(plan, host/);
+  assert.match(source, /planExport\(snapshot/);
   assert.match(source, /supportedCandidates\(RecorderClass, "mp4"\)/);
   assert.match(source, /supportedCandidates\(RecorderClass, "webm"\)/);
   assert.match(source, /controller\.abort\(abortError\)/);

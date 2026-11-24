@@ -2,7 +2,7 @@ name: Motion Studio Android preview
 
 on:
   pull_request:
-    branches: [main, integration/character-animation-timeline-l7, feature/audio-dialogue-timeline-l8b]
+    branches: [main, integration/character-animation-timeline-l7, feature/audio-dialogue-timeline-l8b, docs/motion-studio-export-l10a]
     paths:
       - '.github/workflows/motion-studio-preview.yml'
       - 'examples/motion-studio-lab/**'
@@ -14,6 +14,7 @@ on:
       - 'src/effects/**'
       - 'tests/motion-studio-audio-timeline.test.js'
       - 'tests/motion-studio-visual-effects.test.js'
+      - 'tests/motion-studio-export-*.test.js'
       - 'scripts/build-motion-studio-preview.mjs'
       - 'scripts/check-motion-studio-preview.py'
   push:
@@ -23,6 +24,7 @@ on:
       - feature/character-animation-timeline-l7b
       - feature/audio-dialogue-timeline-l8b
       - feature/visual-effects-timeline-l9b
+      - feature/integrated-av-export-l10b
   workflow_dispatch:
 
 permissions:
@@ -30,7 +32,7 @@ permissions:
 
 jobs:
   preview:
-    if: github.event_name != 'pull_request' || contains(fromJSON('["feature/motion-studio-video-export-l5","feature/motion-studio-visual-timeline-l6b","feature/character-animation-timeline-l7b","feature/audio-dialogue-timeline-l8b","feature/visual-effects-timeline-l9b"]'), github.event.pull_request.head.ref)
+    if: github.event_name != 'pull_request' || contains(fromJSON('["feature/motion-studio-video-export-l5","feature/motion-studio-visual-timeline-l6b","feature/character-animation-timeline-l7b","feature/audio-dialogue-timeline-l8b","feature/visual-effects-timeline-l9b","feature/integrated-av-export-l10b"]'), github.event.pull_request.head.ref)
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout PR branch
@@ -56,6 +58,9 @@ jobs:
           elif [ "$BRANCH_NAME" = 'feature/visual-effects-timeline-l9b' ]; then
             PREVIEW_SLUG='motion-studio-l9b-android-preview'
             PREVIEW_LABEL='L9-B'
+          elif [ "$BRANCH_NAME" = 'feature/integrated-av-export-l10b' ]; then
+            PREVIEW_SLUG='motion-studio-l10b-android-preview'
+            PREVIEW_LABEL='L10-B'
           else
             PREVIEW_SLUG='motion-studio-l5-android-preview'
             PREVIEW_LABEL='L5'
@@ -71,6 +76,8 @@ jobs:
         run: npm test
       - name: Check local-file startup and secure browser APIs
         run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
           python -m pip install playwright==1.55.0
           python scripts/check-motion-studio-preview.py
       - name: Package Android preview ZIP

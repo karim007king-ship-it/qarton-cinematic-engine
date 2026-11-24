@@ -194,7 +194,7 @@
         </section>
 
         <section class="control-card export-card" aria-labelledby="exportHeading">
-          <h2 id="exportHeading">تصدير الفيديو</h2>
+          <h2 id="exportHeading">تصدير الفيديو · L5</h2>
           <p class="hint">يُسجّل المشروع الحالي محليًا. افحص الصيغة على جهازك؛ توفر MediaRecorder يختلف بين المتصفحات.</p>
           <label class="field-label" for="exportFormat">الصيغة
             <select id="exportFormat" aria-label="صيغة الفيديو">
@@ -232,11 +232,43 @@
           <a id="exportDownload" class="download-link" hidden>حفظ الفيديو على الهاتف</a>
           <p class="hint">تُحصر دقة التسجيل وحجمه للمحافظة على ذاكرة Android. اترك الصفحة مفتوحة أثناء التسجيل.</p>
         </section>
+
+        <section class="control-card export-card integrated-export-card" aria-labelledby="integratedExportHeading">
+          <h2 id="integratedExportHeading">تصدير سينمائي متكامل · L10-B</h2>
+          <p class="hint">يجمع الصورة وحركة الكاميرا والشخصية والشفاه والمؤثرات ومسارات الصوت في ملف محلي واحد. اختر الملف الصوتي من الهاتف قبل التصدير.</p>
+          <div class="control-grid">
+            <label class="field-label" for="integratedFrom">بداية نطاق المشهد (ms)<input id="integratedFrom" type="number" min="0" step="1" inputmode="numeric" value="0"></label>
+            <label class="field-label" for="integratedTo">نهاية نطاق المشهد (ms)<input id="integratedTo" type="number" min="1" step="1" inputmode="numeric" value="12000"></label>
+            <label class="field-label" for="integratedQuality">دقة الإخراج
+              <select id="integratedQuality"><option value="480p">480p · اقتصادي</option><option value="720p" selected>720p · متوازن</option><option value="1080p">1080p · أعلى</option></select>
+            </label>
+            <label class="field-label" for="integratedFormat">صيغة الملف
+              <select id="integratedFormat"><option value="auto" selected>تلقائي · MP4 ثم WebM</option><option value="mp4">MP4 فقط</option><option value="webm">WebM فقط</option></select>
+            </label>
+            <label class="field-label" for="integratedAudio">مسارات الصوت
+              <select id="integratedAudio"><option value="mix" selected>مزج الحوار والموسيقى والمؤثرات</option><option value="none">فيديو فقط</option></select>
+            </label>
+            <label class="field-label" for="integratedMissingAudio">ملف صوت غير مرتبط
+              <select id="integratedMissingAudio"><option value="error" selected>إيقاف التصدير وعرض الملفات</option><option value="silence">تصدير صامت لهذا المقطع</option></select>
+            </label>
+          </div>
+          <div class="export-actions">
+            <button id="integratedProbeButton" class="secondary-button" type="button" disabled>فحص الصيغة والدقة على الجهاز</button>
+            <button id="integratedExportButton" class="primary-button" type="button" disabled>تصدير المشروع مع الصوت</button>
+          </div>
+          <progress id="integratedProgress" max="1" value="0" aria-label="تقدم التصدير المتكامل"></progress>
+          <p id="integratedStatus" class="hint export-status" role="status" aria-live="polite">افحص دعم الجهاز للصيغة والدقة المحددتين قبل التصدير.</p>
+          <p id="integratedError" class="error-message" role="alert" hidden></p>
+          <video id="integratedVideo" class="export-video" controls playsinline hidden></video>
+          <p id="integratedMetadata" class="export-metadata">لم يُنشأ تصدير متكامل بعد.</p>
+          <a id="integratedDownload" class="download-link" hidden>حفظ الفيديو المتكامل على الهاتف</a>
+          <p class="hint">الحدود المسبقة: 24 MiB للملف و32 MiB للصوت المفكوك. هذه معاينة متصفح Android مستقلة؛ لم تثبت بعد فعليًا على الهاتف.</p>
+        </section>
       </div>
     </section>
     <p id="errorMessage" class="error-message" role="alert" hidden></p>
     <footer>نسخة تجريبية · التصدير محلي على الجهاز · اختبر الصيغة الناتجة قبل اعتمادها</footer>
   </main>
-  <script type="module" src="./studio.js?v=l8b-audio-timeline-01"></script>
+  <script type="module" src="./studio.js?v=l10b-integrated-01"></script>
 </body>
 </html>

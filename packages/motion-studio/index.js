@@ -2,6 +2,9 @@ import { createCameraTrack, sampleCameraTrack } from "@qarton/cinematic-engine/c
 import { clamp } from "@qarton/cinematic-engine/motion";
 import { createTimeline } from "@qarton/cinematic-engine/motion/timeline";
 
+export { EXPORT_LIMITS, EXPORT_PROFILES, ExportError, planExport, rasterForQuality,
+  prepareAudioMix, MIME_CANDIDATES, probeExport, startExport } from "./export/index.js";
+
 export {
   addCameraKeyframe,
   deleteCameraKeyframe,

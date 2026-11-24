@@ -116,10 +116,13 @@ test("phone audio UI exposes three lanes, clip editing, manual visemes, and shar
   const html = await readFile(new URL("../examples/motion-studio-lab/index.html", import.meta.url), "utf8");
   const js = await readFile(new URL("../examples/motion-studio-lab/studio.js", import.meta.url), "utf8");
   const module = await readFile(new URL("../examples/motion-studio-lab/studio-audio-timeline.js", import.meta.url), "utf8");
+  const renderer = await readFile(new URL("../examples/motion-studio-lab/studio-scene-renderer.js", import.meta.url), "utf8");
   for (const id of ["audioInput", "audioTrackType", "addAudioClip", "deleteAudioClip", "audioClipStart", "audioClipDuration", "audioClipVolume", "audioMasterVolume", "dialogueLanguage", "visemeType", "addViseme", "audioTracks"]) assert.match(html, new RegExp(`id=["']${id}["']`));
   assert.match(js, /createCinematicAudioPlayer/);
   assert.match(js, /audioPlayer\.tick\(\)/);
-  assert.match(js, /audioSample\.dialogue/);
+  assert.match(js, /drawStudioScene/);
+  assert.match(renderer, /audioSample\?\.dialogue/);
+  assert.match(renderer, /characterAnimation\.sample\(timeMs\)/);
   assert.match(js, /audioTimeline\?\.setBusy\(busy\)/);
   assert.match(module, /pointercancel/);
   assert.match(module, /lostpointercapture/);
