@@ -171,6 +171,7 @@ export function drawFrame(ctx, frame) {
 }
 
 const SEQUENCE_LIMITS = Object.freeze({ scenes: 32, assets: 256, durationMs: 300_000 });
+const MAX_SEQUENCE_V2_JSON_BYTES = 2 * 1024 * 1024;
 const SEQUENCE_ASSET_KINDS = new Set(["image", "audio", "font", "other"]);
 const SEQUENCE_MIME = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/iu;
 const compiledSequences = new WeakMap();
@@ -453,6 +454,26 @@ export function createStudioSequenceV2({ viewport, scenes, assets = [], transiti
   const resolvedTransitions = transitions ?? initialScenes.slice(1).map((scene, index) =>
     cutTransitionV2(initialScenes[index].id, scene.id));
   return validateStudioSequenceV2({ version: 2, kind: "studio-sequence", viewport, scenes: initialScenes, assets, transitions: resolvedTransitions });
+}
+
+/** Serialize validated V2 metadata without touching or embedding external media bytes. */
+export function serializeStudioSequenceV2(sequence) {
+  const text = JSON.stringify(validateStudioSequenceV2(sequence));
+  if (new TextEncoder().encode(text).byteLength > MAX_SEQUENCE_V2_JSON_BYTES) {
+    throw new RangeError("StudioSequenceV2 JSON exceeds 2 MiB");
+  }
+  return text;
+}
+
+/** Parse a V2 JSON snapshot strictly; callers persist media bytes in the asset registry separately. */
+export function parseStudioSequenceV2(text) {
+  if (typeof text !== "string" || new TextEncoder().encode(text).byteLength > MAX_SEQUENCE_V2_JSON_BYTES) {
+    throw new RangeError("StudioSequenceV2 JSON is invalid or exceeds 2 MiB");
+  }
+  let value;
+  try { value = JSON.parse(text); }
+  catch { throw new TypeError("StudioSequenceV2 JSON is invalid"); }
+  return validateStudioSequenceV2(value);
 }
 
 /** Compile V2 overlaps once for deterministic absolute-time sampling. */
