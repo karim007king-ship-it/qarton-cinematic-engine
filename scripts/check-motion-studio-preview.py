@@ -796,11 +796,8 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         assert fullscreen_button.bounding_box()["width"] >= 44 and fullscreen_button.bounding_box()["height"] >= 44
         touch_tap(fullscreen_button)
         touch_page.wait_for_function("document.fullscreenElement?.id === 'studioPreview' || document.querySelector('#studioPreview').classList.contains('preview-fullscreen')")
-        if touch_page.evaluate("document.fullscreenElement?.id === 'studioPreview'"):
-            touch_page.keyboard.press("Escape")
-            touch_page.wait_for_function("!document.fullscreenElement")
-        else:
-            touch_tap(fullscreen_button)
+        touch_tap(fullscreen_button)
+        touch_page.wait_for_function("!document.fullscreenElement && !document.querySelector('#studioPreview').classList.contains('preview-fullscreen')")
         touch_tap(touch_page.locator('nav.bottom-dock [data-editor-section="more"]'))
         touch_tap(touch_page.locator("#advancedProjectOptions > summary"))
         touch_page.locator("#aspectPreset").select_option("portrait")
