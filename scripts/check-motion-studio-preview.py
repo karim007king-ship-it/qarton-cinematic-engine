@@ -749,6 +749,10 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         touch_page.locator("#addSceneButton").tap()
         touch_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 2")
         assert touch_page.locator("#sequenceBlocks .sequence-block").count() == 2
+        fit_frame = touch_page.locator("#stage").evaluate("el => el.toDataURL()")
+        touch_page.locator("#fitMode").select_option("fill")
+        touch_page.wait_for_function("previous => document.querySelector('#stage').toDataURL() !== previous", fit_frame)
+        assert touch_page.locator("#fitMode").input_value() == "fill"
         touch_page.locator("#sceneName").fill("المشهد الثاني")
         touch_page.locator("#sceneName").dispatch_event("change")
         touch_page.locator("#sceneDuration").fill("4")
@@ -764,6 +768,12 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         touch_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 4")
         touch_page.locator("#deleteSceneButton").tap()
         touch_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 3")
+        touch_page.locator("#sceneThumbnails .scene-card").first.get_by_role("button", name="المشهد 1").tap()
+        touch_page.wait_for_function("document.querySelector('#sceneName').value === 'المشهد 1'")
+        assert touch_page.locator("#fitMode").input_value() == "fit", "switching scenes restores each scene's Fit setting"
+        touch_page.locator("#sceneThumbnails .scene-card").nth(2).get_by_role("button", name="المشهد الثاني").tap()
+        touch_page.wait_for_function("document.querySelector('#sceneName').value === 'المشهد الثاني'")
+        assert touch_page.locator("#fitMode").input_value() == "fill", "switching scenes restores each scene's Fill setting"
 
         # Exact global Cut boundary selects the next scene with local time zero.
         touch_page.locator("#sequenceSeek").evaluate("el => { el.value = '12000'; el.dispatchEvent(new Event('input', {bubbles:true})); }")

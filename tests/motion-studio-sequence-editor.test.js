@@ -18,6 +18,9 @@ test("editor names, active selection, thumbnails order and Cut timeline are stab
   assert.deepEqual(editor.scenes.map(({ id, startMs, endMs }) => [id, startMs, endMs]), [["a", 0, 3000], ["b", 3000, 8000]]);
   assert.equal(editor.sample(3000).sceneId, "b");
   assert.equal(editor.timeFor("b", 1200), 4200);
+  const cachedView = editor.snapshot();
+  assert.equal(editor.snapshot().compiled, cachedView.compiled, "read-only snapshots reuse the compiled sequence");
+  assert.equal(editor.scenes[0], cachedView.scenes[0], "read-only timeline queries reuse interval summaries");
   editor.activate("b");
   assert.equal(editor.activeSceneId, "b");
   editor.rename("b", "Finale");
@@ -38,6 +41,9 @@ test("editor add, duplicate, remove and reorder operations preserve names and im
   assert.deepEqual(editor.scenes.map(scene => scene.id), ["b", "a", "c"]);
   assert.equal(editor.nameOf("c"), "Middle");
   assert.equal(original.scenes.length, 2);
+  const longName = createStudioSequenceEditor(base(), { names: { a: "x".repeat(80), b: "Ending" } });
+  assert.equal(longName.duplicate("a", "a-copy").scenes[1].name.length, 80);
+  assert.ok(longName.nameOf("a-copy").endsWith(" — نسخة"));
 });
 
 test("scene duration editing moves endpoint key and rejects invalid or sequence-overflow durations", () => {
@@ -59,14 +65,21 @@ test("names reject empty and oversized values without changing saved metadata", 
   assert.equal(editor.nameOf("a"), "المشهد 1");
 });
 
-test("sequence files round-trip strict names/settings and reject mismatched scene metadata", () => {
+test("sequence files round-trip per-scene Fit/Fill settings and preserve earlier sequence-file defaults", () => {
   const editor = createStudioSequenceEditor(base(), { names: { a: "Opening", b: "Ending" } });
-  const text = serializeStudioSequenceFile(editor, { projectId: "local-project", aspectPreset: "portrait", fitMode: "fill", audioMasterVolume: 0.75 });
+  const text = serializeStudioSequenceFile(editor, { projectId: "local-project", aspectPreset: "portrait", fitMode: "fill", audioMasterVolume: 0.75,
+    sceneSettings: { a: { aspectPreset: "square", fitMode: "fit" }, b: { aspectPreset: "portrait", fitMode: "fill" } } });
   const parsed = parseStudioSequenceFile(text);
   assert.equal(parsed.editor.nameOf("b"), "Ending");
   assert.equal(parsed.editor.durationMs, 8000);
   assert.deepEqual(parsed.settings, { aspectPreset: "portrait", fitMode: "fill" });
+  assert.deepEqual(parsed.sceneSettings, { a: { aspectPreset: "square", fitMode: "fit" }, b: { aspectPreset: "portrait", fitMode: "fill" } });
   assert.equal(parsed.audioMasterVolume, 0.75);
   const broken = JSON.parse(text); broken.sceneNames.missing = "Wrong";
   assert.throws(() => parseStudioSequenceFile(JSON.stringify(broken)), /names do not match/iu);
+  const earlierFile = JSON.parse(text); delete earlierFile.sceneSettings;
+  const compatible = parseStudioSequenceFile(JSON.stringify(earlierFile));
+  assert.deepEqual(compatible.sceneSettings, { a: { aspectPreset: "portrait", fitMode: "fill" }, b: { aspectPreset: "portrait", fitMode: "fill" } });
+  const invalidSettings = JSON.parse(text); invalidSettings.sceneSettings.a.fitMode = "stretch";
+  assert.throws(() => parseStudioSequenceFile(JSON.stringify(invalidSettings)), /scene image settings/iu);
 });

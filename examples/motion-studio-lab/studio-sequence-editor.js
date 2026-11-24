@@ -24,10 +24,22 @@ function sceneIndex(sequence, id) {
 export function createStudioSequenceEditor(sequence, { names = {}, activeSceneId } = {}) {
   let snapshot = validateStudioSequenceV1(sequence);
   let compiledSnapshot = compileStudioSequence(snapshot);
+  let sceneSummaries = [];
   const labels = new Map();
   for (const scene of snapshot.scenes) labels.set(scene.id, checkedName(names[scene.id] ?? `المشهد ${sceneIndex(snapshot, scene.id) + 1}`));
   let activeId = activeSceneId ?? snapshot.scenes[0].id;
   sceneIndex(snapshot, activeId);
+
+  function rebuildSummaries() {
+    let startMs = 0;
+    sceneSummaries = snapshot.scenes.map((scene, index) => {
+      const endMs = startMs + scene.project.durationMs;
+      const summary = Object.freeze({ ...scene, name: labels.get(scene.id), index, startMs, endMs });
+      startMs = endMs;
+      return summary;
+    });
+  }
+  rebuildSummaries();
 
   function adopt(next, nextActive = activeId) {
     snapshot = validateStudioSequenceV1(next);
@@ -37,20 +49,16 @@ export function createStudioSequenceEditor(sequence, { names = {}, activeSceneId
     snapshot.scenes.forEach((scene, index) => {
       if (!labels.has(scene.id)) labels.set(scene.id, `المشهد ${index + 1}`);
     });
+    rebuildSummaries();
     activeId = present.has(nextActive) ? nextActive : snapshot.scenes[0].id;
     return view();
   }
 
   function view() {
-    const compiled = compileStudioSequence(snapshot);
     return Object.freeze({ sequence: snapshot, activeSceneId: activeId,
-      scenes: Object.freeze(snapshot.scenes.map((scene, index) => Object.freeze({
-        ...scene, name: labels.get(scene.id), index,
-        startMs: compiled.scenes.slice(0, index).reduce((sum, item) => sum + item.project.durationMs, 0),
-        endMs: compiled.scenes.slice(0, index + 1).reduce((sum, item) => sum + item.project.durationMs, 0)
-      }))),
-      durationMs: compiled.durationMs,
-      compiled });
+      scenes: Object.freeze(sceneSummaries),
+      durationMs: compiledSnapshot.durationMs,
+      compiled: compiledSnapshot });
   }
 
   function updateScene(id, update) {
@@ -63,16 +71,12 @@ export function createStudioSequenceEditor(sequence, { names = {}, activeSceneId
   return Object.freeze({
     get sequence() { return snapshot; },
     get activeSceneId() { return activeId; },
-    get durationMs() { return snapshot.scenes.reduce((sum, scene) => sum + scene.project.durationMs, 0); },
-    get scenes() { return Object.freeze(snapshot.scenes.map((scene, index) => Object.freeze({
-      ...scene, name: labels.get(scene.id), index,
-      startMs: snapshot.scenes.slice(0, index).reduce((sum, item) => sum + item.project.durationMs, 0),
-      endMs: snapshot.scenes.slice(0, index + 1).reduce((sum, item) => sum + item.project.durationMs, 0)
-    }))); },
+    get durationMs() { return compiledSnapshot.durationMs; },
+    get scenes() { return Object.freeze(sceneSummaries); },
     snapshot: view,
     nameOf(id) { sceneIndex(snapshot, id); return labels.get(id); },
     activate(id) { sceneIndex(snapshot, id); activeId = id; return view(); },
-    rename(id, value) { sceneIndex(snapshot, id); labels.set(id, checkedName(value)); return view(); },
+    rename(id, value) { sceneIndex(snapshot, id); labels.set(id, checkedName(value)); rebuildSummaries(); return view(); },
     replaceSequence(next) { return adopt(next); },
     add(scene, index = snapshot.scenes.length, name = undefined) {
       const next = addStudioSequenceScene(snapshot, scene, index);
@@ -81,7 +85,9 @@ export function createStudioSequenceEditor(sequence, { names = {}, activeSceneId
     },
     duplicate(id, newId, index = undefined) {
       const next = duplicateStudioSequenceScene(snapshot, id, { newId, index });
-      labels.set(newId, `${labels.get(id)} — نسخة`);
+      const suffix = " — نسخة";
+      const baseName = labels.get(id).slice(0, NAME_LIMIT - suffix.length).trimEnd();
+      labels.set(newId, checkedName(`${baseName}${suffix}`));
       return adopt(next, newId);
     },
     remove(id) {
@@ -109,21 +115,32 @@ export function createStudioSequenceEditor(sequence, { names = {}, activeSceneId
       const index = sceneIndex(snapshot, id);
       const scene = snapshot.scenes[index];
       if (!Number.isFinite(localMs)) throw new TypeError("Local scene time must be finite");
-      const startMs = snapshot.scenes.slice(0, index).reduce((sum, item) => sum + item.project.durationMs, 0);
-      return startMs + Math.max(0, Math.min(scene.project.durationMs, localMs));
+      return sceneSummaries[index].startMs + Math.max(0, Math.min(scene.project.durationMs, localMs));
     }
   });
 }
 
-export function serializeStudioSequenceFile(editor, { projectId, aspectPreset = "original", fitMode = "fit", audioMasterVolume = 1 } = {}) {
+const ASPECT_PRESETS = ["original", "square", "portrait", "landscape", "post", "classic-landscape", "classic-portrait"];
+function checkedSceneSettings(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) ||
+      Object.keys(value).sort().join("|") !== "aspectPreset|fitMode" ||
+      !ASPECT_PRESETS.includes(value.aspectPreset) || !["fit", "fill"].includes(value.fitMode)) {
+    throw new TypeError("Invalid scene image settings");
+  }
+  return Object.freeze({ aspectPreset: value.aspectPreset, fitMode: value.fitMode });
+}
+
+export function serializeStudioSequenceFile(editor, { projectId, aspectPreset = "original", fitMode = "fit", audioMasterVolume = 1, sceneSettings = null } = {}) {
   if (typeof projectId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u.test(projectId)) throw new TypeError("Invalid local project identifier");
   if (!["original", "square", "portrait", "landscape", "post", "classic-landscape", "classic-portrait"].includes(aspectPreset) ||
       !["fit", "fill"].includes(fitMode) || !Number.isFinite(audioMasterVolume) || audioMasterVolume < 0 || audioMasterVolume > 1) {
     throw new TypeError("Invalid sequence project settings");
   }
   const sceneNames = Object.fromEntries(editor.scenes.map(scene => [scene.id, checkedName(scene.name)]));
+  const serializedSceneSettings = Object.fromEntries(editor.scenes.map(scene => [scene.id,
+    checkedSceneSettings(sceneSettings?.[scene.id] ?? { aspectPreset, fitMode })]));
   const data = { format: STUDIO_SEQUENCE_FILE_FORMAT, version: 1, projectId, sequence: editor.sequence,
-    sceneNames, settings: { aspectPreset, fitMode }, audioMasterVolume };
+    sceneNames, sceneSettings: serializedSceneSettings, settings: { aspectPreset, fitMode }, audioMasterVolume };
   const text = JSON.stringify(data);
   if (new TextEncoder().encode(text).byteLength > MAX_SEQUENCE_FILE_BYTES) throw new RangeError("Sequence project exceeds 2 MiB");
   return text;
@@ -134,14 +151,16 @@ export function parseStudioSequenceFile(text) {
   let data;
   try { data = JSON.parse(text); } catch { throw new TypeError("Sequence project JSON is invalid"); }
   const keys = ["audioMasterVolume", "format", "projectId", "sceneNames", "sequence", "settings", "version"].sort();
-  if (!data || typeof data !== "object" || Array.isArray(data) || Object.keys(data).sort().join("|") !== keys.join("|")) {
+  const actualKeys = data && typeof data === "object" && !Array.isArray(data) ? Object.keys(data).sort() : [];
+  if (!data || typeof data !== "object" || Array.isArray(data) ||
+      (actualKeys.join("|") !== keys.join("|") && actualKeys.join("|") !== [...keys, "sceneSettings"].sort().join("|"))) {
     throw new TypeError("Sequence project envelope has invalid fields");
   }
   if (data.format !== STUDIO_SEQUENCE_FILE_FORMAT || data.version !== 1 ||
       typeof data.projectId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u.test(data.projectId) ||
       !data.sceneNames || typeof data.sceneNames !== "object" || Array.isArray(data.sceneNames) ||
       !data.settings || typeof data.settings !== "object" || Array.isArray(data.settings) ||
-      !["original", "square", "portrait", "landscape", "post", "classic-landscape", "classic-portrait"].includes(data.settings.aspectPreset) ||
+      !ASPECT_PRESETS.includes(data.settings.aspectPreset) ||
       !["fit", "fill"].includes(data.settings.fitMode) || !Number.isFinite(data.audioMasterVolume) ||
       data.audioMasterVolume < 0 || data.audioMasterVolume > 1) throw new TypeError("Sequence project metadata is invalid");
   const snapshot = validateStudioSequenceV1(data.sequence);
@@ -150,6 +169,14 @@ export function parseStudioSequenceFile(text) {
     throw new TypeError("Sequence project scene names do not match the sequence");
   }
   const names = Object.fromEntries(Object.entries(data.sceneNames).map(([id, name]) => [id, checkedName(name)]));
+  const sceneSettings = {};
+  if (data.sceneSettings !== undefined && (!data.sceneSettings || typeof data.sceneSettings !== "object" || Array.isArray(data.sceneSettings) ||
+      Object.keys(data.sceneSettings).length !== expectedIds.size || Object.keys(data.sceneSettings).some(id => !expectedIds.has(id)))) {
+    throw new TypeError("Sequence project scene settings do not match the sequence");
+  }
+  for (const scene of snapshot.scenes) {
+    sceneSettings[scene.id] = checkedSceneSettings(data.sceneSettings?.[scene.id] ?? data.settings);
+  }
   return Object.freeze({ editor: createStudioSequenceEditor(snapshot, { names }), projectId: data.projectId,
-    settings: Object.freeze({ ...data.settings }), audioMasterVolume: data.audioMasterVolume });
+    settings: Object.freeze({ ...data.settings }), sceneSettings: Object.freeze(sceneSettings), audioMasterVolume: data.audioMasterVolume });
 }

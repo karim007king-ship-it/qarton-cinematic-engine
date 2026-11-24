@@ -287,6 +287,10 @@ test("browser module uses the engine sampling API and includes deterministic see
   assert.match(source, /imageRequest\.isCurrent\(requestToken\)/);
   assert.match(source, /projectInput\.addEventListener\("change"[\s\S]*?imageRequest\.begin\(\)/);
   assert.match(source, /get: \(assetId\) => sceneImageSources\.get\(assetId\) \?\? \(project\.layers\.some\(\(layer\) => layer\.assetId === assetId\) \? imageSource : null\)/);
+  assert.match(source, /for \(const layer of project\.layers\) sceneImageSources\.set\(layer\.assetId, prepared\.surface\)/,
+    "Fit and Fill redraws refresh the cached scene asset used by the renderer");
+  assert.match(source, /const imageSettings = sceneImageSettings\(sceneId\);[\s\S]*?aspectPreset = imageSettings\.aspectPreset;[\s\S]*?fitMode = imageSettings\.fitMode/,
+    "scene activation restores the scene-local Fit and aspect settings before decoding its image");
   assert.doesNotMatch(source, /project\.layers\[0\]\.assetId\s*=\s*["']photo-1/);
   assert.match(source, /bitmap\.close/);
   assert.doesNotMatch(source, /createCameraTrack|sampleCameraTrack|createTimeline/);

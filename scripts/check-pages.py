@@ -222,7 +222,7 @@ def exercise(context, url):
     assert "1080 × 1920" in page.locator("#viewportValue").inner_text()
     fit_frame = page.locator("#stage").evaluate("el => el.toDataURL()")
     page.locator("#fitMode").select_option("fill")
-    page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+    page.wait_for_function("previous => document.querySelector('#stage').toDataURL() !== previous", fit_frame)
     fill_frame = page.locator("#stage").evaluate("el => el.toDataURL()")
     assert fit_frame != fill_frame
 

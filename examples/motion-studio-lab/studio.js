@@ -171,6 +171,12 @@ function getCurrentScene() { return sequenceEditor.scenes.find(scene => scene.id
 function currentScenePayload() {
   return { id: activeSceneId, project, audioTracks, characterTracks: [characterTrack, ...(sceneExtraCharacterTracks.get(activeSceneId) ?? [])], visualEffectsTrack };
 }
+function sceneImageSettings(sceneId = activeSceneId) {
+  const stored = sceneSettings.get(sceneId);
+  if (stored?.aspectPreset && stored?.fitMode) return stored;
+  const scene = sequenceEditor.sequence.scenes.find(item => item.id === sceneId);
+  return { aspectPreset: scene ? inferAspectPreset(scene.project.viewport.width, scene.project.viewport.height) : aspectPreset, fitMode: "fit" };
+}
 const sceneExtraCharacterTracks = new Map();
 function captureCurrentScene({ refresh = false } = {}) {
   if (!sequenceEditor) return null;
@@ -238,7 +244,11 @@ function assetMetadataToAudio(asset) {
 function persistSequenceMetadata() {
   try {
     localStorage.setItem(CURRENT_PROJECT_KEY, projectStorageId);
-    const text = serializeStudioSequenceFile(sequenceEditor, { projectId: projectStorageId, aspectPreset, fitMode, audioMasterVolume });
+    const settingsByScene = Object.fromEntries(sequenceEditor.scenes.map(scene => {
+      const settings = sceneImageSettings(scene.id);
+      return [scene.id, { aspectPreset: settings.aspectPreset, fitMode: settings.fitMode }];
+    }));
+    const text = serializeStudioSequenceFile(sequenceEditor, { projectId: projectStorageId, aspectPreset, fitMode, audioMasterVolume, sceneSettings: settingsByScene });
     localStorage.setItem(`qarton-motion-studio-sequence:${projectStorageId}`, text);
   } catch (error) {
     $("assetLibraryMessage").textContent = `تعذر حفظ بيانات التسلسل محليًا: ${errorText(error)}`;
@@ -253,16 +263,23 @@ async function restoreMostRecentSequence() {
     const loaded = parseStudioSequenceFile(text);
     aspectPreset = loaded.settings.aspectPreset; fitMode = loaded.settings.fitMode; audioMasterVolume = loaded.audioMasterVolume;
     aspectSelect.value = aspectPreset; fitSelect.value = fitMode; $("audioMasterVolume").value = String(audioMasterVolume);
-    await attachSequenceProject(loaded.editor, loaded.projectId);
+    await attachSequenceProject(loaded.editor, loaded.projectId, loaded.sceneSettings);
     await activateStudioScene(sequenceEditor.scenes[0].id, { globalTimeMs: 0, localTimeMs: 0 });
     $("assetLibraryMessage").textContent = "استُعيد تسلسل المشروع من هذا الجهاز. الأصول غير المتاحة تحتاج إلى إعادة ربط.";
   } catch (error) { $("assetLibraryMessage").textContent = `تعذر استعادة التسلسل المحلي: ${errorText(error)}`; }
 }
-async function attachSequenceProject(nextEditor, nextProjectId) {
+async function attachSequenceProject(nextEditor, nextProjectId, nextSceneSettings = null) {
   await assetReady;
   sequenceEditor = nextEditor;
   projectStorageId = nextProjectId;
   activeSceneId = sequenceEditor.activeSceneId;
+  sceneSettings.clear();
+  for (const scene of sequenceEditor.scenes) {
+    const stored = nextSceneSettings?.[scene.id];
+    sceneSettings.set(scene.id, stored
+      ? { ...stored, image: null }
+      : { aspectPreset: inferAspectPreset(scene.project.viewport.width, scene.project.viewport.height), fitMode: fitMode, image: null });
+  }
   persistentAssets = assetStorage ? createPersistentAssetRegistry(sequenceEditor.sequence, { storage: assetStorage, projectId: projectStorageId }) : null;
   if (persistentAssets) {
     const missing = await persistentAssets.restore();
@@ -1300,6 +1317,7 @@ async function activateStudioScene(sceneId, { globalTimeMs = null, localTimeMs =
   const target = sequenceEditor.sequence.scenes.find(scene => scene.id === sceneId);
   if (!target) return;
   if (sceneId !== activeSceneId) {
+    sceneSettings.set(activeSceneId, { aspectPreset, fitMode, image: currentFileInfo });
     makeThumbnail();
     captureCurrentScene();
     try { await persistentAssets?.replaceSequence(sequenceEditor.sequence); }
@@ -1308,6 +1326,9 @@ async function activateStudioScene(sceneId, { globalTimeMs = null, localTimeMs =
   }
   const token = ++sceneLoadToken;
   activeSceneId = sceneId;
+  const imageSettings = sceneImageSettings(sceneId);
+  aspectPreset = imageSettings.aspectPreset;
+  fitMode = imageSettings.fitMode;
   project = structuredClone(target.project);
   audioTracks = structuredClone(target.audioTracks);
   characterTrack = structuredClone(target.characterTracks[0] ?? makeCharacterTrack());
@@ -1358,6 +1379,7 @@ async function addScene() {
     const id = makeLocalId("scene");
     const scene = createSequenceSceneFromCurrent(id, { freshTracks: true });
     const result = sequenceEditor.add(scene, sequenceEditor.scenes.length, `المشهد ${sequenceEditor.scenes.length + 1}`);
+    sceneSettings.set(id, { aspectPreset, fitMode, image: currentFileInfo });
     persistSequenceMetadata();
     await persistentAssets?.replaceSequence(result.sequence);
     activeSceneId = id;
@@ -1371,7 +1393,9 @@ async function duplicateActiveScene(sceneId = activeSceneId) {
     stopPlayback(); captureCurrentScene(); makeThumbnail();
     const id = makeLocalId("scene-copy");
     const sourceThumb = sceneThumbnails.get(sceneId);
+    const sourceSettings = sceneImageSettings(sceneId);
     sequenceEditor.duplicate(sceneId, id);
+    sceneSettings.set(id, { aspectPreset: sourceSettings.aspectPreset, fitMode: sourceSettings.fitMode, image: currentFileInfo });
     persistSequenceMetadata();
     if (sourceThumb) sceneThumbnails.set(id, sourceThumb);
     await persistentAssets?.replaceSequence(sequenceEditor.sequence);
@@ -1457,6 +1481,8 @@ async function refreshSelectedImage() {
     const prepared = await loadImageSurface(selectedImageFile, requestToken);
     if (!prepared || !imageRequest.isCurrent(requestToken)) return;
     imageSource = prepared.surface;
+    for (const layer of project.layers) sceneImageSources.set(layer.assetId, prepared.surface);
+    sceneSettings.set(activeSceneId, { aspectPreset, fitMode, image: currentFileInfo });
     compiled = compileProject(projectForRaster(project, previewViewport), imageProvider);
     renderAt(currentMs);
     status.textContent = "المعاينة جاهزة";
@@ -1729,12 +1755,16 @@ for (const id of ["duration", "startZoom", "endZoom", "startX", "endX", "startY"
 
 aspectSelect.addEventListener("change", () => {
   aspectPreset = aspectSelect.value;
+  sceneSettings.set(activeSceneId, { aspectPreset, fitMode, image: currentFileInfo });
+  persistSequenceMetadata();
   updateProject({ viewport: dimensionsForCurrentPreset() });
   refreshSelectedImage();
 });
 fitSelect.addEventListener("change", () => {
   invalidateExport("تغيّرت طريقة عرض الصورة.");
   fitMode = fitSelect.value;
+  sceneSettings.set(activeSceneId, { aspectPreset, fitMode, image: currentFileInfo });
+  persistSequenceMetadata();
   refreshSelectedImage();
 });
 
@@ -1816,7 +1846,7 @@ projectInput.addEventListener("change", async () => {
       audioFiles.clear(); localAssetFiles.clear(); sceneThumbnails.clear(); sceneSettings.clear(); sceneExtraCharacterTracks.clear();
       aspectPreset = loaded.settings.aspectPreset; fitMode = loaded.settings.fitMode; audioMasterVolume = loaded.audioMasterVolume;
       aspectSelect.value = aspectPreset; fitSelect.value = fitMode; $("audioMasterVolume").value = String(audioMasterVolume);
-      await attachSequenceProject(loaded.editor, loaded.projectId);
+      await attachSequenceProject(loaded.editor, loaded.projectId, loaded.sceneSettings);
       await activateStudioScene(sequenceEditor.scenes[0].id, { globalTimeMs: 0, localTimeMs: 0 });
       stopPlayback(); sequenceTimeMs = 0;
       status.textContent = "فُتح تسلسل المشاهد؛ أعد ربط الأصول غير المتاحة على هذا الجهاز";
@@ -1865,7 +1895,9 @@ projectInput.addEventListener("change", async () => {
       id: "legacy-scene", project: parsed.project, audioTracks: parsed.audioTracks,
       characterTracks: [parsed.characterTrack], visualEffectsTrack: parsed.visualEffectsTrack
     }] });
-    await attachSequenceProject(createStudioSequenceEditor(legacySequence, { names: { "legacy-scene": "المشهد 1" } }), makeLocalId("project"));
+    await attachSequenceProject(createStudioSequenceEditor(legacySequence, { names: { "legacy-scene": "المشهد 1" } }), makeLocalId("project"), {
+      "legacy-scene": { aspectPreset, fitMode }
+    });
     const start = project.camera?.[0]?.value;
     const end = project.camera?.at(-1)?.value;
     $("duration").value = String(project.durationMs / 1000);
