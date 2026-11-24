@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 32799)
+Total output lines: 2312
+
 import { errorText, setExportErrorMessage } from "./studio-errors.js";
 import { compileProject, sampleFrame, planExport, rasterForQuality, probeExport, startExport } from "@qarton/cinematic-engine/motion-studio";
 import { createStudioSequenceV1 } from "@qarton/cinematic-engine/motion-studio";
@@ -23,6 +26,7 @@ import { CAMERA_MOTION_PRESETS, createCameraMotionProject } from "./studio-motio
 import { createPersistentAssetRegistry } from "../../packages/motion-studio/asset-persistence.js";
 import { openAssetStorage } from "../../packages/motion-studio/asset-storage.js";
 import { prepareStudioSequenceExport, sampleStudioSequenceExport } from "./studio-sequence-export.js?v=l11e-sequence-export-01";
+import { createStudioSequenceRuntime, decodeStudioSequenceAudio } from "./studio-sequence-runtime.js?v=l11h4-integrated-01";
 
 const $ = (id) => document.getElementById(id);
 const studioRoot = document.querySelector(".studio");
@@ -676,11 +680,14 @@ function syncIntegratedRange() {
 }
 async function prepareSequenceExportImages(sequence, viewport, signal) {
   const surfaces = new Map();
-  const bitmapCache = new Map();
   const sceneRenderers = [];
   const bytesPerSurface = viewport.width * viewport.height * 4;
-  let reservedBytes = 0;
   const maxSequenceImageBytes = 64 * 1024 * 1024;
+  const surfaceCount = new Set(sequence.scenes.flatMap(scene => scene.project.layers.map(layer => `${scene.id}:${layer.assetId}`))).size;
+  const plannedSurfaceBytes = surfaceCount * bytesPerSurface;
+  if (!Number.isSafeInteger(plannedSurfaceBytes) || plannedSurfaceBytes > maxSequenceImageBytes) {
+    throw new RangeError("تجاوزت صور المشاهد حد ذاكرة التصدير الآمن 64 MiB؛ قلل الجودة أو عدد المشاهد.");
+  }
   try {
     for (const scene of sequence.scenes) {
       const fit = sceneSettings.get(scene.id)?.fitMode ?? "fit";
@@ -690,26 +697,22 @@ async function prepareSequenceExportImages(sequence, viewport, signal) {
         const asset = sequence.assets.find(item => item.id === assetId && item.kind === "image");
         const blob = getAssetBlob(assetId);
         if (!asset || !blob) throw new Error(`الأصل الصوري للمشهد ${scene.id} غير متاح: ${assetId}`);
-        let bitmap = bitmapCache.get(assetId);
-        if (!bitmap) {
-          const file = new File([blob], asset.name, { type: asset.mimeType });
-          bitmap = await decodeImageBitmap(file, { isCurrent: () => !signal?.aborted });
-          bitmapCache.set(assetId, bitmap);
-        }
         const key = `${scene.id}:${assetId}`;
         if (!surfaces.has(key)) {
-          if (reservedBytes + bytesPerSurface > maxSequenceImageBytes) {
-            throw new RangeError("تجاوزت صور المشاهد حد ذاكرة التصدير الآمن 64 MiB؛ قلل الجودة أو عدد المشاهد.");
-          }
-          const surface = typeof OffscreenCanvas === "function"
-            ? new OffscreenCanvas(viewport.width, viewport.height)
-            : Object.assign(document.createElement("canvas"), { width: viewport.width, height: viewport.height });
-          const context = surface.getContext("2d", { alpha: false });
-          if (!context) throw new Error("لم تتوفر ذاكرة كافية لتحضير صور المشاهد للتصدير.");
-          context.fillStyle = "#101118"; context.fillRect(0, 0, viewport.width, viewport.height);
-          const rect = imageRect(bitmap.width, bitmap.height, viewport.width, viewport.height, fit);
-          context.drawImage(bitmap, rect.x, rect.y, rect.width, rect.height);
-          surfaces.set(key, surface); reservedBytes += bytesPerSurface;
+          const file = new File([blob], asset.name, { type: asset.mimeType });
+          const bitmap = await decodeImageBitmap(file, { isCurrent: () => !signal?.aborted });
+          try {
+            if (signal?.aborted) throw signal.reason ?? new DOMException("Export cancelled", "AbortError");
+            const surface = typeof OffscreenCanvas === "function"
+              ? new OffscreenCanvas(viewport.width, viewport.height)
+              : Object.assign(document.createElement("canvas"), { width: viewport.width, height: viewport.height });
+            const context = surface.getContext("2d", { alpha: false });
+            if (!context) throw new Error("لم تتوفر ذاكرة كافية لتحضير صور المشاهد.");
+            context.fillStyle = "#101118"; context.fillRect(0, 0, viewport.width, viewport.height);
+            const rect = imageRect(bitmap.width, bitmap.height, viewport.width, viewport.height, fit);
+            context.drawImage(bitmap, rect.x, rect.y, rect.width, rect.height);
+            surfaces.set(key, surface);
+          } finally { bitmap.close?.(); }
         }
         sceneSources.set(assetId, surfaces.get(key));
       }
@@ -729,9 +732,6 @@ async function prepareSequenceExportImages(sequence, viewport, signal) {
     surfaces.clear();
     sceneRenderers.length = 0;
     throw error;
-  } finally {
-    for (const bitmap of bitmapCache.values()) bitmap.close?.();
-    bitmapCache.clear();
   }
 }
 async function prepareSequenceAudioInfo(sequence, signal) {
@@ -826,6 +826,7 @@ async function exportIntegratedProject() {
   activeExport = running;
   let result = null;
   let sequenceImages = null;
+  let sequenceRuntime = null;
   try {
     const verified = getVerifiedIntegratedCapabilities();
     if (!verified.length) throw new Error("افحص دعم الصيغة والدقة المحددتين أولًا.");
@@ -838,18 +839,19 @@ async function exportIntegratedProject() {
         ? await prepareSequenceAudioInfo(sequenceEditor.sequence, controller.signal) : [], audioMasterVolume
     });
     const snapshot = prepared.snapshot;
+    // Older V1 projects migrate to V2 with zero-duration Cut transitions.
+    // Transition editing remains a later UI stage; playback/export share this runtime.
+    sequenceRuntime = createStudioSequenceRuntime(sequenceEditor.sequence, {
+      createSurface: (width, height) => Object.assign(document.createElement("canvas"), { width, height })
+    });
     const range = { startMs: readRequiredMilliseconds(integratedFrom, "البداية"),
       endMs: readRequiredMilliseconds(integratedTo, "النهاية") };
-    if (range.endMs <= range.startMs || range.endMs > prepared.compiledSequence.durationMs) throw new RangeError("نطاق التصدير يجب أن يقع داخل مدة المشروع الكاملة.");
+    if (range.endMs <= range.startMs || range.endMs > sequenceRuntime.durationMs) throw new RangeError("نطاق التصدير يجب أن يقع داخل مدة المشروع الكاملة.");
     const plan = planExport(snapshot, { range, quality: integratedQuality.value, fps: project.viewport.fps,
       format: integratedFormat.value, audio: integratedAudio.value, missingAudio: integratedMissingAudio.value }, verified);
     sequenceImages = await prepareSequenceExportImages(prepared.compiledSequence.sequence, plan.viewport, controller.signal);
-    const compiledAudio = compileAudioTracks(snapshot.audioTracks, snapshot.project.durationMs);
-    const missingAudio = new Set(plan.missingAudioAssetIds);
-    const audioInfo = new Map(snapshot.audioAssetInfo.map(({ id, durationMs }) => [id, durationMs]));
-    const unavailableDialogueClips = new Set(compiledAudio.clips.filter(clip => clip.type === "dialogue" &&
-      plan.audio === "mix" && (missingAudio.has(clip.asset) || (!clip.loop && audioInfo.has(clip.asset) &&
-        clip.startMs + audioInfo.get(clip.asset) < clip.endMs))).map(({ id }) => id));
+    const sceneAudio = new Map(sequenceRuntime.compiled.scenes.map(scene => [scene.id,
+      compileAudioTracks(scene.audioTracks, scene.project.durationMs)]));
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     const host = {
       document, window, MediaRecorderClass: typeof MediaRecorder === "function" ? MediaRecorder : null,
@@ -860,15 +862,35 @@ async function exportIntegratedProject() {
         return new AudioContextClass();
       },
       resolveAudio: async assetId => audioFiles.get(assetId)?.file ?? null,
+      createAudioMix: async ({ audioContext, signal, onProgress }) => {
+        const destination = audioContext.createMediaStreamDestination();
+        let decoded;
+        let engine;
+        try {
+          decoded = await decodeStudioSequenceAudio(sequenceRuntime.compiled, { audioContext,
+            resolveAudio: async assetId => audioFiles.get(assetId)?.file ?? null,
+            audioInfo: snapshot.audioAssetInfo, signal, onProgress });
+          engine = sequenceRuntime.createAudio({ audioContext, audioBuffers: decoded.buffers,
+            destination, masterVolume: audioMasterVolume, signal });
+          return { stream: destination.stream,
+            schedule: epoch => engine.schedule({ epoch, fromMs: range.startMs, toMs: range.endMs }),
+            stop: () => {
+              engine.dispose(); decoded.release();
+              for (const track of destination.stream.getTracks()) { try { track.stop(); } catch {} }
+            } };
+        } catch (error) {
+          engine?.dispose(); decoded?.release();
+          for (const track of destination.stream.getTracks()) { try { track.stop(); } catch {} }
+          throw error;
+        }
+      },
       renderFrame: (ctx, timeMs, viewport, frameContext) => {
-        const activeScene = sampleStudioSequenceExport(prepared, timeMs);
-        const sceneRenderer = sequenceImages.sceneRenderers[activeScene.sceneIndex];
-        let sample = compiledAudio.sample(timeMs);
-        if (plan.audio === "mix" && unavailableDialogueClips.size) sample = Object.freeze({ ...sample,
-          dialogue: Object.freeze(sample.dialogue.filter(cue => !unavailableDialogueClips.has(cue.clipId))) });
-        return drawStudioScene({ ctx, compiledProject: sceneRenderer.compiledProject, timeMs: activeScene.sceneTimeMs,
-          characterTracks: sceneRenderer.characters, audioSample: sample,
-          visualEffectsCompiled: sceneRenderer.effects, viewport, frameContext });
+        return sequenceRuntime.draw(ctx, timeMs, (scene, sceneTimeMs) => {
+          const sceneRenderer = sequenceImages.sceneRenderers.find(item => item.sceneId === scene.id);
+          return drawStudioScene({ ctx, compiledProject: sceneRenderer.compiledProject, timeMs: sceneTimeMs,
+            characterTracks: sceneRenderer.characters, audioSample: sceneAudio.get(scene.id)?.sample(sceneTimeMs),
+            visualEffectsCompiled: sceneRenderer.effects, viewport, frameContext });
+        }, { signal: controller.signal });
       }
     };
     integratedStatus.textContent = `جارٍ تحضير ${plan.format.toUpperCase()} ${plan.viewport.width}×${plan.viewport.height} · ${sequenceEditor.scenes.length} مشاهد · ${(plan.durationMs / 1000).toFixed(2)} ث…`;
@@ -893,6 +915,7 @@ async function exportIntegratedProject() {
     }
   } finally {
     sequenceImages?.release();
+    sequenceRuntime?.release();
     const restorePreview = activeExport === running;
     const completedStatus = integratedStatus.textContent;
     if (activeExport === running) activeExport = null;
@@ -1033,193 +1056,7 @@ function renderVisualEffectInspector() {
       }
       input.value = String(values[channel.key]);
       input.disabled = Boolean(activeExport);
-      label.append(input); container.append(label);
-    }
-  };
-  buildFields("visualEffectFrom", "from", selected?.from);
-  buildFields("visualEffectTo", "to", selected?.to);
-  $("visualEffectType").disabled = Boolean(activeExport);
-  $("addVisualEffect").disabled = Boolean(activeExport);
-}
-function renderAt(timeMs, preparedAudioSample = null) {
-  currentMs = Math.max(0, Math.min(project.durationMs, timeMs));
-  const audioSample = preparedAudioSample ?? audioPlayer?.sample(currentMs);
-  drawStudioScene({ ctx: context, compiledProject: compiled, timeMs: currentMs,
-    characterAnimation, characterTrack, audioSample, visualEffectsCompiled, viewport: previewViewport });
-  seek.value = String(currentMs);
-  timeReadout.textContent = formatTime(currentMs);
-  timelineEditor?.renderPlayhead();
-  characterTimeline?.render();
-  audioTimeline?.renderPlayhead();
-  visualEffectsTimeline?.renderPlayhead();
-  if (sequenceEditor) {
-    if (!isPlaying) sequenceTimeMs = sequenceEditor.timeFor(activeSceneId, currentMs);
-    renderSequencePlayhead();
-  }
-}
-function renderSequencePlayhead() {
-  const total = sequenceEditor?.durationMs ?? 1;
-  const time = Math.max(0, Math.min(total, sequenceTimeMs));
-  $("sequenceSeek").max = String(total);
-  $("sequenceSeek").value = String(time);
-  $("sequenceDuration").textContent = `${formatTime(time)} / ${formatTime(total)}`;
-  for (const button of $("sequenceBlocks").querySelectorAll(".sequence-block")) {
-    const current = button.dataset.sceneId === activeSceneId;
-    button.setAttribute("aria-current", String(current));
-  }
-  for (const button of $("sceneThumbnails").querySelectorAll("[data-scene-id] .scene-select")) {
-    button.setAttribute("aria-current", String(button.closest("[data-scene-id]").dataset.sceneId === activeSceneId));
-  }
-}
-function renderSequenceOverview({ rebuildCards = true, rebuildAssets = true } = {}) {
-  if (!sequenceEditor) return;
-  const cards = $("sceneThumbnails");
-  const scenes = sequenceEditor.scenes;
-  if (rebuildCards) cards.replaceChildren();
-  for (const scene of rebuildCards ? scenes : []) {
-    const card = document.createElement("article");
-    card.className = "scene-card";
-    card.dataset.sceneId = scene.id;
-    const select = document.createElement("button");
-    select.type = "button"; select.className = "scene-select"; select.dataset.sceneSelect = scene.id;
-    select.setAttribute("aria-current", String(scene.id === activeSceneId));
-    const thumb = document.createElement("span"); thumb.className = "scene-thumb";
-    const image = sceneThumbnails.get(scene.id);
-    if (image) { const preview = document.createElement("img"); preview.src = image; preview.alt = ""; thumb.append(preview); }
-    else { thumb.textContent = `${scene.index + 1}`; }
-    const title = document.createElement("span"); title.className = "scene-card-title"; title.textContent = `${scene.index + 1}. ${scene.name}`;
-    select.append(thumb, title);
-    select.addEventListener("click", () => { void activateStudioScene(scene.id); });
-    card.append(select); cards.append(card);
-  }
-  const blocks = $("sequenceBlocks"); blocks.replaceChildren();
-  const total = Math.max(1, sequenceEditor.durationMs);
-  for (const scene of scenes) {
-    const block = document.createElement("button"); block.type = "button"; block.className = "sequence-block";
-    block.dataset.sceneId = scene.id; block.style.flexGrow = String(scene.project.durationMs);
-    block.style.flexBasis = "0"; block.style.flexShrink = "1";
-    block.title = `${scene.name} · ${formatTime(scene.project.durationMs)}`;
-    block.setAttribute("aria-label", `${scene.name}, ${formatTime(scene.startMs)} إلى ${formatTime(scene.endMs)}`);
-    const label = document.createElement("span"); label.textContent = scene.name; block.append(label);
-    block.addEventListener("click", event => {
-      const rect = block.getBoundingClientRect();
-      const fraction = rect.width ? Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) : 0;
-      seekSequenceTo(scene.startMs + fraction * scene.project.durationMs);
-    });
-    blocks.append(block);
-  }
-  const current = getCurrentScene();
-  $("sceneName").value = current?.name ?? "";
-  $("sceneDuration").value = current ? String(current.project.durationMs / 1000) : "";
-  $("deleteSceneButton").disabled = scenes.length <= 1 || Boolean(activeExport);
-  $("duplicateSceneButton").disabled = Boolean(activeExport) || scenes.length >= 32;
-  $("addSceneButton").disabled = Boolean(activeExport) || scenes.length >= 32;
-  $("moveSceneLeftButton").disabled = Boolean(activeExport) || (current?.index ?? 0) <= 0;
-  $("moveSceneRightButton").disabled = Boolean(activeExport) || (current?.index ?? 0) >= scenes.length - 1;
-  renderSequencePlayhead();
-  if (rebuildAssets) renderAssetLibrary();
-}
-function currentAssetReferences(assetId) {
-  return sequenceEditor.sequence.scenes.filter(scene => scene.project.layers.some(layer => layer.assetId === assetId) ||
-    scene.audioTracks.some(track => track.clips.some(clip => clip.asset === assetId)) ||
-    scene.characterTracks.some(track => Object.values(track.character.animation?.clips ?? {}).some(clip =>
-      clip.spriteSheet ? clip.spriteSheet.asset.trim() === assetId : [...clip.frames, ...(clip.blinkFrames ?? [])].includes(assetId))))
-    .map(scene => scene.id);
-}
-function renderAssetLibrary() {
-  const root = $("assetLibraryList");
-  if (!root) return;
-  $("assetBudgetLabel").textContent = assetStorageStatus;
-  root.replaceChildren();
-  for (const asset of sequenceEditor.sequence.assets) {
-    const uses = [...new Set([...(persistentAssets?.references(asset.id) ?? []), ...currentAssetReferences(asset.id)])];
-    const row = document.createElement("div"); row.className = "asset-entry"; row.dataset.assetId = asset.id;
-    const name = document.createElement("span"); name.className = "asset-entry-name"; name.textContent = asset.name;
-    const meta = document.createElement("span"); meta.className = "asset-entry-meta";
-    meta.textContent = `${asset.kind === "image" ? "صورة" : asset.kind === "audio" ? "صوت" : asset.kind} · ${(asset.size / 1024 / 1024).toFixed(2)} MiB · ${uses.length ? `مستخدم في ${uses.length} مشهد` : "غير مستخدم"}`;
-    const use = document.createElement("button"); use.type = "button"; use.textContent = "استخدم"; use.setAttribute("aria-label", `استخدم الأصل ${asset.name}`);
-    use.disabled = !getAssetBlob(asset.id) || Boolean(activeExport);
-    use.addEventListener("click", () => { void useLibraryAsset(asset.id); });
-    const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "حذف"; remove.setAttribute("aria-label", `حذف الأصل ${asset.name}`);
-    remove.disabled = uses.length > 0 || Boolean(activeExport) || !persistentAssets;
-    remove.addEventListener("click", () => { void removeLibraryAsset(asset.id); });
-    row.append(name, meta, use, remove); root.append(row);
-  }
-}
-function makeThumbnail() {
-  try {
-    const thumb = document.createElement("canvas"); thumb.width = 120; thumb.height = 68;
-    thumb.getContext("2d").drawImage(canvas, 0, 0, thumb.width, thumb.height);
-    sceneThumbnails.set(activeSceneId, thumb.toDataURL("image/jpeg", 0.55));
-  } catch { /* A missing or tainted preview leaves the accessible scene label visible. */ }
-}
-function createSequenceSceneFromCurrent(id, { freshTracks = false } = {}) {
-  return { id,
-    project: structuredClone(project),
-    audioTracks: freshTracks ? makeAudioTracks() : structuredClone(audioTracks),
-    characterTracks: freshTracks ? [makeCharacterTrack()] : structuredClone([characterTrack, ...(sceneExtraCharacterTracks.get(activeSceneId) ?? [])]),
-    visualEffectsTrack: freshTracks ? makeVisualEffectsTrack() : structuredClone(visualEffectsTrack) };
-}
-function replaceCurrentSceneAndAssets(nextAssets = sequenceEditor.sequence.assets) {
-  const old = sequenceEditor.sequence;
-  const current = currentScenePayload();
-  const scenes = old.scenes.map(scene => scene.id === activeSceneId ? current : scene);
-  const next = createStudioSequenceV1({ viewport: project.viewport, scenes, assets: nextAssets });
-  sequenceEditor.replaceSequence(next);
-  persistSequenceMetadata();
-  void persistentAssets?.replaceSequence(next).catch(error => {
-    $("assetLibraryMessage").textContent = `تعذر حفظ مراجع الأصول: ${errorText(error)}`;
-  });
-  audioAssets = next.assets.filter(asset => asset.kind === "audio").map(assetMetadataToAudio);
-  renderAssetLibrary();
-  return next;
-}
-async function useLibraryAsset(id) {
-  try {
-    await assetReady;
-    const asset = sequenceEditor.sequence.assets.find(item => item.id === id);
-    const blob = getAssetBlob(id);
-    if (!asset || !blob) throw new Error("الأصل غير مرتبط؛ أعد اختياره من الهاتف.");
-    if (asset.kind === "audio") {
-      let audio = audioFiles.get(id);
-      if (!audio) {
-        const file = new File([blob], asset.name, { type: asset.mimeType });
-        const url = URL.createObjectURL(file);
-        let durationMs = 0; try { durationMs = await readAudioDuration(file); } catch { /* Timeline clips retain their authored duration. */ }
-        audio = { file, url, durationMs }; audioFiles.set(id, audio);
-      }
-      activeAudioAssetId = id;
-      $("audioFileName").textContent = `${asset.name} · ${(asset.size / 1024 / 1024).toFixed(2)} MiB`;
-      $("audioTimelineMessage").textContent = `الأصل ${asset.name} جاهز للمسار الحالي.`;
-      renderAudioInspector();
-      return;
-    }
-    if (asset.kind !== "image") throw new TypeError("هذا النوع من الأصول لا يمكن وضعه في المشهد بعد.");
-    const file = new File([blob], asset.name, { type: asset.mimeType });
-    const imageRequestToken = imageRequest.begin();
-    pendingImageRequest = imageRequestToken; refreshExportControls();
-    const bitmap = await decodeImageBitmap(file, { isCurrent: () => imageRequest.isCurrent(imageRequestToken) });
-    try {
-      selectedImageDimensions = { width: bitmap.width, height: bitmap.height };
-      const surface = drawBitmap(bitmap);
-      const nextProject = structuredClone(project);
-      nextProject.layers[0].assetId = id;
-      project = nextProject; selectedImageFile = file; currentFileInfo = { name: asset.name, type: asset.mimeType, size: asset.size };
-      imageSource = surface; sceneImageSources.set(id, surface);
-      compiled = compileProject(projectForRaster(project, previewViewport), imageProvider);
-      replaceCurrentSceneAndAssets();
-      sceneSettings.set(activeSceneId, { aspectPreset, fitMode, image: currentFileInfo });
-      imageName.textContent = `${asset.name} · ${bitmap.width}×${bitmap.height}`;
-      renderAt(currentMs); status.textContent = "تم ربط الصورة بالمشهد";
-    } finally { bitmap.close?.(); }
-  } catch (error) { $("assetLibraryMessage").textContent = errorText(error); }
-  finally { if (pendingImageRequest !== null) pendingImageRequest = null; refreshExportControls(); }
-}
-async function removeLibraryAsset(id) {
-  try {
-    captureCurrentScene();
-    await assetReady;
-    await persistentAssets?.replaceSequence(sequenceEditor.sequence);
+      label.appe…2799 tokens truncated…sequenceEditor.sequence);
     if (persistentAssets) {
       await persistentAssets.remove(id);
       sequenceEditor.replaceSequence(persistentAssets.sequence);

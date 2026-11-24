@@ -379,8 +379,17 @@ export async function startExport(plan, host = {}, { signal, onProgress } = {}) 
       checkAbort(signal);
       if (audioContext.state !== "running") throw error("CAPTURE_FAILED", "AudioContext did not enter the running state");
       audioContext.addEventListener?.("statechange", onAudioStateChange);
-      mixer = await prepareAudioMix(plan, { audioContext, resolveAudio: host.resolveAudio }, { signal,
-        onProgress: progress => onProgress?.(progress) });
+      if (typeof host.createAudioMix === "function") {
+        mixer = await host.createAudioMix({ audioContext, plan, signal,
+          onProgress: progress => onProgress?.(progress) });
+        if (!mixer || typeof mixer.schedule !== "function" || typeof mixer.stop !== "function" ||
+            !mixer.stream?.getAudioTracks?.().length) {
+          throw error("CAPTURE_FAILED", "Custom audio mix did not provide a stream, schedule, and cleanup handle");
+        }
+      } else {
+        mixer = await prepareAudioMix(plan, { audioContext, resolveAudio: host.resolveAudio }, { signal,
+          onProgress: progress => onProgress?.(progress) });
+      }
     }
     checkAbort(signal);
     const startSceneMs = plan.range.startMs;

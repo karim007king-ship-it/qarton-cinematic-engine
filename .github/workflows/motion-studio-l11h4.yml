@@ -1,0 +1,42 @@
+name: Motion Studio L11-H4 integrated sequence
+
+on:
+  pull_request:
+    branches:
+      - feature/motion-studio-cinematic-audio-crossfade-l11h3
+    paths:
+      - '.github/workflows/motion-studio-l11h4.yml'
+      - 'examples/motion-studio-lab/studio.js'
+      - 'examples/motion-studio-lab/studio-sequence-editor.js'
+      - 'examples/motion-studio-lab/studio-sequence-runtime.js'
+      - 'packages/motion-studio/**'
+      - 'tests/motion-studio-sequence-runtime.test.js'
+      - 'tests/motion-studio-export-session.test.js'
+      - 'tests/fixtures/studio-sequence-compositor.html'
+      - 'tests/fixtures/studio-sequence-audio-crossfade.html'
+      - 'scripts/check-motion-studio-compositor-chromium.py'
+      - 'scripts/check-sequence-audio-crossfade-chromium.py'
+
+permissions:
+  contents: read
+
+jobs:
+  integrated-sequence:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Chromium
+        run: |
+          python -m pip install playwright==1.55.0
+          python -m playwright install --with-deps chrome
+      - name: Verify transition pixels in Chromium
+        run: python scripts/check-motion-studio-compositor-chromium.py
+      - name: Measure crossfade audio in OfflineAudioContext
+        run: python scripts/check-sequence-audio-crossfade-chromium.py

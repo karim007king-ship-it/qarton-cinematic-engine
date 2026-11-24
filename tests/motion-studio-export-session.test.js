@@ -188,6 +188,29 @@ test("mixed recording resumes audio before async preparation and starts audio on
   assert.equal(rendered.at(-1).timeMs, 300);
 });
 
+test("custom sequence audio mix shares the recorder AudioContext epoch and releases its graph", async () => {
+  const log = [];
+  const context = new FakeAudioContext(log);
+  const plan = makePlan({ durationMs: 300, audio: "mix" });
+  const { host, canvas } = makeHost([], { audioContext: context,
+    createAudioMix: async ({ audioContext, plan: exportPlan }) => {
+      assert.strictEqual(audioContext, context);
+      assert.strictEqual(exportPlan, plan);
+      const destination = audioContext.createMediaStreamDestination();
+      return { stream: destination.stream,
+        schedule: epoch => log.push(["sequence-schedule", epoch]),
+        stop: () => { log.push("sequence-stop"); destination.stream.getTracks()[0].stop(); } };
+    } });
+  const result = await startExport(plan, host);
+  assert.ok(result.blob.size > 0);
+  const scheduled = log.find(item => Array.isArray(item) && item[0] === "sequence-schedule");
+  assert.ok(scheduled);
+  assert.ok(scheduled[1] >= context.currentTime - plan.durationMs / 1000 - 0.1);
+  assert.ok(log.includes("sequence-stop"));
+  assert.equal(canvas.track.stopped, true);
+  assert.equal(context.destination.stream.getAudioTracks()[0].stopped, true);
+});
+
 test("only one export runs per host and recorder constructor failures surface typed errors", async () => {
   const rendered = [];
   const { host } = makeHost(rendered);
