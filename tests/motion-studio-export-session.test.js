@@ -62,12 +62,13 @@ class InfiniteDurationVideo extends EventTarget {
 }
 
 class FakeAudioContext extends EventTarget {
-  constructor(log) { super(); this.state = "running"; this.currentTime = 3; this.log = log; this.nodes = []; this.destination = null; }
+  constructor(log) { super(); this.state = "running"; this.clockOrigin = null; this.log = log; this.nodes = []; this.destination = null; }
+  get currentTime() { return 3 + (this.clockOrigin === null ? 0 : (performance.now() - this.clockOrigin) / 1000); }
   resume() { this.log.push("resume"); return Promise.resolve(); }
   async decodeAudioData(bytes) { this.log.push("decode"); return { length: 48_000, numberOfChannels: 1, sampleRate: 48_000, duration: 1 }; }
   createGain() { const node = { gain: { value: 1, setValueAtTime() {}, linearRampToValueAtTime() {} }, connect() {}, disconnect() {} }; this.nodes.push(node); return node; }
   createBufferSource() { const source = { connect() {}, disconnect() {}, start: (...args) => this.log.push(["audio-start", ...args]), stop() {} }; return source; }
-  createMediaStreamDestination() { const destination = { connect() {}, disconnect() {}, stream: new FakeStream([new FakeTrack("audio")]) }; this.destination = destination; return destination; }
+  createMediaStreamDestination() { this.clockOrigin = performance.now(); const destination = { connect() {}, disconnect() {}, stream: new FakeStream([new FakeTrack("audio")]) }; this.destination = destination; return destination; }
 }
 class HangingResumeAudioContext extends FakeAudioContext {
   constructor() { super([]); }
@@ -156,7 +157,8 @@ test("mixed recording resumes audio before async preparation and starts audio on
   assert.equal(log.filter(item => item === "decode").length, 1, "only the source audio asset is decoded; the multiplexed WebM is validated through its tracks");
   const scheduled = log.find(item => Array.isArray(item) && item[0] === "audio-start");
   assert.ok(scheduled, "audio source was scheduled on the recorder clock");
-  assert.ok(scheduled[1] >= 3.03 && scheduled[1] <= 3.05);
+  assert.ok(scheduled[1] >= 3.03 && scheduled[1] <= context.currentTime);
+  assert.equal(rendered.at(-1).timeMs, 300);
 });
 
 test("only one export runs per host and recorder constructor failures surface typed errors", async () => {
