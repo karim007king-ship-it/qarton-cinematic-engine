@@ -122,6 +122,16 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
     sequence_cards = [Path(tmp) / f"sequence-{name}.png" for name in ("red", "green", "blue")]
     for path, color in zip(sequence_cards, ((240, 20, 20), (20, 230, 20), (20, 30, 240))):
         write_solid_png(path, color)
+    sequence_audio = [Path(tmp) / f"sequence-{name}.wav" for name in ("red", "green", "blue")]
+    for path, duration, frequency in zip(sequence_audio, (3, 4, 3), (440, 660, 880)):
+        with wave.open(str(path), "wb") as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(48000)
+            wav.writeframes(b"".join(
+                struct.pack("<h", int(10000 * math.sin(2 * math.pi * frequency * i / 48000)))
+                for i in range(48000 * duration)
+            ))
     with sync_playwright() as pw:
         executable = environ.get("CHROMIUM_EXECUTABLE_PATH")
         browser = pw.chromium.launch(executable_path=executable) if executable else pw.chromium.launch(channel="chrome")
@@ -800,22 +810,35 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             sequence_page.locator("#sceneDuration").fill(str(seconds))
             sequence_page.locator("#sceneDuration").dispatch_event("change")
             assert sequence_page.locator("#sceneDuration").input_value() == str(seconds)
+        def add_scene_audio(audio_file):
+            sequence_page.locator('nav.bottom-dock [data-editor-section="audio"]').click()
+            sequence_page.locator("#audioInput").set_input_files(str(audio_file))
+            sequence_page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('تم التحقق من الملف')")
+            sequence_page.locator("#audioTrackType").select_option("music")
+            sequence_page.locator("#addAudioClip").click()
+            assert sequence_page.locator(".audio-clip").count() >= 1, sequence_page.locator("#audioTimelineMessage").inner_text()
+            sequence_page.locator('nav.bottom-dock [data-editor-section="scenes"]').click()
+
         set_scene_card(sequence_cards[0])
         set_scene_duration(3)
+        add_scene_audio(sequence_audio[0])
         sequence_page.locator("#addSceneButton").click()
         sequence_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 2")
         set_scene_card(sequence_cards[1])
         set_scene_duration(4)
+        add_scene_audio(sequence_audio[1])
         sequence_page.locator("#addSceneButton").click()
         sequence_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 3")
         set_scene_card(sequence_cards[2])
         set_scene_duration(3)
+        add_scene_audio(sequence_audio[2])
         sequence_page.wait_for_function("document.querySelector('#sequenceDuration').textContent.includes('00:10')")
         assert sequence_page.locator("#sequenceBlocks .sequence-block").count() == 3
         assert sequence_page.locator("#integratedTo").input_value() == "10000"
         sequence_page.locator('nav.bottom-dock [data-editor-section="more"]').click()
+        sequence_page.locator(".integrated-export-card details.export-options > summary").click()
         sequence_page.locator("#integratedFormat").select_option("webm")
-        sequence_page.locator("#integratedAudio").select_option("none")
+        sequence_page.locator("#integratedAudio").select_option("mix")
         sequence_page.locator("#integratedQuality").select_option("480p")
         sequence_page.locator("#integratedProbeButton").click()
         sequence_page.wait_for_function("document.querySelector('#integratedStatus').textContent.includes('تم التحقق فعليًا') || !document.querySelector('#integratedError').hidden", timeout=30000)
@@ -831,7 +854,9 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             "ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(sequence_output)
         ], text=True, timeout=60))
         sequence_video_streams = [stream for stream in sequence_probe["streams"] if stream["codec_type"] == "video"]
+        sequence_audio_streams = [stream for stream in sequence_probe["streams"] if stream["codec_type"] == "audio"]
         assert len(sequence_video_streams) == 1, sequence_probe["streams"]
+        assert len(sequence_audio_streams) == 1, sequence_probe["streams"]
         duration = float(sequence_probe["format"].get("duration") or sequence_video_streams[0].get("duration"))
         assert abs(duration - 10) <= 0.150, (duration, sequence_probe["format"])
         def decoded_center_color(seconds):
@@ -842,7 +867,21 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         for timestamp, expected in ((1, 0), (2.95, 0), (3.05, 1), (6.95, 1), (7.05, 2), (8.5, 2)):
             color = decoded_center_color(timestamp)
             assert len(color) == 3 and color[expected] > max(color[(expected + 1) % 3], color[(expected + 2) % 3]) * 2, (timestamp, list(color))
-        print(f"L11-E three-scene export: one WebM video track, duration={duration:.3f}s, scene colors verified at 3s/7s Cuts")
+        def dominant_audio_frequency(seconds):
+            raw = subprocess.check_output([
+                "ffmpeg", "-v", "error", "-ss", str(seconds), "-i", str(sequence_output), "-t", "0.2",
+                "-vn", "-ac", "1", "-ar", "48000", "-f", "s16le", "-acodec", "pcm_s16le", "-"
+            ], timeout=60)
+            samples = [value[0] for value in struct.iter_unpack("<h", raw)]
+            assert len(samples) >= 8000, (seconds, len(samples))
+            return max((440, 660, 880), key=lambda frequency: abs(sum(
+                sample * math.cos(2 * math.pi * frequency * index / 48000)
+                for index, sample in enumerate(samples)
+            )))
+        for timestamp, expected_frequency in ((2.7, 440), (3.2, 660), (6.7, 660), (7.2, 880)):
+            actual_frequency = dominant_audio_frequency(timestamp)
+            assert actual_frequency == expected_frequency, (timestamp, expected_frequency, actual_frequency)
+        print(f"L11-E three-scene export: one WebM video/audio track each, duration={duration:.3f}s, picture and sound verified across 3s/7s Cuts")
         assert not sequence_errors, sequence_errors
         sequence_page.close()
         page.locator('nav.bottom-dock [data-editor-section="effects"]').click()
