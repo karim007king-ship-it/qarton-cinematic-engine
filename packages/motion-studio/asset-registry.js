@@ -25,12 +25,15 @@ export function createAssetRegistry(sequence, { maxBytes = 64 * 1024 * 1024 } = 
     blobs.set(id, blob);
     bytes = next;
   }
-  function remove(id) {
+  function validateRemoval(id) {
     if (!snapshot.assets.some(asset => asset.id === id)) throw new RangeError("Unknown asset");
     if (references(id).length) throw new Error("Asset is referenced by a scene");
     // Character tracks may contain additional asset references; fail closed until audited.
     if (snapshot.scenes.some(scene => scene.characterTracks.length)) throw new Error("Character references require audit before deletion");
-    const next = validateStudioSequenceV1({ ...snapshot, assets: snapshot.assets.filter(asset => asset.id !== id) });
+    return validateStudioSequenceV1({ ...snapshot, assets: snapshot.assets.filter(asset => asset.id !== id) });
+  }
+  function remove(id) {
+    const next = validateRemoval(id);
     bytes -= blobs.get(id)?.size ?? 0;
     blobs.delete(id);
     snapshot = next;
@@ -41,5 +44,5 @@ export function createAssetRegistry(sequence, { maxBytes = 64 * 1024 * 1024 } = 
     return snapshot;
   }
   return Object.freeze({ get sequence() { return snapshot; }, get linkedBytes() { return bytes; },
-    references, validateLink, relink, remove, add, get: id => blobs.get(id) ?? null });
+    references, validateLink, validateRemoval, relink, remove, add, get: id => blobs.get(id) ?? null });
 }
