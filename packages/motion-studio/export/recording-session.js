@@ -49,6 +49,12 @@ function seekableMediaDuration(video) {
     return Number.isFinite(end) && end > 0 ? end * 1000 : null;
   } catch { return null; }
 }
+function durationToleranceMs(fps) {
+  // Allow at most 150 ms or one output frame for Android encoder/container
+  // timestamp quantization. The check remains strict enough to reject drift
+  // such as a delayed MediaRecorder start being added to the requested length.
+  return Math.max(150, 1000 / fps);
+}
 function waitForEvent(target, name, { signal, timeoutMs = 5000, errorNames = [] } = {}) {
   return new Promise((resolve, reject) => {
     let timer;
@@ -128,7 +134,7 @@ async function inspectOutput(blob, plan, host, stream) {
     if (durationMs === null) {
       if (video.duration !== Infinity) throw error("INVALID_OUTPUT", "Recorded video has no usable duration metadata");
       warnings.push("Container duration and end seek are unavailable in this browser; file duration could not be measured.");
-    } else if (Math.abs(durationMs - plan.durationMs) > Math.max(150, 1000 / plan.fps)) {
+    } else if (Math.abs(durationMs - plan.durationMs) > durationToleranceMs(plan.fps)) {
       throw error("INVALID_OUTPUT", `Recorded duration ${durationMs.toFixed(0)}ms differs from the ${plan.durationMs}ms target`);
     }
     const seekTarget = durationMs === null ? 0 : Math.max(0, durationMs / 1000 - 0.05);
@@ -226,7 +232,7 @@ async function probeOne({ canvas, width, height, fps, audioMode, mimeType, Media
         const measuredDuration = Number.isFinite(video.duration) ? `${video.duration.toFixed(3)}s` : String(video.duration);
         throw error("INVALID_OUTPUT", `Probe output measured ${video.videoWidth}×${video.videoHeight}, ${measuredDuration}; expected ${width}×${height} and valid duration metadata`);
       }
-      if (measuredDurationMs !== null && Math.abs(measuredDurationMs - durationMs) > Math.max(150, 1000 / fps)) {
+      if (measuredDurationMs !== null && Math.abs(measuredDurationMs - durationMs) > durationToleranceMs(fps)) {
         throw error("INVALID_OUTPUT", `Probe output duration ${measuredDurationMs.toFixed(0)}ms differs from the ${durationMs}ms probe window`);
       }
       if (measuredDurationMs !== null && measuredDurationMs > 50) {
@@ -430,24 +436,26 @@ export async function startExport(plan, host = {}, { signal, onProgress } = {}) 
     };
     if (requestFrames) {
       // Chromium can wait for consecutive Canvas frames before it emits start.
-      // Keep the fixed initial scene frame live until that event, then switch
-      // immediately to the shared audio/performance epochs below.
+      // Keep the fixed initial scene frame live until that event.
       primeStartFrame();
       startFrameInterval = globalThis.setInterval(primeStartFrame, Math.max(16, 1000 / fps));
     }
-    const startedPromise = waitForEvent(recorder, "start", { signal, timeoutMs: host.startTimeoutMs ?? 5000, errorNames: ["error"] });
-    recorder.start(250);
-    const stoppedPromise = waitForEvent(recorder, "stop", { timeoutMs: plan.durationMs + (host.stopTimeoutMs ?? 10_000), errorNames: ["error"] });
-    await startedPromise;
-    if (startFrameInterval !== null) { clearInterval(startFrameInterval); startFrameInterval = null; }
-    checkAbort(signal);
-    if (stopReason) throw stopReason;
-    const frameCount = Math.ceil(plan.durationMs * fps / 1000) + 1;
+    // Android encoders may dispatch `start` several frames after recording has
+    // begun. Anchor both clocks to the start() call so this event delay is not
+    // added to the file duration or introduced as audio/video drift.
     const frameIntervalMs = 1000 / fps;
     const leadMs = Math.min(50, Math.max(30, host.startLeadMs ?? 40));
     const clockAudioEpoch = plan.audio === "mix" ? audioContext.currentTime + leadMs / 1000 : null;
     const clockPerfEpoch = now() + leadMs;
     if (mixer) mixer.schedule(clockAudioEpoch);
+    const startedPromise = waitForEvent(recorder, "start", { signal, timeoutMs: host.startTimeoutMs ?? 5000, errorNames: ["error"] });
+    const stoppedPromise = waitForEvent(recorder, "stop", { timeoutMs: plan.durationMs + (host.stopTimeoutMs ?? 10_000), errorNames: ["error"] });
+    recorder.start(250);
+    await startedPromise;
+    if (startFrameInterval !== null) { clearInterval(startFrameInterval); startFrameInterval = null; }
+    checkAbort(signal);
+    if (stopReason) throw stopReason;
+    const frameCount = Math.ceil(plan.durationMs * fps / 1000) + 1;
     let nextFrame = 0;
     let lastProgress = now();
     let finished = false;
@@ -469,7 +477,9 @@ export async function startExport(plan, host = {}, { signal, onProgress } = {}) 
         const current = Number.isFinite(timestamp) ? timestamp : now();
         const elapsed = clockAudioEpoch === null ? current - clockPerfEpoch : (audioContext.currentTime - clockAudioEpoch) * 1000;
         if (elapsed >= 0) {
-          const due = Math.min(frameCount - 1, Math.floor(elapsed / frameIntervalMs));
+          const due = elapsed >= plan.durationMs
+            ? frameCount - 1
+            : Math.min(frameCount - 2, Math.floor(elapsed / frameIntervalMs));
           if (due >= nextFrame) {
             if (due > nextFrame) {
               const skipped = due - nextFrame;

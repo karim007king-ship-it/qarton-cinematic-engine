@@ -4,8 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#101118">
+  <meta name="mobile-web-app-capable" content="yes">
   <title>QARTON Motion Studio Lab</title>
-  <link rel="stylesheet" href="./studio.css?v=l11f1-smart-editor-01">
+  <link rel="stylesheet" href="./studio.css?v=l11f2-android-fix-01">
   <script type="importmap">
     {
       "imports": {
@@ -20,8 +21,15 @@
 <body>
   <main class="studio">
     <header class="topbar">
-      <div><p class="eyebrow">QARTON · استوديو الحركة</p><h1>Motion Studio</h1></div>
+      <a class="brand-lockup" href="#studioPreview" aria-label="QARTON Motion Studio">
+        <span class="qarton-mark" aria-hidden="true">Q</span><span><strong>QARTON</strong><small>استوديو الحركة</small></span>
+      </a>
       <span class="status-pill" id="status" role="status" aria-live="polite">اختر صورة للبدء</span>
+      <div class="header-actions" role="group" aria-label="إجراءات المشروع">
+        <button id="headerSaveButton" class="header-action" type="button" aria-label="حفظ المشروع" title="حفظ المشروع"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l4 4v14H3V3h2zm2 0v6h10V3M7 21v-8h10v8"/></svg><span>حفظ</span></button>
+        <button id="headerUndoButton" class="header-action" type="button" aria-label="تراجع عن آخر حركة" title="تراجع"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5M4 9h9a7 7 0 0 1 0 14h-2"/></svg><span>تراجع</span></button>
+        <button id="headerExportButton" class="header-action header-export" type="button" aria-label="فتح التصدير" title="تصدير"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4"/></svg><span>تصدير</span></button>
+      </div>
     </header>
 
     <nav class="editor-mode-nav" aria-label="أقسام الاستوديو">
@@ -30,13 +38,15 @@
         <button type="button" data-editor-mode-button="simple" aria-pressed="true">🎬 مبسّط</button>
         <button type="button" data-editor-mode-button="professional" aria-pressed="false">⚙️ احترافي</button>
       </div>
-      <div class="editor-section-links" role="group" aria-label="انتقال إلى قسم">
-        <button type="button" data-editor-section="scenes">🎞️ المشاهد</button>
-        <button type="button" data-editor-section="motion">📷 الحركة</button>
-        <button type="button" data-editor-section="audio">🔊 الصوت</button>
-        <button type="button" data-editor-section="effects">✨ المؤثرات</button>
-      </div>
+
     </nav>
+
+    <section id="studioPreview" class="studio-preview" aria-label="معاينة الفيديو">
+      <div id="previewImagePicker" class="preview-image-picker"></div>
+      <div id="previewCanvasHost" class="preview-canvas-host"></div>
+      <div id="previewTransportHost" class="preview-transport-host"></div>
+      <div id="previewSceneStrip" class="preview-scene-strip" aria-label="مشاهد المشروع"></div>
+    </section>
 
     <section id="sceneSection" class="sequence-workbench" aria-labelledby="sequenceHeading">
       <div class="sequence-heading">
@@ -47,6 +57,8 @@
         <button id="addSceneButton" class="secondary-button" type="button">＋ مشهد</button>
         <button id="duplicateSceneButton" class="secondary-button" type="button">نسخ المشهد</button>
         <button id="deleteSceneButton" class="secondary-button danger-button" type="button">حذف المشهد</button>
+        <button id="moveSceneLeftButton" class="secondary-button scene-reorder-action" type="button" aria-label="ترتيب المشهد المحدد إلى اليسار"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5 7.5 12l7 7"/></svg><span>يسار</span></button>
+        <button id="moveSceneRightButton" class="secondary-button scene-reorder-action" type="button" aria-label="ترتيب المشهد المحدد إلى اليمين"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.5 5 7 7-7 7"/></svg><span>يمين</span></button>
         <label>اسم المشهد <input id="sceneName" type="text" maxlength="80" autocomplete="off"></label>
         <label>المدة (ث) <input id="sceneDuration" type="number" min="3" max="60" step="1" inputmode="numeric"></label>
       </div>
@@ -80,8 +92,8 @@
     <section id="simpleMotionPanel" class="motion-mode-panel" data-mode-panel="simple" aria-labelledby="simpleMotionHeading">
       <div class="simple-panel-heading"><div><span class="eyebrow">تحرير سريع</span><h2 id="simpleMotionHeading">كيف تتحرك الكاميرا؟</h2></div><span>اختيار الحركة يعرض النتيجة مباشرة</span></div>
       <div class="simple-motion-presets" role="group" aria-label="حركات الكاميرا الجاهزة">
-        <button class="motion-preset-button" type="button" data-motion-preset="zoom-in"><span class="motion-icon">⌕</span><strong>تقريب</strong></button>
-        <button class="motion-preset-button" type="button" data-motion-preset="zoom-out"><span class="motion-icon">⌖</span><strong>إبعاد</strong></button>
+        <button class="motion-preset-button" type="button" data-motion-preset="zoom-in"><span class="motion-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5M10.5 7.5v6m-3-3h6"/></svg></span><strong>تقريب</strong></button>
+        <button class="motion-preset-button" type="button" data-motion-preset="zoom-out"><span class="motion-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5m-13-10h6"/></svg></span><strong>إبعاد</strong></button>
         <button class="motion-preset-button" type="button" data-motion-preset="static"><span class="motion-icon">◉</span><strong>كاميرا ثابتة</strong></button>
         <button class="motion-preset-button" type="button" data-motion-preset="pan-horizontal"><span class="motion-icon">↔</span><strong>يمين ويسار</strong></button>
         <button class="motion-preset-button" type="button" data-motion-preset="pan-vertical"><span class="motion-icon">↕</span><strong>أعلى وأسفل</strong></button>
@@ -341,9 +353,27 @@
         </section>
       </div>
     </section>
+    <section class="tool-drawer" aria-label="أدوات التحرير">
+      <section id="toolPanel-scenes" class="tool-panel" data-tool-panel="scenes" hidden aria-label="أدوات المشاهد"></section>
+      <section id="toolPanel-motion" class="tool-panel" data-tool-panel="motion" aria-label="أدوات الحركة"></section>
+      <section id="toolPanel-audio" class="tool-panel" data-tool-panel="audio" hidden aria-label="أدوات الصوت"></section>
+      <section id="toolPanel-effects" class="tool-panel" data-tool-panel="effects" hidden aria-label="أدوات المؤثرات"></section>
+      <section id="toolPanel-more" class="tool-panel" data-tool-panel="more" hidden aria-label="المزيد من الأدوات"></section>
+    </section>
+    <nav class="bottom-dock" aria-label="أقسام التحرير">
+      <button type="button" data-editor-section="scenes" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="8" height="7" rx="1"/><rect x="13" y="4" width="8" height="7" rx="1"/><rect x="3" y="13" width="8" height="7" rx="1"/><rect x="13" y="13" width="8" height="7" rx="1"/></svg><span>المشاهد</span></button>
+      <button type="button" data-editor-section="motion" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17 17 4l3 3L7 20l-3-3Zm10-10 3 3M5 8V4m-2 2h4m10 12v-4m-2 2h4"/></svg><span>الحركة</span></button>
+      <button type="button" data-editor-section="audio" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4m4-8v12m4-15v18m4-14v10m4-7v4"/></svg><span>الصوت</span></button>
+      <button type="button" data-editor-section="effects" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2Zm7 13 .8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z"/></svg><span>المؤثرات</span></button>
+      <button type="button" data-editor-section="more" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg><span>المزيد</span></button>
+    </nav>
+    <details id="professionalMotionControls" class="advanced-motion-drawer">
+      <summary>الإعدادات الاحترافية للحركة</summary>
+      <div id="advancedMotionContent" class="advanced-motion-content"></div>
+    </details>
     <p id="errorMessage" class="error-message" role="alert" hidden></p>
-    <footer>نسخة تجريبية · التصدير محلي على الجهاز · اختبر الصيغة الناتجة قبل اعتمادها</footer>
+    <footer class="studio-footer">نسخة تجريبية · تتم المعالجة على الجهاز</footer>
   </main>
-  <script type="module" src="./studio.js?v=l11f1-smart-editor-01"></script>
+  <script type="module" src="./studio.js?v=l11f2-android-fix-01"></script>
 </body>
 </html>

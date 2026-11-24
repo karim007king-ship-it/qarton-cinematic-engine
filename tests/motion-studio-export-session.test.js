@@ -44,6 +44,22 @@ class FakeRecorder extends EventTarget {
     this.dispatchEvent(new Event("stop"));
   }
 }
+class DelayedStartRecorder extends FakeRecorder {
+  start() {
+    if (this.state !== "inactive") throw new Error("already recording");
+    this.state = "recording";
+    const track = this.stream.getVideoTracks()[0];
+    DelayedStartRecorder.paintCountAtStart = track?.owner?.paintCount ?? 0;
+    DelayedStartRecorder.requestCountAtStart = track?.requests ?? 0;
+    DelayedStartRecorder.startedAt = performance.now();
+    setTimeout(() => this.dispatchEvent(new Event("start")), 250);
+  }
+  stop() {
+    if (this.state !== "recording") return;
+    DelayedStartRecorder.stoppedAt = performance.now();
+    super.stop();
+  }
+}
 class FakeMediaStream extends FakeStream {}
 
 class InfiniteDurationVideo extends EventTarget {
@@ -112,6 +128,17 @@ test("recording uses exact absolute project samples, reports progress, validates
   assert.equal(canvas.track.stopped, true);
   assert.ok(canvas.track.requests > 0);
   assert.ok(FakeRecorder.requestCountAtStart > 0, "manual Canvas track is requested before waiting for MediaRecorder.start");
+});
+
+test("delayed MediaRecorder start event does not extend the requested recording duration", async () => {
+  const plan = makePlan({ durationMs: 500 });
+  const { host } = makeHost([], { MediaRecorderClass: DelayedStartRecorder });
+  host.startLeadMs = 40;
+  const result = await startExport(plan, host);
+  const capturedMs = DelayedStartRecorder.stoppedAt - DelayedStartRecorder.startedAt;
+  assert.ok(result.blob.size > 0);
+  assert.ok(capturedMs >= plan.durationMs + 25, `expected the recorder lead frame to be retained: ${capturedMs}`);
+  assert.ok(capturedMs <= plan.durationMs + 180, `start-event latency leaked into output duration: ${capturedMs}`);
 });
 
 test("WebM without finite container duration metadata uses the shared recording clock and reports the limitation", async () => {

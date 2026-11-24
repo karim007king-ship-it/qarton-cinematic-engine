@@ -72,6 +72,8 @@ root = Path(__file__).resolve().parents[1]
 preview_slug = environ.get("MOTION_STUDIO_PREVIEW_SLUG", "motion-studio-l5-android-preview")
 preview = root / "dist" / preview_slug / "index.html"
 sample = root / "examples/motion-studio-lab/preview-test.png"
+screenshot_dir = root / "artifacts/motion-studio-l11f2"
+screenshot_dir.mkdir(parents=True, exist_ok=True)
 assert preview.is_file() and sample.is_file()
 html = preview.read_text()
 assert not re.search(r"<script\b[^>]*\btype=[\"']importmap[\"']", html, re.IGNORECASE)
@@ -128,7 +130,9 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         image_input = page.locator("#imageInput")
         image_input.set_input_files(str(sample))
         page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
-        page.locator('[data-editor-section="effects"]').click()
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight + 1"), "desktop editor shell must not require page scrolling"
+        page.screenshot(path=str(screenshot_dir / "motion-studio-desktop.png"))
+        page.locator('nav.bottom-dock [data-editor-section="effects"]').click()
         page.locator("#visualEffectType").select_option("fade")
         page.locator("#addVisualEffect").click()
         assert page.locator(".visual-effect-clip").count() == 1
@@ -216,6 +220,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         assert page.locator("#playPauseButton").inner_text() == "متابعة"
         assert page.locator(".visual-effect-clip").count() == 1, "Replay preserves the latest edited scene timeline"
         page.locator(".visual-effect-clip").click()
+        page.locator('nav.bottom-dock [data-editor-section="audio"]').click()
         page.locator("#audioInput").set_input_files(str(audio_sample))
         page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('تم التحقق من الملف')")
         page.locator("#audioTrackType").select_option("dialogue")
@@ -307,14 +312,21 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         page.mouse.move(audio_box["x"] + audio_box["width"] * 0.8, audio_box["y"] + audio_box["height"] / 2)
         assert page.locator(".audio-clip").get_attribute("aria-label") == drag_start, "export lock ignores trailing pointer motion"
         page.mouse.up()
+        page.locator('nav.bottom-dock [data-editor-section="more"]').click()
+        if not page.locator("#advancedProjectOptions").evaluate("el => el.open"):
+            page.locator("#advancedProjectOptions > summary").click()
+        if not page.locator("#legacyExportDetails").evaluate("el => el.open"):
+            page.locator("#legacyExportDetails > summary").click()
         page.locator("#cancelExportButton").click()
         page.get_by_text("أُلغي التسجيل ونُظّفت موارده.", exact=True).wait_for(timeout=10000)
+        page.locator('nav.bottom-dock [data-editor-section="audio"]').click()
         assert "00:01.34" in page.locator(".audio-clip").get_attribute("aria-label"), "cancelled audio drag keeps its last valid timing"
         page.locator("#seek").evaluate("""(el, value) => { el.value = String(value); el.dispatchEvent(new Event('input', {bubbles: true})); }""", 0)
         page.locator("#playPauseButton").click()
         page.wait_for_function("Number(document.querySelector('#seek').value) > 100", timeout=3000)
         page.locator("#playPauseButton").click()
         assert page.locator("#playPauseButton").inner_text() == "متابعة"
+        page.locator('nav.bottom-dock [data-editor-section="more"]').click()
         with page.expect_download() as project_download:
             page.locator("#saveProjectButton").click()
         project_path = Path(tmp) / "audio-project.json"
@@ -327,9 +339,12 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         page.wait_for_function("document.querySelector('#status').textContent.includes('فُتح المشروع')")
         assert page.locator(".audio-clip").count() == 1
         assert page.locator(".visual-effect-clip").count() == 1, "saved visual effects survive JSON reload"
+        page.locator('nav.bottom-dock [data-editor-section="audio"]').click()
         page.locator("#audioInput").set_input_files(str(audio_sample))
         page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('تم التحقق من الملف')")
         assert not page.locator("#addAudioClip").is_disabled(), "relinked local audio keeps the saved asset id"
+        page.locator('nav.bottom-dock [data-editor-section="motion"]').click()
+        page.locator("#professionalMotionControls summary").click()
         image_input.set_input_files(str(sample))
         page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
         page.locator("#seek").evaluate("""(el, value) => { el.value = String(value); el.dispatchEvent(new Event('input', {bubbles: true})); }""", 0)
@@ -416,8 +431,16 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         assert [int(value) for value in page.locator(".keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")] == [0, 7000, 12000]
         assert page.locator('.keyframe-marker[data-key-time="7000"]').evaluate("el => document.activeElement === el"), "selection focus survives marker rerender"
 
+        page.locator('nav.bottom-dock [data-editor-section="more"]').click()
+        if not page.locator("#advancedProjectOptions").evaluate("el => el.open"):
+            page.locator("#advancedProjectOptions > summary").click()
+        if not page.locator("#legacyExportDetails").evaluate("el => el.open"):
+            page.locator("#legacyExportDetails > summary").click()
         page.locator("#exportDuration").select_option("3000")
         page.locator("#exportQuality").select_option("economy")
+        page.locator('nav.bottom-dock [data-editor-section="motion"]').click()
+        if not page.locator("#professionalMotionControls").evaluate("el => el.open"):
+            page.locator("#professionalMotionControls > summary").click()
         drag_key(7000, 8000, 96)
         assert page.locator("#timelineLane").get_attribute("data-dragging") == "true"
         page.locator("#exportButton").evaluate("el => el.click()")
@@ -427,8 +450,17 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
                         lane.bounding_box()["y"] + 20)
         assert page.locator('.keyframe-marker[data-key-time="8000"]').count() == 1, "export lock rejects trailing pointer moves"
         page.mouse.up()
+        page.locator('nav.bottom-dock [data-editor-section="more"]').click()
+        if not page.locator("#advancedProjectOptions").evaluate("el => el.open"):
+            page.locator("#advancedProjectOptions > summary").click()
+        if not page.locator("#legacyExportDetails").evaluate("el => el.open"):
+            page.locator("#legacyExportDetails > summary").click()
         page.locator("#cancelExportButton").click()
         page.get_by_text("أُلغي التسجيل ونُظّفت موارده.", exact=True).wait_for(timeout=10000)
+        page.locator('nav.bottom-dock [data-editor-section="audio"]').click()
+        page.locator('nav.bottom-dock [data-editor-section="more"]').click()
+        if not page.locator("#advancedProjectOptions").evaluate("el => el.open"):
+            page.locator("#advancedProjectOptions > summary").click()
 
         page.locator("#aspectPreset").select_option("landscape")
         page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
@@ -494,17 +526,21 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             sync_page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
             sync_page.locator("#audioInput").set_input_files(str(sync_audio_sample))
             sync_page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('تم التحقق من الملف')")
-            sync_page.locator('[data-editor-section="audio"]').click()
+            sync_page.locator('nav.bottom-dock [data-editor-section="audio"]').click()
             sync_page.locator("#audioTrackType").select_option("dialogue")
             sync_page.locator("#seek").evaluate("""el => { el.value = '0'; el.dispatchEvent(new Event('input', {bubbles: true})); }""")
             sync_page.locator("#addAudioClip").click()
             assert sync_page.locator(".audio-clip").count() == 1
+            sync_page.locator('nav.bottom-dock [data-editor-section="more"]').click()
+            sync_page.locator("#advancedProjectOptions > summary").click()
+            sync_page.locator(".integrated-export-card .export-options summary").click()
             sync_page.locator("#integratedFrom").fill("0")
             sync_page.locator("#integratedTo").fill("3000")
             sync_page.locator("#integratedQuality").select_option("480p")
             sync_page.locator("#integratedFormat").select_option("webm")
             sync_page.locator("#integratedAudio").select_option("mix")
 
+            sync_page.locator('nav.bottom-dock [data-editor-section="effects"]').click()
             for mark in sync_marks:
                 for at, intensity in ((mark, "1"), (mark + 0.16, "0")):
                     sync_page.locator("#seek").evaluate("""(el, ms) => { el.value = String(ms); el.dispatchEvent(new Event('input', {bubbles: true})); }""", round(at * 1000))
@@ -517,6 +553,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
                         field.fill(intensity)
                         field.dispatch_event("change")
 
+            sync_page.locator('nav.bottom-dock [data-editor-section="more"]').click()
             sync_page.locator("#integratedProbeButton").click()
             sync_page.wait_for_function("""() => document.querySelector('#integratedStatus').textContent.includes('تم التحقق فعليًا') ||
               !document.querySelector('#integratedError').hidden""", timeout=30000)
@@ -660,7 +697,79 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             assert max(abs(value) for value in drifts) <= 100, drifts
             assert max(drifts) - min(drifts) <= 50, drifts
             print(f"L10-B output sync: markers={len(sync_marks)}, drift_ms={drifts}, streams={video_stream['codec_name']}/{audio_stream['codec_name']}")
+
+            # Exercise the requested real-browser durations in silent and mixed
+            # modes. Only formats the device can actually probe and decode count
+            # as supported; advertised-but-unusable MIME types remain skipped.
+            sync_page.locator("#duration").fill("60")
+            sync_page.locator("#duration").dispatch_event("input")
+            verified_runs = 0
+            for audio_mode in ("none", "mix"):
+                for export_format in ("mp4", "webm"):
+                    if not support[export_format]:
+                        print(f"L11-F2 export matrix: {export_format}/{audio_mode} unsupported by this Chromium build")
+                        continue
+                    sync_page.locator("#integratedFormat").select_option(export_format)
+                    sync_page.locator("#integratedAudio").select_option(audio_mode)
+                    sync_page.locator("#integratedQuality").select_option("480p")
+                    sync_page.locator("#integratedProbeButton").click()
+                    sync_page.wait_for_function("""() => document.querySelector('#integratedStatus').textContent.includes('تم التحقق فعليًا') ||
+                      !document.querySelector('#integratedError').hidden""", timeout=30000)
+                    probe_status = sync_page.locator("#integratedStatus").inner_text()
+                    if "تم التحقق فعليًا" not in probe_status:
+                        print(f"L11-F2 export matrix: {export_format}/{audio_mode} not verified: {sync_page.locator('#integratedError').inner_text()}")
+                        continue
+                    for seconds in (3, 5, 10, 30):
+                        sync_page.locator("#integratedFrom").fill("0")
+                        sync_page.locator("#integratedTo").fill(str(seconds * 1000))
+                        sync_page.locator("#integratedFrom").dispatch_event("change")
+                        sync_page.locator("#integratedTo").dispatch_event("change")
+                        sync_page.locator("#integratedExportButton").click()
+                        sync_page.wait_for_function("""() => document.querySelector('#integratedStatus').textContent.includes('اكتمل التصدير المتكامل') ||
+                          !document.querySelector('#integratedError').hidden""", timeout=seconds * 1000 + 30000)
+                        status = sync_page.locator("#integratedStatus").inner_text()
+                        detail = sync_page.locator("#integratedError").inner_text()
+                        assert "اكتمل التصدير المتكامل" in status, (export_format, audio_mode, seconds, status, detail)
+                        with sync_page.expect_download(timeout=15000) as download_info:
+                            sync_page.locator("#integratedDownload").click()
+                        output = Path(tmp) / f"timing-{seconds}s-{audio_mode}.{export_format}"
+                        download_info.value.save_as(output)
+                        probe = __import__("json").loads(subprocess.check_output([
+                            "ffprobe", "-v", "error", "-show_streams", "-of", "json", str(output)
+                        ], text=True, timeout=60))
+                        video_streams = [stream for stream in probe["streams"] if stream["codec_type"] == "video"]
+                        audio_streams = [stream for stream in probe["streams"] if stream["codec_type"] == "audio"]
+                        assert len(video_streams) == 1 and bool(audio_streams) == (audio_mode == "mix"), (
+                            export_format, audio_mode, seconds, [(stream["codec_type"], stream["codec_name"]) for stream in probe["streams"]])
+                        frames = __import__("json").loads(subprocess.check_output([
+                            "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_frames",
+                            "-show_entries", "frame=best_effort_timestamp_time,pkt_duration_time,duration_time",
+                            "-of", "json", str(output)
+                        ], text=True, timeout=60)).get("frames", [])
+                        video_timeline = measure_media_timeline(
+                            frames, ("best_effort_timestamp_time", "pts_time"), ("pkt_duration_time", "duration_time"))
+                        duration_tolerance_s = max(0.150, 1000 / 24 / 1000)
+                        assert abs(video_timeline["duration"] - seconds) <= duration_tolerance_s, (
+                            export_format, audio_mode, seconds, video_timeline, duration_tolerance_s)
+                        if audio_mode == "mix":
+                            packets = __import__("json").loads(subprocess.check_output([
+                                "ffprobe", "-v", "error", "-select_streams", "a:0", "-show_packets",
+                                "-show_entries", "packet=pts_time,dts_time,duration_time",
+                                "-of", "json", str(output)
+                            ], text=True, timeout=60)).get("packets", [])
+                            audio_timeline = measure_media_timeline(packets, ("pts_time", "dts_time"), ("duration_time",))
+                            expected_audio_duration = min(seconds, 3)
+                            envelope = max(video_timeline["end"], audio_timeline["end"]) - min(
+                                video_timeline["start"], audio_timeline["start"])
+                            assert abs(audio_timeline["duration"] - expected_audio_duration) <= duration_tolerance_s and \
+                                abs(envelope - seconds) <= duration_tolerance_s, (
+                                    export_format, audio_mode, seconds, video_timeline, audio_timeline, envelope)
+                        verified_runs += 1
+                        audio_duration = audio_timeline["duration"] if audio_mode == "mix" else 0
+                        print(f"L11-F2 real export: {export_format}/{audio_mode}/{seconds}s video={video_timeline['duration']:.3f}s audio={audio_duration:.3f}s")
+            assert verified_runs >= 8, f"Expected WebM 3/5/10/30 s with and without audio; verified {verified_runs} exports"
             sync_page.close()
+        page.locator('nav.bottom-dock [data-editor-section="effects"]').click()
         effect_lane = page.locator('#visualEffectsTracks .visual-effect-lane[data-effect-type="fade"]')
         effect_clip = page.locator(".visual-effect-clip")
         effect_lane.scroll_into_view_if_needed()
@@ -746,29 +855,96 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         def touch_tap(locator):
             locator.evaluate("el => el.scrollIntoView({block:'center', inline:'center', behavior:'instant'})")
             box = locator.bounding_box()
-            assert locator.evaluate("el => { const r=el.getBoundingClientRect(); return document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.closest('button') === el; }"), "touch target must be the actual hit target after scrolling"
+            assert locator.evaluate("el => { const r=el.getBoundingClientRect(), hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2); return hit === el || hit?.closest('button') === el || (el.matches('summary') && hit?.closest('summary') === el); }"), "touch target must be the actual hit target after scrolling"
             touch_page.touchscreen.tap(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
         touch_page.goto(preview.as_uri())
         touch_page.wait_for_function("document.querySelector('#stage')?.width === 720")
         touch_page.locator("#imageInput").set_input_files(str(sample))
         touch_page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
-        touch_tap(touch_page.locator('[data-editor-mode-button="professional"]'))
+        assert touch_page.evaluate("document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight + 1"), "mobile editor shell must fit the viewport without long-page or horizontal scrolling"
+        touch_page.screenshot(path=str(screenshot_dir / "motion-studio-mobile-motion.png"))
+
+        # Exercise the three requested phone sizes, then repeat one on a WebView-style Android UA.
+        phone_sizes = [(360, 640), (390, 844), (430, 932)]
+        phone_profiles = [
+            ("chrome", "Mozilla/5.0 (Linux; Android 15; HONOR 400 Pro Build/UP1A) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"),
+            ("webview", "Mozilla/5.0 (Linux; Android 15; HONOR 400 Pro Build/UP1A) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/131.0.0.0 Mobile Safari/537.36")
+        ]
+        for profile, user_agent in phone_profiles:
+            sizes = phone_sizes if profile == "chrome" else [phone_sizes[1]]
+            for width, height in sizes:
+                phone_context = browser.new_context(viewport={"width": width, "height": height}, device_scale_factor=1.5,
+                    is_mobile=True, has_touch=True, user_agent=user_agent, accept_downloads=True)
+                phone_page = phone_context.new_page()
+                phone_page.on("pageerror", lambda error: touch_errors.append(str(error)))
+                phone_page.goto(preview.as_uri())
+                phone_page.wait_for_function("document.querySelector('#stage')?.width === 720")
+                phone_page.locator("#imageInput").set_input_files(str(sample))
+                phone_page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+                layout = phone_page.evaluate("""() => {
+                  const rect = selector => { const r = document.querySelector(selector).getBoundingClientRect(); return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom}; };
+                  const preview = rect('#studioPreview'), drawer = rect('.tool-drawer'), dock = rect('.bottom-dock');
+                  const canvas = rect('#stage'), stage = rect('.stage-wrap'), transport = rect('.preview-transport-host'), heading = rect('.preview-heading');
+                  const overlaps = (a,b) => a.x < b.right && a.right > b.x && a.y < b.bottom && a.bottom > b.y;
+                  return {preview,drawer,dock,canvas,stage,transport,heading,ratio:preview.height/(preview.height+drawer.height),
+                    canvasHeightFill:canvas.height/stage.height,
+                    pageOverflow:document.documentElement.scrollWidth > innerWidth || document.documentElement.scrollHeight > innerHeight + 1,
+                    picker:getComputedStyle(document.querySelector('#previewImagePicker')).display,
+                    inputRect:(() => { const r=document.querySelector('#imageInput').getBoundingClientRect(); return {width:r.width,height:r.height}; })(),
+                    canvasRatio:canvas.width/canvas.height, sourceRatio:(() => { const el=document.querySelector('#stage'); return el.width/el.height; })(), canvasTransportOverlap:overlaps(canvas,transport),
+                    canvasHeadingOverlap:overlaps(canvas,heading), hasCardActions:Boolean(document.querySelector('#sceneThumbnails .scene-card-controls'))};
+                }""")
+                assert not layout["pageOverflow"], (profile, width, height, layout)
+                assert 0.52 <= layout["ratio"] <= 0.58, (profile, width, height, layout)
+                assert abs(layout["canvasRatio"] - layout["sourceRatio"]) < 0.02, (profile, width, height, layout)
+                assert layout["canvasHeightFill"] >= 0.9, (profile, width, height, layout)
+                assert not layout["canvasTransportOverlap"] and not layout["canvasHeadingOverlap"], (profile, width, height, layout)
+                assert layout["picker"] == "none", (profile, width, height, layout)
+                assert max(layout["inputRect"]["width"], layout["inputRect"]["height"]) <= 1, (profile, width, height, layout)
+                assert not layout["hasCardActions"], "scene actions belong in the Scenes section"
+                if profile == "chrome":
+                    phone_page.screenshot(path=str(screenshot_dir / f"motion-studio-android-chrome-{width}x{height}.png"))
+                if width == 360:
+                    phone_page.locator('nav.bottom-dock [data-editor-section="scenes"]').click()
+                    phone_page.locator("#sceneName").focus()
+                    phone_page.set_viewport_size({"width": width, "height": height - 240})
+                    keyboard_layout = phone_page.evaluate("""() => ({height:innerHeight,studioBottom:document.querySelector('.studio').getBoundingClientRect().bottom,
+                      dockTop:document.querySelector('.bottom-dock').getBoundingClientRect().top,dockBottom:document.querySelector('.bottom-dock').getBoundingClientRect().bottom,
+                      panelTop:document.querySelector('.tool-drawer').getBoundingClientRect().top,panelBottom:document.querySelector('.tool-drawer').getBoundingClientRect().bottom,
+                      horizontalOverflow:document.documentElement.scrollWidth > innerWidth + 1})""")
+                    assert not keyboard_layout["horizontalOverflow"] and keyboard_layout["studioBottom"] <= keyboard_layout["height"] + 1, keyboard_layout
+                    assert keyboard_layout["dockBottom"] <= keyboard_layout["height"] + 1, keyboard_layout
+                    assert keyboard_layout["panelBottom"] < keyboard_layout["dockTop"], keyboard_layout
+                phone_context.close()
+        fullscreen_button = touch_page.locator("#fullscreenPreviewButton")
+        assert fullscreen_button.bounding_box()["width"] >= 44 and fullscreen_button.bounding_box()["height"] >= 44
+        touch_tap(fullscreen_button)
+        touch_page.wait_for_function("document.fullscreenElement?.id === 'studioPreview' || document.querySelector('#studioPreview').classList.contains('preview-fullscreen')")
+        touch_tap(fullscreen_button)
+        touch_page.wait_for_function("!document.fullscreenElement && !document.querySelector('#studioPreview').classList.contains('preview-fullscreen')")
+        touch_tap(touch_page.locator('nav.bottom-dock [data-editor-section="more"]'))
+        touch_tap(touch_page.locator("#advancedProjectOptions > summary"))
         touch_page.locator("#aspectPreset").select_option("portrait")
         touch_page.wait_for_function("document.querySelector('#stage').width === 720 && document.querySelector('#stage').height === 1280")
         touch_page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+        touch_tap(touch_page.locator('nav.bottom-dock [data-editor-section="scenes"]'))
         touch_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 1")
+        asset_library = touch_page.locator(".asset-library")
+        if not asset_library.evaluate("el => el.open"):
+            touch_tap(asset_library.locator("summary"))
         touch_page.wait_for_function("document.querySelectorAll('#assetLibraryList .asset-entry').length >= 2")
+        touch_page.screenshot(path=str(screenshot_dir / "motion-studio-mobile-scenes.png"))
         used_asset = touch_page.locator("#assetLibraryList .asset-entry").last
         assert used_asset.get_by_role("button", name="حذف").is_disabled(), "scene-referenced assets cannot be deleted"
-        touch_page.locator("#addSceneButton").scroll_into_view_if_needed()
-        print("Mobile add-scene hit test:", __import__("json").dumps(touch_page.locator("#addSceneButton").evaluate("el => { const r=el.getBoundingClientRect(), hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2); return {width:innerWidth,height:innerHeight,scrollY,coarse:matchMedia('(pointer: coarse)').matches,previewPosition:getComputedStyle(document.querySelector('.preview-panel')).position,rect:{x:r.x,y:r.y,w:r.width,h:r.height},hit:hit?.outerHTML?.slice(0,180)}; }"), ensure_ascii=False), flush=True)
         touch_tap(touch_page.locator("#addSceneButton"))
         touch_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 2")
         assert touch_page.locator("#sequenceBlocks .sequence-block").count() == 2
         fit_frame = touch_page.locator("#stage").evaluate("el => el.toDataURL()")
+        touch_tap(touch_page.locator('nav.bottom-dock [data-editor-section="more"]'))
         touch_page.locator("#fitMode").select_option("fill")
         touch_page.wait_for_function("previous => document.querySelector('#stage').toDataURL() !== previous", arg=fit_frame)
         assert touch_page.locator("#fitMode").input_value() == "fill"
+        touch_tap(touch_page.locator('nav.bottom-dock [data-editor-section="scenes"]'))
         touch_page.locator("#sceneName").fill("المشهد الثاني")
         touch_page.locator("#sceneName").dispatch_event("change")
         touch_page.locator("#sceneDuration").fill("4")
@@ -777,9 +953,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         touch_tap(touch_page.locator("#addSceneButton"))
         touch_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 3")
         order_before = touch_page.locator("#sceneThumbnails .scene-card").evaluate_all("els => els.map(el => el.dataset.sceneId)")
-        third_scene = touch_page.locator("#sceneThumbnails .scene-card").nth(2)
-        third_scene.scroll_into_view_if_needed()
-        reorder_button = third_scene.get_by_role("button", name="إلى اليسار: المشهد 3")
+        reorder_button = touch_page.locator("#moveSceneLeftButton")
         reorder_button.evaluate("el => el.scrollIntoView({block:'center', inline:'center', behavior:'instant'})")
         reorder_box = reorder_button.bounding_box()
         assert reorder_button.evaluate("el => { const r=el.getBoundingClientRect(); return document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.closest('button') === el; }"), "scene reorder button must be the actual touch hit target"
@@ -792,10 +966,14 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         touch_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 3")
         touch_tap(touch_page.locator("#sceneThumbnails .scene-card").first.locator(".scene-select"))
         touch_page.wait_for_function("document.querySelector('#sceneName').value === 'المشهد 1'")
+        touch_tap(touch_page.locator('nav.bottom-dock [data-editor-section="more"]'))
         assert touch_page.locator("#fitMode").input_value() == "fit", "switching scenes restores each scene's Fit setting"
+        touch_tap(touch_page.locator('nav.bottom-dock [data-editor-section="scenes"]'))
         touch_tap(touch_page.locator("#sceneThumbnails .scene-card").nth(2).locator(".scene-select"))
         touch_page.wait_for_function("document.querySelector('#sceneName').value === 'المشهد الثاني'")
+        touch_tap(touch_page.locator('nav.bottom-dock [data-editor-section="more"]'))
         assert touch_page.locator("#fitMode").input_value() == "fill", "switching scenes restores each scene's Fill setting"
+        touch_tap(touch_page.locator('nav.bottom-dock [data-editor-section="scenes"]'))
 
         # Exact global Cut boundary selects the next scene with local time zero.
         touch_page.locator("#sequenceSeek").evaluate("el => { el.value = '12000'; el.dispatchEvent(new Event('input', {bubbles:true})); }")
@@ -808,6 +986,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         assert touch_page.locator("#playPauseButton").text_content() == "متابعة"
         touch_tap(touch_page.locator("#replayButton"))
         touch_page.wait_for_function("document.querySelector('#sceneName').value === 'المشهد 1' && Number(document.querySelector('#sequenceSeek').value) > 0")
+        touch_tap(touch_page.locator('nav.bottom-dock [data-editor-section="motion"]'))
         touch_tap(touch_page.locator('[data-editor-mode-button="simple"]'))
         assert touch_page.locator(".studio").get_attribute("data-editor-mode") == "simple", "Simple mode is the mobile default"
         simple_times = lambda: [int(value) for value in touch_page.locator(".keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")]
@@ -838,19 +1017,23 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             touch_tap(touch_page.locator(f'[data-motion-preset="{preset}"][data-automatic-motion="true"]'))
             assert "اقتراح" in touch_page.locator("#motionPresetMessage").inner_text(), preset
             touch_tap(touch_page.locator("#undoMotionAutomatic"))
-        touch_tap(touch_page.locator('[data-editor-section="audio"]'))
+        touch_tap(touch_page.locator('nav.bottom-dock [data-editor-section="audio"]'))
         assert touch_page.locator(".studio").get_attribute("data-editor-mode") == "professional"
         assert touch_page.locator("#audioToolsSection").is_visible()
-        touch_tap(touch_page.locator('[data-editor-section="effects"]'))
+        touch_page.screenshot(path=str(screenshot_dir / "motion-studio-mobile-audio.png"))
+        touch_tap(touch_page.locator('nav.bottom-dock [data-editor-section="effects"]'))
         assert touch_page.locator("#effectsToolsSection").is_visible()
-        touch_tap(touch_page.locator('[data-editor-section="motion"]'))
-        assert touch_page.locator(".studio").get_attribute("data-editor-mode") == "simple"
+        touch_page.screenshot(path=str(screenshot_dir / "motion-studio-mobile-effects.png"))
+        touch_tap(touch_page.locator('nav.bottom-dock [data-editor-section="motion"]'))
+        assert touch_page.locator(".studio").get_attribute("data-editor-mode") == "professional", "section navigation preserves the user's selected editing mode"
+        touch_tap(touch_page.locator('[data-editor-mode-button="simple"]'))
         assert touch_page.locator("#motionStrength").input_value() == "72"
         assert touch_page.locator("#motionFocusX").input_value() == "30"
         assert touch_page.locator("#motionFocusY").input_value() == "68"
         assert touch_page.locator("#motionFromSeconds").input_value() == "1"
         assert touch_page.locator("#motionToSeconds").input_value() == "5"
         assert not touch_errors, touch_errors
-        print("L11-D/F1 touch UI: scene editing, mode switching, six camera presets, auto suggestions, undo, focus, preview, pause and replay passed")
+        assert touch_page.evaluate("document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight + 1"), "mobile editor shell remains fixed after section changes"
+        print("L11-F2 touch UI: compact fixed shell, scene editing, mode switching, six camera presets, auto suggestions, undo, focus, preview, pause and replay passed")
         touch_context.close()
         browser.close()
