@@ -78,3 +78,28 @@ test("speed changes the generated easing midpoint, strength scales movement, and
   ]) assert.throws(() => createCameraMotionProject(project, { preset: "zoom-in", ...bad }));
   assert.throws(() => createCameraMotionProject(project, { preset: "unknown" }));
 });
+
+test("compact editor shell keeps preview, scene thumbnails, and five touch sections inside one viewport", async () => {
+  const html = await readFile(resolve(root, "examples/motion-studio-lab/index.html"), "utf8");
+  const css = await readFile(resolve(root, "examples/motion-studio-lab/studio.css"), "utf8");
+  const js = await readFile(resolve(root, "examples/motion-studio-lab/studio.js"), "utf8");
+  for (const id of ["studioPreview", "previewSceneStrip", "fullscreenPreviewButton", "headerSaveButton", "headerUndoButton", "headerExportButton"]) {
+    if (id === "fullscreenPreviewButton") assert.match(js, new RegExp(`id = "${id}"`));
+    else assert.match(html, new RegExp(`id="${id}"`));
+  }
+  for (const section of ["scenes", "motion", "audio", "effects", "more"]) {
+    assert.match(html, new RegExp(`data-tool-panel="${section}"`));
+    assert.match(html, new RegExp(`data-editor-section="${section}"`));
+  }
+  assert.match(html, /<nav class="bottom-dock"/);
+  assert.match(js, /advancedProjectOptions/);
+  assert.match(js, /خيارات الجودة والصيغة المتقدمة/);
+  assert.match(html, /data-editor-section="more"[\s\S]*?<svg/);
+  assert.match(js, /function mountCompactWorkspace\(\)/);
+  assert.match(js, /function setEditorSection\(section\)/);
+  assert.match(js, /fullscreenPreviewButton/);
+  assert.match(css, /height:100dvh/);
+  assert.match(css, /overflow:hidden/);
+  assert.match(css, /grid-template-columns:minmax\(0,1fr\)/);
+  assert.match(css, /min-height:44px/);
+});

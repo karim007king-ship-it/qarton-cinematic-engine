@@ -24,6 +24,88 @@ import { openAssetStorage } from "../../packages/motion-studio/asset-storage.js"
 
 const $ = (id) => document.getElementById(id);
 const studioRoot = document.querySelector(".studio");
+let activeEditorSection = "motion";
+
+function mountCompactWorkspace() {
+  const workspace = studioRoot.querySelector(".workspace");
+  const preview = workspace?.querySelector(".preview-panel");
+  const controls = workspace?.querySelector(".controls-panel");
+  if (!workspace || !preview || !controls) return;
+  const panel = (name) => document.querySelector(`[data-tool-panel="${name}"]`);
+  const previewHeading = preview.querySelector(".preview-heading");
+  const stageWrap = preview.querySelector(".stage-wrap");
+  const transport = preview.querySelector(".transport");
+  const sceneSection = $("sceneSection");
+  const sceneStrip = $("previewSceneStrip");
+  const imagePicker = $("previewImagePicker");
+  const projectCard = controls.querySelector(".project-card");
+  const imageLabel = projectCard?.querySelector("label.file-picker[for='imageInput']");
+  if (imageLabel) imagePicker.append(imageLabel, $("imageInput"));
+  const sceneThumbnails = $("sceneThumbnails");
+  if (sceneThumbnails) sceneStrip.append(sceneThumbnails);
+  if (previewHeading) {
+    const fullscreen = document.createElement("button");
+    fullscreen.id = "fullscreenPreviewButton";
+    fullscreen.type = "button";
+    fullscreen.className = "fullscreen-button";
+    fullscreen.setAttribute("aria-label", "ملء الشاشة");
+    fullscreen.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></svg>';
+    previewHeading.append(fullscreen);
+  }
+  $("previewCanvasHost").append(previewHeading, stageWrap);
+  $("previewTransportHost").append(transport);
+  const camTimeline = preview.querySelector(".timeline-card:not(.character-timeline-card):not(.audio-timeline-card):not(.visual-effects-card)");
+  const characterTimeline = preview.querySelector(".character-timeline-card");
+  const audioTimelinePanel = $("audioToolsSection");
+  const effectsTimelinePanel = $("effectsToolsSection");
+  const motionPanel = panel("motion");
+  const morePanel = panel("more");
+  const advancedMotion = $("professionalMotionControls");
+  const advancedMotionContent = $("advancedMotionContent");
+  motionPanel.append($("automaticMotionPanel"), $("simpleMotionPanel"), advancedMotion);
+  if (camTimeline) advancedMotionContent.append(camTimeline);
+  if (characterTimeline) advancedMotionContent.append(characterTimeline);
+  const cards = [...controls.querySelectorAll(":scope > .control-card")];
+  const [dimensionsCard, durationCard, cameraCard, legacyExportCard, integratedExportCard] = cards.slice(1);
+  if (sceneSection) panel("scenes").append(sceneSection);
+  if (audioTimelinePanel) panel("audio").append(audioTimelinePanel);
+  if (effectsTimelinePanel) panel("effects").append(effectsTimelinePanel);
+  if (projectCard) morePanel.append(projectCard);
+  const advancedProject = document.createElement("details");
+  advancedProject.id = "advancedProjectOptions";
+  advancedProject.className = "advanced-options project-options";
+  advancedProject.innerHTML = '<summary>إعدادات المشروع المتقدمة</summary>';
+  for (const card of [dimensionsCard, durationCard, cameraCard]) if (card) advancedProject.append(card);
+  if (legacyExportCard) {
+    const legacy = document.createElement("details");
+    legacy.id = "legacyExportDetails";
+    legacy.className = "advanced-options";
+    legacy.innerHTML = '<summary>التصدير القديم L5</summary>';
+    legacy.append(legacyExportCard);
+    advancedProject.append(legacy);
+  }
+  if (integratedExportCard) {
+    integratedExportCard.querySelector("h2").textContent = "تصدير الفيديو";
+    const hint = integratedExportCard.querySelector(":scope > .hint");
+    if (hint) hint.textContent = "أنشئ فيديو من المشهد الحالي مع الحركة والصوت والمؤثرات.";
+    const options = integratedExportCard.querySelector(":scope > .control-grid");
+    if (options) {
+      const details = document.createElement("details");
+      details.className = "advanced-options export-options";
+      details.innerHTML = '<summary>خيارات الجودة والصيغة المتقدمة</summary>';
+      details.append(options);
+      integratedExportCard.insertBefore(details, integratedExportCard.querySelector(".export-actions"));
+    }
+    morePanel.append(integratedExportCard);
+  }
+  morePanel.append(advancedProject);
+  controls.remove();
+  workspace.remove();
+  sceneSection.querySelector(".asset-library")?.removeAttribute("open");
+  document.querySelector(".studio-footer")?.remove();
+  document.querySelector("#professionalMotionControls").open = false;
+}
+mountCompactWorkspace();
 const canvas = $("stage");
 const context = canvas.getContext("2d", { alpha: false });
 const imageInput = $("imageInput");
@@ -1064,6 +1146,15 @@ function syncMotionTimeBounds() {
   if (Number.isFinite(fromValue) && fromValue > durationSeconds) from.value = String(Math.max(0, durationSeconds - 0.1));
   if (Number.isFinite(toValue) && toValue > durationSeconds) to.value = String(durationSeconds);
 }
+function setEditorSection(section) {
+  if (!["scenes", "motion", "audio", "effects", "more"].includes(section)) return;
+  activeEditorSection = section;
+  for (const panel of document.querySelectorAll("[data-tool-panel]")) panel.hidden = panel.dataset.toolPanel !== section;
+  for (const button of document.querySelectorAll("[data-editor-section]")) {
+    button.setAttribute("aria-pressed", String(button.dataset.editorSection === section));
+  }
+  studioRoot.dataset.editorSection = section;
+}
 function setEditorMode(mode) {
   if (!["automatic", "simple", "professional"].includes(mode)) return;
   studioRoot.dataset.editorMode = mode;
@@ -1082,6 +1173,8 @@ function readMotionSeconds(id, label) {
 function refreshMotionUndoButtons() {
   const disabled = !quickMotionUndo || Boolean(activeExport);
   for (const button of [$("undoMotionButton"), $("undoMotionAutomatic")]) button.disabled = disabled;
+  const headerUndo = $("headerUndoButton");
+  if (headerUndo) headerUndo.disabled = disabled;
 }
 function applyQuickMotion(preset, automatic = false) {
   const fromField = $("motionFromSeconds"); const toField = $("motionToSeconds");
@@ -1131,12 +1224,25 @@ for (const button of document.querySelectorAll("[data-editor-mode-button]")) {
 for (const button of document.querySelectorAll("[data-editor-section]")) {
   button.addEventListener("click", () => {
     const section = button.dataset.editorSection;
-    const target = ({ scenes: $("sceneSection"), motion: $("simpleMotionPanel"), audio: $("audioToolsSection"), effects: $("effectsToolsSection") })[section];
-    if (!target) return;
-    setEditorMode(section === "audio" || section === "effects" ? "professional" : "simple");
-    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (["audio", "effects", "more"].includes(section)) setEditorMode("professional");
+    setEditorSection(section);
   });
 }
+$("headerSaveButton").addEventListener("click", () => $("saveProjectButton").click());
+$("headerUndoButton").addEventListener("click", undoQuickMotion);
+$("headerExportButton").addEventListener("click", () => {
+  setEditorMode("professional");
+  setEditorSection("more");
+  $("integratedExportButton").focus({ preventScroll: true });
+});
+$("fullscreenPreviewButton").addEventListener("click", async () => {
+  const target = $("studioPreview");
+  try {
+    if (document.fullscreenElement === target) await document.exitFullscreen();
+    else if (target.requestFullscreen) await target.requestFullscreen();
+    else target.classList.toggle("preview-fullscreen");
+  } catch { target.classList.toggle("preview-fullscreen"); }
+});
 for (const button of document.querySelectorAll("[data-motion-preset]")) {
   button.addEventListener("click", () => applyQuickMotion(button.dataset.motionPreset, button.dataset.automaticMotion === "true"));
 }
@@ -2021,6 +2127,7 @@ projectInput.addEventListener("change", async () => {
 });
 
 setEditorMode("simple");
+setEditorSection("motion");
 syncMotionTimeBounds();
 refreshMotionUndoButtons();
 updateProject({ viewport: project.viewport });

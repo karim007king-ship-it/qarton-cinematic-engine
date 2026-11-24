@@ -2,7 +2,7 @@ name: Motion Studio Android preview
 
 on:
   pull_request:
-    branches: [main, integration/character-animation-timeline-l7, feature/audio-dialogue-timeline-l8b, feature/integrated-av-export-l10b, fix/integrated-av-export-l10c, docs/motion-studio-export-l10a, docs/motion-studio-multiscene-l11a, feature/motion-studio-multiscene-editor-l11d, feature/shared-assets-l11c]
+    branches: [main, integration/character-animation-timeline-l7, feature/audio-dialogue-timeline-l8b, feature/integrated-av-export-l10b, fix/integrated-av-export-l10c, docs/motion-studio-export-l10a, docs/motion-studio-multiscene-l11a, feature/motion-studio-multiscene-editor-l11d, feature/motion-studio-smart-easy-editor-l11f1, feature/shared-assets-l11c]
     paths:
       - '.github/workflows/motion-studio-preview.yml'
       - 'examples/motion-studio-lab/**'
@@ -35,7 +35,7 @@ permissions:
 
 jobs:
   preview:
-    if: github.event_name != 'pull_request' || contains(fromJSON('["feature/motion-studio-video-export-l5","feature/motion-studio-visual-timeline-l6b","feature/character-animation-timeline-l7b","feature/audio-dialogue-timeline-l8b","feature/visual-effects-timeline-l9b","feature/integrated-av-export-l10b","fix/l10c-export-safety-regressions","feature/shared-assets-l11c","feature/motion-studio-multiscene-editor-l11d","feature/motion-studio-smart-easy-editor-l11f1"]'), github.event.pull_request.head.ref)
+    if: github.event_name != 'pull_request' || contains(fromJSON('["feature/motion-studio-video-export-l5","feature/motion-studio-visual-timeline-l6b","feature/character-animation-timeline-l7b","feature/audio-dialogue-timeline-l8b","feature/visual-effects-timeline-l9b","feature/integrated-av-export-l10b","fix/l10c-export-safety-regressions","feature/shared-assets-l11c","feature/motion-studio-multiscene-editor-l11d","feature/motion-studio-smart-easy-editor-l11f1","feature/motion-studio-compact-mobile-ui-l11f2"]'), github.event.pull_request.head.ref)
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout PR branch
@@ -76,6 +76,9 @@ jobs:
           elif [ "$BRANCH_NAME" = 'feature/motion-studio-smart-easy-editor-l11f1' ]; then
             PREVIEW_SLUG='motion-studio-l11f1-android-preview'
             PREVIEW_LABEL='L11-F1'
+          elif [ "$BRANCH_NAME" = 'feature/motion-studio-compact-mobile-ui-l11f2' ]; then
+            PREVIEW_SLUG='motion-studio-l11f2-android-preview'
+            PREVIEW_LABEL='L11-F2'
           else
             PREVIEW_SLUG='motion-studio-l5-android-preview'
             PREVIEW_LABEL='L5'
@@ -109,5 +112,13 @@ jobs:
         with:
           name: ${{ steps.preview.outputs.slug }}
           path: ${{ steps.preview.outputs.slug }}.zip
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload L11-F2 interface screenshots
+        if: github.head_ref == 'feature/motion-studio-compact-mobile-ui-l11f2'
+        uses: actions/upload-artifact@v4
+        with:
+          name: motion-studio-l11f2-ui-screenshots
+          path: artifacts/motion-studio-l11f2/*.png
           if-no-files-found: error
           retention-days: 30

@@ -72,6 +72,8 @@ root = Path(__file__).resolve().parents[1]
 preview_slug = environ.get("MOTION_STUDIO_PREVIEW_SLUG", "motion-studio-l5-android-preview")
 preview = root / "dist" / preview_slug / "index.html"
 sample = root / "examples/motion-studio-lab/preview-test.png"
+screenshot_dir = root / "artifacts/motion-studio-l11f2"
+screenshot_dir.mkdir(parents=True, exist_ok=True)
 assert preview.is_file() and sample.is_file()
 html = preview.read_text()
 assert not re.search(r"<script\b[^>]*\btype=[\"']importmap[\"']", html, re.IGNORECASE)
@@ -128,6 +130,8 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         image_input = page.locator("#imageInput")
         image_input.set_input_files(str(sample))
         page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight + 1"), "desktop editor shell must not require page scrolling"
+        page.screenshot(path=str(screenshot_dir / "motion-studio-desktop.png"))
         page.locator('[data-editor-section="effects"]').click()
         page.locator("#visualEffectType").select_option("fade")
         page.locator("#addVisualEffect").click()
@@ -216,6 +220,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         assert page.locator("#playPauseButton").inner_text() == "متابعة"
         assert page.locator(".visual-effect-clip").count() == 1, "Replay preserves the latest edited scene timeline"
         page.locator(".visual-effect-clip").click()
+        page.locator('[data-editor-section="audio"]').click()
         page.locator("#audioInput").set_input_files(str(audio_sample))
         page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('تم التحقق من الملف')")
         page.locator("#audioTrackType").select_option("dialogue")
@@ -315,6 +320,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         page.wait_for_function("Number(document.querySelector('#seek').value) > 100", timeout=3000)
         page.locator("#playPauseButton").click()
         assert page.locator("#playPauseButton").inner_text() == "متابعة"
+        page.locator('[data-editor-section="more"]').click()
         with page.expect_download() as project_download:
             page.locator("#saveProjectButton").click()
         project_path = Path(tmp) / "audio-project.json"
@@ -327,9 +333,12 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         page.wait_for_function("document.querySelector('#status').textContent.includes('فُتح المشروع')")
         assert page.locator(".audio-clip").count() == 1
         assert page.locator(".visual-effect-clip").count() == 1, "saved visual effects survive JSON reload"
+        page.locator('[data-editor-section="audio"]').click()
         page.locator("#audioInput").set_input_files(str(audio_sample))
         page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('تم التحقق من الملف')")
         assert not page.locator("#addAudioClip").is_disabled(), "relinked local audio keeps the saved asset id"
+        page.locator('[data-editor-section="motion"]').click()
+        page.locator("#professionalMotionControls summary").click()
         image_input.set_input_files(str(sample))
         page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
         page.locator("#seek").evaluate("""(el, value) => { el.value = String(value); el.dispatchEvent(new Event('input', {bubbles: true})); }""", 0)
@@ -416,6 +425,9 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         assert [int(value) for value in page.locator(".keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")] == [0, 7000, 12000]
         assert page.locator('.keyframe-marker[data-key-time="7000"]').evaluate("el => document.activeElement === el"), "selection focus survives marker rerender"
 
+        page.locator('[data-editor-section="more"]').click()
+        page.locator("#advancedProjectOptions summary").click()
+        page.locator("#legacyExportDetails summary").click()
         page.locator("#exportDuration").select_option("3000")
         page.locator("#exportQuality").select_option("economy")
         drag_key(7000, 8000, 96)
@@ -499,12 +511,16 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             sync_page.locator("#seek").evaluate("""el => { el.value = '0'; el.dispatchEvent(new Event('input', {bubbles: true})); }""")
             sync_page.locator("#addAudioClip").click()
             assert sync_page.locator(".audio-clip").count() == 1
+            sync_page.locator('[data-editor-section="more"]').click()
+            sync_page.locator("#advancedProjectOptions summary").click()
+            sync_page.locator(".integrated-export-card .export-options summary").click()
             sync_page.locator("#integratedFrom").fill("0")
             sync_page.locator("#integratedTo").fill("3000")
             sync_page.locator("#integratedQuality").select_option("480p")
             sync_page.locator("#integratedFormat").select_option("webm")
             sync_page.locator("#integratedAudio").select_option("mix")
 
+            sync_page.locator('[data-editor-section="effects"]').click()
             for mark in sync_marks:
                 for at, intensity in ((mark, "1"), (mark + 0.16, "0")):
                     sync_page.locator("#seek").evaluate("""(el, ms) => { el.value = String(ms); el.dispatchEvent(new Event('input', {bubbles: true})); }""", round(at * 1000))
@@ -517,6 +533,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
                         field.fill(intensity)
                         field.dispatch_event("change")
 
+            sync_page.locator('[data-editor-section="more"]').click()
             sync_page.locator("#integratedProbeButton").click()
             sync_page.wait_for_function("""() => document.querySelector('#integratedStatus').textContent.includes('تم التحقق فعليًا') ||
               !document.querySelector('#integratedError').hidden""", timeout=30000)
@@ -752,23 +769,37 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         touch_page.wait_for_function("document.querySelector('#stage')?.width === 720")
         touch_page.locator("#imageInput").set_input_files(str(sample))
         touch_page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
-        touch_tap(touch_page.locator('[data-editor-mode-button="professional"]'))
+        assert touch_page.evaluate("document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight + 1"), "mobile editor shell must fit the viewport without long-page or horizontal scrolling"
+        touch_page.screenshot(path=str(screenshot_dir / "motion-studio-mobile-motion.png"))
+        fullscreen_button = touch_page.locator("#fullscreenPreviewButton")
+        assert fullscreen_button.bounding_box()["width"] >= 44 and fullscreen_button.bounding_box()["height"] >= 44
+        touch_tap(fullscreen_button)
+        touch_page.wait_for_function("document.fullscreenElement?.id === 'studioPreview' || document.querySelector('#studioPreview').classList.contains('preview-fullscreen')")
+        if touch_page.evaluate("document.fullscreenElement?.id === 'studioPreview'"):
+            touch_page.keyboard.press("Escape")
+            touch_page.wait_for_function("!document.fullscreenElement")
+        else:
+            touch_tap(fullscreen_button)
+        touch_tap(touch_page.locator('[data-editor-section="more"]'))
+        touch_tap(touch_page.locator("#advancedProjectOptions summary"))
         touch_page.locator("#aspectPreset").select_option("portrait")
         touch_page.wait_for_function("document.querySelector('#stage').width === 720 && document.querySelector('#stage').height === 1280")
         touch_page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+        touch_tap(touch_page.locator('[data-editor-section="scenes"]'))
         touch_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 1")
         touch_page.wait_for_function("document.querySelectorAll('#assetLibraryList .asset-entry').length >= 2")
+        touch_page.screenshot(path=str(screenshot_dir / "motion-studio-mobile-scenes.png"))
         used_asset = touch_page.locator("#assetLibraryList .asset-entry").last
         assert used_asset.get_by_role("button", name="حذف").is_disabled(), "scene-referenced assets cannot be deleted"
-        touch_page.locator("#addSceneButton").scroll_into_view_if_needed()
-        print("Mobile add-scene hit test:", __import__("json").dumps(touch_page.locator("#addSceneButton").evaluate("el => { const r=el.getBoundingClientRect(), hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2); return {width:innerWidth,height:innerHeight,scrollY,coarse:matchMedia('(pointer: coarse)').matches,previewPosition:getComputedStyle(document.querySelector('.preview-panel')).position,rect:{x:r.x,y:r.y,w:r.width,h:r.height},hit:hit?.outerHTML?.slice(0,180)}; }"), ensure_ascii=False), flush=True)
         touch_tap(touch_page.locator("#addSceneButton"))
         touch_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 2")
         assert touch_page.locator("#sequenceBlocks .sequence-block").count() == 2
         fit_frame = touch_page.locator("#stage").evaluate("el => el.toDataURL()")
+        touch_tap(touch_page.locator('[data-editor-section="more"]'))
         touch_page.locator("#fitMode").select_option("fill")
         touch_page.wait_for_function("previous => document.querySelector('#stage').toDataURL() !== previous", arg=fit_frame)
         assert touch_page.locator("#fitMode").input_value() == "fill"
+        touch_tap(touch_page.locator('[data-editor-section="scenes"]'))
         touch_page.locator("#sceneName").fill("المشهد الثاني")
         touch_page.locator("#sceneName").dispatch_event("change")
         touch_page.locator("#sceneDuration").fill("4")
@@ -792,10 +823,14 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         touch_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 3")
         touch_tap(touch_page.locator("#sceneThumbnails .scene-card").first.locator(".scene-select"))
         touch_page.wait_for_function("document.querySelector('#sceneName').value === 'المشهد 1'")
+        touch_tap(touch_page.locator('[data-editor-section="more"]'))
         assert touch_page.locator("#fitMode").input_value() == "fit", "switching scenes restores each scene's Fit setting"
+        touch_tap(touch_page.locator('[data-editor-section="scenes"]'))
         touch_tap(touch_page.locator("#sceneThumbnails .scene-card").nth(2).locator(".scene-select"))
         touch_page.wait_for_function("document.querySelector('#sceneName').value === 'المشهد الثاني'")
+        touch_tap(touch_page.locator('[data-editor-section="more"]'))
         assert touch_page.locator("#fitMode").input_value() == "fill", "switching scenes restores each scene's Fill setting"
+        touch_tap(touch_page.locator('[data-editor-section="scenes"]'))
 
         # Exact global Cut boundary selects the next scene with local time zero.
         touch_page.locator("#sequenceSeek").evaluate("el => { el.value = '12000'; el.dispatchEvent(new Event('input', {bubbles:true})); }")
@@ -808,6 +843,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         assert touch_page.locator("#playPauseButton").text_content() == "متابعة"
         touch_tap(touch_page.locator("#replayButton"))
         touch_page.wait_for_function("document.querySelector('#sceneName').value === 'المشهد 1' && Number(document.querySelector('#sequenceSeek').value) > 0")
+        touch_tap(touch_page.locator('[data-editor-section="motion"]'))
         touch_tap(touch_page.locator('[data-editor-mode-button="simple"]'))
         assert touch_page.locator(".studio").get_attribute("data-editor-mode") == "simple", "Simple mode is the mobile default"
         simple_times = lambda: [int(value) for value in touch_page.locator(".keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")]
@@ -841,16 +877,20 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         touch_tap(touch_page.locator('[data-editor-section="audio"]'))
         assert touch_page.locator(".studio").get_attribute("data-editor-mode") == "professional"
         assert touch_page.locator("#audioToolsSection").is_visible()
+        touch_page.screenshot(path=str(screenshot_dir / "motion-studio-mobile-audio.png"))
         touch_tap(touch_page.locator('[data-editor-section="effects"]'))
         assert touch_page.locator("#effectsToolsSection").is_visible()
+        touch_page.screenshot(path=str(screenshot_dir / "motion-studio-mobile-effects.png"))
         touch_tap(touch_page.locator('[data-editor-section="motion"]'))
-        assert touch_page.locator(".studio").get_attribute("data-editor-mode") == "simple"
+        assert touch_page.locator(".studio").get_attribute("data-editor-mode") == "professional", "section navigation preserves the user's selected editing mode"
+        touch_tap(touch_page.locator('[data-editor-mode-button="simple"]'))
         assert touch_page.locator("#motionStrength").input_value() == "72"
         assert touch_page.locator("#motionFocusX").input_value() == "30"
         assert touch_page.locator("#motionFocusY").input_value() == "68"
         assert touch_page.locator("#motionFromSeconds").input_value() == "1"
         assert touch_page.locator("#motionToSeconds").input_value() == "5"
         assert not touch_errors, touch_errors
-        print("L11-D/F1 touch UI: scene editing, mode switching, six camera presets, auto suggestions, undo, focus, preview, pause and replay passed")
+        assert touch_page.evaluate("document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight + 1"), "mobile editor shell remains fixed after section changes"
+        print("L11-F2 touch UI: compact fixed shell, scene editing, mode switching, six camera presets, auto suggestions, undo, focus, preview, pause and replay passed")
         touch_context.close()
         browser.close()
