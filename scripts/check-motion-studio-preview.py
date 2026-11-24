@@ -835,11 +835,13 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
                     phone_page.locator('nav.bottom-dock [data-editor-section="scenes"]').click()
                     phone_page.locator("#sceneName").focus()
                     phone_page.set_viewport_size({"width": width, "height": height - 240})
-                    keyboard_layout = phone_page.evaluate("""() => ({height:innerHeight,dockBottom:document.querySelector('.bottom-dock').getBoundingClientRect().bottom,
+                    keyboard_layout = phone_page.evaluate("""() => ({height:innerHeight,studioBottom:document.querySelector('.studio').getBoundingClientRect().bottom,
+                      dockTop:document.querySelector('.bottom-dock').getBoundingClientRect().top,dockBottom:document.querySelector('.bottom-dock').getBoundingClientRect().bottom,
                       panelTop:document.querySelector('.tool-drawer').getBoundingClientRect().top,panelBottom:document.querySelector('.tool-drawer').getBoundingClientRect().bottom,
-                      overflow:document.documentElement.scrollWidth > innerWidth || document.documentElement.scrollHeight > innerHeight + 1})""")
-                    assert not keyboard_layout["overflow"] and keyboard_layout["dockBottom"] <= keyboard_layout["height"] + 1, keyboard_layout
-                    assert keyboard_layout["panelBottom"] <= keyboard_layout["dockBottom"] + 1, keyboard_layout
+                      horizontalOverflow:document.documentElement.scrollWidth > innerWidth + 1})""")
+                    assert not keyboard_layout["horizontalOverflow"] and keyboard_layout["studioBottom"] <= keyboard_layout["height"] + 1, keyboard_layout
+                    assert keyboard_layout["dockBottom"] <= keyboard_layout["height"] + 1, keyboard_layout
+                    assert keyboard_layout["panelBottom"] < keyboard_layout["dockTop"], keyboard_layout
                 phone_context.close()
         fullscreen_button = touch_page.locator("#fullscreenPreviewButton")
         assert fullscreen_button.bounding_box()["width"] >= 44 and fullscreen_button.bounding_box()["height"] >= 44
