@@ -591,7 +591,8 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
               !document.querySelector('#integratedError').hidden""", timeout=30000)
             integrated_status = sync_page.locator("#integratedStatus").inner_text()
             integrated_error = sync_page.locator("#integratedError").inner_text()
-            assert "اكتمل التصدير المتكامل" in integrated_status, f"integrated export failed: {integrated_status}; {integrated_error}; page errors: {errors}"
+            integrated_technical = sync_page.locator("#integratedError details code").text_content() or ""
+            assert "اكتمل التصدير المتكامل" in integrated_status, f"integrated export failed: {integrated_status}; {integrated_error}; technical: {integrated_technical}; page errors: {errors}"
             with sync_page.expect_download() as sync_download_info:
                 sync_page.locator("#integratedDownload").click()
             sync_output = Path(tmp) / "integrated-av-sync.webm"
