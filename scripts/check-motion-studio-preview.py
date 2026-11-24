@@ -857,7 +857,14 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         sequence_audio_streams = [stream for stream in sequence_probe["streams"] if stream["codec_type"] == "audio"]
         assert len(sequence_video_streams) == 1, sequence_probe["streams"]
         assert len(sequence_audio_streams) == 1, sequence_probe["streams"]
-        duration = float(sequence_probe["format"].get("duration") or sequence_video_streams[0].get("duration"))
+        sequence_frames = __import__("json").loads(subprocess.check_output([
+            "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_frames",
+            "-show_entries", "frame=best_effort_timestamp_time,pkt_duration_time,duration_time",
+            "-of", "json", str(sequence_output)
+        ], text=True, timeout=60)).get("frames", [])
+        sequence_timeline = measure_media_timeline(
+            sequence_frames, ("best_effort_timestamp_time", "pts_time"), ("pkt_duration_time", "duration_time"))
+        duration = sequence_timeline["duration"]
         assert abs(duration - 10) <= 0.150, (duration, sequence_probe["format"])
         def decoded_center_color(seconds):
             return subprocess.check_output([
