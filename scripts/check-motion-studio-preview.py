@@ -697,6 +697,75 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             assert max(abs(value) for value in drifts) <= 100, drifts
             assert max(drifts) - min(drifts) <= 50, drifts
             print(f"L10-B output sync: markers={len(sync_marks)}, drift_ms={drifts}, streams={video_stream['codec_name']}/{audio_stream['codec_name']}")
+
+            # Exercise the requested real-browser durations in silent and mixed
+            # modes. Only formats the device can actually probe and decode count
+            # as supported; advertised-but-unusable MIME types remain skipped.
+            sync_page.locator("#duration").fill("60")
+            sync_page.locator("#duration").dispatch_event("input")
+            verified_runs = 0
+            for audio_mode in ("none", "mix"):
+                for export_format in ("mp4", "webm"):
+                    if not support[export_format]:
+                        print(f"L11-F2 export matrix: {export_format}/{audio_mode} unsupported by this Chromium build")
+                        continue
+                    sync_page.locator("#integratedFormat").select_option(export_format)
+                    sync_page.locator("#integratedAudio").select_option(audio_mode)
+                    sync_page.locator("#integratedQuality").select_option("480p")
+                    sync_page.locator("#integratedProbeButton").click()
+                    sync_page.wait_for_function("""() => document.querySelector('#integratedStatus').textContent.includes('تم التحقق فعليًا') ||
+                      !document.querySelector('#integratedError').hidden""", timeout=30000)
+                    probe_status = sync_page.locator("#integratedStatus").inner_text()
+                    if "تم التحقق فعليًا" not in probe_status:
+                        print(f"L11-F2 export matrix: {export_format}/{audio_mode} not verified: {sync_page.locator('#integratedError').inner_text()}")
+                        continue
+                    for seconds in (3, 5, 10, 30):
+                        sync_page.locator("#integratedFrom").fill("0")
+                        sync_page.locator("#integratedTo").fill(str(seconds * 1000))
+                        sync_page.locator("#integratedFrom").dispatch_event("change")
+                        sync_page.locator("#integratedTo").dispatch_event("change")
+                        sync_page.locator("#integratedExportButton").click()
+                        sync_page.wait_for_function("""() => document.querySelector('#integratedStatus').textContent.includes('اكتمل التصدير المتكامل') ||
+                          !document.querySelector('#integratedError').hidden""", timeout=seconds * 1000 + 30000)
+                        status = sync_page.locator("#integratedStatus").inner_text()
+                        detail = sync_page.locator("#integratedError").inner_text()
+                        assert "اكتمل التصدير المتكامل" in status, (export_format, audio_mode, seconds, status, detail)
+                        with sync_page.expect_download(timeout=15000) as download_info:
+                            sync_page.locator("#integratedDownload").click()
+                        output = Path(tmp) / f"timing-{seconds}s-{audio_mode}.{export_format}"
+                        download_info.value.save_as(output)
+                        probe = __import__("json").loads(subprocess.check_output([
+                            "ffprobe", "-v", "error", "-show_streams", "-of", "json", str(output)
+                        ], text=True, timeout=60))
+                        video_streams = [stream for stream in probe["streams"] if stream["codec_type"] == "video"]
+                        audio_streams = [stream for stream in probe["streams"] if stream["codec_type"] == "audio"]
+                        assert len(video_streams) == 1 and bool(audio_streams) == (audio_mode == "mix"), (
+                            export_format, audio_mode, seconds, [(stream["codec_type"], stream["codec_name"]) for stream in probe["streams"]])
+                        frames = __import__("json").loads(subprocess.check_output([
+                            "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_frames",
+                            "-show_entries", "frame=best_effort_timestamp_time,pkt_duration_time,duration_time",
+                            "-of", "json", str(output)
+                        ], text=True, timeout=60)).get("frames", [])
+                        video_timeline = measure_media_timeline(
+                            frames, ("best_effort_timestamp_time", "pts_time"), ("pkt_duration_time", "duration_time"))
+                        duration_tolerance_s = max(0.150, 1000 / 24 / 1000)
+                        assert abs(video_timeline["duration"] - seconds) <= duration_tolerance_s, (
+                            export_format, audio_mode, seconds, video_timeline, duration_tolerance_s)
+                        if audio_mode == "mix":
+                            packets = __import__("json").loads(subprocess.check_output([
+                                "ffprobe", "-v", "error", "-select_streams", "a:0", "-show_packets",
+                                "-show_entries", "packet=pts_time,dts_time,duration_time",
+                                "-of", "json", str(output)
+                            ], text=True, timeout=60)).get("packets", [])
+                            audio_timeline = measure_media_timeline(packets, ("pts_time", "dts_time"), ("duration_time",))
+                            envelope = max(video_timeline["end"], audio_timeline["end"]) - min(
+                                video_timeline["start"], audio_timeline["start"])
+                            assert abs(audio_timeline["duration"] - seconds) <= duration_tolerance_s and \
+                                abs(envelope - seconds) <= duration_tolerance_s, (
+                                    export_format, audio_mode, seconds, video_timeline, audio_timeline, envelope)
+                        verified_runs += 1
+                        print(f"L11-F2 real export: {export_format}/{audio_mode}/{seconds}s duration={video_timeline['duration']:.3f}s")
+            assert verified_runs >= 8, f"Expected WebM 3/5/10/30 s with and without audio; verified {verified_runs} exports"
             sync_page.close()
         page.locator('nav.bottom-dock [data-editor-section="effects"]').click()
         effect_lane = page.locator('#visualEffectsTracks .visual-effect-lane[data-effect-type="fade"]')
@@ -813,9 +882,10 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
                 layout = phone_page.evaluate("""() => {
                   const rect = selector => { const r = document.querySelector(selector).getBoundingClientRect(); return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom}; };
                   const preview = rect('#studioPreview'), drawer = rect('.tool-drawer'), dock = rect('.bottom-dock');
-                  const canvas = rect('#stage'), transport = rect('.preview-transport-host'), heading = rect('.preview-heading');
+                  const canvas = rect('#stage'), stage = rect('.stage-wrap'), transport = rect('.preview-transport-host'), heading = rect('.preview-heading');
                   const overlaps = (a,b) => a.x < b.right && a.right > b.x && a.y < b.bottom && a.bottom > b.y;
-                  return {preview,drawer,dock,canvas,transport,heading,ratio:preview.height/(preview.height+drawer.height),
+                  return {preview,drawer,dock,canvas,stage,transport,heading,ratio:preview.height/(preview.height+drawer.height),
+                    canvasHeightFill:canvas.height/stage.height,
                     pageOverflow:document.documentElement.scrollWidth > innerWidth || document.documentElement.scrollHeight > innerHeight + 1,
                     picker:getComputedStyle(document.querySelector('#previewImagePicker')).display,
                     inputRect:(() => { const r=document.querySelector('#imageInput').getBoundingClientRect(); return {width:r.width,height:r.height}; })(),
@@ -823,8 +893,9 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
                     canvasHeadingOverlap:overlaps(canvas,heading), hasCardActions:Boolean(document.querySelector('#sceneThumbnails .scene-card-controls'))};
                 }""")
                 assert not layout["pageOverflow"], (profile, width, height, layout)
-                assert 0.37 <= layout["ratio"] <= 0.43, (profile, width, height, layout)
+                assert 0.52 <= layout["ratio"] <= 0.58, (profile, width, height, layout)
                 assert abs(layout["canvasRatio"] - layout["sourceRatio"]) < 0.02, (profile, width, height, layout)
+                assert layout["canvasHeightFill"] >= 0.9, (profile, width, height, layout)
                 assert not layout["canvasTransportOverlap"] and not layout["canvasHeadingOverlap"], (profile, width, height, layout)
                 assert layout["picker"] == "none", (profile, width, height, layout)
                 assert max(layout["inputRect"]["width"], layout["inputRect"]["height"]) <= 1, (profile, width, height, layout)

@@ -320,8 +320,11 @@ body {
 button:disabled { opacity: .58; }
 .studio-footer { display: none; }
 .error-message { margin: 0; }
+.error-message details { margin-top: 6px; color: #f4d5b5; font-size: 11px; }
+.error-message summary { min-height: 38px; padding: 9px 2px; color: #f0d395; cursor: pointer; }
+.error-message code { display: block; overflow-wrap: anywhere; color: #ded8d0; font: 11px/1.5 ui-monospace, monospace; }
 @media (max-width: 760px) {
-  .studio { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 2fr) minmax(0, 3fr) auto; gap: 6px; padding: max(5px, env(safe-area-inset-top)) max(7px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(7px, env(safe-area-inset-left)); }
+  .studio { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1.1fr) minmax(0, .9fr) auto; gap: 6px; padding: max(5px, env(safe-area-inset-top)) max(7px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(7px, env(safe-area-inset-left)); }
   .topbar { min-height: 46px; gap: 5px; }
   .brand-lockup { gap: 5px; }
   .qarton-mark { width: 30px; height: 30px; font-size: 21px; }
@@ -336,13 +339,13 @@ button:disabled { opacity: .58; }
   .tool-drawer { grid-column: 1; grid-row: 4; }
   .preview-heading { gap: 5px; }
   .preview-heading strong { font-size: 10px; }
-  .preview-canvas-host { grid-template-rows: minmax(0, 1fr); }
-  .preview-heading { position: absolute; z-index: 2; inset-block-start: 4px; inset-inline: 6px; min-height: 34px; padding: 2px 5px; border-radius: 7px; background: #101116d9; }
+  .preview-canvas-host { grid-template-rows: 44px minmax(0, 1fr); gap: 2px; }
+  .preview-heading { position: static; inset: auto; z-index: auto; min-height: 44px; padding: 0 2px; border-radius: 7px; background: transparent; }
   .preview-heading > div { padding-inline-end: 4px; }
   .preview-heading .eyebrow { display: none; }
   .preview-heading strong { max-width: 32vw; }
   .fullscreen-button { flex-basis: 44px; width: 44px; min-width: 44px; min-height: 44px; }
-  .stage-wrap { padding-top: 58px; }
+  .stage-wrap { padding-top: 0; }
   .preview-transport-host .transport { min-height: 44px; }
   .preview-transport-host .transport button { min-height: 44px; }
   .bottom-dock { grid-row: 5; min-height: 56px; }

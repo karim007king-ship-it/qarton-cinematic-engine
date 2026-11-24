@@ -33,12 +33,16 @@ test("mobile interface exposes portrait preview, image input, camera controls an
   assert.match(html, /viewport" content="width=device-width, initial-scale=1/);
 });
 
-test("L11-F2 Android workspace reserves 40 percent for preview and keeps file and scene controls accessible", async () => {
+test("L11-F2 Android workspace expands the preview and keeps file and scene controls accessible", async () => {
   const html = await readFile(resolve(root, "examples/motion-studio-lab/index.html"), "utf8");
   const css = await readFile(resolve(root, "examples/motion-studio-lab/studio.css"), "utf8");
   const script = await readFile(resolve(root, "examples/motion-studio-lab/studio.js"), "utf8");
-  assert.match(css, /grid-template-rows:\s*auto auto minmax\(0,\s*2fr\) minmax\(0,\s*3fr\) auto/,
-    "mobile preview and tools share the available height in a 40/60 split");
+  assert.match(css, /grid-template-rows:\s*auto auto minmax\(0,\s*1\.1fr\) minmax\(0,\s*\.9fr\) auto/,
+    "mobile preview receives 55 percent of the height shared with the tools");
+  assert.match(css, /\.preview-canvas-host\s*\{[^}]*grid-template-rows:\s*44px minmax\(0,\s*1fr\)/,
+    "the title row is compact and the Canvas gets the remaining preview height");
+  assert.match(css, /\.stage-wrap\s*\{\s*padding-top:\s*0\s*;/,
+    "the Canvas has no reserved blank strip below the preview title");
   assert.match(css, /\.sr-only\s*\{[^}]*clip-path:\s*inset\(50%\)/,
     "native file inputs use a real screen-reader-only treatment");
   assert.match(css, /\.studio\[data-image-ready="true"\]\s+#previewImagePicker\s*\{\s*display:\s*none/,
@@ -48,6 +52,8 @@ test("L11-F2 Android workspace reserves 40 percent for preview and keeps file an
   assert.match(html, /data-motion-preset="zoom-in"[^>]*>[\s\S]*?<svg viewBox="0 0 24 24"/);
   assert.match(html, /data-motion-preset="zoom-out"[^>]*>[\s\S]*?<svg viewBox="0 0 24 24"/);
   assert.match(script, /studioRoot\.dataset\.imageReady = String\(Boolean\(currentFileInfo\)\)/);
+  assert.match(script, /"عرض التفاصيل التقنية"/);
+  assert.match(script, /"توقفت ساعة التصدير أو تأخرت الإطارات\./);
   assert.doesNotMatch(script, /scene-card-controls/,
     "scene duplicate, delete and reorder actions are presented in the Scenes section, not on the preview strip");
 });
