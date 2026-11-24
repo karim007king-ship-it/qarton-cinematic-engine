@@ -23,19 +23,31 @@ class FakeParam {
   cancelScheduledValues(time) { this.events.push(["cancel", time]); }
 }
 class FakeNode {
-  constructor(context, kind) { this.context = context; this.kind = kind; this.connections = []; this.gain = new FakeParam(); }
-  connect(node) { this.connections.push(node); }
-  disconnect() { this.connections.length = 0; this.context.disconnects++; }
+  constructor(context, kind) { this.context = context; this.kind = kind; this.connections = []; this.gain = new FakeParam(); this.disconnected = false; }
+  connect(node) {
+    this.context.connects++;
+    if (this.context.failConnectAt === this.context.connects) throw new Error(`connect failed ${this.context.connects}`);
+    this.connections.push(node);
+  }
+  disconnect() { this.connections.length = 0; this.disconnected = true; this.context.disconnects++; }
 }
 class FakeSource extends FakeNode {
-  constructor(context) { super(context, "source"); this.calls = []; this.loop = false; this.onended = null; this.buffer = null; }
-  start(...args) { this.calls.push(["start", ...args]); }
-  stop(...args) { this.calls.push(["stop", ...args]); }
+  constructor(context) { super(context, "source"); this.calls = []; this.loop = false; this.onended = null; this._buffer = null; }
+  get buffer() { return this._buffer; }
+  set buffer(value) { if (this.context.failBufferAssignment) throw new Error("source buffer assignment failed"); this._buffer = value; }
+  start(...args) { this.calls.push(["start", ...args]); if (this.context.failStart) throw new Error("source start failed"); }
+  stop(...args) { this.calls.push(["stop", ...args]); if (this.context.failStop) throw new Error("source stop failed"); }
 }
 class FakeAudioContext {
-  constructor() { this.currentTime = 1; this.destination = new FakeNode(this, "destination"); this.sources = []; this.gains = []; this.disconnects = 0; }
-  createGain() { const node = new FakeNode(this, "gain"); this.gains.push(node); return node; }
-  createBufferSource() { const node = new FakeSource(this); this.sources.push(node); return node; }
+  constructor() { this.currentTime = 1; this.destination = new FakeNode(this, "destination"); this.sources = []; this.gains = []; this.nodes = []; this.disconnects = 0; this.connects = 0; this.failConnectAt = 0; this.failGainAt = 0; this.failSource = false; this.failBufferAssignment = false; this.failStart = false; this.failStop = false; }
+  createGain() {
+    if (this.gains.length + 1 === this.failGainAt) throw new Error(`gain allocation failed ${this.failGainAt}`);
+    const node = new FakeNode(this, "gain"); this.gains.push(node); this.nodes.push(node); return node;
+  }
+  createBufferSource() {
+    if (this.failSource) throw new Error("source allocation failed");
+    const node = new FakeSource(this); this.sources.push(node); this.nodes.push(node); return node;
+  }
 }
 function buffer({ duration = 2, channels = 1, peak = 1 } = {}) {
   const channel = new Float32Array(Math.round(duration * 48000)).fill(peak);
@@ -47,15 +59,19 @@ test("sequence audio keeps local clip time and converts scene offset once, inclu
     audioScene("b", 1000, [music("in", { startMs: 100, durationMs: 900 })])],
   transitions: [{ fromSceneId: "a", toSceneId: "b", type: "dissolve", durationMs: 400, audioCrossfadeMs: 200 }] });
   const context = new FakeAudioContext();
-  const engine = createStudioSequenceAudioCrossfadeEngine(compiled, { audioContext: context, audioBuffers: new Map([[sound.id, buffer()]]) });
-  const session = engine.schedule({ epoch: 2, fromMs: 750 });
+  const recorderDestination = new FakeNode(context, "media-stream-audio-destination");
+  const engine = createStudioSequenceAudioCrossfadeEngine(compiled, { audioContext: context,
+    audioBuffers: new Map([[sound.id, buffer()]]), destination: recorderDestination });
+  assert.equal(context.gains[1].connections[0], recorderDestination, "a MediaStreamAudioDestinationNode can be the shared output");
+  const session = engine.schedule({ epoch: 2, fromMs: 750.5 });
   assert.deepEqual(session.scheduled.map(item => [item.sceneId, item.localStartMs, item.globalStartMs, item.when, item.offset]), [
-    ["a", 0, 0, 2, 0.75], ["b", 100, 700, 2, 0.15]
+    ["a", 0, 0, 2, 0.7505], ["b", 100, 700, 2, 0.0505]
   ]);
   assert.equal(context.sources.length, 2);
-  assert.ok(Math.abs(engine.sample(800).gains[0].gain - Math.SQRT1_2) < 1e-12);
-  assert.ok(Math.abs(engine.sample(800).gains[1].gain - Math.SQRT1_2) < 1e-12);
-  assert.deepEqual(engine.sample(800), engine.sample(800), "seek/replay sampling is absolute and deterministic");
+  const fractionalProgress = (800.5 - 700) / 200;
+  assert.ok(Math.abs(engine.sample(800.5).gains[0].gain - Math.cos(fractionalProgress * Math.PI / 2)) < 1e-12);
+  assert.ok(Math.abs(engine.sample(800.5).gains[1].gain - Math.sin(fractionalProgress * Math.PI / 2)) < 1e-12);
+  assert.deepEqual(engine.sample(800.5), engine.sample(800.5), "fractional seek/replay sampling is absolute and deterministic");
   session.stop();
   assert.equal(session.stopped, true);
   engine.dispose();
@@ -103,7 +119,7 @@ test("overlapping dialogue, music and effects retain levels and receive conserva
   const engine = createStudioSequenceAudioCrossfadeEngine(compiled, { audioContext: ctx, audioBuffers: { [sound.id]: buffer() }, masterVolume: 0.75 });
   assert.equal(engine.diagnostics.clipCount, 3);
   assert.equal(engine.diagnostics.peakBound, 0.48 + 0.15 + 0.4);
-  assert.ok(engine.diagnostics.safeHeadroom < 1);
+  assert.equal(engine.diagnostics.safeHeadroom, 1, "a sub-unity master level already provides sufficient peak headroom");
   const scheduled = engine.schedule({ epoch: 2 });
   assert.equal(scheduled.scheduled.length, 3);
   assert.ok(scheduled.scheduled.every(item => item.gain <= 0.75));
@@ -134,9 +150,11 @@ test("silence, cancellation, and scheduling failures release every created node"
   const silent = compile({ scenes: [audioScene("quiet", 500, [])] });
   const ctx = new FakeAudioContext();
   const quietEngine = createStudioSequenceAudioCrossfadeEngine(silent, { audioContext: ctx, audioBuffers: {} });
-  assert.equal(quietEngine.schedule({ epoch: 2 }).scheduled.length, 0);
+  const quietSession = quietEngine.schedule({ epoch: 2 });
+  assert.equal(quietSession.scheduled.length, 0);
+  assert.equal(quietSession.stopped, true);
   quietEngine.dispose();
-  assert.ok(ctx.disconnects >= 2);
+  assert.equal(ctx.nodes.length, 0, "silent scenes allocate no audio graph nodes");
 
   const compiled = compile({ scenes: [audioScene("a", 1000, [music("a")])] });
   const controller = new AbortController();
@@ -149,11 +167,89 @@ test("silence, cancellation, and scheduling failures release every created node"
   assert.throws(() => engine.schedule({ epoch: 3 }), /disposed/u);
   assert.ok(abortContext.disconnects >= 5);
 
-  const failedContext = new FakeAudioContext();
-  const failingEngine = createStudioSequenceAudioCrossfadeEngine(compiled, { audioContext: failedContext,
-    audioBuffers: { [sound.id]: buffer() } });
-  failedContext.createBufferSource = () => { throw new Error("source allocation failed"); };
-  assert.throws(() => failingEngine.schedule({ epoch: 2 }), /source allocation failed/u);
-  assert.ok(failedContext.disconnects >= 3);
-  failingEngine.dispose();
+  function assertAllReleased(context, label) {
+    assert.ok(context.nodes.every(node => node.disconnected), `${label}: all allocated nodes disconnected`);
+    assert.ok(context.sources.every(source => source.buffer === null), `${label}: source buffers detached`);
+  }
+  for (const failGainAt of [1, 2]) {
+    const context = new FakeAudioContext(); context.failGainAt = failGainAt;
+    assert.throws(() => createStudioSequenceAudioCrossfadeEngine(compiled, { audioContext: context,
+      audioBuffers: { [sound.id]: buffer() } }), /gain allocation failed/u);
+    assertAllReleased(context, `gain allocation ${failGainAt}`);
+  }
+  for (const failGainAt of [3, 4, 5]) {
+    const context = new FakeAudioContext();
+    const failing = createStudioSequenceAudioCrossfadeEngine(compiled, { audioContext: context, audioBuffers: { [sound.id]: buffer() } });
+    context.failGainAt = failGainAt;
+    assert.throws(() => failing.schedule({ epoch: 2 }), /gain allocation failed/u);
+    failing.dispose(); assertAllReleased(context, `gain allocation ${failGainAt}`);
+  }
+  for (const failConnectAt of [1, 2]) {
+    const context = new FakeAudioContext(); context.failConnectAt = failConnectAt;
+    assert.throws(() => createStudioSequenceAudioCrossfadeEngine(compiled, { audioContext: context,
+      audioBuffers: { [sound.id]: buffer() } }), /connect failed/u);
+    assertAllReleased(context, `engine connect ${failConnectAt}`);
+  }
+  for (const failConnectAt of [3, 4, 5, 6]) {
+    const context = new FakeAudioContext();
+    const failing = createStudioSequenceAudioCrossfadeEngine(compiled, { audioContext: context, audioBuffers: { [sound.id]: buffer() } });
+    context.failConnectAt = failConnectAt;
+    assert.throws(() => failing.schedule({ epoch: 2 }), /connect failed/u);
+    failing.dispose(); assertAllReleased(context, `session connect ${failConnectAt}`);
+  }
+  for (const operation of ["failSource", "failBufferAssignment", "failStart", "failStop"]) {
+    const context = new FakeAudioContext();
+    const failing = createStudioSequenceAudioCrossfadeEngine(compiled, { audioContext: context, audioBuffers: { [sound.id]: buffer() } });
+    context[operation] = true;
+    assert.throws(() => failing.schedule({ epoch: 2 }), /source allocation failed|source buffer assignment failed|source start failed|source stop failed/u);
+    failing.dispose(); assertAllReleased(context, operation);
+  }
+});
+
+test("natural source completion automatically releases clip, track, and scene nodes", () => {
+  const compiled = compile({ scenes: [audioScene("a", 1000, [music("a")])] });
+  const context = new FakeAudioContext();
+  const engine = createStudioSequenceAudioCrossfadeEngine(compiled, { audioContext: context, audioBuffers: { [sound.id]: buffer() } });
+  const session = engine.schedule({ epoch: 2 });
+  const sessionNodes = context.nodes.slice(2); // exclude persistent master and headroom nodes
+  assert.ok(sessionNodes.some(node => !node.disconnected));
+  context.sources[0].onended();
+  assert.equal(session.stopped, true);
+  assert.ok(sessionNodes.every(node => node.disconnected), "the scene and track gains are released after the final voice ends");
+  assert.equal(context.sources[0].buffer, null);
+  engine.dispose();
+});
+
+test("safe headroom follows the actual equal-power bound and PCM/clip budgets are enforced", () => {
+  const paired = compile({ scenes: [audioScene("a", 1000, [music("a", { volume: 0.8 })]),
+    audioScene("b", 1000, [music("b", { volume: 0.8 })])], transitions: [
+    { fromSceneId: "a", toSceneId: "b", type: "dissolve", durationMs: 400, audioCrossfadeMs: 400 }
+  ] });
+  const context = new FakeAudioContext();
+  const engine = createStudioSequenceAudioCrossfadeEngine(paired, { audioContext: context, audioBuffers: { [sound.id]: buffer() } });
+  assert.ok(Math.abs(engine.diagnostics.safeHeadroom - 1 / (0.8 * Math.SQRT2)) < 1e-12);
+  assert.ok(engine.diagnostics.estimatedMaxSessionNodes <= 2 + 2 + 2 * 2);
+  engine.dispose();
+
+  const buffers = new Map([[sound.id, buffer({ duration: 0.5, channels: 2 })]]);
+  const one = compile({ scenes: [audioScene("budget", 1000, [music("a")])] });
+  const budgeted = createStudioSequenceAudioCrossfadeEngine(one, { audioContext: new FakeAudioContext(), audioBuffers: buffers });
+  assert.equal(budgeted.diagnostics.decodedPcmBytes, 500 * 48000 / 1000 * 2 * 4);
+  budgeted.dispose();
+
+  const manyTracks = id => [{ id: "many", type: "music", volume: 1, clips: Array.from({ length: 300 }, (_, index) => ({
+    id: `${id}-${index}`, asset: sound.id, startMs: 0, durationMs: 1, volume: 1, loop: false
+  })) }];
+  const tooManyCompiled = compile({ scenes: [audioScene("many-a", 1000, manyTracks("a")),
+    audioScene("many-b", 1000, manyTracks("b"))], transitions: [
+    { fromSceneId: "many-a", toSceneId: "many-b", type: "cut", durationMs: 0, audioCrossfadeMs: 0 }
+  ] });
+  assert.throws(() => createStudioSequenceAudioCrossfadeEngine(tooManyCompiled, {
+    audioContext: new FakeAudioContext(), audioBuffers: { [sound.id]: buffer() }
+  }), error => error.code === "BUDGET_EXCEEDED");
+
+  const oversized = { duration: 500, length: 500 * 48000, numberOfChannels: 2,
+    getChannelData: () => new Float32Array(1) };
+  assert.throws(() => createStudioSequenceAudioCrossfadeEngine(one, { audioContext: new FakeAudioContext(),
+    audioBuffers: { [sound.id]: oversized } }), error => error.code === "BUDGET_EXCEEDED");
 });

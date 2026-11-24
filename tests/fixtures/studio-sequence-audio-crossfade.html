@@ -24,11 +24,11 @@ const viewport = { width: 2, height: 2, fps: 30 };
 const image = { id: "poster", kind: "image", name: "poster.png", mimeType: "image/png", size: 4 };
 const toneA = { id: "tone-a", kind: "audio", name: "a.wav", mimeType: "audio/wav", size: 4 };
 const toneB = { id: "tone-b", kind: "audio", name: "b.wav", mimeType: "audio/wav", size: 4 };
-function scene(id, asset) {
+function scene(id, asset, startMs = 100, durationMs = 900) {
   return { id, project: { version: 1, durationMs: 1000, viewport,
     layers: [{ id: `layer-${id}`, assetId: image.id, z: 0 }] },
     audioTracks: [{ id: `track-${id}`, type: "music", volume: 1, clips: [
-      { id: `clip-${id}`, asset, startMs: 0, durationMs: 1000, volume: 0.8, loop: false }
+      { id: `clip-${id}`, asset, startMs, durationMs, volume: 0.8, loop: false }
     ] }], characterTracks: [], visualEffectsTrack: { version: 1, seed: 1, clips: [] } };
 }
 function makeSequence(type, durationMs, audioCrossfadeMs) {
@@ -36,8 +36,8 @@ function makeSequence(type, durationMs, audioCrossfadeMs) {
   return compileStudioSequenceV2(createStudioSequenceV2({ viewport, scenes, assets: [image, toneA, toneB],
     transitions: [{ fromSceneId: "a", toSceneId: "b", type, durationMs, audioCrossfadeMs }] }));
 }
-function makeTone(context, frequency) {
-  const audio = context.createBuffer(1, sampleRate * 2, sampleRate);
+function makeTone(context, frequency, duration = 2) {
+  const audio = context.createBuffer(1, sampleRate * duration, sampleRate);
   const values = audio.getChannelData(0);
   for (let index = 0; index < values.length; index++) values[index] = 0.8 * Math.sin(2 * Math.PI * frequency * index / sampleRate);
   return audio;
@@ -73,7 +73,7 @@ try {
   const buffers = new Map([[toneA.id, makeTone(offline, 440)], [toneB.id, makeTone(offline, 880)]]);
   const engine = createStudioSequenceAudioCrossfadeEngine(dissolve, { audioContext: offline, audioBuffers: buffers });
   const session = engine.schedule({ epoch: 0 });
-  if (session.scheduled.length !== 2 || session.scheduled[1].globalStartMs !== 600) {
+  if (session.scheduled.length !== 2 || session.scheduled[1].globalStartMs !== 700 || session.scheduled[1].offset !== 0) {
     throw new Error(`unexpected global clip schedule ${JSON.stringify(session.scheduled)}`);
   }
   const rendered = await offline.startRendering();
@@ -108,6 +108,67 @@ try {
     throw new Error(`zero-window midpoint cut leaked/missed audio: ${JSON.stringify({ early440, early880, late440, late880 })}`);
   }
   cutEngine.dispose();
+
+  // A seek may occur at a fractional preview-clock time inside a transition.
+  const seekOffline = new OfflineAudioContext(1, sampleRate * 2, sampleRate);
+  const seekEngine = createStudioSequenceAudioCrossfadeEngine(dissolve, { audioContext: seekOffline,
+    audioBuffers: new Map([[toneA.id, makeTone(seekOffline, 440)], [toneB.id, makeTone(seekOffline, 880)]]) });
+  const seekSession = seekEngine.schedule({ epoch: 0.25, fromMs: 775.5 });
+  if (Math.abs(seekSession.scheduled[0].offset - 0.6755) > 1e-9 ||
+      Math.abs(seekSession.scheduled[1].offset - 0.0755) > 1e-9) {
+    throw new Error(`seek source offsets were not relative to each clip: ${JSON.stringify(seekSession.scheduled)}`);
+  }
+  const seekGains = seekEngine.sample(825.5).gains;
+  const seekProgress = (825.5 - 700) / 200;
+  assertNear(seekGains[0].gain, Math.cos(seekProgress * Math.PI / 2), 1e-12, "fractional seek outgoing gain");
+  assertNear(seekGains[1].gain, Math.sin(seekProgress * Math.PI / 2), 1e-12, "fractional seek incoming gain");
+  const seekValues = (await seekOffline.startRendering()).getChannelData(0);
+  if (rms(seekValues, 300, 350) < 0.35) throw new Error("seek inside the crossfade rendered silence");
+  seekEngine.dispose();
+
+  // Replay a seeked music loop and ensure source-file time wraps, not scene-local time.
+  const loopScene = { id: "loop", project: { version: 1, durationMs: 1000, viewport,
+    layers: [{ id: "layer-loop", assetId: image.id, z: 0 }] }, audioTracks: [{ id: "loop-track", type: "music", volume: 1,
+    clips: [{ id: "loop-clip", asset: toneA.id, startMs: 250, durationMs: 750, volume: 0.8, loop: true }] }],
+    characterTracks: [], visualEffectsTrack: { version: 1, seed: 1, clips: [] } };
+  const loopSequence = compileStudioSequenceV2(createStudioSequenceV2({ viewport, scenes: [loopScene], assets: [image, toneA] }));
+  const loopOffline = new OfflineAudioContext(1, sampleRate, sampleRate);
+  const loopEngine = createStudioSequenceAudioCrossfadeEngine(loopSequence, { audioContext: loopOffline,
+    audioBuffers: new Map([[toneA.id, makeTone(loopOffline, 660, 0.2)]]) });
+  const firstReplay = loopEngine.schedule({ epoch: 0.25, fromMs: 675.5 });
+  if (!firstReplay.scheduled[0].loop || Math.abs(firstReplay.scheduled[0].offset - 0.0255) > 1e-9) {
+    throw new Error(`loop seek did not wrap file offset: ${JSON.stringify(firstReplay.scheduled[0])}`);
+  }
+  firstReplay.stop();
+  const replay = loopEngine.schedule({ epoch: 0.25, fromMs: 675.5 });
+  if (Math.abs(replay.scheduled[0].offset - firstReplay.scheduled[0].offset) > 1e-12) {
+    throw new Error("Replay changed the deterministic loop offset");
+  }
+  const loopValues = (await loopOffline.startRendering()).getChannelData(0);
+  if (rms(loopValues, 260, 350) < 0.25) throw new Error("seeked replay of a music loop rendered silence");
+  loopEngine.dispose();
+
+  // The middle scene's incoming and outgoing windows touch at the same time.
+  const middle = { id: "middle", project: { version: 1, durationMs: 400, viewport,
+    layers: [{ id: "layer-middle", assetId: image.id, z: 0 }] }, audioTracks: [{ id: "track-middle", type: "music", volume: 1,
+    clips: [{ id: "clip-middle", asset: toneB.id, startMs: 0, durationMs: 400, volume: 0.8 }] }],
+    characterTracks: [], visualEffectsTrack: { version: 1, seed: 1, clips: [] } };
+  const threeScenes = [scene("first", toneA.id, 0, 1000), middle, scene("last", toneA.id, 0, 1000)];
+  const continuous = compileStudioSequenceV2(createStudioSequenceV2({ viewport, scenes: threeScenes, assets: [image, toneA, toneB],
+    transitions: [
+      { fromSceneId: "first", toSceneId: "middle", type: "dissolve", durationMs: 200, audioCrossfadeMs: 200 },
+      { fromSceneId: "middle", toSceneId: "last", type: "dissolve", durationMs: 200, audioCrossfadeMs: 200 }
+    ] }));
+  if (continuous.durationMs !== 2000) throw new Error(`unexpected touching-transition duration ${continuous.durationMs}`);
+  const continuousOffline = new OfflineAudioContext(1, sampleRate * 2, sampleRate);
+  const continuousEngine = createStudioSequenceAudioCrossfadeEngine(continuous, { audioContext: continuousOffline,
+    audioBuffers: new Map([[toneA.id, makeTone(continuousOffline, 440)], [toneB.id, makeTone(continuousOffline, 880)]]) });
+  continuousEngine.schedule({ epoch: 0 });
+  const continuousValues = (await continuousOffline.startRendering()).getChannelData(0);
+  if (rms(continuousValues, 950, 1050) < 0.3) throw new Error("touching sequential crossfades produced a silent boundary");
+  const continuousPeak = continuousValues.reduce((maximum, value) => Math.max(maximum, Math.abs(value)), 0);
+  if (continuousPeak > 1.0001) throw new Error(`touching crossfade peak exceeded full scale: ${continuousPeak}`);
+  continuousEngine.dispose();
   result.textContent = "PASS";
 } catch (error) {
   failure.textContent = String(error?.stack ?? error);
