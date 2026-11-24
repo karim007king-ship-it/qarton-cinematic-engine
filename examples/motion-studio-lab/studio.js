@@ -1417,8 +1417,8 @@ function commitCharacterTrack(nextTrack) {
 }
 function applyCanvasDimensions(size) {
   previewViewport = size;
-  canvas.width = previewViewport.width;
-  canvas.height = previewViewport.height;
+  if (canvas.width !== previewViewport.width) canvas.width = previewViewport.width;
+  if (canvas.height !== previewViewport.height) canvas.height = previewViewport.height;
   canvas.style.aspectRatio = `${previewViewport.width} / ${previewViewport.height}`;
   canvas.setAttribute("aria-label", `معاينة الصورة المتحركة ${project.viewport.width} في ${project.viewport.height}`);
 }
