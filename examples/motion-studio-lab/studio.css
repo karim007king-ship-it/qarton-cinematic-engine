@@ -337,10 +337,9 @@ button:disabled { opacity: .58; }
   .editor-mode-switch button { min-height: 38px; font-size: 10px; }
   .studio-preview { grid-column: 1; grid-row: 3; gap: 4px; padding: 5px; }
   .tool-drawer { grid-column: 1; grid-row: 4; }
-  .preview-heading { gap: 5px; }
   .preview-heading strong { font-size: 10px; }
   .preview-canvas-host { grid-template-rows: 44px minmax(0, 1fr); gap: 2px; }
-  .preview-heading { position: static; inset: auto; z-index: auto; min-height: 44px; padding: 0 2px; border-radius: 7px; background: transparent; }
+  .preview-heading { gap: 5px; position: static; inset: auto; z-index: auto; min-height: 44px; padding: 0 2px; border-radius: 7px; background: transparent; }
   .preview-heading > div { padding-inline-end: 4px; }
   .preview-heading .eyebrow { display: none; }
   .preview-heading strong { max-width: 32vw; }
