@@ -591,7 +591,8 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
               !document.querySelector('#integratedError').hidden""", timeout=30000)
             integrated_status = sync_page.locator("#integratedStatus").inner_text()
             integrated_error = sync_page.locator("#integratedError").inner_text()
-            integrated_technical = sync_page.locator("#integratedError details code").text_content() or ""
+            technical_locator = sync_page.locator("#integratedError details code")
+            integrated_technical = technical_locator.text_content() if technical_locator.count() else ""
             assert "اكتمل التصدير المتكامل" in integrated_status, f"integrated export failed: {integrated_status}; {integrated_error}; technical: {integrated_technical}; page errors: {errors}"
             with sync_page.expect_download() as sync_download_info:
                 sync_page.locator("#integratedDownload").click()
