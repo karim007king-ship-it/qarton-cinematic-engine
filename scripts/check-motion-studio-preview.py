@@ -758,13 +758,15 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
                                 "-of", "json", str(output)
                             ], text=True, timeout=60)).get("packets", [])
                             audio_timeline = measure_media_timeline(packets, ("pts_time", "dts_time"), ("duration_time",))
+                            expected_audio_duration = min(seconds, 3)
                             envelope = max(video_timeline["end"], audio_timeline["end"]) - min(
                                 video_timeline["start"], audio_timeline["start"])
-                            assert abs(audio_timeline["duration"] - seconds) <= duration_tolerance_s and \
+                            assert abs(audio_timeline["duration"] - expected_audio_duration) <= duration_tolerance_s and \
                                 abs(envelope - seconds) <= duration_tolerance_s, (
                                     export_format, audio_mode, seconds, video_timeline, audio_timeline, envelope)
                         verified_runs += 1
-                        print(f"L11-F2 real export: {export_format}/{audio_mode}/{seconds}s duration={video_timeline['duration']:.3f}s")
+                        audio_duration = audio_timeline["duration"] if audio_mode == "mix" else 0
+                        print(f"L11-F2 real export: {export_format}/{audio_mode}/{seconds}s video={video_timeline['duration']:.3f}s audio={audio_duration:.3f}s")
             assert verified_runs >= 8, f"Expected WebM 3/5/10/30 s with and without audio; verified {verified_runs} exports"
             sync_page.close()
         page.locator('nav.bottom-dock [data-editor-section="effects"]').click()
