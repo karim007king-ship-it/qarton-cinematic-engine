@@ -1,4 +1,131 @@
-  File "<string>", line 1
-    import pathlib; print(pathlib.Path(.github/workflows/motion-studio-preview.yml).read_text())
-                                       ^
-SyntaxError: invalid syntax
+name: Motion Studio Android preview
+
+on:
+  pull_request:
+    branches: [main, integration/character-animation-timeline-l7, feature/audio-dialogue-timeline-l8b, feature/integrated-av-export-l10b, fix/integrated-av-export-l10c, docs/motion-studio-export-l10a, docs/motion-studio-multiscene-l11a, feature/motion-studio-multiscene-editor-l11d, feature/motion-studio-smart-easy-editor-l11f1, feature/motion-studio-compact-mobile-ui-l11f2, feature/shared-assets-l11c, feature/motion-studio-full-multiscene-export-l11e]
+    paths:
+      - '.github/workflows/motion-studio-preview.yml'
+      - 'examples/motion-studio-lab/**'
+      - 'tests/motion-studio-smart-editor.test.js'
+      - 'examples/motion-studio-export-lab/export-lab-core.js'
+      - 'packages/motion-studio/**'
+      - 'src/camera/**'
+      - 'src/motion/**'
+      - 'src/audio/**'
+      - 'src/effects/**'
+      - 'tests/motion-studio-audio-timeline.test.js'
+      - 'tests/motion-studio-visual-effects.test.js'
+      - 'tests/motion-studio-export-*.test.js'
+      - 'scripts/build-motion-studio-preview.mjs'
+      - 'scripts/motion-studio-preview-html.js'
+      - 'scripts/check-motion-studio-preview.py'
+      - 'tests/motion-studio-preview-builder.test.js'
+  push:
+    branches:
+      - feature/motion-studio-video-export-l5
+      - feature/motion-studio-visual-timeline-l6b
+      - feature/character-animation-timeline-l7b
+      - feature/audio-dialogue-timeline-l8b
+      - feature/visual-effects-timeline-l9b
+      - feature/integrated-av-export-l10b
+      - refactor/motion-studio-l11g
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    if: github.event_name != 'pull_request' || contains(fromJSON('["feature/motion-studio-video-export-l5","feature/motion-studio-visual-timeline-l6b","feature/character-animation-timeline-l7b","feature/audio-dialogue-timeline-l8b","feature/visual-effects-timeline-l9b","feature/integrated-av-export-l10b","fix/l10c-export-safety-regressions","feature/shared-assets-l11c","feature/motion-studio-multiscene-editor-l11d","feature/motion-studio-smart-easy-editor-l11f1","feature/motion-studio-compact-mobile-ui-l11f2","feature/motion-studio-full-multiscene-export-l11e","refactor/motion-studio-l11g"]'), github.event.pull_request.head.ref)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Select isolated preview artifact name
+        id: preview
+        shell: bash
+        run: |
+          BRANCH_NAME='${{ github.head_ref || github.ref_name }}'
+          if [ "$BRANCH_NAME" = 'feature/motion-studio-visual-timeline-l6b' ]; then
+            PREVIEW_SLUG='motion-studio-l6b-android-preview'
+            PREVIEW_LABEL='L6-B'
+          elif [ "$BRANCH_NAME" = 'feature/character-animation-timeline-l7b' ]; then
+            PREVIEW_SLUG='motion-studio-l7b-android-preview'
+            PREVIEW_LABEL='L7-B'
+          elif [ "$BRANCH_NAME" = 'feature/audio-dialogue-timeline-l8b' ]; then
+            PREVIEW_SLUG='motion-studio-l8b-android-preview'
+            PREVIEW_LABEL='L8-B'
+          elif [ "$BRANCH_NAME" = 'feature/visual-effects-timeline-l9b' ]; then
+            PREVIEW_SLUG='motion-studio-l9b-android-preview'
+            PREVIEW_LABEL='L9-B'
+          elif [ "$BRANCH_NAME" = 'feature/integrated-av-export-l10b' ]; then
+            PREVIEW_SLUG='motion-studio-l10b-android-preview'
+            PREVIEW_LABEL='L10-B'
+          elif [ "$BRANCH_NAME" = 'fix/l10c-export-safety-regressions' ]; then
+            PREVIEW_SLUG='motion-studio-l10c-safety-android-preview'
+            PREVIEW_LABEL='L10-C'
+          elif [ "$BRANCH_NAME" = 'feature/shared-assets-l11c' ]; then
+            PREVIEW_SLUG='motion-studio-l11c-android-preview'
+            PREVIEW_LABEL='L11-C'
+          elif [ "$BRANCH_NAME" = 'feature/motion-studio-multiscene-editor-l11d' ]; then
+            PREVIEW_SLUG='motion-studio-l11d-android-preview'
+            PREVIEW_LABEL='L11-D'
+          elif [ "$BRANCH_NAME" = 'feature/motion-studio-smart-easy-editor-l11f1' ]; then
+            PREVIEW_SLUG='motion-studio-l11f1-android-preview'
+            PREVIEW_LABEL='L11-F1'
+          elif [ "$BRANCH_NAME" = 'feature/motion-studio-compact-mobile-ui-l11f2' ]; then
+            PREVIEW_SLUG='motion-studio-l11f2-android-preview'
+            PREVIEW_LABEL='L11-F2'
+          elif [ "$BRANCH_NAME" = 'feature/motion-studio-full-multiscene-export-l11e' ]; then
+            PREVIEW_SLUG='motion-studio-l11e-android-preview'
+            PREVIEW_LABEL='L11-E'
+          elif [ "$BRANCH_NAME" = 'refactor/motion-studio-l11g' ]; then
+            PREVIEW_SLUG='motion-studio-l11g-android-preview'
+            PREVIEW_LABEL='L11-G'
+          else
+            PREVIEW_SLUG='motion-studio-l5-android-preview'
+            PREVIEW_LABEL='L5'
+          fi
+          echo "MOTION_STUDIO_PREVIEW_SLUG=$PREVIEW_SLUG" >> "$GITHUB_ENV"
+          echo "MOTION_STUDIO_PREVIEW_LABEL=$PREVIEW_LABEL" >> "$GITHUB_ENV"
+          echo "slug=$PREVIEW_SLUG" >> "$GITHUB_OUTPUT"
+      - name: Bundle the editor as a single offline HTML file
+        run: |
+          npm install --no-save --no-package-lock esbuild@0.25.12
+          node scripts/build-motion-studio-preview.mjs
+      - name: Run Node regressions
+        run: npm test
+      - name: Check local-file startup and secure browser APIs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install playwright==1.55.0
+          python scripts/check-motion-studio-preview.py
+      - name: Verify IndexedDB storage
+        if: github.head_ref == 'feature/shared-assets-l11c' || github.head_ref == 'feature/motion-studio-multiscene-editor-l11d' || github.head_ref == 'refactor/motion-studio-l11g' || github.ref_name == 'refactor/motion-studio-l11g'
+        run: |
+          python -m playwright install --with-deps chromium
+          python scripts/check-motion-studio-assets.py
+      - name: Package Android preview ZIP
+        run: |
+          cd "dist/$MOTION_STUDIO_PREVIEW_SLUG"
+          zip -9 "../../$MOTION_STUDIO_PREVIEW_SLUG.zip" index.html README.txt
+      - name: Upload Android preview artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.preview.outputs.slug }}
+          path: ${{ steps.preview.outputs.slug }}.zip
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload L11-F2 interface screenshots
+        if: github.head_ref == 'feature/motion-studio-compact-mobile-ui-l11f2'
+        uses: actions/upload-artifact@v4
+        with:
+          name: motion-studio-l11f2-ui-screenshots
+          path: artifacts/motion-studio-l11f2/*.png
+          if-no-files-found: error
+          retention-days: 30
