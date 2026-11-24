@@ -363,7 +363,8 @@ body {
   .header-action { min-width: 38px; }
   .bottom-dock { gap: 2px; }
   .bottom-dock button { font-size: 9px; }
-  .tool-panel .sequence-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tool-panel .sequence-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .tool-panel .sequence-actions > label { grid-column: 1 / -1; }
   .tool-panel .simple-motion-presets,
   .tool-panel .automatic-motion-options { gap: 5px; }
   .tool-panel .motion-preset-button { min-height: 48px; }
@@ -390,4 +391,11 @@ body, .studio, .studio-preview, .tool-drawer, .tool-panel { color: #f2eee5; colo
 .tool-panel :is(h2,h3) { color: #f2eee5; }
 .tool-panel .sequence-actions > button:not(.danger-button) { color: #f2eee5; }
 .tool-panel .sequence-actions > .danger-button { color: #ffd9dd; }
-.tool-panel { -webkit-overflow-scrolling: touch; }
+.tool-panel { -webkit-overflow-scrolling: touch; padding-block-end: 16px; }
+.tool-panel .sequence-actions > button { line-height: 1.25; overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .tool-panel .sequence-actions > button { font-size: 11px; }
+  .tool-panel .sequence-heading h2, .tool-panel .visual-effects-card h2 { font-size: 15px; }
+  .tool-panel .sequence-actions > label { grid-column: 1 / -1; }
+  .tool-panel .sequence-actions > label input { max-width: none; }
+}
