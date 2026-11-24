@@ -564,6 +564,13 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
                     video_timeline, audio_timeline)
             # The browser reports Infinity for some valid WebM files. Check actual
             # playback and use a real seek range when exposed by the media element.
+            viewport_text = sync_page.locator("#viewportValue").inner_text().split("·", 1)[0]
+            viewport_dimensions = [int(value) for value in re.findall(r"\d+", viewport_text)]
+            assert len(viewport_dimensions) >= 2, viewport_text
+            source_width, source_height = viewport_dimensions[:2]
+            scale = min(1, 480 / min(source_width, source_height), 854 / max(source_width, source_height))
+            expected_width = max(2, math.floor(source_width * scale / 2) * 2)
+            expected_height = max(2, math.floor(source_height * scale / 2) * 2)
             integrated_video = sync_page.locator("#integratedVideo")
             sync_page.wait_for_function("document.querySelector('#integratedVideo').readyState >= 1", timeout=10000)
             media_state = integrated_video.evaluate("""video => ({
@@ -585,13 +592,6 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
                     arg=seek_target, timeout=5000)
             else:
                 print("L10-B playback: playable; Chromium did not expose a seekable range for this WebM container.")
-            viewport_text = sync_page.locator("#viewportValue").inner_text().split("·", 1)[0]
-            viewport_dimensions = [int(value) for value in re.findall(r"\d+", viewport_text)]
-            assert len(viewport_dimensions) >= 2, viewport_text
-            source_width, source_height = viewport_dimensions[:2]
-            scale = min(1, 480 / min(source_width, source_height), 854 / max(source_width, source_height))
-            expected_width = max(2, math.floor(source_width * scale / 2) * 2)
-            expected_height = max(2, math.floor(source_height * scale / 2) * 2)
             assert video_stream["width"] == expected_width and video_stream["height"] == expected_height, (video_stream, (expected_width, expected_height))
             video_start = video_timeline["start"]
             audio_start = audio_timeline["start"]
