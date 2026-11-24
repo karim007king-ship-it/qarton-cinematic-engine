@@ -805,6 +805,9 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         touch_page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
         touch_tap(touch_page.locator('nav.bottom-dock [data-editor-section="scenes"]'))
         touch_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 1")
+        asset_library = touch_page.locator(".asset-library")
+        if not asset_library.evaluate("el => el.open"):
+            touch_tap(asset_library.locator("summary"))
         touch_page.wait_for_function("document.querySelectorAll('#assetLibraryList .asset-entry').length >= 2")
         touch_page.screenshot(path=str(screenshot_dir / "motion-studio-mobile-scenes.png"))
         used_asset = touch_page.locator("#assetLibraryList .asset-entry").last
