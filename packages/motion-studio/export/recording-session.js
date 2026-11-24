@@ -471,7 +471,13 @@ export async function startExport(plan, host = {}, { signal, onProgress } = {}) 
         if (elapsed >= 0) {
           const due = Math.min(frameCount - 1, Math.floor(elapsed / frameIntervalMs));
           if (due >= nextFrame) {
-            if (due > nextFrame) droppedFrames += due - nextFrame;
+            if (due > nextFrame) {
+              const skipped = due - nextFrame;
+              droppedFrames += skipped;
+              if (skipped * frameIntervalMs >= 250) {
+                throw error("CLOCK_STALLED", "Export skipped too many consecutive frames; retry at a lower quality");
+              }
+            }
             paint(due, elapsed);
             nextFrame = due + 1;
           }
