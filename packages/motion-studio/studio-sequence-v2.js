@@ -90,12 +90,17 @@ export function validateStudioSequenceV2(input) {
   if (!Array.isArray(input.scenes) || input.scenes.length < 1 || input.scenes.length > SEQUENCE_LIMITS.scenes) {
     throw new RangeError(`StudioSequenceV2 scenes must contain between 1 and ${SEQUENCE_LIMITS.scenes} scenes`);
   }
-  const legacyTransitions = input.scenes.slice(1).map((scene, index) => ({
-    fromSceneId: input.scenes[index].id, toSceneId: scene.id, type: "cut", durationMs: 0
-  }));
-  const validatedV1 = validateStudioSequenceV1({ version: 1, kind: "studio-sequence", viewport: input.viewport,
-    scenes: input.scenes, assets: input.assets, transitions: legacyTransitions });
-  const { viewport, scenes, assets } = validatedV1;
+  // Validate each scene through the established V1 scene/track validators, but
+  // keep the project duration check here: V2's overlap reduces total duration,
+  // so the sum of local scene durations can legitimately exceed V1's cap.
+  const validatedFirstScene = validateStudioSequenceV1({ version: 1, kind: "studio-sequence", viewport: input.viewport,
+    scenes: [input.scenes[0]], assets: input.assets, transitions: [] });
+  const { viewport, assets } = validatedFirstScene;
+  const scenes = [validatedFirstScene.scenes[0]];
+  for (const scene of input.scenes.slice(1)) {
+    scenes.push(validateStudioSequenceV1({ version: 1, kind: "studio-sequence", viewport,
+      scenes: [scene], assets, transitions: [] }).scenes[0]);
+  }
   const transitions = validateSequenceV2Transitions(input.transitions, scenes);
   const intervals = [];
   let startMs = 0;

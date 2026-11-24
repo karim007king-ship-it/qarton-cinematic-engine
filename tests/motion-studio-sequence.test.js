@@ -321,6 +321,13 @@ test("V2 consecutive transitions meet at one exact timestamp without a gap or tr
   assert.deepEqual(sampleStudioSequenceV2(compiled, 1000), exact);
 });
 
+test("V2 validates local scene durations against the overlap-adjusted project limit", () => {
+  const project = sequenceV2([scene("long-a", 151_500), scene("long-b", 151_500)], [
+    transition("long-a", "long-b", "dissolve", 3_000, 0)
+  ]);
+  assert.equal(compileStudioSequenceV2(project).durationMs, 300_000);
+});
+
 test("V2 migrate-down rejects lossy transitions", () => {
   const dissolve = sequenceV2([scene("a", 1000), scene("b", 1000)], [transition("a", "b", "dissolve", 200, 100)]);
   assert.throws(() => migrateStudioSequenceV2ToV1(dissolve), /cannot represent/iu);
