@@ -341,7 +341,7 @@ button:disabled { opacity: .58; }
   .preview-heading > div { padding-inline-end: 4px; }
   .preview-heading .eyebrow { display: none; }
   .preview-heading strong { max-width: 32vw; }
-  .fullscreen-button { flex-basis: 38px; width: 38px; min-width: 38px; min-height: 38px; }
+  .fullscreen-button { flex-basis: 44px; width: 44px; min-width: 44px; min-height: 44px; }
   .stage-wrap { padding-top: 48px; }
   .preview-transport-host .transport { min-height: 44px; }
   .preview-transport-host .transport button { min-height: 44px; }
