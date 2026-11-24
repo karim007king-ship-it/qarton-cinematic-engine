@@ -18,10 +18,12 @@ import { addVisualEffect, deleteVisualEffect, editVisualEffect, moveVisualEffect
 import { createStudioVisualEffectsTimeline } from "./studio-visual-effects-timeline.js?v=l9b-effects-01";
 import { drawStudioScene } from "./studio-scene-renderer.js?v=l10b-integrated-01";
 import { createStudioSequenceEditor, parseStudioSequenceFile, serializeStudioSequenceFile, STUDIO_SEQUENCE_FILE_FORMAT } from "./studio-sequence-editor.js?v=l11d-multiscene-01";
+import { CAMERA_MOTION_PRESETS, createCameraMotionProject } from "./studio-motion-presets.js?v=l11f1-smart-editor-01";
 import { createPersistentAssetRegistry } from "../../packages/motion-studio/asset-persistence.js";
 import { openAssetStorage } from "../../packages/motion-studio/asset-storage.js";
 
 const $ = (id) => document.getElementById(id);
+const studioRoot = document.querySelector(".studio");
 const canvas = $("stage");
 const context = canvas.getContext("2d", { alpha: false });
 const imageInput = $("imageInput");
@@ -99,6 +101,8 @@ let currentMs = 0;
 let isPlaying = false;
 let pausedAt = null;
 let rafId = 0;
+let quickMotionUndo = null;
+let committingQuickMotion = false;
 
 canvas.width = previewViewport.width;
 canvas.height = previewViewport.height;
@@ -407,9 +411,10 @@ function refreshIntegratedControls() {
   for (const control of [integratedQuality, integratedFormat, integratedAudio, integratedMissingAudio, integratedFrom, integratedTo]) control.disabled = Boolean(activeExport);
 }
 function setExportBusy(busy) {
-  for (const id of ["imageInput", "projectInput", "audioInput", "audioTrackType", "addAudioClip", "deleteAudioClip", "audioClipStart", "audioClipDuration", "audioClipVolume", "dialogueLanguage", "visemeType", "phonemeLabel", "addViseme", "audioMasterVolume", "visualEffectType", "addVisualEffect", "deleteVisualEffect", "visualEffectStart", "visualEffectDuration", "visualEffectEasing", "aspectPreset", "fitMode", "duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "saveProjectButton", "loadProjectButton", "integratedQuality", "integratedFormat", "integratedAudio", "integratedMissingAudio", "integratedFrom", "integratedTo"]) {
+  for (const id of ["imageInput", "projectInput", "audioInput", "audioTrackType", "addAudioClip", "deleteAudioClip", "audioClipStart", "audioClipDuration", "audioClipVolume", "dialogueLanguage", "visemeType", "phonemeLabel", "addViseme", "audioMasterVolume", "visualEffectType", "addVisualEffect", "deleteVisualEffect", "visualEffectStart", "visualEffectDuration", "visualEffectEasing", "aspectPreset", "fitMode", "duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "saveProjectButton", "loadProjectButton", "motionSpeed", "motionStrength", "motionFocusX", "motionFocusY", "motionFromSeconds", "motionToSeconds", "integratedQuality", "integratedFormat", "integratedAudio", "integratedMissingAudio", "integratedFrom", "integratedTo"]) {
     $(id).disabled = busy;
   }
+  for (const button of document.querySelectorAll("[data-motion-preset]")) button.disabled = busy;
   timelineEditor?.setBusy(busy);
   characterTimeline?.setBusy(busy);
   audioTimeline?.setBusy(busy);
@@ -425,6 +430,7 @@ function setExportBusy(busy) {
   cancelExportButton.disabled = !busy;
   integratedProbeButton.disabled = busy || !currentFileInfo || pendingImageRequest !== null || pendingAudioRequest !== null;
   integratedExportButton.disabled = busy || !currentFileInfo || getVerifiedIntegratedCapabilities().length === 0;
+  refreshMotionUndoButtons();
 }
 function createTestAudioGraph() {
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -1049,6 +1055,97 @@ async function removeLibraryAsset(id) {
   } catch (error) { $("assetLibraryMessage").textContent = errorText(error); }
 }
 function inputNumber(id) { return Number($(id).value); }
+function syncMotionTimeBounds() {
+  const durationSeconds = project.durationMs / 1000;
+  const from = $("motionFromSeconds"); const to = $("motionToSeconds");
+  from.max = String(durationSeconds); to.max = String(durationSeconds);
+  const fromValue = from.value.trim() ? Number(from.value) : NaN;
+  const toValue = to.value.trim() ? Number(to.value) : NaN;
+  if (Number.isFinite(fromValue) && fromValue > durationSeconds) from.value = String(Math.max(0, durationSeconds - 0.1));
+  if (Number.isFinite(toValue) && toValue > durationSeconds) to.value = String(durationSeconds);
+}
+function setEditorMode(mode) {
+  if (!["automatic", "simple", "professional"].includes(mode)) return;
+  studioRoot.dataset.editorMode = mode;
+  for (const button of document.querySelectorAll("[data-editor-mode-button]")) {
+    button.setAttribute("aria-pressed", String(button.dataset.editorModeButton === mode));
+  }
+  for (const panel of document.querySelectorAll("[data-mode-panel]")) panel.hidden = panel.dataset.modePanel !== mode;
+}
+function readMotionSeconds(id, label) {
+  const input = $(id); const text = input.value.trim();
+  if (!text || input.validity.badInput) throw new TypeError(`${label}: أدخل وقتًا بالثواني.`);
+  const value = Number(text);
+  if (!Number.isFinite(value) || value < 0 || value > project.durationMs / 1000) throw new RangeError(`${label}: الوقت خارج مدة المشهد.`);
+  return value;
+}
+function refreshMotionUndoButtons() {
+  const disabled = !quickMotionUndo || Boolean(activeExport);
+  for (const button of [$("undoMotionButton"), $("undoMotionAutomatic")]) button.disabled = disabled;
+}
+function applyQuickMotion(preset, automatic = false) {
+  const fromField = $("motionFromSeconds"); const toField = $("motionToSeconds");
+  fromField.removeAttribute("aria-invalid"); toField.removeAttribute("aria-invalid");
+  try {
+    const fromSeconds = automatic ? 0 : readMotionSeconds("motionFromSeconds", "بداية الحركة");
+    const toSeconds = automatic ? project.durationMs / 1000 : readMotionSeconds("motionToSeconds", "نهاية الحركة");
+    if (fromSeconds >= toSeconds) throw new RangeError("يجب أن تكون نهاية الحركة بعد بدايتها.");
+    const settings = automatic ? { speed: 0.75, strength: 36, focusX: 50, focusY: 50 }
+      : { speed: Number($("motionSpeed").value), strength: Number($("motionStrength").value),
+        focusX: Number($("motionFocusX").value), focusY: Number($("motionFocusY").value) };
+    const nextProject = createCameraMotionProject(project, { preset, fromSeconds, toSeconds, ...settings });
+    const previousProject = structuredClone(project);
+    committingQuickMotion = true;
+    try {
+      commitKeyframeProject(nextProject);
+      timelineEditor?.render();
+      timelineEditor?.selectTime(Math.round(fromSeconds * 1000));
+    } finally { committingQuickMotion = false; }
+    quickMotionUndo = previousProject;
+    refreshMotionUndoButtons();
+    const label = CAMERA_MOTION_PRESETS.find((item) => item.id === preset)?.label ?? "الحركة";
+    $("motionPresetMessage").textContent = automatic
+      ? `طُبّق اقتراح «${label}» على كامل المشهد. يمكنك متابعة التعديل في الوضع الاحترافي.`
+      : `طُبّقت «${label}» من ${fromSeconds} إلى ${toSeconds} ثانية.`;
+  } catch (error) {
+    if (!fromField.value.trim() || fromField.validity.badInput) fromField.setAttribute("aria-invalid", "true");
+    if (!toField.value.trim() || toField.validity.badInput) toField.setAttribute("aria-invalid", "true");
+    $("motionPresetMessage").textContent = errorText(error);
+  }
+}
+function undoQuickMotion() {
+  if (!quickMotionUndo || activeExport) return;
+  const previous = quickMotionUndo;
+  committingQuickMotion = true;
+  try {
+    commitKeyframeProject(previous);
+    timelineEditor?.render();
+    quickMotionUndo = null;
+    $("motionPresetMessage").textContent = "تم التراجع عن آخر حركة جاهزة.";
+  } catch (error) { $("motionPresetMessage").textContent = errorText(error); }
+  finally { committingQuickMotion = false; refreshMotionUndoButtons(); }
+}
+for (const button of document.querySelectorAll("[data-editor-mode-button]")) {
+  button.addEventListener("click", () => setEditorMode(button.dataset.editorModeButton));
+}
+for (const button of document.querySelectorAll("[data-editor-section]")) {
+  button.addEventListener("click", () => {
+    const section = button.dataset.editorSection;
+    const target = ({ scenes: $("sceneSection"), motion: $("simpleMotionPanel"), audio: $("audioToolsSection"), effects: $("effectsToolsSection") })[section];
+    if (!target) return;
+    setEditorMode(section === "audio" || section === "effects" ? "professional" : "simple");
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+for (const button of document.querySelectorAll("[data-motion-preset]")) {
+  button.addEventListener("click", () => applyQuickMotion(button.dataset.motionPreset, button.dataset.automaticMotion === "true"));
+}
+for (const button of [$("undoMotionButton"), $("undoMotionAutomatic")]) button.addEventListener("click", undoQuickMotion);
+$("motionStrength").addEventListener("input", () => { $("motionStrengthValue").textContent = `${$("motionStrength").value}%`; });
+$("motionFocusX").addEventListener("input", () => { $("motionFocusXValue").textContent = `${$("motionFocusX").value}%`; });
+$("motionFocusY").addEventListener("input", () => { $("motionFocusYValue").textContent = `${$("motionFocusY").value}%`; });
+for (const id of ["motionFromSeconds", "motionToSeconds"]) $(id).addEventListener("input", () => $(id).removeAttribute("aria-invalid"));
+
 function syncOutputs() {
   for (const [id, suffix, digits] of [
     ["startZoom", "×", 2], ["endZoom", "×", 2], ["startX", " px", 0],
@@ -1074,6 +1171,7 @@ function commitKeyframeProject(nextProject) {
   });
   const nextEffectsCompiled = compilePreviewEffects(visualEffectsTrack, nextProject, previewViewport);
   project = nextProject;
+  if (!committingQuickMotion) { quickMotionUndo = null; refreshMotionUndoButtons(); }
   compiled = nextCompiled;
   visualEffectsCompiled = nextEffectsCompiled;
   syncLegacyCameraInputs();
@@ -1105,6 +1203,8 @@ function setCanvasDimensions() {
   }
 }
 function updateProject({ resetPlayback = false, viewport = project.viewport, editedControl = null } = {}) {
+  quickMotionUndo = null;
+  refreshMotionUndoButtons();
   invalidateExport("تغيّر المشروع؛ أُلغي التصدير السابق أو الجاري.");
   clearFailure();
   try {
@@ -1161,6 +1261,7 @@ function updateProject({ resetPlayback = false, viewport = project.viewport, edi
     if (!currentFileInfo) placeholder = imageSource = nextImageSource;
     applyCanvasDimensions(nextPreview);
     seek.max = String(durationMs);
+    syncMotionTimeBounds();
     integratedFrom.max = String(Math.max(0, durationMs - 1));
     integratedTo.max = String(durationMs);
     if (Number(integratedTo.value) === previousDurationMs || Number(integratedTo.value) > durationMs) integratedTo.value = String(durationMs);
@@ -1327,6 +1428,7 @@ async function activateStudioScene(sceneId, { globalTimeMs = null, localTimeMs =
   }
   const token = ++sceneLoadToken;
   activeSceneId = sceneId;
+  quickMotionUndo = null;
   const imageSettings = sceneImageSettings(sceneId);
   aspectPreset = imageSettings.aspectPreset;
   fitMode = imageSettings.fitMode;
@@ -1357,6 +1459,7 @@ async function activateStudioScene(sceneId, { globalTimeMs = null, localTimeMs =
   if (currentMs > 0) audioPlayer.seek(currentMs);
   if (wasPlaying) audioPlayer.play();
   seek.max = String(project.durationMs);
+  syncMotionTimeBounds();
   $("duration").value = String(project.durationMs / 1000);
   integratedFrom.max = String(Math.max(0, project.durationMs - 1)); integratedTo.max = String(project.durationMs);
   if (Number(integratedTo.value) > project.durationMs) integratedTo.value = String(project.durationMs);
@@ -1917,6 +2020,9 @@ projectInput.addEventListener("change", async () => {
   finally { projectInput.value = ""; }
 });
 
+setEditorMode("simple");
+syncMotionTimeBounds();
+refreshMotionUndoButtons();
 updateProject({ viewport: project.viewport });
 timelineEditor.render();
 refreshCharacterTimeline();

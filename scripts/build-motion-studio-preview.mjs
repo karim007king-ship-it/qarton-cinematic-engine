@@ -8,7 +8,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sourceDirectory = resolve(root, "examples/motion-studio-lab");
 const previewSlug = process.env.MOTION_STUDIO_PREVIEW_SLUG || "motion-studio-l5-android-preview";
 const previewLabel = process.env.MOTION_STUDIO_PREVIEW_LABEL || "L5";
-if (!/^[a-z0-9-]+$/u.test(previewSlug) || !/^L[0-9]+(?:-[A-Z])?$/u.test(previewLabel)) {
+if (!/^[a-z0-9-]+$/u.test(previewSlug) || !/^L[0-9]+(?:-[A-Z][0-9]?)?$/u.test(previewLabel)) {
   throw new Error("Invalid Motion Studio preview slug or label");
 }
 const outputDirectory = resolve(root, "dist", previewSlug);
