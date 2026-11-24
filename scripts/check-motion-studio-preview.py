@@ -792,6 +792,55 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         touch_page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
         assert touch_page.evaluate("document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight + 1"), "mobile editor shell must fit the viewport without long-page or horizontal scrolling"
         touch_page.screenshot(path=str(screenshot_dir / "motion-studio-mobile-motion.png"))
+
+        # Exercise the three requested phone sizes, then repeat one on a WebView-style Android UA.
+        phone_sizes = [(360, 640), (390, 844), (430, 932)]
+        phone_profiles = [
+            ("chrome", "Mozilla/5.0 (Linux; Android 15; HONOR 400 Pro Build/UP1A) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"),
+            ("webview", "Mozilla/5.0 (Linux; Android 15; HONOR 400 Pro Build/UP1A) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/131.0.0.0 Mobile Safari/537.36")
+        ]
+        for profile, user_agent in phone_profiles:
+            sizes = phone_sizes if profile == "chrome" else [phone_sizes[1]]
+            for width, height in sizes:
+                phone_context = browser.new_context(viewport={"width": width, "height": height}, device_scale_factor=1.5,
+                    is_mobile=True, has_touch=True, user_agent=user_agent, accept_downloads=True)
+                phone_page = phone_context.new_page()
+                phone_page.on("pageerror", lambda error: touch_errors.append(str(error)))
+                phone_page.goto(preview.as_uri())
+                phone_page.wait_for_function("document.querySelector('#stage')?.width === 720")
+                phone_page.locator("#imageInput").set_input_files(str(sample))
+                phone_page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+                layout = phone_page.evaluate("""() => {
+                  const rect = selector => { const r = document.querySelector(selector).getBoundingClientRect(); return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom}; };
+                  const preview = rect('#studioPreview'), drawer = rect('.tool-drawer'), dock = rect('.bottom-dock');
+                  const canvas = rect('#stage'), transport = rect('.preview-transport-host'), heading = rect('.preview-heading');
+                  const overlaps = (a,b) => a.x < b.right && a.right > b.x && a.y < b.bottom && a.bottom > b.y;
+                  return {preview,drawer,dock,canvas,transport,heading,ratio:preview.height/(preview.height+drawer.height),
+                    pageOverflow:document.documentElement.scrollWidth > innerWidth || document.documentElement.scrollHeight > innerHeight + 1,
+                    picker:getComputedStyle(document.querySelector('#previewImagePicker')).display,
+                    inputRect:(() => { const r=document.querySelector('#imageInput').getBoundingClientRect(); return {width:r.width,height:r.height}; })(),
+                    canvasRatio:canvas.width/canvas.height, canvasTransportOverlap:overlaps(canvas,transport),
+                    canvasHeadingOverlap:overlaps(canvas,heading), hasCardActions:Boolean(document.querySelector('#sceneThumbnails .scene-card-controls'))};
+                }""")
+                assert not layout["pageOverflow"], (profile, width, height, layout)
+                assert 0.37 <= layout["ratio"] <= 0.43, (profile, width, height, layout)
+                assert abs(layout["canvasRatio"] - 720 / 1280) < 0.02, (profile, width, height, layout)
+                assert not layout["canvasTransportOverlap"] and not layout["canvasHeadingOverlap"], (profile, width, height, layout)
+                assert layout["picker"] == "none", (profile, width, height, layout)
+                assert max(layout["inputRect"]["width"], layout["inputRect"]["height"]) <= 1, (profile, width, height, layout)
+                assert not layout["hasCardActions"], "scene actions belong in the Scenes section"
+                if profile == "chrome":
+                    phone_page.screenshot(path=str(screenshot_dir / f"motion-studio-android-chrome-{width}x{height}.png"))
+                if width == 360:
+                    phone_page.locator('nav.bottom-dock [data-editor-section="scenes"]').click()
+                    phone_page.locator("#sceneName").focus()
+                    phone_page.set_viewport_size({"width": width, "height": height - 240})
+                    keyboard_layout = phone_page.evaluate("""() => ({height:innerHeight,dockBottom:document.querySelector('.bottom-dock').getBoundingClientRect().bottom,
+                      panelTop:document.querySelector('.tool-drawer').getBoundingClientRect().top,panelBottom:document.querySelector('.tool-drawer').getBoundingClientRect().bottom,
+                      overflow:document.documentElement.scrollWidth > innerWidth || document.documentElement.scrollHeight > innerHeight + 1})""")
+                    assert not keyboard_layout["overflow"] and keyboard_layout["dockBottom"] <= keyboard_layout["height"] + 1, keyboard_layout
+                    assert keyboard_layout["panelBottom"] <= keyboard_layout["dockBottom"] + 1, keyboard_layout
+                phone_context.close()
         fullscreen_button = touch_page.locator("#fullscreenPreviewButton")
         assert fullscreen_button.bounding_box()["width"] >= 44 and fullscreen_button.bounding_box()["height"] >= 44
         touch_tap(fullscreen_button)
@@ -829,9 +878,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         touch_tap(touch_page.locator("#addSceneButton"))
         touch_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 3")
         order_before = touch_page.locator("#sceneThumbnails .scene-card").evaluate_all("els => els.map(el => el.dataset.sceneId)")
-        third_scene = touch_page.locator("#sceneThumbnails .scene-card").nth(2)
-        third_scene.scroll_into_view_if_needed()
-        reorder_button = third_scene.get_by_role("button", name="إلى اليسار: المشهد 3")
+        reorder_button = touch_page.locator("#moveSceneLeftButton")
         reorder_button.evaluate("el => el.scrollIntoView({block:'center', inline:'center', behavior:'instant'})")
         reorder_box = reorder_button.bounding_box()
         assert reorder_button.evaluate("el => { const r=el.getBoundingClientRect(); return document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.closest('button') === el; }"), "scene reorder button must be the actual touch hit target"

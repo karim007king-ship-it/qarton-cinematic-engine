@@ -98,8 +98,8 @@ test("compact editor shell keeps preview, scene thumbnails, and five touch secti
   assert.match(js, /function mountCompactWorkspace\(\)/);
   assert.match(js, /function setEditorSection\(section\)/);
   assert.match(js, /fullscreenPreviewButton/);
-  assert.match(css, /height:100dvh/);
+  assert.match(css, /height:\s*100dvh/);
   assert.match(css, /overflow:hidden/);
-  assert.match(css, /grid-template-columns:minmax\(0,1fr\)/);
-  assert.match(css, /min-height:44px/);
+  assert.match(css, /grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  assert.match(css, /min-height:\s*44px/);
 });

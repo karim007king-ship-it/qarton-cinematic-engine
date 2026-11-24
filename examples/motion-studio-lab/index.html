@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#101118">
   <meta name="mobile-web-app-capable" content="yes">
   <title>QARTON Motion Studio Lab</title>
-  <link rel="stylesheet" href="./studio.css?v=l11f2-compact-mobile-01">
+  <link rel="stylesheet" href="./studio.css?v=l11f2-android-fix-01">
   <script type="importmap">
     {
       "imports": {
@@ -57,6 +57,8 @@
         <button id="addSceneButton" class="secondary-button" type="button">＋ مشهد</button>
         <button id="duplicateSceneButton" class="secondary-button" type="button">نسخ المشهد</button>
         <button id="deleteSceneButton" class="secondary-button danger-button" type="button">حذف المشهد</button>
+        <button id="moveSceneLeftButton" class="secondary-button scene-reorder-action" type="button" aria-label="ترتيب المشهد المحدد إلى اليسار"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5 7.5 12l7 7"/></svg><span>يسار</span></button>
+        <button id="moveSceneRightButton" class="secondary-button scene-reorder-action" type="button" aria-label="ترتيب المشهد المحدد إلى اليمين"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.5 5 7 7-7 7"/></svg><span>يمين</span></button>
         <label>اسم المشهد <input id="sceneName" type="text" maxlength="80" autocomplete="off"></label>
         <label>المدة (ث) <input id="sceneDuration" type="number" min="3" max="60" step="1" inputmode="numeric"></label>
       </div>
@@ -90,8 +92,8 @@
     <section id="simpleMotionPanel" class="motion-mode-panel" data-mode-panel="simple" aria-labelledby="simpleMotionHeading">
       <div class="simple-panel-heading"><div><span class="eyebrow">تحرير سريع</span><h2 id="simpleMotionHeading">كيف تتحرك الكاميرا؟</h2></div><span>اختيار الحركة يعرض النتيجة مباشرة</span></div>
       <div class="simple-motion-presets" role="group" aria-label="حركات الكاميرا الجاهزة">
-        <button class="motion-preset-button" type="button" data-motion-preset="zoom-in"><span class="motion-icon">⌕</span><strong>تقريب</strong></button>
-        <button class="motion-preset-button" type="button" data-motion-preset="zoom-out"><span class="motion-icon">⌖</span><strong>إبعاد</strong></button>
+        <button class="motion-preset-button" type="button" data-motion-preset="zoom-in"><span class="motion-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5M10.5 7.5v6m-3-3h6"/></svg></span><strong>تقريب</strong></button>
+        <button class="motion-preset-button" type="button" data-motion-preset="zoom-out"><span class="motion-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5m-13-10h6"/></svg></span><strong>إبعاد</strong></button>
         <button class="motion-preset-button" type="button" data-motion-preset="static"><span class="motion-icon">◉</span><strong>كاميرا ثابتة</strong></button>
         <button class="motion-preset-button" type="button" data-motion-preset="pan-horizontal"><span class="motion-icon">↔</span><strong>يمين ويسار</strong></button>
         <button class="motion-preset-button" type="button" data-motion-preset="pan-vertical"><span class="motion-icon">↕</span><strong>أعلى وأسفل</strong></button>
@@ -372,6 +374,6 @@
     <p id="errorMessage" class="error-message" role="alert" hidden></p>
     <footer class="studio-footer">نسخة تجريبية · تتم المعالجة على الجهاز</footer>
   </main>
-  <script type="module" src="./studio.js?v=l11f2-compact-mobile-01"></script>
+  <script type="module" src="./studio.js?v=l11f2-android-fix-01"></script>
 </body>
 </html>
