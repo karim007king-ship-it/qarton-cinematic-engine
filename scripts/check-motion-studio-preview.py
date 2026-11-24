@@ -313,6 +313,10 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         assert page.locator(".audio-clip").get_attribute("aria-label") == drag_start, "export lock ignores trailing pointer motion"
         page.mouse.up()
         page.locator('[data-editor-section="more"]').click()
+        if not page.locator("#advancedProjectOptions").evaluate("el => el.open"):
+            page.locator("#advancedProjectOptions > summary").click()
+        if not page.locator("#legacyExportDetails").evaluate("el => el.open"):
+            page.locator("#legacyExportDetails > summary").click()
         page.locator("#cancelExportButton").click()
         page.get_by_text("أُلغي التسجيل ونُظّفت موارده.", exact=True).wait_for(timeout=10000)
         page.locator('[data-editor-section="audio"]').click()
@@ -442,6 +446,10 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         assert page.locator('.keyframe-marker[data-key-time="8000"]').count() == 1, "export lock rejects trailing pointer moves"
         page.mouse.up()
         page.locator('[data-editor-section="more"]').click()
+        if not page.locator("#advancedProjectOptions").evaluate("el => el.open"):
+            page.locator("#advancedProjectOptions > summary").click()
+        if not page.locator("#legacyExportDetails").evaluate("el => el.open"):
+            page.locator("#legacyExportDetails > summary").click()
         page.locator("#cancelExportButton").click()
         page.get_by_text("أُلغي التسجيل ونُظّفت موارده.", exact=True).wait_for(timeout=10000)
         page.locator('[data-editor-section="audio"]').click()
