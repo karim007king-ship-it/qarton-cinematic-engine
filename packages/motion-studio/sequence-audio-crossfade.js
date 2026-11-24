@@ -185,7 +185,17 @@ function automateSceneGain(param, sampleStudioSequenceV2, compiled, sceneIndex, 
   for (let index = 0; index < intervals.length; index++) {
     const transition = intervals[index];
     const side = index === sceneIndex ? "outgoing" : index + 1 === sceneIndex ? "incoming" : null;
-    if (!side || transition.durationMs <= 0) continue;
+    if (!side) continue;
+    if (transition.durationMs === 0) {
+      // A zero-duration Cut has no transition window, but its scene gain still
+      // needs a scheduled step at the exact shared-clock boundary. Otherwise
+      // automation keeps the initial scene gain for the whole recording.
+      const boundaryMs = transition.startMs;
+      if (boundaryMs > fromMs && boundaryMs <= toMs) {
+        setValue(param, side === "outgoing" ? 0 : 1, epoch + (boundaryMs - fromMs) / 1000);
+      }
+      continue;
+    }
     if (transition.audioCrossfadeMs === 0) {
       const boundaryMs = transition.startMs + transition.durationMs / 2;
       if (boundaryMs > fromMs && boundaryMs <= toMs) {
