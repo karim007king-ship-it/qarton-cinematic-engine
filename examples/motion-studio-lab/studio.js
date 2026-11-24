@@ -744,13 +744,18 @@ async function prepareSequenceExportImages(sequence, viewport, signal) {
       const effects = compilePreviewEffects(scene.visualEffectsTrack, scene.project, viewport);
       sceneRenderers.push(Object.freeze({ sceneId: scene.id, compiledProject, characters, effects }));
     }
+    // Raster surfaces now own the pixels; decoded source bitmaps are no longer needed.
     return { sceneRenderers, release() {
-      for (const bitmap of bitmapCache.values()) bitmap.close?.();
-      bitmapCache.clear(); surfaces.clear(); sceneRenderers.length = 0;
+      surfaces.clear();
+      sceneRenderers.length = 0;
     } };
   } catch (error) {
-    for (const bitmap of bitmapCache.values()) bitmap.close?.();
+    surfaces.clear();
+    sceneRenderers.length = 0;
     throw error;
+  } finally {
+    for (const bitmap of bitmapCache.values()) bitmap.close?.();
+    bitmapCache.clear();
   }
 }
 async function prepareSequenceAudioInfo(sequence, signal) {
