@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>StudioSequenceV2 Audio Crossfade OfflineAudioContext Regression</title>
+<script type="importmap">
+{
+  "imports": {
+    "@qarton/cinematic-engine/camera": "/src/camera/camera-track.js",
+    "@qarton/cinematic-engine/motion": "/src/motion/easing.js",
+    "@qarton/cinematic-engine/motion/timeline": "/src/motion/timeline.js"
+  }
+}
+</script>
+<body>
+<pre id="result">RUNNING</pre>
+<pre id="failure"></pre>
+<script type="module">
+import { compileStudioSequenceV2, createStudioSequenceAudioCrossfadeEngine, createStudioSequenceV2 } from "/packages/motion-studio/index.js";
+
+const result = document.querySelector("#result");
+const failure = document.querySelector("#failure");
+const sampleRate = 48000;
+const viewport = { width: 2, height: 2, fps: 30 };
+const image = { id: "poster", kind: "image", name: "poster.png", mimeType: "image/png", size: 4 };
+const toneA = { id: "tone-a", kind: "audio", name: "a.wav", mimeType: "audio/wav", size: 4 };
+const toneB = { id: "tone-b", kind: "audio", name: "b.wav", mimeType: "audio/wav", size: 4 };
+function scene(id, asset) {
+  return { id, project: { version: 1, durationMs: 1000, viewport,
+    layers: [{ id: `layer-${id}`, assetId: image.id, z: 0 }] },
+    audioTracks: [{ id: `track-${id}`, type: "music", volume: 1, clips: [
+      { id: `clip-${id}`, asset, startMs: 0, durationMs: 1000, volume: 0.8, loop: false }
+    ] }], characterTracks: [], visualEffectsTrack: { version: 1, seed: 1, clips: [] } };
+}
+function makeSequence(type, durationMs, audioCrossfadeMs) {
+  const scenes = [scene("a", toneA.id), scene("b", toneB.id)];
+  return compileStudioSequenceV2(createStudioSequenceV2({ viewport, scenes, assets: [image, toneA, toneB],
+    transitions: [{ fromSceneId: "a", toSceneId: "b", type, durationMs, audioCrossfadeMs }] }));
+}
+function makeTone(context, frequency) {
+  const audio = context.createBuffer(1, sampleRate * 2, sampleRate);
+  const values = audio.getChannelData(0);
+  for (let index = 0; index < values.length; index++) values[index] = 0.8 * Math.sin(2 * Math.PI * frequency * index / sampleRate);
+  return audio;
+}
+function rms(values, startMs, endMs) {
+  const first = Math.round(startMs * sampleRate / 1000);
+  const last = Math.round(endMs * sampleRate / 1000);
+  let energy = 0;
+  for (let index = first; index < last; index++) energy += values[index] * values[index];
+  return Math.sqrt(energy / Math.max(1, last - first));
+}
+function componentRms(values, startMs, endMs, frequency) {
+  const first = Math.round(startMs * sampleRate / 1000);
+  const last = Math.round(endMs * sampleRate / 1000);
+  let real = 0, imaginary = 0;
+  for (let index = first; index < last; index++) {
+    const phase = 2 * Math.PI * frequency * index / sampleRate;
+    real += values[index] * Math.cos(phase);
+    imaginary += values[index] * Math.sin(phase);
+  }
+  const count = last - first;
+  return Math.sqrt(2) * Math.hypot(real, imaginary) / count;
+}
+function assertNear(actual, expected, tolerance, label) {
+  if (Math.abs(actual - expected) > tolerance) throw new Error(`${label}: got ${actual}, expected ${expected} ± ${tolerance}`);
+}
+
+try {
+  if (typeof OfflineAudioContext !== "function") throw new Error("OfflineAudioContext is unavailable");
+  const dissolve = makeSequence("dissolve", 400, 200);
+  if (dissolve.durationMs !== 1600) throw new Error(`unexpected overlap duration ${dissolve.durationMs}`);
+  const offline = new OfflineAudioContext(1, sampleRate * 2, sampleRate);
+  const buffers = new Map([[toneA.id, makeTone(offline, 440)], [toneB.id, makeTone(offline, 880)]]);
+  const engine = createStudioSequenceAudioCrossfadeEngine(dissolve, { audioContext: offline, audioBuffers: buffers });
+  const session = engine.schedule({ epoch: 0 });
+  if (session.scheduled.length !== 2 || session.scheduled[1].globalStartMs !== 600) {
+    throw new Error(`unexpected global clip schedule ${JSON.stringify(session.scheduled)}`);
+  }
+  const rendered = await offline.startRendering();
+  const values = rendered.getChannelData(0);
+  const before = rms(values, 500, 600);
+  const middle = rms(values, 750, 850);
+  const after = rms(values, 1050, 1150);
+  assertNear(middle / before, 1, 0.035, "equal-power crossfade RMS continuity");
+  assertNear(after / before, 1, 0.035, "outgoing to incoming RMS continuity");
+  const baseline440 = componentRms(values, 500, 600, 440);
+  const mixed440 = componentRms(values, 750, 850, 440);
+  const baseline880 = componentRms(values, 1050, 1150, 880);
+  const mixed880 = componentRms(values, 750, 850, 880);
+  assertNear(mixed440 / baseline440, Math.SQRT1_2, 0.035, "outgoing equal-power coefficient");
+  assertNear(mixed880 / baseline880, Math.SQRT1_2, 0.035, "incoming equal-power coefficient");
+  const peak = values.reduce((maximum, value) => Math.max(maximum, Math.abs(value)), 0);
+  if (peak > 1.0001) throw new Error(`audio peak exceeded full scale: ${peak}`);
+  engine.dispose();
+
+  const hardCut = makeSequence("fade", 400, 0);
+  const cutOffline = new OfflineAudioContext(1, sampleRate * 2, sampleRate);
+  const cutEngine = createStudioSequenceAudioCrossfadeEngine(hardCut, { audioContext: cutOffline,
+    audioBuffers: new Map([[toneA.id, makeTone(cutOffline, 440)], [toneB.id, makeTone(cutOffline, 880)]]) });
+  cutEngine.schedule({ epoch: 0 });
+  const cutValues = (await cutOffline.startRendering()).getChannelData(0);
+  const early440 = componentRms(cutValues, 700, 790, 440);
+  const early880 = componentRms(cutValues, 700, 790, 880);
+  const late440 = componentRms(cutValues, 810, 900, 440);
+  const late880 = componentRms(cutValues, 810, 900, 880);
+  if (early440 < 0.25 || early880 > 0.002 || late880 < 0.25 || late440 > 0.002) {
+    throw new Error(`zero-window midpoint cut leaked/missed audio: ${JSON.stringify({ early440, early880, late440, late880 })}`);
+  }
+  cutEngine.dispose();
+  result.textContent = "PASS";
+} catch (error) {
+  failure.textContent = String(error?.stack ?? error);
+  result.textContent = "FAIL";
+}
+</script>
+</body>
+</html>

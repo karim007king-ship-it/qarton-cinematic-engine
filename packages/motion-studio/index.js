@@ -5,6 +5,7 @@ import { compileCinematicAudioProject } from "../../src/audio/cinematic-audio-co
 import { createCharacterAnimation } from "../../src/character/animation-core.js";
 import { compileCinematicEffects } from "../../src/effects/cinematic-effects.js";
 import { createStudioSequenceV2Core } from "./studio-sequence-v2.js";
+import { createStudioSequenceAudioCrossfadeCore } from "./sequence-audio-crossfade.js";
 
 export { EXPORT_LIMITS, EXPORT_PROFILES, ExportError, planExport, rasterForQuality,
   prepareAudioMix, MIME_CANDIDATES, probeExport, startExport } from "./export/index.js";
@@ -368,6 +369,10 @@ export function sampleStudioSequence(compiled, timeMs) {
 }
 
 const studioSequenceV2 = createStudioSequenceV2Core({ createStudioSequenceV1, validateStudioSequenceV1 });
+const createStudioSequenceAudioCrossfadeEngine = createStudioSequenceAudioCrossfadeCore({
+  sampleStudioSequenceV2: studioSequenceV2.sampleStudioSequenceV2
+});
+export { createStudioSequenceAudioCrossfadeEngine };
 export const { addStudioSequenceSceneV2, compileStudioSequenceV2, createStudioSequenceV2,
   deleteStudioSequenceSceneV2, duplicateStudioSequenceSceneV2, migrateStudioSequenceV1ToV2,
   migrateStudioSequenceV2ToV1, parseStudioSequenceV2, reorderStudioSequenceSceneV2,

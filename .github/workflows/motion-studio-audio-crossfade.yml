@@ -1,0 +1,44 @@
+name: Motion Studio sequence audio crossfade
+
+on:
+  push:
+    branches:
+      - feature/motion-studio-cinematic-audio-crossfade-l11h3
+  pull_request:
+    branches:
+      - feature/motion-studio-transition-compositor-l11h2
+    paths:
+      - '.github/workflows/motion-studio-audio-crossfade.yml'
+      - 'packages/motion-studio/**'
+      - 'src/audio/**'
+      - 'tests/motion-studio-sequence-audio-crossfade.test.js'
+      - 'tests/fixtures/studio-sequence-audio-crossfade.html'
+      - 'scripts/check-sequence-audio-crossfade-chromium.py'
+
+permissions:
+  contents: read
+
+jobs:
+  audio-crossfade:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out H3 branch
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run all Node tests
+        run: npm test
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Chromium test dependencies
+        run: |
+          python -m pip install playwright==1.55.0
+          python -m playwright install --with-deps chrome
+      - name: Check compositor in Chromium
+        run: python scripts/check-motion-studio-compositor-chromium.py
+      - name: Measure sequence audio with OfflineAudioContext
+        run: python scripts/check-sequence-audio-crossfade-chromium.py
