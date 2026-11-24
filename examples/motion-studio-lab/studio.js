@@ -235,6 +235,8 @@ const localAssetFiles = new Map();
 const sceneSettings = new Map([[activeSceneId, { aspectPreset, fitMode, image: null }]]);
 const sceneThumbnails = new Map();
 let sceneLoadToken = 0;
+let pendingSceneActivation = null;
+let exportPreparing = false;
 let sequenceAutosaveTimer = 0;
 const assetReady = openAssetStorage().then(async storage => {
   assetStorage = storage;
@@ -819,23 +821,39 @@ async function probeIntegratedExport() {
   } finally { refreshIntegratedControls(); }
 }
 async function exportIntegratedProject() {
-  if (activeExport) return;
-  const verified = getVerifiedIntegratedCapabilities();
-  if (!verified.length) {
-    integratedError.textContent = "افحص دعم الصيغة والدقة المحددتين أولًا.";
+  if (activeExport || exportPreparing) return;
+  exportPreparing = true;
+  setExportBusy(true);
+  try {
+    const sceneActivation = pendingSceneActivation;
+    if (sceneActivation) await sceneActivation;
+  } catch (error) {
+    exportPreparing = false;
+    setExportBusy(false);
+    refreshExportControls();
+    setExportErrorMessage(integratedError, error);
     integratedError.hidden = false;
+    integratedStatus.textContent = "تعذر تثبيت المشهد الحالي قبل التصدير.";
     return;
   }
-  clearIntegratedResult();
+  if (activeExport) {
+    exportPreparing = false;
+    setExportBusy(false);
+    refreshExportControls();
+    return;
+  }
+  exportPreparing = false;
   const controller = new AbortController();
   const running = { kind: "integrated", controller, session: null, rafId: 0, stopTimer: 0 };
   activeExport = running;
-  setExportBusy(true);
-  stopPlayback();
-  captureCurrentScene();
   let result = null;
   let sequenceImages = null;
   try {
+    const verified = getVerifiedIntegratedCapabilities();
+    if (!verified.length) throw new Error("افحص دعم الصيغة والدقة المحددتين أولًا.");
+    clearIntegratedResult();
+    stopPlayback();
+    captureCurrentScene();
     await persistentAssets?.replaceSequence(sequenceEditor.sequence);
     const prepared = prepareStudioSequenceExport(sequenceEditor.sequence, {
       audioAssetInfo: integratedAudio.value === "mix"
@@ -897,10 +915,22 @@ async function exportIntegratedProject() {
     }
   } finally {
     sequenceImages?.release();
+    const restorePreview = activeExport === running;
+    const completedStatus = integratedStatus.textContent;
     if (activeExport === running) activeExport = null;
+    if (restorePreview) {
+      exportPreparing = true;
+      try {
+        await loadStudioScene(activeSceneId, { globalTimeMs: sequenceTimeMs, localTimeMs: currentMs });
+        integratedStatus.textContent = completedStatus;
+      } catch (error) {
+        try { renderAt(currentMs); } catch {}
+        status.textContent = `تعذرت استعادة معاينة المشهد: ${errorText(error)}`;
+      } finally { exportPreparing = false; }
+    }
     setExportBusy(false);
     refreshExportControls();
-    renderAt(currentMs);
+    try { renderAt(currentMs); } catch (error) { status.textContent = `تعذرت استعادة المعاينة: ${errorText(error)}`; }
   }
 }
 function audioAdapterPlay(assetId, options) {
@@ -1608,7 +1638,16 @@ async function restoreSceneAssets(scene) {
   if (currentFileInfo) sceneSettings.set(scene.id, { aspectPreset, fitMode, image: currentFileInfo });
   return firstImage;
 }
-async function activateStudioScene(sceneId, { globalTimeMs = null, localTimeMs = 0, keepPlaying = false } = {}) {
+function activateStudioScene(sceneId, options = {}) {
+  if (activeExport || exportPreparing) return;
+  const loading = loadStudioScene(sceneId, options);
+  pendingSceneActivation = loading;
+  void loading.finally(() => {
+    if (pendingSceneActivation === loading) pendingSceneActivation = null;
+  }).catch(() => {});
+  return loading;
+}
+async function loadStudioScene(sceneId, { globalTimeMs = null, localTimeMs = 0, keepPlaying = false } = {}) {
   if (activeExport) return;
   if (!keepPlaying && isPlaying) stopPlayback();
   const wasPlaying = keepPlaying && isPlaying;
@@ -1638,7 +1677,7 @@ async function activateStudioScene(sceneId, { globalTimeMs = null, localTimeMs =
   previewViewport = safePreviewSize(project.viewport.width, project.viewport.height);
   applyCanvasDimensions(previewViewport);
   await restoreSceneAssets(target);
-  if (token !== sceneLoadToken) return;
+  if (token !== sceneLoadToken || activeExport) return;
   audioAssets = sequenceEditor.sequence.assets.filter(asset => asset.kind === "audio").map(assetMetadataToAudio);
   if (activeAudioAssetId && !audioAssets.some(asset => asset.id === activeAudioAssetId)) activeAudioAssetId = null;
   const audioAsset = audioAssets.find(item => audioFiles.has(item.id));

@@ -889,6 +889,36 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             actual_frequency = dominant_audio_frequency(timestamp)
             assert actual_frequency == expected_frequency, (timestamp, expected_frequency, actual_frequency)
         print(f"L11-E three-scene export: one WebM video/audio track each, duration={duration:.3f}s, picture and sound verified across 3s/7s Cuts")
+        preview_color = sequence_page.locator("#stage").evaluate("el => [...el.getContext('2d').getImageData(el.width / 2, el.height / 2, 1, 1).data]")
+        assert preview_color[2] > preview_color[0] * 2, ("editor preview was not restored after WebM export", preview_color)
+        assert sequence_page.locator("#integratedError").is_hidden(), sequence_page.locator("#integratedError").inner_text()
+
+        # Repeat the same sequence as MP4 to catch duplicated scene offsets and stale
+        # preview/error state after one successful export.
+        sequence_page.locator("#integratedFormat").select_option("mp4")
+        sequence_page.locator("#integratedProbeButton").click()
+        sequence_page.wait_for_function("document.querySelector('#integratedStatus').textContent.includes('تم التحقق فعليًا') || !document.querySelector('#integratedError').hidden", timeout=30000)
+        assert "تم التحقق فعليًا" in sequence_page.locator("#integratedStatus").inner_text(), sequence_page.locator("#integratedError").inner_text()
+        sequence_page.locator("#integratedExportButton").click()
+        sequence_page.wait_for_function("document.querySelector('#integratedStatus').textContent.includes('جارٍ تحضير')", timeout=10000)
+        sequence_page.wait_for_function("document.querySelector('#integratedStatus').textContent.includes('اكتمل التصدير المتكامل') || !document.querySelector('#integratedError').hidden", timeout=45000)
+        assert "اكتمل التصدير المتكامل" in sequence_page.locator("#integratedStatus").inner_text(), sequence_page.locator("#integratedError").inner_text()
+        assert sequence_page.locator("#integratedError").is_hidden(), sequence_page.locator("#integratedError").inner_text()
+        preview_color = sequence_page.locator("#stage").evaluate("el => [...el.getContext('2d').getImageData(el.width / 2, el.height / 2, 1, 1).data]")
+        assert preview_color[2] > preview_color[0] * 2, ("editor preview was not restored after repeated MP4 export", preview_color)
+        with sequence_page.expect_download(timeout=15000) as mp4_download:
+            sequence_page.locator("#integratedDownload").click()
+        mp4_output = Path(tmp) / "l11e-three-scenes-10s.mp4"
+        mp4_download.value.save_as(mp4_output)
+        mp4_probe = __import__("json").loads(subprocess.check_output([
+            "ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(mp4_output)
+        ], text=True, timeout=60))
+        mp4_video = [stream for stream in mp4_probe["streams"] if stream["codec_type"] == "video"]
+        mp4_audio = [stream for stream in mp4_probe["streams"] if stream["codec_type"] == "audio"]
+        assert len(mp4_video) == len(mp4_audio) == 1, mp4_probe["streams"]
+        mp4_duration = float(mp4_probe["format"].get("duration") or mp4_video[0].get("duration"))
+        assert abs(mp4_duration - 10) <= 0.150, (mp4_duration, mp4_probe["format"])
+        print(f"L11-E repeated scene export: one MP4 video/audio track each, duration={mp4_duration:.3f}s; preview restored")
         assert not sequence_errors, sequence_errors
         sequence_page.close()
         page.locator('nav.bottom-dock [data-editor-section="effects"]').click()

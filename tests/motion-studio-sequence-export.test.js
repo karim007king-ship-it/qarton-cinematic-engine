@@ -57,6 +57,14 @@ test("sequence export freezes ordered scenes and uses one cumulative clock for 3
   assert.deepEqual(activeIdsAt(4000), ["scene-b--music--music-b"]);
   assert.deepEqual(activeIdsAt(7000), []);
   assert.deepEqual(activeIdsAt(7500), ["scene-c--music--music-c"]);
+
+  const repeated = prepareStudioSequenceExport(sequence, {
+    audioAssetInfo: [{ id: audio.id, durationMs: 5000, channels: 1, sampleRate: 48_000 }], audioMasterVolume: 0.75
+  });
+  assert.deepEqual(repeated.snapshot.audioTracks.find(track => track.type === "music").clips.map(({ startMs }) => startMs), [2000, 4000, 7500]);
+  assert.deepEqual(sequence.scenes.map(scene => scene.audioTracks[0].clips[0].startMs), [2000, 1000, 500],
+    "export offsets must never be written back into scene-local clips");
+  assert.equal(repeated.compiledSequence.durationMs, prepared.compiledSequence.durationMs);
 });
 
 test("sequence export rejects an unsupported audio master level before recording", () => {
