@@ -752,6 +752,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         touch_page.wait_for_function("document.querySelector('#stage')?.width === 720")
         touch_page.locator("#imageInput").set_input_files(str(sample))
         touch_page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+        touch_tap(touch_page.locator('[data-editor-mode-button="professional"]'))
         touch_page.locator("#aspectPreset").select_option("portrait")
         touch_page.wait_for_function("document.querySelector('#stage').width === 720 && document.querySelector('#stage').height === 1280")
         touch_page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
