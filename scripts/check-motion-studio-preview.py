@@ -774,10 +774,10 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         touch_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 4")
         touch_page.locator("#deleteSceneButton").tap()
         touch_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 3")
-        touch_page.locator("#sceneThumbnails .scene-card").first.get_by_role("button", name="المشهد 1").tap()
+        touch_page.locator("#sceneThumbnails .scene-card").first.locator(".scene-select").tap()
         touch_page.wait_for_function("document.querySelector('#sceneName').value === 'المشهد 1'")
         assert touch_page.locator("#fitMode").input_value() == "fit", "switching scenes restores each scene's Fit setting"
-        touch_page.locator("#sceneThumbnails .scene-card").nth(2).get_by_role("button", name="المشهد الثاني").tap()
+        touch_page.locator("#sceneThumbnails .scene-card").nth(2).locator(".scene-select").tap()
         touch_page.wait_for_function("document.querySelector('#sceneName').value === 'المشهد الثاني'")
         assert touch_page.locator("#fitMode").input_value() == "fill", "switching scenes restores each scene's Fill setting"
 
