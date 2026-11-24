@@ -326,6 +326,8 @@ test("browser module uses the engine sampling API and includes deterministic see
   const renderer = await readFile(resolve(root, "examples/motion-studio-lab/studio-scene-renderer.js"), "utf8");
   assert.match(renderer, /sampleFrame\(compiledProject, timeMs\)/);
   assert.match(source, /drawStudioScene\(\{ ctx: context, compiledProject: compiled, timeMs: currentMs/);
+  assert.match(source, /sequenceRuntime\.draw\(ctx, timeMs, \(sceneContext, scene, sceneTimeMs\) =>[\s\S]*?drawStudioScene\(\{ ctx: sceneContext, compiledProject: sceneRenderer\.compiledProject/,
+    "the V2 compositor passes its active or reusable scratch Canvas context into the scene renderer");
   assert.match(source, /drawStudioScene\(\{ ctx, compiledProject: exportCompiled, timeMs: projectMs/);
   assert.match(renderer, /characterAnimation\.sample\(timeMs\)/);
   assert.match(renderer, /drawCharacterWithCamera\(ctx, pose/);

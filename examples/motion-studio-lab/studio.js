@@ -882,9 +882,9 @@ async function exportIntegratedProject() {
         }
       },
       renderFrame: (ctx, timeMs, viewport, frameContext) => {
-        return sequenceRuntime.draw(ctx, timeMs, (scene, sceneTimeMs) => {
+        return sequenceRuntime.draw(ctx, timeMs, (sceneContext, scene, sceneTimeMs) => {
           const sceneRenderer = sequenceImages.sceneRenderers.find(item => item.sceneId === scene.id);
-          return drawStudioScene({ ctx, compiledProject: sceneRenderer.compiledProject, timeMs: sceneTimeMs,
+          return drawStudioScene({ ctx: sceneContext, compiledProject: sceneRenderer.compiledProject, timeMs: sceneTimeMs,
             characterTracks: sceneRenderer.characters, audioSample: sceneAudio.get(scene.id)?.sample(sceneTimeMs),
             visualEffectsCompiled: sceneRenderer.effects, viewport, frameContext });
         }, { signal: controller.signal });
