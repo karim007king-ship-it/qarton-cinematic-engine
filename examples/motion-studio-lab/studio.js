@@ -427,35 +427,32 @@ function formatTime(ms) {
   const seconds = Math.max(0, ms) / 1000;
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${(seconds % 60).toFixed(2).padStart(5, "0")}`;
 }
+// Both export paths own a video element and an object URL. Release them consistently.
+function resetExportMedia(video, download, objectUrl) {
+  video.pause();
+  video.removeAttribute("src");
+  video.load();
+  video.hidden = true;
+  download.hidden = true;
+  download.removeAttribute("href");
+  if (objectUrl) URL.revokeObjectURL(objectUrl);
+  return null;
+}
 function clearExportResult() {
   exportStatusHasResult = false;
   exportError.hidden = true;
   exportError.textContent = "";
   tryWebmButton.hidden = true;
-  exportVideo.pause();
-  exportVideo.removeAttribute("src");
-  exportVideo.load();
-  exportVideo.hidden = true;
-  exportDownload.hidden = true;
-  exportDownload.removeAttribute("href");
+  exportVideoUrl = resetExportMedia(exportVideo, exportDownload, exportVideoUrl);
   exportMetadata.textContent = "لم يُنشأ فيديو بعد.";
   exportProgress.value = 0;
-  if (exportVideoUrl) URL.revokeObjectURL(exportVideoUrl);
-  exportVideoUrl = null;
 }
 function clearIntegratedResult() {
   integratedError.hidden = true;
   integratedError.textContent = "";
   integratedProgress.value = 0;
-  integratedVideo.pause();
-  integratedVideo.removeAttribute("src");
-  integratedVideo.load();
-  integratedVideo.hidden = true;
-  integratedDownload.hidden = true;
-  integratedDownload.removeAttribute("href");
+  integratedVideoUrl = resetExportMedia(integratedVideo, integratedDownload, integratedVideoUrl);
   integratedMetadata.textContent = "لم يُنشأ تصدير متكامل بعد.";
-  if (integratedVideoUrl) URL.revokeObjectURL(integratedVideoUrl);
-  integratedVideoUrl = null;
 }
 function cancelActiveExport(reason = "تغير المشروع أثناء التصدير.") {
   const running = activeExport;
