@@ -52,8 +52,10 @@ test("L11-F2 Android workspace expands the preview and keeps file and scene cont
   assert.match(html, /data-motion-preset="zoom-in"[^>]*>[\s\S]*?<svg viewBox="0 0 24 24"/);
   assert.match(html, /data-motion-preset="zoom-out"[^>]*>[\s\S]*?<svg viewBox="0 0 24 24"/);
   assert.match(script, /studioRoot\.dataset\.imageReady = String\(Boolean\(currentFileInfo\)\)/);
-  assert.match(script, /"عرض التفاصيل التقنية"/);
-  assert.match(script, /"توقفت ساعة التصدير أو تأخرت الإطارات\./);
+  const errors = await readFile(resolve(root, "examples/motion-studio-lab/studio-errors.js"), "utf8");
+  assert.match(script, /import\s*\{\s*errorText,\s*setExportErrorMessage\s*\}\s*from\s*"\.\/studio-errors\.js"/);
+  assert.match(errors, /"عرض التفاصيل التقنية"/);
+  assert.match(errors, /"توقفت ساعة التصدير أو تأخرت الإطارات\./);
   assert.doesNotMatch(script, /scene-card-controls/,
     "scene duplicate, delete and reorder actions are presented in the Scenes section, not on the preview strip");
 });
