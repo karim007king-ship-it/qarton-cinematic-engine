@@ -745,6 +745,9 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         touch_page.wait_for_function("document.querySelector('#stage')?.width === 720")
         touch_page.locator("#imageInput").set_input_files(str(sample))
         touch_page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+        touch_page.locator("#aspectPreset").select_option("portrait")
+        touch_page.wait_for_function("document.querySelector('#stage').width === 720 && document.querySelector('#stage').height === 1280")
+        touch_page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
         touch_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 1")
         touch_page.wait_for_function("document.querySelectorAll('#assetLibraryList .asset-entry').length >= 2")
         used_asset = touch_page.locator("#assetLibraryList .asset-entry").last
