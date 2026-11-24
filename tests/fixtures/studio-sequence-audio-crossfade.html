@@ -15,11 +15,13 @@
 <pre id="result">RUNNING</pre>
 <pre id="stage">initializing</pre>
 <pre id="failure"></pre>
+<script>document.querySelector("#stage").textContent = "module-loading";</script>
 <script type="module">
 import { compileStudioSequenceV2, createStudioSequenceAudioCrossfadeEngine, createStudioSequenceV2 } from "/packages/motion-studio/index.js";
 
 const result = document.querySelector("#result");
 const stage = document.querySelector("#stage");
+stage.textContent = "module-entered";
 const failure = document.querySelector("#failure");
 const sampleRate = 48000;
 const viewport = { width: 2, height: 2, fps: 30 };
@@ -68,12 +70,17 @@ function assertNear(actual, expected, tolerance, label) {
 }
 
 try {
+  stage.textContent = "checking-offline-audio-context";
   if (typeof OfflineAudioContext !== "function") throw new Error("OfflineAudioContext is unavailable");
+  stage.textContent = "compiling-sequence";
   const dissolve = makeSequence("dissolve", 400, 200);
   if (dissolve.durationMs !== 1600) throw new Error(`unexpected overlap duration ${dissolve.durationMs}`);
+  stage.textContent = "creating-audio-buffers";
   const offline = new OfflineAudioContext(1, sampleRate * 2, sampleRate);
   const buffers = new Map([[toneA.id, makeTone(offline, 440)], [toneB.id, makeTone(offline, 880)]]);
+  stage.textContent = "creating-mixer";
   const engine = createStudioSequenceAudioCrossfadeEngine(dissolve, { audioContext: offline, audioBuffers: buffers });
+  stage.textContent = "scheduling-dissolve";
   const session = engine.schedule({ epoch: 0 });
   if (session.scheduled.length !== 2 || session.scheduled[1].globalStartMs !== 700 || session.scheduled[1].offset !== 0) {
     throw new Error(`unexpected global clip schedule ${JSON.stringify(session.scheduled)}`);

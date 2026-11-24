@@ -29,7 +29,9 @@ def main():
             try:
                 page = browser.new_page()
                 page_errors = []
+                console_errors = []
                 page.on("pageerror", lambda error: page_errors.append(str(error)))
+                page.on("console", lambda message: console_errors.append(message.text) if message.type == "error" else None)
                 response = page.goto(f"http://127.0.0.1:{server.server_port}{FIXTURE}", wait_until="load")
                 if response is None or response.status != 200:
                     raise RuntimeError(f"Audio fixture returned HTTP {getattr(response, 'status', None)}")
@@ -38,7 +40,8 @@ def main():
                 except PlaywrightTimeoutError as error:
                     stage = page.locator("#stage").inner_text()
                     details = page.locator("#failure").inner_text()
-                    raise AssertionError(f"OfflineAudioContext fixture timed out in {stage}: {details}") from error
+                    errors = " | ".join([*page_errors, *console_errors])
+                    raise AssertionError(f"OfflineAudioContext fixture timed out in {stage}: {details}; browser errors: {errors}") from error
                 result = page.locator("#result").inner_text()
                 if result != "PASS":
                     raise AssertionError("Chromium OfflineAudioContext fixture failed: " + page.locator("#failure").inner_text())
