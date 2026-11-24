@@ -176,7 +176,7 @@ def exercise(context, url):
     })();""")
     page.goto(url + "examples/motion-studio-lab/")
     def reveal_editor_section(section):
-        page.locator(f'[data-editor-section="{section}"]').click()
+        page.locator(f'nav.bottom-dock [data-editor-section="{section}"]').click()
         if section == "more":
             for details_id in ("advancedProjectOptions", "legacyExportDetails"):
                 details = page.locator(f"#{details_id}")
