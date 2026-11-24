@@ -121,10 +121,12 @@ try {
       JSON.stringify(state) !== JSON.stringify(["none", "rgba(0, 0, 0, 0)", 0, 0, 0, 1, "source-over"]))) {
     throw new Error(`Painter inherited Canvas filter or shadow state: ${JSON.stringify(painterStates)}`);
   }
-  if (stateContext.filter !== "blur(2px)" || stateContext.shadowColor !== "rgba(255, 0, 0, 1)" ||
-      stateContext.shadowBlur !== 7 || stateContext.shadowOffsetX !== 3 || stateContext.shadowOffsetY !== 4 ||
-      stateContext.globalAlpha !== 0.25 || stateContext.globalCompositeOperation !== "multiply") {
-    throw new Error("Compositor did not restore all caller Canvas state");
+  const restoredState = [stateContext.filter, stateContext.shadowColor, stateContext.shadowBlur,
+    stateContext.shadowOffsetX, stateContext.shadowOffsetY, stateContext.globalAlpha,
+    stateContext.globalCompositeOperation];
+  const expectedState = ["blur(2px)", "rgba(255, 0, 0, 1)", 7, 3, 4, 0.25, "multiply"];
+  if (JSON.stringify(restoredState) !== JSON.stringify(expectedState)) {
+    throw new Error(`Compositor did not restore all caller Canvas state: ${JSON.stringify({ expectedState, restoredState })}`);
   }
   if (compositor.getDiagnostics().surfaceCreations !== 1) throw new Error("Compositor allocated more than one scratch surface");
   compositor.release();
@@ -139,3 +141,4 @@ try {
 </script>
 </body>
 </html>
+
