@@ -181,7 +181,7 @@ def exercise(context, url):
             for details_id in ("advancedProjectOptions", "legacyExportDetails"):
                 details = page.locator(f"#{details_id}")
                 if not details.evaluate("el => el.open"):
-                    details.locator("summary").click()
+                    details.locator("summary").first.click()
         if section == "motion" and not page.locator("#professionalMotionControls").evaluate("el => el.open"):
             page.locator("#professionalMotionControls summary").click()
 
