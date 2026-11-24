@@ -13,11 +13,13 @@
 </script>
 <body>
 <pre id="result">RUNNING</pre>
+<pre id="stage">initializing</pre>
 <pre id="failure"></pre>
 <script type="module">
 import { compileStudioSequenceV2, createStudioSequenceAudioCrossfadeEngine, createStudioSequenceV2 } from "/packages/motion-studio/index.js";
 
 const result = document.querySelector("#result");
+const stage = document.querySelector("#stage");
 const failure = document.querySelector("#failure");
 const sampleRate = 48000;
 const viewport = { width: 2, height: 2, fps: 30 };
@@ -76,6 +78,7 @@ try {
   if (session.scheduled.length !== 2 || session.scheduled[1].globalStartMs !== 700 || session.scheduled[1].offset !== 0) {
     throw new Error(`unexpected global clip schedule ${JSON.stringify(session.scheduled)}`);
   }
+  stage.textContent = "rendering-dissolve";
   const rendered = await offline.startRendering();
   const values = rendered.getChannelData(0);
   const before = rms(values, 500, 600);
@@ -98,6 +101,7 @@ try {
   const cutEngine = createStudioSequenceAudioCrossfadeEngine(hardCut, { audioContext: cutOffline,
     audioBuffers: new Map([[toneA.id, makeTone(cutOffline, 440)], [toneB.id, makeTone(cutOffline, 880)]]) });
   cutEngine.schedule({ epoch: 0 });
+  stage.textContent = "rendering-hard-cut";
   const cutValues = (await cutOffline.startRendering()).getChannelData(0);
   // Use 100 ms windows (44 and 88 whole cycles) to avoid FFT projection leakage.
   const early440 = componentRms(cutValues, 700, 800, 440);
@@ -122,6 +126,7 @@ try {
   const seekProgress = (825.5 - 700) / 200;
   assertNear(seekGains[0].gain, Math.cos(seekProgress * Math.PI / 2), 1e-12, "fractional seek outgoing gain");
   assertNear(seekGains[1].gain, Math.sin(seekProgress * Math.PI / 2), 1e-12, "fractional seek incoming gain");
+  stage.textContent = "rendering-seek";
   const seekValues = (await seekOffline.startRendering()).getChannelData(0);
   if (rms(seekValues, 300, 350) < 0.35) throw new Error("seek inside the crossfade rendered silence");
   seekEngine.dispose();
@@ -144,6 +149,7 @@ try {
   if (Math.abs(replay.scheduled[0].offset - firstReplay.scheduled[0].offset) > 1e-12) {
     throw new Error("Replay changed the deterministic loop offset");
   }
+  stage.textContent = "rendering-loop-replay";
   const loopValues = (await loopOffline.startRendering()).getChannelData(0);
   if (rms(loopValues, 260, 350) < 0.25) throw new Error("seeked replay of a music loop rendered silence");
   loopEngine.dispose();
@@ -164,11 +170,13 @@ try {
   const continuousEngine = createStudioSequenceAudioCrossfadeEngine(continuous, { audioContext: continuousOffline,
     audioBuffers: new Map([[toneA.id, makeTone(continuousOffline, 440)], [toneB.id, makeTone(continuousOffline, 880)]]) });
   continuousEngine.schedule({ epoch: 0 });
+  stage.textContent = "rendering-touching-crossfades";
   const continuousValues = (await continuousOffline.startRendering()).getChannelData(0);
   if (rms(continuousValues, 950, 1050) < 0.3) throw new Error("touching sequential crossfades produced a silent boundary");
   const continuousPeak = continuousValues.reduce((maximum, value) => Math.max(maximum, Math.abs(value)), 0);
   if (continuousPeak > 1.0001) throw new Error(`touching crossfade peak exceeded full scale: ${continuousPeak}`);
   continuousEngine.dispose();
+  stage.textContent = "complete";
   result.textContent = "PASS";
 } catch (error) {
   failure.textContent = String(error?.stack ?? error);

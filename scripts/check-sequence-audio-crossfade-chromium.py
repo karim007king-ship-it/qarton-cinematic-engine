@@ -5,7 +5,7 @@ from os import environ
 from pathlib import Path
 from threading import Thread
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, sync_playwright
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,7 +33,12 @@ def main():
                 response = page.goto(f"http://127.0.0.1:{server.server_port}{FIXTURE}", wait_until="load")
                 if response is None or response.status != 200:
                     raise RuntimeError(f"Audio fixture returned HTTP {getattr(response, 'status', None)}")
-                page.wait_for_function("document.querySelector('#result')?.textContent !== 'RUNNING'", timeout=30000)
+                try:
+                    page.wait_for_function("document.querySelector('#result')?.textContent !== 'RUNNING'", timeout=30000)
+                except PlaywrightTimeoutError as error:
+                    stage = page.locator("#stage").inner_text()
+                    details = page.locator("#failure").inner_text()
+                    raise AssertionError(f"OfflineAudioContext fixture timed out in {stage}: {details}") from error
                 result = page.locator("#result").inner_text()
                 if result != "PASS":
                     raise AssertionError("Chromium OfflineAudioContext fixture failed: " + page.locator("#failure").inner_text())
