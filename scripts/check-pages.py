@@ -175,8 +175,23 @@ def exercise(context, url):
         };
     })();""")
     page.goto(url + "examples/motion-studio-lab/")
+    def reveal_editor_section(section):
+        page.locator(f'[data-editor-section="{section}"]').click()
+        if section == "more":
+            for details_id in ("advancedProjectOptions", "legacyExportDetails"):
+                details = page.locator(f"#{details_id}")
+                if not details.evaluate("el => el.open"):
+                    details.locator("summary").click()
+        if section == "motion" and not page.locator("#professionalMotionControls").evaluate("el => el.open"):
+            page.locator("#professionalMotionControls summary").click()
+
     def activate_studio_button(locator):
-        """Use a real centered touch tap on touch devices and verify hit testing."""
+        """Navigate to the real editor panel, then verify centered touch hit testing."""
+        control_id = locator.get_attribute("id")
+        if control_id in {"saveProjectButton", "loadProjectButton", "exportButton", "cancelExportButton"}:
+            reveal_editor_section("more")
+        elif control_id in {"addKeyframeButton", "deleteKeyframeButton", "addCharacterKeyframe", "deleteCharacterKeyframe"}:
+            reveal_editor_section("motion")
         if page.evaluate("matchMedia('(pointer: coarse)').matches"):
             locator.evaluate("el => el.scrollIntoView({block:'center', inline:'center', behavior:'instant'})")
             box = locator.bounding_box()
@@ -229,6 +244,7 @@ def exercise(context, url):
     assert square_project and square_project.group(1) == square_project.group(2)
 
     page.locator('[data-editor-mode-button="professional"]').click()
+    reveal_editor_section("more")
     assert page.locator("#aspectPreset").is_visible()
     assert page.locator("#aspectPreset").input_value() == "original"
     assert page.locator("#fitMode").input_value() == "fit"
@@ -565,7 +581,9 @@ def exercise(context, url):
 
     # Use a real browser pointer to begin a lane scrub, then acquire the export
     # lock. The lock must release capture and discard the stale scrub before retry.
+    reveal_editor_section("more")
     page.locator("#exportDuration").select_option("3000")
+    reveal_editor_section("motion")
     character_box = character_lane.bounding_box()
     page.evaluate("""() => {
         window.characterPointerId = null;
@@ -579,6 +597,7 @@ def exercise(context, url):
     assert pointer_id is not None
     assert character_lane.evaluate("(el, id) => el.hasPointerCapture(id)", pointer_id)
     locked_time = page.locator("#seek").input_value()
+    page.locator("#headerExportButton").click()
     page.locator("#exportButton").evaluate("el => el.click()")
     page.wait_for_function("!document.querySelector('#cancelExportButton').hidden")
     assert character_lane.get_attribute("aria-disabled") == "true"
