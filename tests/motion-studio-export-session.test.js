@@ -206,3 +206,88 @@ test("mixed export rejects a stalled AudioContext clock and releases capture tra
   assert.equal(canvas.track.stopped, true);
   assert.equal(context.destination.stream.getAudioTracks()[0].stopped, true);
 });
+
+function makeSafetyMixedPlan(durationMs = 300) {
+  const project = { version: 1, durationMs, viewport: { width: 360, height: 640, fps: 24 }, layers: [] };
+  const audioTracks = [{ id: "dialogue", type: "dialogue", clips: [
+    { id: "voice", asset: "voice", startMs: 0, durationMs, language: "ar", visemes: [] }
+  ] }];
+  const capability = { verification: "verified", mimeType: "video/webm;codecs=vp8", width: 360, height: 640, fps: 24, audioMode: "mix" };
+  return planExport({ project, audioTracks, audioAssets: [{ id: "voice", name: "voice.wav", type: "audio/wav", size: 16 }],
+    audioAssetInfo: [{ id: "voice", durationMs: 1000, channels: 1, sampleRate: 48_000 }] }, { quality: "480p" }, [capability]);
+}
+
+class ResourceTrackingAudioContext extends FakeAudioContext {
+  constructor(log = []) { super(log); this.closeCount = 0; }
+  close() { this.closeCount++; this.state = "closed"; return Promise.resolve(); }
+}
+
+test("MediaRecorder initialization failure releases mixed capture resources", async () => {
+  const context = new ResourceTrackingAudioContext();
+  const { host, canvas } = makeHost([], { audioContext: context, resolveAudio: async () => new Blob(["voice"]),
+    MediaRecorderClass: class { constructor() { throw new Error("recorder init failed"); } } });
+  await assert.rejects(startExport(makeSafetyMixedPlan(), host), { code: "UNSUPPORTED_FORMAT" });
+  assert.equal(canvas.track.stopped, true);
+  assert.equal(context.destination.stream.getAudioTracks()[0].stopped, true);
+  assert.equal(context.closeCount, 1);
+  assert.equal(canvas.width, 1);
+  assert.equal(canvas.height, 1);
+});
+
+test("repeated mixed-export cancellations release audio, video, and recorder-owned buffers", async () => {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const context = new ResourceTrackingAudioContext();
+    context.sources = [];
+    const createBufferSource = context.createBufferSource.bind(context);
+    context.createBufferSource = () => { const source = createBufferSource(); context.sources.push(source); return source; };
+    const { host, canvas } = makeHost([], { audioContext: context, resolveAudio: async () => new Blob(["voice"]) });
+    const controller = new AbortController();
+    const pending = startExport(makeSafetyMixedPlan(500), host, { signal: controller.signal,
+      onProgress: value => { if (value.phase === "recording") controller.abort(); } });
+    await assert.rejects(pending, { name: "AbortError" });
+    assert.equal(canvas.track.stopped, true, `video track released on cancellation ${attempt + 1}`);
+    assert.equal(context.destination.stream.getAudioTracks()[0].stopped, true, `audio track released on cancellation ${attempt + 1}`);
+    assert.equal(context.closeCount, 1, `AudioContext closed once on cancellation ${attempt + 1}`);
+    assert.ok(context.sources.length > 0, "a source was allocated before cancellation");
+    assert.ok(context.sources.every(source => source.buffer === null), `decoded AudioBuffers released on cancellation ${attempt + 1}`);
+  }
+});
+
+function makeManualRafHost() {
+  const rendered = [];
+  const frames = [];
+  const { host } = makeHost(rendered);
+  host.performance = { now: () => 1000 };
+  host.requestAnimationFrame = callback => { frames.push(callback); return frames.length; };
+  host.cancelAnimationFrame = () => {};
+  host.startLeadMs = 40;
+  return { host, frames, rendered };
+}
+
+test("isolated frame loss is counted and export completes without slowing the timeline", async () => {
+  const { host, frames } = makeManualRafHost();
+  const pending = startExport(makePlan({ durationMs: 180 }), host);
+  await new Promise(resolve => setImmediate(resolve));
+  const frameIntervalMs = 1000 / 24;
+  const first = frames.shift();
+  assert.equal(typeof first, "function");
+  first(1040);
+  frames.shift()(1040 + frameIntervalMs * 2);
+  frames.shift()(1040 + frameIntervalMs * 3);
+  frames.shift()(1040 + frameIntervalMs * 4);
+  frames.shift()(1040 + frameIntervalMs * 6);
+  const result = await pending;
+  assert.equal(result.droppedFrames, 1);
+  assert.equal(result.targetDurationMs, 180);
+});
+
+test("severe frame loss stops export with a retryable clock error", async () => {
+  const { host, frames } = makeManualRafHost();
+  const pending = startExport(makePlan({ durationMs: 500 }), host);
+  await new Promise(resolve => setImmediate(resolve));
+  frames.shift()(1040);
+  const delayed = frames.shift();
+  assert.equal(typeof delayed, "function");
+  delayed(1040 + 350);
+  await assert.rejects(pending, { code: "CLOCK_STALLED" });
+});
