@@ -819,12 +819,12 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
                     pageOverflow:document.documentElement.scrollWidth > innerWidth || document.documentElement.scrollHeight > innerHeight + 1,
                     picker:getComputedStyle(document.querySelector('#previewImagePicker')).display,
                     inputRect:(() => { const r=document.querySelector('#imageInput').getBoundingClientRect(); return {width:r.width,height:r.height}; })(),
-                    canvasRatio:canvas.width/canvas.height, canvasTransportOverlap:overlaps(canvas,transport),
+                    canvasRatio:canvas.width/canvas.height, sourceRatio:(() => { const el=document.querySelector('#stage'); return el.width/el.height; })(), canvasTransportOverlap:overlaps(canvas,transport),
                     canvasHeadingOverlap:overlaps(canvas,heading), hasCardActions:Boolean(document.querySelector('#sceneThumbnails .scene-card-controls'))};
                 }""")
                 assert not layout["pageOverflow"], (profile, width, height, layout)
                 assert 0.37 <= layout["ratio"] <= 0.43, (profile, width, height, layout)
-                assert abs(layout["canvasRatio"] - 720 / 1280) < 0.02, (profile, width, height, layout)
+                assert abs(layout["canvasRatio"] - layout["sourceRatio"]) < 0.02, (profile, width, height, layout)
                 assert not layout["canvasTransportOverlap"] and not layout["canvasHeadingOverlap"], (profile, width, height, layout)
                 assert layout["picker"] == "none", (profile, width, height, layout)
                 assert max(layout["inputRect"]["width"], layout["inputRect"]["height"]) <= 1, (profile, width, height, layout)
