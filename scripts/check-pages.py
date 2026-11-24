@@ -368,7 +368,7 @@ def exercise(context, url):
     studio_seek.evaluate("""(el, value) => {
         el.value = String(value); el.dispatchEvent(new Event('input', {bubbles:true}));
     }""", 5000)
-    page.locator("#addKeyframeButton").click()
+    activate_studio_button(page.locator("#addKeyframeButton"))
     assert page.locator(".keyframe-marker").count() == 3
     assert page.locator('.keyframe-marker[aria-pressed="true"]').get_attribute("data-key-time") == "5000"
     studio_seek.evaluate("""(el, value) => {
@@ -432,7 +432,7 @@ def exercise(context, url):
     }""", 6000)
     assert preview.evaluate("el => el.toDataURL()") == repeat_frame
     page.locator('.keyframe-marker[data-key-time="7000"]').evaluate("el => el.click()")
-    page.locator("#deleteKeyframeButton").click()
+    activate_studio_button(page.locator("#deleteKeyframeButton"))
     assert [int(value) for value in page.locator(".keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")] == [0, 12000]
 
     # Exercise the separate character lane through real DOM events and Canvas sampling.
@@ -440,7 +440,7 @@ def exercise(context, url):
         studio_seek.evaluate("""(el, value) => {
             el.value = String(value); el.dispatchEvent(new Event('input', {bubbles:true}));
         }""", position)
-        page.locator("#addCharacterKeyframe").click()
+        activate_studio_button(page.locator("#addCharacterKeyframe"))
     assert page.locator(".character-keyframe-marker").count() == 3
     focus_marker = page.locator('.character-keyframe-marker[data-key-time="6000"]')
     focus_marker.evaluate("el => el.focus()")
@@ -606,7 +606,7 @@ def exercise(context, url):
     page.get_by_text("فُتح المشروع؛ اختر الصورة المرتبطة به", exact=True).wait_for()
     assert page.locator(".character-keyframe-marker").count() == 3
     page.locator('.character-keyframe-marker[data-key-time="7500"]').evaluate("el => el.click()")
-    page.locator("#deleteCharacterKeyframe").click()
+    activate_studio_button(page.locator("#deleteCharacterKeyframe"))
     remaining_character_times = [int(value) for value in page.locator(".character-keyframe-marker")
         .evaluate_all("els => els.map(el => el.dataset.keyTime)")]
     assert remaining_character_times == sorted([collision_candidates[-1], 10000]), {
