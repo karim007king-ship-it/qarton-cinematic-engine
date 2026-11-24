@@ -171,7 +171,6 @@ export function drawFrame(ctx, frame) {
 }
 
 const SEQUENCE_LIMITS = Object.freeze({ scenes: 32, assets: 256, durationMs: 300_000 });
-const SEQUENCE_FIELDS = Object.freeze(["version", "kind", "viewport", "scenes", "assets", "transitions"]);
 const SEQUENCE_ASSET_KINDS = new Set(["image", "audio", "font", "other"]);
 const SEQUENCE_MIME = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/iu;
 const compiledSequences = new WeakMap();
@@ -186,14 +185,6 @@ function deepFreeze(value, seen = new WeakSet()) {
 function cloneData(value, label) {
   try { return structuredClone(value); }
   catch (cause) { throw new TypeError(`${label} must contain cloneable JSON data`, { cause }); }
-}
-
-function sequenceFields(value, required, optional, label) {
-  fields(value, required, optional, label);
-}
-
-function sequenceIdentifier(value, label) {
-  identifier(value, label);
 }
 
 function validateSequenceViewport(viewport) {
@@ -221,7 +212,7 @@ function validateSequenceAssets(assets) {
   const byId = new Map();
   const snapshot = assets.map((asset, index) => {
     fields(asset, ["id", "kind", "name", "mimeType", "size"], [], `Sequence asset ${index}`);
-    sequenceIdentifier(asset.id, `Sequence asset ${index} id`);
+    identifier(asset.id, `Sequence asset ${index} id`);
     if (byId.has(asset.id)) throw new TypeError(`Duplicate sequence asset id: ${asset.id}`);
     if (!SEQUENCE_ASSET_KINDS.has(asset.kind)) throw new TypeError(`Sequence asset ${asset.id} has an unsupported kind`);
     if (typeof asset.name !== "string" || !asset.name.trim() || asset.name.length > 255) {
@@ -245,7 +236,7 @@ function assertAssetReference(assetMap, assetId, kind, label) {
 
 function normalizeSequenceScene(scene, index, viewport, assetsById) {
   fields(scene, ["id", "project"], ["audioTracks", "characterTracks", "visualEffectsTrack"], `Sequence scene ${index}`);
-  sequenceIdentifier(scene.id, `Sequence scene ${index} id`);
+  identifier(scene.id, `Sequence scene ${index} id`);
   const project = cloneData(scene.project, `Sequence scene ${scene.id} project`);
   const projectViewport = project?.viewport;
   if (!projectViewport || projectViewport.width !== viewport.width || projectViewport.height !== viewport.height || projectViewport.fps !== viewport.fps) {
@@ -305,7 +296,7 @@ function validateSequenceTransitions(transitions, scenes) {
 
 /** Validate, clone, and freeze a strict, metadata-only StudioSequenceV1 envelope. */
 export function validateStudioSequenceV1(input) {
-  sequenceFields(input, ["version", "kind", "viewport", "scenes", "assets", "transitions"], [], "StudioSequenceV1");
+  fields(input, ["version", "kind", "viewport", "scenes", "assets", "transitions"], [], "StudioSequenceV1");
   if (input.version !== 1 || input.kind !== "studio-sequence") throw new TypeError("Expected StudioSequenceV1");
   const viewport = validateSequenceViewport(input.viewport);
   if (!Array.isArray(input.scenes) || input.scenes.length < 1 || input.scenes.length > SEQUENCE_LIMITS.scenes) {
@@ -398,7 +389,7 @@ export function deleteStudioSequenceScene(sequence, sceneId) {
 /** Duplicate one scene with a caller-supplied fresh ID so IDs remain reproducible across seek/replay. */
 export function duplicateStudioSequenceScene(sequence, sceneId, { newId, index } = {}) {
   const snapshot = validateStudioSequenceV1(sequence);
-  sequenceIdentifier(newId, "Duplicate scene id");
+  identifier(newId, "Duplicate scene id");
   if (snapshot.scenes.some(scene => scene.id === newId)) throw new TypeError(`Duplicate sequence scene id: ${newId}`);
   const sourceIndex = snapshot.scenes.findIndex(scene => scene.id === sceneId);
   if (sourceIndex < 0) throw new RangeError(`Unknown sequence scene: ${sceneId}`);
@@ -426,7 +417,7 @@ export function reorderStudioSequenceScene(sequence, sceneId, toIndex) {
 /** Convert an existing single-scene project plus its stored sidecar tracks into an immutable sequence. */
 export function legacyStudioProjectToSequence(project, options = {}) {
   const allowed = ["sceneId", "assets", "audioTracks", "characterTrack", "characterTracks", "visualEffectsTrack"];
-  sequenceFields(options, [], allowed, "Legacy sequence options");
+  fields(options, [], allowed, "Legacy sequence options");
   if (Object.hasOwn(options, "characterTrack") && Object.hasOwn(options, "characterTracks")) {
     throw new TypeError("Provide characterTrack or characterTracks, not both");
   }
