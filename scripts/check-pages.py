@@ -596,7 +596,7 @@ def exercise(context, url):
     assert pointer_id is not None
     assert character_lane.evaluate("(el, id) => el.hasPointerCapture(id)", pointer_id)
     locked_time = page.locator("#seek").input_value()
-    page.locator("#headerExportButton").click()
+    page.locator('nav.bottom-dock [data-editor-section="more"]').evaluate("el => el.click()")
     page.locator("#exportButton").evaluate("el => el.click()")
     page.wait_for_function("!document.querySelector('#cancelExportButton').hidden")
     assert character_lane.get_attribute("aria-disabled") == "true"
