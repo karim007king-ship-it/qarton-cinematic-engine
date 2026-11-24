@@ -741,6 +741,11 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         touch_page = touch_context.new_page()
         touch_errors = []
         touch_page.on("pageerror", lambda error: touch_errors.append(str(error)))
+        def touch_tap(locator):
+            locator.evaluate("el => el.scrollIntoView({block:'center', inline:'center', behavior:'instant'})")
+            box = locator.bounding_box()
+            assert locator.evaluate("el => { const r=el.getBoundingClientRect(); return document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.closest('button') === el; }"), "touch target must be the actual hit target after scrolling"
+            touch_page.touchscreen.tap(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
         touch_page.goto(preview.as_uri())
         touch_page.wait_for_function("document.querySelector('#stage')?.width === 720")
         touch_page.locator("#imageInput").set_input_files(str(sample))
@@ -754,7 +759,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         assert used_asset.get_by_role("button", name="حذف").is_disabled(), "scene-referenced assets cannot be deleted"
         touch_page.locator("#addSceneButton").scroll_into_view_if_needed()
         print("Mobile add-scene hit test:", __import__("json").dumps(touch_page.locator("#addSceneButton").evaluate("el => { const r=el.getBoundingClientRect(), hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2); return {width:innerWidth,height:innerHeight,scrollY,coarse:matchMedia('(pointer: coarse)').matches,previewPosition:getComputedStyle(document.querySelector('.preview-panel')).position,rect:{x:r.x,y:r.y,w:r.width,h:r.height},hit:hit?.outerHTML?.slice(0,180)}; }"), ensure_ascii=False), flush=True)
-        touch_page.locator("#addSceneButton").tap()
+        touch_tap(touch_page.locator("#addSceneButton"))
         touch_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 2")
         assert touch_page.locator("#sequenceBlocks .sequence-block").count() == 2
         fit_frame = touch_page.locator("#stage").evaluate("el => el.toDataURL()")
@@ -766,7 +771,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         touch_page.locator("#sceneDuration").fill("4")
         touch_page.locator("#sceneDuration").dispatch_event("change")
         assert int(touch_page.locator("#sequenceSeek").get_attribute("max")) == 16000
-        touch_page.locator("#addSceneButton").tap()
+        touch_tap(touch_page.locator("#addSceneButton"))
         touch_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 3")
         order_before = touch_page.locator("#sceneThumbnails .scene-card").evaluate_all("els => els.map(el => el.dataset.sceneId)")
         third_scene = touch_page.locator("#sceneThumbnails .scene-card").nth(2)
@@ -778,14 +783,14 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         touch_page.touchscreen.tap(reorder_box["x"] + reorder_box["width"] / 2, reorder_box["y"] + reorder_box["height"] / 2)
         order_after = touch_page.locator("#sceneThumbnails .scene-card").evaluate_all("els => els.map(el => el.dataset.sceneId)")
         assert order_after[1] == order_before[2] and order_after != order_before, (order_before, order_after)
-        touch_page.locator("#duplicateSceneButton").tap()
+        touch_tap(touch_page.locator("#duplicateSceneButton"))
         touch_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 4")
-        touch_page.locator("#deleteSceneButton").tap()
+        touch_tap(touch_page.locator("#deleteSceneButton"))
         touch_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 3")
-        touch_page.locator("#sceneThumbnails .scene-card").first.locator(".scene-select").tap()
+        touch_tap(touch_page.locator("#sceneThumbnails .scene-card").first.locator(".scene-select"))
         touch_page.wait_for_function("document.querySelector('#sceneName').value === 'المشهد 1'")
         assert touch_page.locator("#fitMode").input_value() == "fit", "switching scenes restores each scene's Fit setting"
-        touch_page.locator("#sceneThumbnails .scene-card").nth(2).locator(".scene-select").tap()
+        touch_tap(touch_page.locator("#sceneThumbnails .scene-card").nth(2).locator(".scene-select"))
         touch_page.wait_for_function("document.querySelector('#sceneName').value === 'المشهد الثاني'")
         assert touch_page.locator("#fitMode").input_value() == "fill", "switching scenes restores each scene's Fill setting"
 
@@ -793,12 +798,12 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         touch_page.locator("#sequenceSeek").evaluate("el => { el.value = '12000'; el.dispatchEvent(new Event('input', {bubbles:true})); }")
         touch_page.wait_for_function("document.querySelector('#sceneName').value === 'المشهد 3'")
         assert touch_page.locator("#seek").input_value() == "0"
-        touch_page.locator("#playPauseButton").tap()
+        touch_tap(touch_page.locator("#playPauseButton"))
         touch_page.wait_for_function("document.querySelector('#playPauseButton').textContent === 'إيقاف مؤقت'")
         touch_page.wait_for_timeout(200)
-        touch_page.locator("#playPauseButton").tap()
+        touch_tap(touch_page.locator("#playPauseButton"))
         assert touch_page.locator("#playPauseButton").text_content() == "متابعة"
-        touch_page.locator("#replayButton").tap()
+        touch_tap(touch_page.locator("#replayButton"))
         touch_page.wait_for_function("document.querySelector('#sceneName').value === 'المشهد 1' && Number(document.querySelector('#sequenceSeek').value) > 0")
         assert not touch_errors, touch_errors
         print("L11-D touch UI: scene add, rename, duration, reorder, duplicate, delete, Cut seek, pause and replay passed")
