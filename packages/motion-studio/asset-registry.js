@@ -44,6 +44,22 @@ export function createAssetRegistry(sequence, { maxBytes = 64 * 1024 * 1024 } = 
     snapshot = validateStudioSequenceV1({ ...snapshot, assets: [...snapshot.assets, asset] });
     return snapshot;
   }
+  function replaceSequence(sequence) {
+    const next = validateStudioSequenceV1(sequence);
+    const assetsById = new Map(next.assets.map(asset => [asset.id, asset]));
+    for (const [id, blob] of blobs) {
+      const asset = assetsById.get(id);
+      if (asset && (asset.size !== blob.size || asset.mimeType !== blob.type.toLowerCase())) {
+        throw new TypeError(`Updated metadata does not match linked asset: ${id}`);
+      }
+    }
+    for (const [id, blob] of blobs) {
+      if (!assetsById.has(id)) { bytes -= blob.size; blobs.delete(id); }
+    }
+    snapshot = next;
+    return snapshot;
+  }
   return Object.freeze({ get sequence() { return snapshot; }, get linkedBytes() { return bytes; },
-    references, validateLink, validateRemoval, relink, remove, add, get: id => blobs.get(id) ?? null });
+    references, validateLink, validateRemoval, relink, remove, add, replaceSequence,
+    get: id => blobs.get(id) ?? null });
 }

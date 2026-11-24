@@ -282,11 +282,11 @@ test("browser module uses the engine sampling API and includes deterministic see
   assert.match(source, /import \{[^}]*compileProject[^}]*sampleFrame[^}]*\} from "@qarton\/cinematic-engine\/motion-studio"/);
   assert.match(source, /seek\.addEventListener\("input"/);
   assert.match(source, /function replay\(\)/);
-  assert.match(source, /audioPlayer\.replay\(\)/);
+  assert.match(source, /async function replay\(\)[\s\S]*?const first = sequenceEditor\.scenes\[0\][\s\S]*?globalTimeMs: 0, localTimeMs: 0[\s\S]*?sequenceTimeMs = 0[\s\S]*?await play\(\)/);
   assert.match(source, /decodeImageBitmap\(file/);
   assert.match(source, /imageRequest\.isCurrent\(requestToken\)/);
   assert.match(source, /projectInput\.addEventListener\("change"[\s\S]*?imageRequest\.begin\(\)/);
-  assert.match(source, /get: \(assetId\) => project\.layers\.some\(\(layer\) => layer\.assetId === assetId\) \? imageSource : null/);
+  assert.match(source, /get: \(assetId\) => sceneImageSources\.get\(assetId\) \?\? \(project\.layers\.some\(\(layer\) => layer\.assetId === assetId\) \? imageSource : null\)/);
   assert.doesNotMatch(source, /project\.layers\[0\]\.assetId\s*=\s*["']photo-1/);
   assert.match(source, /bitmap\.close/);
   assert.doesNotMatch(source, /createCameraTrack|sampleCameraTrack|createTimeline/);

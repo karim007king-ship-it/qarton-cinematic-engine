@@ -24,6 +24,34 @@
       <span class="status-pill" id="status" role="status" aria-live="polite">اختر صورة للبدء</span>
     </header>
 
+    <section class="sequence-workbench" aria-labelledby="sequenceHeading">
+      <div class="sequence-heading">
+        <div><span class="eyebrow">مشاهد المشروع</span><h2 id="sequenceHeading">تسلسل المشاهد</h2></div>
+        <span id="sequenceDuration" class="timeline-selection">00:00.00</span>
+      </div>
+      <div class="sequence-actions">
+        <button id="addSceneButton" class="secondary-button" type="button">＋ مشهد</button>
+        <button id="duplicateSceneButton" class="secondary-button" type="button">نسخ المشهد</button>
+        <button id="deleteSceneButton" class="secondary-button danger-button" type="button">حذف المشهد</button>
+        <label>اسم المشهد <input id="sceneName" type="text" maxlength="80" autocomplete="off"></label>
+        <label>المدة (ث) <input id="sceneDuration" type="number" min="3" max="60" step="1" inputmode="numeric"></label>
+      </div>
+      <div id="sceneThumbnails" class="scene-thumbnails" role="list" aria-label="مصغرات المشاهد"></div>
+      <div class="sequence-timeline">
+        <div class="sequence-timeline-label"><strong>Timeline المشروع</strong><span>Cut مباشر · Timeline المسارات أدناه محلي للمشهد المحدد</span></div>
+        <div id="sequenceBlocks" class="sequence-blocks" role="group" aria-label="Timeline إجمالي للمشاهد"></div>
+        <label class="sr-only" for="sequenceSeek">انتقال عبر Timeline المشروع</label>
+        <input id="sequenceSeek" class="sequence-seek" type="range" min="0" max="300000" step="1" value="0">
+      </div>
+      <details class="asset-library" open>
+        <summary>مكتبة الأصول المشتركة <span id="assetBudgetLabel">محفوظة على هذا الجهاز</span></summary>
+        <label class="file-picker asset-picker" for="assetLibraryInput"><span>＋</span><span><strong>إضافة صور أو صوت للمكتبة</strong><small>تخزين محلي على هذا الجهاز · لا رفع خارجي</small></span></label>
+        <input id="assetLibraryInput" class="sr-only" type="file" multiple accept="image/jpeg,image/png,image/webp,image/avif,image/gif,audio/mpeg,audio/mp4,audio/aac,audio/wav,audio/x-wav,audio/ogg,audio/webm,.mp3,.m4a,.aac,.wav,.ogg,.oga,.webm">
+        <div id="assetLibraryList" class="asset-library-list" aria-live="polite"></div>
+        <p id="assetLibraryMessage" class="timeline-message" role="status" aria-live="polite">الأصول المستخدمة محمية من الحذف. الملفات تبقى محلية في المتصفح.</p>
+      </details>
+    </section>
+
     <section class="workspace" aria-label="مساحة العمل">
       <div class="preview-panel">
         <div class="preview-heading"><div><span class="eyebrow">معاينة المشروع</span><strong id="viewportValue">1080 × 1920 · معاينة 720 × 1280</strong></div><span id="timeReadout">00:00.00</span></div>
@@ -269,6 +297,6 @@
     <p id="errorMessage" class="error-message" role="alert" hidden></p>
     <footer>نسخة تجريبية · التصدير محلي على الجهاز · اختبر الصيغة الناتجة قبل اعتمادها</footer>
   </main>
-  <script type="module" src="./studio.js?v=l10b-integrated-01"></script>
+  <script type="module" src="./studio.js?v=l11d-multiscene-01"></script>
 </body>
 </html>

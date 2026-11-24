@@ -15,6 +15,12 @@ export function createPersistentAssetRegistry(sequence, {storage, projectId, max
     get linkedBytes() { return registry.linkedBytes; },
     get: id => registry.get(id),
     references: id => registry.references(id),
+    add(asset) {
+      return enqueue(async () => registry.add(asset));
+    },
+    replaceSequence(sequence) {
+      return enqueue(async () => registry.replaceSequence(sequence));
+    },
     relink(id, blob, options = {}) {
       return enqueue(async () => {
         registry.validateLink(id, blob);

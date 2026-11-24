@@ -731,4 +731,52 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         assert "أُلغي السحب" in page.locator("#visualEffectsMessage").inner_text()
         page.mouse.up()
         assert not errors, errors
+
+        # L11-D multi-scene workbench: use a real mobile Chromium touch context.
+        touch_context = browser.new_context(viewport={"width": 390, "height": 844}, device_scale_factor=2,
+                                           is_mobile=True, has_touch=True, accept_downloads=True)
+        touch_page = touch_context.new_page()
+        touch_errors = []
+        touch_page.on("pageerror", lambda error: touch_errors.append(str(error)))
+        touch_page.goto(preview.as_uri())
+        touch_page.wait_for_function("document.querySelector('#stage')?.width === 720")
+        touch_page.locator("#imageInput").set_input_files(str(sample))
+        touch_page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+        touch_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 1")
+        touch_page.wait_for_function("document.querySelectorAll('#assetLibraryList .asset-entry').length >= 2")
+        used_asset = touch_page.locator("#assetLibraryList .asset-entry").last
+        assert used_asset.get_by_role("button", name="حذف").is_disabled(), "scene-referenced assets cannot be deleted"
+        touch_page.locator("#addSceneButton").tap()
+        touch_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 2")
+        assert touch_page.locator("#sequenceBlocks .sequence-block").count() == 2
+        touch_page.locator("#sceneName").fill("المشهد الثاني")
+        touch_page.locator("#sceneName").dispatch_event("change")
+        touch_page.locator("#sceneDuration").fill("4")
+        touch_page.locator("#sceneDuration").dispatch_event("change")
+        assert int(touch_page.locator("#sequenceSeek").get_attribute("max")) == 16000
+        touch_page.locator("#addSceneButton").tap()
+        touch_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 3")
+        order_before = touch_page.locator("#sceneThumbnails .scene-card").evaluate_all("els => els.map(el => el.dataset.sceneId)")
+        touch_page.locator("#sceneThumbnails .scene-card").nth(2).get_by_role("button", name="إلى اليسار: المشهد 3").tap()
+        order_after = touch_page.locator("#sceneThumbnails .scene-card").evaluate_all("els => els.map(el => el.dataset.sceneId)")
+        assert order_after[1] == order_before[2] and order_after != order_before, (order_before, order_after)
+        touch_page.locator("#duplicateSceneButton").tap()
+        touch_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 4")
+        touch_page.locator("#deleteSceneButton").tap()
+        touch_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 3")
+
+        # Exact global Cut boundary selects the next scene with local time zero.
+        touch_page.locator("#sequenceSeek").evaluate("el => { el.value = '12000'; el.dispatchEvent(new Event('input', {bubbles:true})); }")
+        touch_page.wait_for_function("document.querySelector('#sceneName').value === 'المشهد 3'")
+        assert touch_page.locator("#seek").input_value() == "0"
+        touch_page.locator("#playPauseButton").tap()
+        touch_page.wait_for_function("document.querySelector('#playPauseButton').textContent === 'إيقاف مؤقت'")
+        touch_page.wait_for_timeout(200)
+        touch_page.locator("#playPauseButton").tap()
+        assert touch_page.locator("#playPauseButton").text_content() == "متابعة"
+        touch_page.locator("#replayButton").tap()
+        touch_page.wait_for_function("document.querySelector('#sceneName').value === 'المشهد 1' && Number(document.querySelector('#sequenceSeek').value) > 0")
+        assert not touch_errors, touch_errors
+        print("L11-D touch UI: scene add, rename, duration, reorder, duplicate, delete, Cut seek, pause and replay passed")
+        touch_context.close()
         browser.close()
