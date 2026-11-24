@@ -432,7 +432,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         assert page.locator('.keyframe-marker[data-key-time="7000"]').evaluate("el => document.activeElement === el"), "selection focus survives marker rerender"
 
         page.locator('nav.bottom-dock [data-editor-section="more"]').click()
-        page.locator("#advancedProjectOptions summary").click()
+        page.locator("#advancedProjectOptions > summary").click()
         page.locator("#legacyExportDetails summary").click()
         page.locator("#exportDuration").select_option("3000")
         page.locator("#exportQuality").select_option("economy")
@@ -524,7 +524,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             sync_page.locator("#addAudioClip").click()
             assert sync_page.locator(".audio-clip").count() == 1
             sync_page.locator('nav.bottom-dock [data-editor-section="more"]').click()
-            sync_page.locator("#advancedProjectOptions summary").click()
+            sync_page.locator("#advancedProjectOptions > summary").click()
             sync_page.locator(".integrated-export-card .export-options summary").click()
             sync_page.locator("#integratedFrom").fill("0")
             sync_page.locator("#integratedTo").fill("3000")
@@ -793,7 +793,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         else:
             touch_tap(fullscreen_button)
         touch_tap(touch_page.locator('nav.bottom-dock [data-editor-section="more"]'))
-        touch_tap(touch_page.locator("#advancedProjectOptions summary"))
+        touch_tap(touch_page.locator("#advancedProjectOptions > summary"))
         touch_page.locator("#aspectPreset").select_option("portrait")
         touch_page.wait_for_function("document.querySelector('#stage').width === 720 && document.querySelector('#stage').height === 1280")
         touch_page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
