@@ -12,6 +12,62 @@ import wave
 from playwright.sync_api import sync_playwright
 
 
+def measure_media_timeline(entries, timestamp_fields, duration_fields):
+    """Measure a stream timeline from frame/packet timestamps, with final-unit fallback."""
+    samples = []
+    for entry in entries:
+        timestamp = None
+        for field in timestamp_fields:
+            try:
+                candidate = float(entry[field])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if math.isfinite(candidate):
+                timestamp = candidate
+                break
+        if timestamp is None:
+            continue
+        duration = None
+        for field in duration_fields:
+            try:
+                candidate = float(entry[field])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if math.isfinite(candidate) and candidate > 0:
+                duration = candidate
+                break
+        samples.append((timestamp, duration))
+
+    assert samples, f"ffprobe returned no usable timestamps for {timestamp_fields}"
+    timestamps = sorted({timestamp for timestamp, _ in samples})
+    intervals = [right - left for left, right in zip(timestamps, timestamps[1:]) if right > left]
+    if intervals:
+        ordered = sorted(intervals)
+        middle = len(ordered) // 2
+        final_unit = ordered[middle] if len(ordered) % 2 else (ordered[middle - 1] + ordered[middle]) / 2
+    else:
+        final_unit = None
+
+    start = timestamps[0]
+    end_candidates = [timestamp + duration for timestamp, duration in samples if duration is not None]
+    end = max(end_candidates, default=timestamps[-1])
+    if final_unit is not None:
+        end = max(end, timestamps[-1] + final_unit)
+    assert end > start, f"ffprobe timestamps do not establish a positive timeline for {timestamp_fields}"
+    return {"start": start, "end": end, "duration": end - start}
+
+
+# Regression coverage for streams without container or packet-duration metadata.
+assert abs(measure_media_timeline(
+    [{"best_effort_timestamp_time": value} for value in ("0", "1", "2")],
+    ("best_effort_timestamp_time",), ("pkt_duration_time", "duration_time")
+)["duration"] - 3.0) < 1e-9
+assert abs(measure_media_timeline(
+    [{"pts_time": str(value / 2), "duration_time": "0.5"} for value in range(6)],
+    ("pts_time", "dts_time"), ("duration_time",)
+)["duration"] - 3.0) < 1e-9
+
+
 root = Path(__file__).resolve().parents[1]
 preview_slug = environ.get("MOTION_STUDIO_PREVIEW_SLUG", "motion-studio-l5-android-preview")
 preview = root / "dist" / preview_slug / "index.html"
@@ -480,6 +536,54 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             ], text=True))
             video_stream = next(stream for stream in probe["streams"] if stream["codec_type"] == "video")
             audio_stream = next(stream for stream in probe["streams"] if stream["codec_type"] == "audio")
+            video_frames = __import__("json").loads(subprocess.check_output([
+                "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_frames",
+                "-show_entries", "frame=best_effort_timestamp_time,pkt_duration_time,duration_time",
+                "-of", "json", str(sync_output)
+            ], text=True)).get("frames", [])
+            audio_packets = __import__("json").loads(subprocess.check_output([
+                "ffprobe", "-v", "error", "-select_streams", "a:0", "-show_packets",
+                "-show_entries", "packet=pts_time,dts_time,duration_time",
+                "-of", "json", str(sync_output)
+            ], text=True)).get("packets", [])
+            video_timeline = measure_media_timeline(
+                video_frames, ("best_effort_timestamp_time", "pts_time"), ("pkt_duration_time", "duration_time"))
+            audio_timeline = measure_media_timeline(
+                audio_packets, ("pts_time", "dts_time"), ("duration_time",))
+            # WebM commonly omits format.duration. Require both encoded tracks and the
+            # complete A/V envelope to stay within the L10-A 150 ms recording tolerance.
+            target_duration_s = 3.0
+            duration_tolerance_s = max(0.150, 1000 / 24 / 1000)
+            av_timeline_duration = max(video_timeline["end"], audio_timeline["end"]) - min(
+                video_timeline["start"], audio_timeline["start"])
+            for label, measured in (("video", video_timeline["duration"]),
+                                    ("audio", audio_timeline["duration"]),
+                                    ("A/V envelope", av_timeline_duration)):
+                assert abs(measured - target_duration_s) <= duration_tolerance_s, (
+                    label, measured, target_duration_s, duration_tolerance_s,
+                    video_timeline, audio_timeline)
+            # The browser reports Infinity for some valid WebM files. Check actual
+            # playback and use a real seek range when exposed by the media element.
+            integrated_video = sync_page.locator("#integratedVideo")
+            media_state = integrated_video.evaluate("""video => ({
+              readyState: video.readyState, videoWidth: video.videoWidth, videoHeight: video.videoHeight,
+              seekable: Array.from({length: video.seekable.length}, (_, index) =>
+                [video.seekable.start(index), video.seekable.end(index)])
+            })""")
+            assert media_state["readyState"] >= 1 and media_state["videoWidth"] == expected_width and \
+                media_state["videoHeight"] == expected_height, media_state
+            integrated_video.evaluate("video => { video.muted = true; return video.play(); }")
+            sync_page.wait_for_function("document.querySelector('#integratedVideo').currentTime > 0.1", timeout=5000)
+            integrated_video.evaluate("video => video.pause()")
+            if media_state["seekable"]:
+                seek_start, seek_end = media_state["seekable"][-1]
+                seek_target = max(seek_start, seek_end - 0.2)
+                integrated_video.evaluate("(video, target) => { video.currentTime = target; }", seek_target)
+                sync_page.wait_for_function(
+                    "(target) => Math.abs(document.querySelector('#integratedVideo').currentTime - target) < 0.08",
+                    arg=seek_target, timeout=5000)
+            else:
+                print("L10-B playback: playable; Chromium did not expose a seekable range for this WebM container.")
             viewport_text = sync_page.locator("#viewportValue").inner_text().split("·", 1)[0]
             viewport_dimensions = [int(value) for value in re.findall(r"\d+", viewport_text)]
             assert len(viewport_dimensions) >= 2, viewport_text
@@ -488,9 +592,8 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             expected_width = max(2, math.floor(source_width * scale / 2) * 2)
             expected_height = max(2, math.floor(source_height * scale / 2) * 2)
             assert video_stream["width"] == expected_width and video_stream["height"] == expected_height, (video_stream, (expected_width, expected_height))
-            assert float(probe["format"]["duration"]) >= 2.85, probe["format"]
-            video_start = float(video_stream.get("start_time", 0) or 0)
-            audio_start = float(audio_stream.get("start_time", 0) or 0)
+            video_start = video_timeline["start"]
+            audio_start = audio_timeline["start"]
             frame_pts = [float(value) for value in subprocess.check_output([
                 "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "frame=best_effort_timestamp_time",
                 "-of", "csv=p=0", str(sync_output)
