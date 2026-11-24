@@ -432,8 +432,10 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         assert page.locator('.keyframe-marker[data-key-time="7000"]').evaluate("el => document.activeElement === el"), "selection focus survives marker rerender"
 
         page.locator('nav.bottom-dock [data-editor-section="more"]').click()
-        page.locator("#advancedProjectOptions > summary").click()
-        page.locator("#legacyExportDetails summary").click()
+        if not page.locator("#advancedProjectOptions").evaluate("el => el.open"):
+            page.locator("#advancedProjectOptions > summary").click()
+        if not page.locator("#legacyExportDetails").evaluate("el => el.open"):
+            page.locator("#legacyExportDetails > summary").click()
         page.locator("#exportDuration").select_option("3000")
         page.locator("#exportQuality").select_option("economy")
         drag_key(7000, 8000, 96)
