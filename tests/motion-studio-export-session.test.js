@@ -194,3 +194,15 @@ test("capability probe bounds Web Audio resume and cleanup when their promises n
   assert.equal(result[0].verification, "failed");
   assert.match(result[0].reason, /did not resume in time/u);
 });
+
+
+test("mixed export rejects a stalled AudioContext clock and releases capture tracks", async () => {
+  class StalledAudioContext extends FakeAudioContext {
+    get currentTime() { return 3; }
+  }
+  const context = new StalledAudioContext([]);
+  const { host, canvas } = makeHost([], { audioContext: context, resolveAudio: async () => null });
+  await assert.rejects(startExport(makePlan({ audio: "mix" }), host), { code: "CLOCK_STALLED" });
+  assert.equal(canvas.track.stopped, true);
+  assert.equal(context.destination.stream.getAudioTracks()[0].stopped, true);
+});
