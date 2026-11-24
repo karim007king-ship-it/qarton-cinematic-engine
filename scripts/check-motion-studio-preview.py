@@ -128,6 +128,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         image_input = page.locator("#imageInput")
         image_input.set_input_files(str(sample))
         page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+        page.locator('[data-editor-section="effects"]').click()
         page.locator("#visualEffectType").select_option("fade")
         page.locator("#addVisualEffect").click()
         assert page.locator(".visual-effect-clip").count() == 1
