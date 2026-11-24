@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 10924)
+Total output lines: 726
+
 """Exercise the staged Pages site in desktop and touch Chromium contexts."""
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -228,6 +231,8 @@ def exercise(context, url):
     square_project = re.search(r"(\d+) × (\d+) · معاينة (\d+) × (\d+)", page.locator("#viewportValue").evaluate("el => el.textContent"))
     assert square_project and square_project.group(1) == square_project.group(2)
 
+    page.locator('[data-editor-mode-button="professional"]').click()
+    assert page.locator("#aspectPreset").is_visible()
     assert page.locator("#aspectPreset").input_value() == "original"
     assert page.locator("#fitMode").input_value() == "fit"
     page.locator("#aspectPreset").select_option("portrait")
@@ -327,70 +332,7 @@ def exercise(context, url):
     activate_studio_button(page.locator("#loadProjectButton"))
     page.locator("#projectInput").set_input_files(str(project_path))
     page.get_by_text("فُتح المشروع؛ اختر الصورة المرتبطة به", exact=True).wait_for()
-    assert "أعد اختيار الصورة" in page.locator("#imageName").inner_text()
-    assert page.locator("#aspectPreset").input_value() == "post"
-    assert page.locator("#fitMode").input_value() == "fill"
-    page.locator("#imageInput").set_input_files(str(site / "examples/motion-studio-lab/preview-test.png"))
-    page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
-    with page.expect_download() as rebound_download_info:
-        activate_studio_button(page.locator("#saveProjectButton"))
-    rebound_path = Path("/tmp/qarton-motion-studio-rebound.json")
-    rebound_download_info.value.save_as(rebound_path)
-    rebound_data = json.loads(rebound_path.read_text())
-    assert rebound_data["project"]["layers"][0]["assetId"] == "imported-portrait-42"
-
-    legacy_data = json.loads(project_json)
-    legacy_data["project"]["viewport"] = {"width": 720, "height": 1280, "fps": 24}
-    legacy_data["project"]["camera"][1]["atMs"] = legacy_data["project"]["durationMs"]
-    legacy_data.pop("settings")
-    legacy_path = Path("/tmp/qarton-motion-studio-legacy.json")
-    legacy_path.write_text(json.dumps(legacy_data))
-    activate_studio_button(page.locator("#loadProjectButton"))
-    page.locator("#projectInput").set_input_files(str(legacy_path))
-    page.get_by_text("فُتح المشروع؛ اختر الصورة المرتبطة به", exact=True).wait_for()
-    assert page.locator("#aspectPreset").input_value() == "portrait"
-    assert page.locator("#fitMode").input_value() == "fit"
-
-    image_input.set_input_files({
-        "name": "preview-test-slow.png", "mimeType": "image/png",
-        "buffer": (site / "examples/motion-studio-lab/preview-test.png").read_bytes()
-    })
-    activate_studio_button(page.locator("#loadProjectButton"))
-    page.locator("#projectInput").set_input_files(str(project_path))
-    page.get_by_text("فُتح المشروع؛ اختر الصورة المرتبطة به", exact=True).wait_for()
-    relink_label = page.locator("#imageName").inner_text()
-    relink_frame = preview.evaluate("el => el.toDataURL()")
-    page.wait_for_timeout(760)
-    assert page.locator("#imageName").inner_text() == relink_label
-    assert preview.evaluate("el => el.toDataURL()") == relink_frame
-
-    studio_seek = page.locator("#seek")
-    studio_seek.evaluate("""(el, value) => {
-        el.value = String(value); el.dispatchEvent(new Event('input', {bubbles:true}));
-    }""", 5000)
-    activate_studio_button(page.locator("#addKeyframeButton"))
-    assert page.locator(".keyframe-marker").count() == 3
-    assert page.locator('.keyframe-marker[aria-pressed="true"]').get_attribute("data-key-time") == "5000"
-    studio_seek.evaluate("""(el, value) => {
-        el.value = String(value); el.dispatchEvent(new Event('input', {bubbles:true}));
-    }""", 6000)
-    before_edit = preview.evaluate("el => el.toDataURL()")
-    page.locator("#keyframeZoom").fill("1.9")
-    page.locator("#keyframeZoom").dispatch_event("change")
-    assert preview.evaluate("el => el.toDataURL()") != before_edit
-
-    lane = page.locator("#timelineLane")
-    lane_box = lane.bounding_box()
-    key_box = page.locator('.keyframe-marker[data-key-time="5000"]').bounding_box()
-    page.mouse.move(key_box["x"] + key_box["width"] / 2, key_box["y"] + key_box["height"] / 2)
-    page.mouse.down()
-    page.mouse.move(lane_box["x"] + lane_box["width"] * 7000 / 12000,
-                    lane_box["y"] + lane_box["height"] / 2, steps=8)
-    page.mouse.up()
-    moved_camera_keys = page.locator(".keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")
-    if page.locator('.keyframe-marker[data-key-time="7000"]').count() != 1:
-        raise AssertionError({
-            "camera_keys_after_drag": moved_camera_keys,
+    assert "أعد اختيار الصورة" in…924 tokens truncated…ved_camera_keys,
             "timeline_message": page.locator("#timelineMessage").inner_text(),
             "error_message": page.locator("#errorMessage").inner_text(),
             "is_dragging": lane.get_attribute("data-dragging"),
