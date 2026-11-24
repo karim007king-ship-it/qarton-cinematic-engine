@@ -2216,6 +2216,8 @@ projectInput.addEventListener("change", async () => {
     if (audioPlayer) { try { audioPlayer.destroy(); } catch (error) { $("audioTimelineMessage").textContent = `تعذر تنظيف الصوت القديم: ${errorText(error)}`; } }
     for (const { url } of audioFiles.values()) if (url) URL.revokeObjectURL(url);
     audioFiles.clear(); activeAudioAssetId = null;
+    // Legacy imports also start a new project; never reuse another project's cached assets.
+    localAssetFiles.clear(); sceneThumbnails.clear(); sceneExtraCharacterTracks.clear();
     audioTracks = parsed.audioTracks; audioAssets = parsed.audioAssets; audioMasterVolume = parsed.audioMasterVolume;
     visualEffectsTrack = parsed.visualEffectsTrack; visualEffectSelection = null;
     audioClipSelection = null;
