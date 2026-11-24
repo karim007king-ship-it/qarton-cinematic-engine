@@ -341,7 +341,7 @@ export async function startExport(plan, host = {}, { signal, onProgress } = {}) 
     audioContext?.removeEventListener?.("statechange", onAudioStateChange);
     for (const [track, listener] of boundTracks) track.removeEventListener?.("ended", listener);
     try { mixer?.stop(); } catch {}
-    for (const track of stream?.getTracks?.() ?? []) { try { track.stop(); } catch {} }
+    for (const track of new Set([...(stream?.getTracks?.() ?? []), ...(videoStream?.getTracks?.() ?? [])])) { try { track.stop(); } catch {} }
     try { await awaitWork(audioContext?.close?.(), host.audioContextCloseTimeoutMs ?? 1000, "AudioContext cleanup timed out"); } catch {}
     if (canvas) { canvas.width = 1; canvas.height = 1; }
     chunks = [];
