@@ -282,7 +282,14 @@ def exercise(context, url):
     assert studio_seek.input_value() == paused_value
     assert page.locator("#playPauseButton").inner_text() == "متابعة"
     assert page.locator("#stage").evaluate("el => [el.width, el.height]") == [858, 1073]
-    page.locator("#replayButton").click()
+    if page.evaluate("matchMedia('(pointer: coarse)').matches"):
+        replay_button = page.locator("#replayButton")
+        replay_button.evaluate("el => el.scrollIntoView({block:'center', inline:'center', behavior:'instant'})")
+        box = replay_button.bounding_box()
+        assert replay_button.evaluate("el => { const r=el.getBoundingClientRect(); return document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.closest('button') === el; }"), "touch Replay button must be the actual hit target"
+        page.touchscreen.tap(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    else:
+        page.locator("#replayButton").click()
     page.wait_for_function("Number(document.querySelector('#seek').value) > 0")
     page.wait_for_function("Number(document.querySelector('#seek').value) < 1000")
     with page.expect_download() as download_info:
