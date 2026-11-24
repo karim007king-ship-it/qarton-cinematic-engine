@@ -580,7 +580,13 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             })""")
             assert media_state["readyState"] >= 1 and media_state["videoWidth"] == expected_width and \
                 media_state["videoHeight"] == expected_height, media_state
-            integrated_video.evaluate("video => { video.muted = true; return video.play(); }")
+            integrated_video.evaluate("""video => {
+              video.muted = true;
+              return Promise.race([
+                video.play(),
+                new Promise((_, reject) => setTimeout(() => reject(new Error("WebM playback did not start within 5 seconds")), 5000))
+              ]);
+            }""")
             sync_page.wait_for_function("document.querySelector('#integratedVideo').currentTime > 0.1", timeout=5000)
             integrated_video.evaluate("video => video.pause()")
             if media_state["seekable"]:
