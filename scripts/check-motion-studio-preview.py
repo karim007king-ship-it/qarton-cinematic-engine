@@ -784,7 +784,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         def touch_tap(locator):
             locator.evaluate("el => el.scrollIntoView({block:'center', inline:'center', behavior:'instant'})")
             box = locator.bounding_box()
-            assert locator.evaluate("el => { const r=el.getBoundingClientRect(); return document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.closest('button') === el; }"), "touch target must be the actual hit target after scrolling"
+            assert locator.evaluate("el => { const r=el.getBoundingClientRect(), hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2); return hit === el || hit?.closest('button') === el || (el.matches('summary') && hit?.closest('summary') === el); }"), "touch target must be the actual hit target after scrolling"
             touch_page.touchscreen.tap(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
         touch_page.goto(preview.as_uri())
         touch_page.wait_for_function("document.querySelector('#stage')?.width === 720")
