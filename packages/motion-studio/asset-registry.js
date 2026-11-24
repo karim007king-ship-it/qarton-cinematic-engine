@@ -8,7 +8,10 @@ export function createAssetRegistry(sequence, { maxBytes = 64 * 1024 * 1024 } = 
   function references(id) {
     return Object.freeze(snapshot.scenes.filter(scene =>
       scene.project.layers.some(layer => layer.assetId === id) ||
-      scene.audioTracks.some(track => track.clips.some(clip => clip.asset === id))
+      scene.audioTracks.some(track => track.clips.some(clip => clip.asset === id)) ||
+      scene.characterTracks.some(track => Object.values(track.character.animation?.clips ?? {}).some(clip =>
+        clip.spriteSheet ? clip.spriteSheet.asset.trim() === id :
+          [...clip.frames, ...(clip.blinkFrames ?? [])].includes(id)))
     ).map(scene => scene.id));
   }
   function validateLink(id, blob) {
@@ -28,8 +31,6 @@ export function createAssetRegistry(sequence, { maxBytes = 64 * 1024 * 1024 } = 
   function validateRemoval(id) {
     if (!snapshot.assets.some(asset => asset.id === id)) throw new RangeError("Unknown asset");
     if (references(id).length) throw new Error("Asset is referenced by a scene");
-    // Character tracks may contain additional asset references; fail closed until audited.
-    if (snapshot.scenes.some(scene => scene.characterTracks.length)) throw new Error("Character references require audit before deletion");
     return validateStudioSequenceV1({ ...snapshot, assets: snapshot.assets.filter(asset => asset.id !== id) });
   }
   function remove(id) {
