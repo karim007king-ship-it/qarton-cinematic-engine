@@ -565,6 +565,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             # The browser reports Infinity for some valid WebM files. Check actual
             # playback and use a real seek range when exposed by the media element.
             integrated_video = sync_page.locator("#integratedVideo")
+            sync_page.wait_for_function("document.querySelector('#integratedVideo').readyState >= 1", timeout=10000)
             media_state = integrated_video.evaluate("""video => ({
               readyState: video.readyState, videoWidth: video.videoWidth, videoHeight: video.videoHeight,
               seekable: Array.from({length: video.seekable.length}, (_, index) =>
