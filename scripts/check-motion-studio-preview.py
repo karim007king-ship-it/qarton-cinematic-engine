@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 13617)
-Total output lines: 793
-
 """Run the standalone artifact from file:// in Chromium and exercise one export."""
 from pathlib import Path
 from os import environ
@@ -324,7 +321,207 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         assert saved_project["visualEffectsTrack"]["clips"][0]["type"] == "fade"
         assert "data:audio" not in project_path.read_text()
         page.locator("#projectInput").set_input_files(str(project_path))
-        page.wait_for_…3617 tokens truncated…           sync_page.wait_for_function("""() => document.querySelector('#integratedStatus').textContent.includes('اكتمل التصدير المتكامل') ||
+        page.wait_for_function("document.querySelector('#status').textContent.includes('فُتح المشروع')")
+        assert page.locator(".audio-clip").count() == 1
+        assert page.locator(".visual-effect-clip").count() == 1, "saved visual effects survive JSON reload"
+        page.locator("#audioInput").set_input_files(str(audio_sample))
+        page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('تم التحقق من الملف')")
+        assert not page.locator("#addAudioClip").is_disabled(), "relinked local audio keeps the saved asset id"
+        image_input.set_input_files(str(sample))
+        page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+        page.locator("#seek").evaluate("""(el, value) => { el.value = String(value); el.dispatchEvent(new Event('input', {bubbles: true})); }""", 0)
+        page.locator("#seek").evaluate("""(el, value) => {
+          el.value = String(value); el.dispatchEvent(new Event('input', {bubbles: true}));
+        }""", 4000)
+        page.locator("#addKeyframeButton").click()
+        assert page.locator(".keyframe-marker").count() == 3
+        assert page.locator(".keyframe-marker[aria-pressed=true]").get_attribute("data-key-time") == "4000"
+        page.locator("#seek").evaluate("""(el, value) => {
+          el.value = String(value); el.dispatchEvent(new Event('input', {bubbles: true}));
+        }""", 6000)
+        before_key_edit = page.locator("#stage").evaluate("el => el.toDataURL()")
+        page.locator("#keyframeZoom").fill("1.8")
+        page.locator("#keyframeZoom").dispatch_event("change")
+        page.wait_for_function("document.querySelector('#timelineMessage').textContent.includes('zoom')")
+        assert page.locator("#stage").evaluate("el => el.toDataURL()") != before_key_edit
+
+        lane = page.locator("#timelineLane")
+        lane_box = lane.bounding_box()
+        drag_x = lane_box["x"] + lane_box["width"] * 7000 / 12000
+        page.evaluate("""() => {
+          window.lastCameraPointerId = null;
+          document.querySelector('#timelineLane').addEventListener('pointerdown', event => {
+            window.lastCameraPointerId = event.pointerId;
+          }, {capture: true});
+        }""")
+        key_box = page.locator('.keyframe-marker[data-key-time="4000"]').bounding_box()
+        page.mouse.move(key_box["x"] + key_box["width"] / 2, key_box["y"] + key_box["height"] / 2)
+        page.mouse.down()
+        page.wait_for_function("document.querySelector('#timelineLane').hasPointerCapture(window.lastCameraPointerId)")
+        page.mouse.move(drag_x, lane_box["y"] + lane_box["height"] / 2, steps=8)
+        page.mouse.up()
+        assert page.locator('.keyframe-marker[data-key-time="7000"]').count() == 1
+        page.locator("#deleteKeyframeButton").click()
+        assert page.locator(".keyframe-marker").count() == 2
+
+        page.locator("#seek").evaluate("""(el, value) => {
+          el.value = String(value); el.dispatchEvent(new Event('input', {bubbles: true}));
+        }""", 4000)
+        page.locator("#addKeyframeButton").click()
+        lane = page.locator("#timelineLane")
+        def drag_key(source_ms, target_ms, pointer_id, end_event=None, repeat=False):
+            box = lane.bounding_box()
+            key_box = page.locator(f'.keyframe-marker[data-key-time="{source_ms}"]').bounding_box()
+            page.mouse.move(key_box["x"] + key_box["width"] / 2, key_box["y"] + key_box["height"] / 2)
+            page.mouse.down()
+            page.wait_for_function("document.querySelector('#timelineLane').hasPointerCapture(window.lastCameraPointerId)")
+            if source_ms != target_ms:
+                target_x = box["x"] + box["width"] * target_ms / 12000
+                page.mouse.move(target_x, box["y"] + box["height"] / 2, steps=6)
+                if repeat:
+                    page.mouse.move(target_x, box["y"] + box["height"] / 2)
+            if end_event:
+                if end_event == "pointerup":
+                    page.mouse.up()
+                elif end_event == "pointercancel":
+                    page.evaluate("""() => document.querySelector('#timelineLane').dispatchEvent(new PointerEvent('pointercancel', {
+                      bubbles: true, pointerId: window.lastCameraPointerId, pointerType: 'mouse', isPrimary: true
+                    }))""")
+                    page.mouse.up()
+                elif end_event == "lostpointercapture":
+                    page.evaluate("""() => document.querySelector('#timelineLane').dispatchEvent(new PointerEvent('lostpointercapture', {
+                      bubbles: true, pointerId: window.lastCameraPointerId, pointerType: 'mouse', isPrimary: true
+                    }))""")
+                    page.wait_for_function("!document.querySelector('#timelineLane').dataset.dragging")
+                    page.mouse.up()
+
+        drag_key(4000, 5000, 92, "pointercancel")
+        assert page.locator('.keyframe-marker[data-key-time="5000"]').count() == 1
+        assert not page.locator("#timelineLane").get_attribute("data-dragging")
+        lane.dispatch_event("pointermove", {"pointerId": 92, "pointerType": "touch", "isPrimary": True, "button": 0, "clientX": lane.bounding_box()["x"] + lane.bounding_box()["width"] * 9000 / 12000, "clientY": lane.bounding_box()["y"] + 20})
+        assert page.locator('.keyframe-marker[data-key-time="5000"]').count() == 1, "pointercancel leaves no stale drag"
+
+        drag_key(5000, 6000, 93, "lostpointercapture")
+        assert page.locator('.keyframe-marker[data-key-time="6000"]').count() == 1
+        assert not page.locator("#timelineLane").get_attribute("data-dragging")
+        drag_key(6000, 12000, 94, "pointerup")
+        collision_times = [int(value) for value in page.locator(".keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")]
+        movable_times = [value for value in collision_times if value not in (0, 12000)]
+        assert len(collision_times) == 3 and len(set(collision_times)) == 3, "collision preserves all keys without duplicate times"
+        assert movable_times and 6000 < movable_times[0] < 12000, "failed final position retains the last valid drag time"
+        drag_key(movable_times[0], 7000, 95, "pointerup", repeat=True)
+        assert [int(value) for value in page.locator(".keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")] == [0, 7000, 12000]
+        assert page.locator('.keyframe-marker[data-key-time="7000"]').evaluate("el => document.activeElement === el"), "selection focus survives marker rerender"
+
+        page.locator("#exportDuration").select_option("3000")
+        page.locator("#exportQuality").select_option("economy")
+        drag_key(7000, 8000, 96)
+        assert page.locator("#timelineLane").get_attribute("data-dragging") == "true"
+        page.locator("#exportButton").evaluate("el => el.click()")
+        page.wait_for_function("document.querySelector('#exportButton').disabled")
+        assert not page.locator("#timelineLane").get_attribute("data-dragging"), "export lock cancels the active drag state"
+        page.mouse.move(lane.bounding_box()["x"] + lane.bounding_box()["width"] * 9000 / 12000,
+                        lane.bounding_box()["y"] + 20)
+        assert page.locator('.keyframe-marker[data-key-time="8000"]').count() == 1, "export lock rejects trailing pointer moves"
+        page.mouse.up()
+        page.locator("#cancelExportButton").click()
+        page.get_by_text("أُلغي التسجيل ونُظّفت موارده.", exact=True).wait_for(timeout=10000)
+
+        page.locator("#aspectPreset").select_option("landscape")
+        page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+        page.locator("#fitMode").select_option("fill")
+        page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+        assert page.locator("#stage").evaluate("el => el.width / el.height") > 1.7
+
+        if support["webm"]:
+            page.locator("#exportFormat").select_option("webm")
+            page.locator("#exportDuration").select_option("3000")
+            page.locator("#exportQuality").select_option("economy")
+            page.locator("#exportAudioEnabled").check()
+            page.locator("#exportButton").click()
+            page.get_by_text("اكتمل التسجيل. شغّل المعاينة ثم احفظ الملف إذا كانت النتيجة مناسبة.", exact=True).wait_for(timeout=20000)
+            page.locator("#exportVideo").wait_for(state="visible")
+            page.wait_for_function("document.querySelector('#exportVideo').readyState >= 1", timeout=10000)
+            metadata = page.locator("#exportMetadata").inner_text()
+            assert "video/webm" in metadata and "MiB" in metadata, metadata
+            with page.expect_download() as download_info:
+                page.locator("#exportDownload").click()
+            downloaded = Path(tmp) / "export.webm"
+            download_info.value.save_as(downloaded)
+            assert downloaded.is_file() and downloaded.stat().st_size > 0
+
+            page.locator("#exportDuration").select_option("10000")
+            page.locator("#exportButton").click()
+            page.get_by_text("اكتمل التسجيل. شغّل المعاينة ثم احفظ الملف إذا كانت النتيجة مناسبة.", exact=True).wait_for(timeout=30000)
+            assert "10." in page.locator("#exportMetadata").inner_text()
+
+            if support["mp4"]:
+                page.locator("#exportFormat").select_option("mp4")
+                page.locator("#exportDuration").select_option("3000")
+                page.locator("#exportAudioEnabled").uncheck()
+                page.locator("#exportButton").click()
+                page.wait_for_function("document.querySelector('#exportVideo').hidden === false || document.querySelector('#tryWebmButton').hidden === false", timeout=15000)
+                if page.locator("#tryWebmButton").is_visible():
+                    page.locator("#tryWebmButton").click()
+                    assert page.locator("#exportFormat").input_value() == "webm"
+                    page.locator("#exportButton").click()
+                    page.get_by_text("اكتمل التسجيل. شغّل المعاينة ثم احفظ الملف إذا كانت النتيجة مناسبة.", exact=True).wait_for(timeout=20000)
+
+            page.locator("#exportDuration").select_option("10000")
+            page.locator("#exportAudioEnabled").uncheck()
+            page.locator("#exportButton").click()
+            page.locator("#cancelExportButton").click()
+            page.get_by_text("أُلغي التسجيل ونُظّفت موارده.", exact=True).wait_for(timeout=5000)
+            page.locator("#exportDuration").select_option("3000")
+            page.locator("#exportButton").click()
+            page.get_by_text("اكتمل التسجيل. شغّل المعاينة ثم احفظ الملف إذا كانت النتيجة مناسبة.", exact=True).wait_for(timeout=20000)
+            image_input.set_input_files(str(other_image))
+            page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+            assert page.locator("#exportVideo").is_hidden()
+            assert "alternate-photo.png" in page.locator("#imageName").inner_text()
+
+        # Measure synchronization from one actual L10 recording. Audio contains three
+        # short sine bursts; zero-duration flash state clips mark the same scene times.
+        if support["webm"]:
+            sync_page = browser.new_page(accept_downloads=True)
+            sync_page.on("pageerror", lambda error: errors.append(str(error)))
+            sync_page.goto(preview.as_uri())
+            sync_page.wait_for_function("document.querySelector('#stage')?.width === 720")
+            sync_page.locator("#imageInput").set_input_files(str(sample))
+            sync_page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+            sync_page.locator("#audioInput").set_input_files(str(sync_audio_sample))
+            sync_page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('تم التحقق من الملف')")
+            sync_page.locator("#audioTrackType").select_option("dialogue")
+            sync_page.locator("#seek").evaluate("""el => { el.value = '0'; el.dispatchEvent(new Event('input', {bubbles: true})); }""")
+            sync_page.locator("#addAudioClip").click()
+            assert sync_page.locator(".audio-clip").count() == 1
+            sync_page.locator("#integratedFrom").fill("0")
+            sync_page.locator("#integratedTo").fill("3000")
+            sync_page.locator("#integratedQuality").select_option("480p")
+            sync_page.locator("#integratedFormat").select_option("webm")
+            sync_page.locator("#integratedAudio").select_option("mix")
+
+            for mark in sync_marks:
+                for at, intensity in ((mark, "1"), (mark + 0.16, "0")):
+                    sync_page.locator("#seek").evaluate("""(el, ms) => { el.value = String(ms); el.dispatchEvent(new Event('input', {bubbles: true})); }""", round(at * 1000))
+                    sync_page.locator("#visualEffectType").select_option("flash")
+                    sync_page.locator("#addVisualEffect").click()
+                    sync_page.locator("#visualEffectDuration").fill("0")
+                    sync_page.locator("#visualEffectDuration").dispatch_event("change")
+                    for source in ("visualEffectFrom", "visualEffectTo"):
+                        field = sync_page.locator(f'#{source} [data-effect-field="intensity"]')
+                        field.fill(intensity)
+                        field.dispatch_event("change")
+
+            sync_page.locator("#integratedProbeButton").click()
+            sync_page.wait_for_function("""() => document.querySelector('#integratedStatus').textContent.includes('تم التحقق فعليًا') ||
+              !document.querySelector('#integratedError').hidden""", timeout=30000)
+            probe_status = sync_page.locator("#integratedStatus").inner_text()
+            probe_error = sync_page.locator("#integratedError").inner_text()
+            assert "تم التحقق فعليًا" in probe_status, f"exact-profile capability probe failed: {probe_status}; {probe_error}"
+            assert not sync_page.locator("#integratedExportButton").is_disabled()
+            sync_page.locator("#integratedExportButton").click()
+            sync_page.wait_for_function("""() => document.querySelector('#integratedStatus').textContent.includes('اكتمل التصدير المتكامل') ||
               !document.querySelector('#integratedError').hidden""", timeout=30000)
             integrated_status = sync_page.locator("#integratedStatus").inner_text()
             integrated_error = sync_page.locator("#integratedError").inner_text()
