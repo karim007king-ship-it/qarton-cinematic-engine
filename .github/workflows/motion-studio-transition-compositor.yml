@@ -1,0 +1,42 @@
+name: Motion Studio transition compositor
+
+on:
+  push:
+    branches:
+      - feature/motion-studio-transition-compositor-l11h2
+  pull_request:
+    branches:
+      - feature/motion-studio-transition-core-l11h1
+    paths:
+      - '.github/workflows/motion-studio-transition-compositor.yml'
+      - 'packages/motion-studio/**'
+      - 'tests/motion-studio-sequence*.test.js'
+      - 'tests/fixtures/studio-sequence-compositor.html'
+      - 'scripts/check-motion-studio-compositor-chromium.py'
+
+permissions:
+  contents: read
+
+jobs:
+  compositor:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out H2 branch
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run Node regressions
+        run: npm test
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Chromium test dependencies
+        run: |
+          python -m pip install playwright==1.55.0
+          python -m playwright install --with-deps chrome
+      - name: Check transition compositor pixels in Chromium
+        run: python scripts/check-motion-studio-compositor-chromium.py
+

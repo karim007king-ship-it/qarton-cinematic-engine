@@ -280,6 +280,78 @@ test("V2 rejects malformed transitions, out-of-scene overlaps, and triple-scene 
   assert.throws(() => sampleStudioSequenceV2(compileStudioSequenceV2(valid), Infinity), TypeError);
 });
 
+test("V2 rejects sparse arrays and null or undefined entries at every nested level", () => {
+  const baseScenes = [scene("a", 1000), scene("b", 1000)];
+  const sparseScenes = [baseScenes[0], , baseScenes[1]];
+  assert.throws(() => createStudioSequenceV2({ viewport, scenes: sparseScenes, assets: [image] }), /sparse or empty array entry/iu);
+  assert.throws(() => sequenceV2([baseScenes[0], null], [transition("a", "b")]), /sparse or empty array entry/iu);
+  const sparseAssets = [image, , audio];
+  assert.throws(() => createStudioSequenceV2({ viewport, scenes: baseScenes, assets: sparseAssets,
+    transitions: [transition("a", "b")] }), /sparse or empty array entry/iu);
+  const sparseTransitions = new Array(1);
+  assert.throws(() => createStudioSequenceV2({ viewport, scenes: baseScenes, assets: [image],
+    transitions: sparseTransitions }), /sparse or empty array entry/iu);
+  const nested = scene("a", 1000, { audioTracks: new Array(1) });
+  assert.throws(() => sequenceV2([nested], []), /sparse or empty array entry/iu);
+  const emptyEntry = scene("a", 1000, { characterTracks: [undefined] });
+  assert.throws(() => sequenceV2([emptyEntry], []), /sparse or empty array entry/iu);
+});
+
+test("V2 consecutive transitions meet at one exact timestamp without a gap or triple sample", () => {
+  const compiled = compileStudioSequenceV2(sequenceV2([scene("a", 1000), scene("b", 1000), scene("c", 1000)], [
+    transition("a", "b", "dissolve", 400), transition("b", "c", "fade", 600)
+  ]));
+  assert.equal(compiled.durationMs, 2000);
+  assert.deepEqual(compiled.transitionIntervals.map(({ startMs, endMs }) => [startMs, endMs]), [[600, 1000], [1000, 1600]]);
+  const before = sampleStudioSequenceV2(compiled, 999.999);
+  const exact = sampleStudioSequenceV2(compiled, 1000);
+  const after = sampleStudioSequenceV2(compiled, 1000.001);
+  assert.equal(before.kind, "transition");
+  assert.equal(before.transition.type, "dissolve");
+  assert.equal(before.outgoing.sceneId, "a");
+  assert.equal(before.incoming.sceneId, "b");
+  assert.equal(before.incoming.sceneTimeMs, 399.999);
+  assert.equal(exact.kind, "transition");
+  assert.equal(exact.transition.type, "fade", "the next half-open transition owns the shared boundary");
+  assert.equal(exact.outgoing.sceneId, "b");
+  assert.equal(exact.incoming.sceneId, "c");
+  assert.equal(exact.outgoing.sceneTimeMs, 400);
+  assert.equal(exact.incoming.sceneTimeMs, 0);
+  assert.equal(after.outgoing.sceneTimeMs, 400.001);
+  assert.deepEqual(sampleStudioSequenceV2(compiled, 1000), exact);
+});
+
+test("V2 validates local scene durations against the overlap-adjusted project limit", () => {
+  const project = sequenceV2([scene("long-a", 151_500), scene("long-b", 151_500)], [
+    transition("long-a", "long-b", "dissolve", 3_000, 0)
+  ]);
+  assert.equal(compileStudioSequenceV2(project).durationMs, 300_000);
+});
+
+test("V2 rejects duplicate scene IDs and freezes the scenes collection and cloned data", () => {
+  assert.throws(() => sequenceV2([scene("reused"), scene("reused")], [transition("reused", "reused")]),
+    /Duplicate sequence scene id: reused/iu);
+
+  const sourceTracks = [{ character: { id: "hero", initial: { mouthOpen: 0 } }, keyframes: [] }];
+  const sourceScenes = [scene("immutable-a", 1000, { characterTracks: sourceTracks }), scene("immutable-b")];
+  const snapshot = sequenceV2(sourceScenes, [transition("immutable-a", "immutable-b", "dissolve", 200)]);
+  const compiled = compileStudioSequenceV2(snapshot);
+  assert.ok(Object.isFrozen(snapshot.scenes));
+  assert.ok(Object.isFrozen(snapshot.scenes[0]));
+  assert.ok(Object.isFrozen(snapshot.scenes[0].project.layers));
+  assert.ok(Object.isFrozen(snapshot.scenes[0].characterTracks));
+  assert.ok(Object.isFrozen(snapshot.scenes[0].characterTracks[0].character.initial));
+  assert.ok(Object.isFrozen(compiled.scenes));
+
+  sourceScenes[0].project.layers[0].z = 12;
+  sourceTracks[0].character.initial.mouthOpen = 1;
+  sourceScenes.push(scene("later"));
+  assert.equal(snapshot.scenes.length, 2);
+  assert.equal(snapshot.scenes[0].project.layers[0].z, 0);
+  assert.equal(snapshot.scenes[0].characterTracks[0].character.initial.mouthOpen, 0);
+  assert.throws(() => snapshot.scenes.push(scene("forbidden")), TypeError);
+});
+
 test("V2 migrate-down rejects lossy transitions", () => {
   const dissolve = sequenceV2([scene("a", 1000), scene("b", 1000)], [transition("a", "b", "dissolve", 200, 100)]);
   assert.throws(() => migrateStudioSequenceV2ToV1(dissolve), /cannot represent/iu);

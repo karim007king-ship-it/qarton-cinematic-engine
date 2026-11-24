@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Studio Sequence Compositor Chromium Regression</title>
+<script type="importmap">
+{
+  "imports": {
+    "@qarton/cinematic-engine/camera": "/src/camera/camera-track.js",
+    "@qarton/cinematic-engine/motion": "/src/motion/easing.js",
+    "@qarton/cinematic-engine/motion/timeline": "/src/motion/timeline.js"
+  }
+}
+</script>
+<body>
+<pre id="result">RUNNING</pre>
+<pre id="failure"></pre>
+<script type="module">
+import { compileStudioSequenceV2, createStudioSequenceV2, sampleStudioSequenceV2 } from "/packages/motion-studio/index.js";
+import { createStudioSequenceCompositor } from "/packages/motion-studio/studio-sequence-compositor.js";
+
+const result = document.querySelector("#result");
+const failure = document.querySelector("#failure");
+const viewport = { width: 1, height: 1, fps: 30 };
+const colors = { red: [255, 0, 0], blue: [0, 0, 255], green: [0, 255, 0] };
+function makeScene(id) {
+  return { id, project: { version: 1, durationMs: 1000, viewport, layers: [
+    { id: `layer-${id}`, assetId: `asset-${id}`, z: 0 }
+  ] }, audioTracks: [], characterTracks: [], visualEffectsTrack: { version: 1, seed: 1, clips: [] } };
+}
+const scenes = [makeScene("red"), makeScene("blue"), makeScene("green")];
+const assets = scenes.map(scene => ({ id: `asset-${scene.id}`, kind: "image", name: `${scene.id}.png`, mimeType: "image/png", size: 4 }));
+function compile(type, durationMs, sceneList = scenes.slice(0, 2)) {
+  return compileStudioSequenceV2(createStudioSequenceV2({ viewport, scenes: sceneList, assets: assets.slice(0, sceneList.length),
+    transitions: sceneList.slice(1).map((scene, index) => ({ fromSceneId: sceneList[index].id,
+      toSceneId: scene.id, type: index === 0 ? type : "cut", durationMs: index === 0 ? durationMs : 0,
+      audioCrossfadeMs: 0 })) }));
+}
+const target = document.createElement("canvas");
+target.width = 1; target.height = 1;
+const ctx = target.getContext("2d", { willReadFrequently: true });
+const compositor = createStudioSequenceCompositor();
+const sampled = [];
+function draw(compiled, timeMs, painter = (_context, scene) => {
+  const key = scene.id.includes("green") ? "green" : scene.id.includes("blue") ? "blue" : "red";
+  const [r, g, b] = colors[key];
+  _context.fillStyle = `rgb(${r} ${g} ${b})`;
+  _context.fillRect(0, 0, _context.canvas.width, _context.canvas.height);
+}) {
+  compositor.draw(ctx, sampleStudioSequenceV2(compiled, timeMs), (context, scene, localTimeMs) => {
+    sampled.push([scene.id, localTimeMs]);
+    painter(context, scene, localTimeMs);
+  });
+  return [...ctx.getImageData(0, 0, 1, 1).data];
+}
+function assertPixel(actual, expected, tolerance, label) {
+  for (let channel = 0; channel < 4; channel++) {
+    if (Math.abs(actual[channel] - expected[channel]) > tolerance) throw new Error(`${label}: channel ${channel} was ${actual[channel]}, expected ${expected[channel]}`);
+  }
+}
+
+try {
+  const cut = compile("cut", 0);
+  assertPixel(draw(cut, 999), [255, 0, 0, 255], 0, "Cut before boundary");
+  assertPixel(draw(cut, 1000), [0, 0, 255, 255], 0, "Cut at boundary");
+
+  const dissolve = compile("dissolve", 400);
+  assertPixel(draw(dissolve, 600), [255, 0, 0, 255], 0, "Dissolve start");
+  assertPixel(draw(dissolve, 800), [128, 0, 128, 255], 1, "Dissolve midpoint is not darkened");
+  assertPixel(draw(dissolve, 999), [1, 0, 254, 255], 2, "Dissolve last interior frame");
+  assertPixel(draw(dissolve, 1000), [0, 0, 255, 255], 0, "Dissolve endpoint");
+
+  const fade = compile("fade", 400);
+  assertPixel(draw(fade, 600), [255, 0, 0, 255], 0, "Fade start");
+  assertPixel(draw(fade, 800), [0, 0, 0, 255], 0, "Fade black midpoint");
+  assertPixel(draw(fade, 1000), [0, 0, 255, 255], 0, "Fade endpoint");
+
+  const stackedRed = makeScene("stacked");
+  const green = makeScene("incoming-green");
+  const stackedScenes = [stackedRed, green];
+  const stackedAssets = [
+    { id: "asset-stacked", kind: "image", name: "stacked.png", mimeType: "image/png", size: 4 },
+    { id: "asset-incoming-green", kind: "image", name: "incoming-green.png", mimeType: "image/png", size: 4 }
+  ];
+  const grouped = compileStudioSequenceV2(createStudioSequenceV2({ viewport, scenes: stackedScenes, assets: stackedAssets,
+    transitions: [{ fromSceneId: "stacked", toSceneId: "incoming-green", type: "dissolve", durationMs: 400, audioCrossfadeMs: 0 }] }));
+  const groupPixel = draw(grouped, 800, (context, scene) => {
+    if (scene.id === "stacked") {
+      context.fillStyle = "rgb(255 0 0)"; context.fillRect(0, 0, 1, 1);
+    context.fillStyle = "rgba(0 0 255 / 0.5)"; context.fillRect(0, 0, 1, 1);
+    } else {
+      context.fillStyle = "rgb(0 255 0)"; context.fillRect(0, 0, 1, 1);
+    }
+  });
+  assertPixel(groupPixel, [64, 128, 64, 255], 1, "Dissolve weights a complete scene group");
+  assertPixel(draw(dissolve, 800), [128, 0, 128, 255], 1, "Dissolve is deterministic on repeated sampling");
+  if (!sampled.some(([id, local]) => id === "red" && local === 800) ||
+      !sampled.some(([id, local]) => id === "blue" && local === 200)) {
+    throw new Error("Scene-local times were not delivered to both scene painters");
+  }
+  target.width = 2; target.height = 1;
+  compositor.draw(ctx, sampleStudioSequenceV2(dissolve, 800), (context, scene) => {
+    context.fillStyle = scene.id === "red" ? "rgb(255 0 0)" : "rgb(0 255 0)";
+    context.fillRect(scene.id === "red" ? 0 : 1, 0, 1, 1);
+  });
+  const alphaPixels = [...ctx.getImageData(0, 0, 2, 1).data];
+  assertPixel(alphaPixels.slice(0, 4), [255, 0, 0, 128], 1, "Dissolve preserves outgoing transparency");
+  assertPixel(alphaPixels.slice(4, 8), [0, 255, 0, 128], 1, "Dissolve preserves incoming transparency");
+  const stateCanvas = document.createElement("canvas");
+  stateCanvas.width = 2; stateCanvas.height = 2;
+  const stateContext = stateCanvas.getContext("2d");
+  Object.assign(stateContext, { filter: "blur(2px)", shadowColor: "rgba(255, 0, 0, 1)", shadowBlur: 7,
+    shadowOffsetX: 3, shadowOffsetY: 4, globalAlpha: 0.25, globalCompositeOperation: "multiply" });
+  const initialState = [stateContext.filter, stateContext.shadowColor, stateContext.shadowBlur,
+    stateContext.shadowOffsetX, stateContext.shadowOffsetY, stateContext.globalAlpha,
+    stateContext.globalCompositeOperation];
+  const painterStates = [];
+  compositor.draw(stateContext, sampleStudioSequenceV2(dissolve, 800), context => {
+    painterStates.push([context.filter, context.shadowColor, context.shadowBlur, context.shadowOffsetX,
+      context.shadowOffsetY, context.globalAlpha, context.globalCompositeOperation]);
+    Object.assign(context, { filter: "blur(20px)", shadowColor: "blue", shadowBlur: 20,
+      shadowOffsetX: 20, shadowOffsetY: 20, globalAlpha: 0.1, globalCompositeOperation: "copy" });
+  });
+  if (painterStates.length !== 2 || painterStates.some(state =>
+      JSON.stringify(state) !== JSON.stringify(["none", "rgba(0, 0, 0, 0)", 0, 0, 0, 1, "source-over"]))) {
+    throw new Error(`Painter inherited Canvas filter or shadow state: ${JSON.stringify(painterStates)}`);
+  }
+  const restoredState = [stateContext.filter, stateContext.shadowColor, stateContext.shadowBlur,
+    stateContext.shadowOffsetX, stateContext.shadowOffsetY, stateContext.globalAlpha,
+    stateContext.globalCompositeOperation];
+  if (JSON.stringify(restoredState) !== JSON.stringify(initialState)) {
+    throw new Error(`Compositor did not restore all caller Canvas state: ${JSON.stringify({ initialState, restoredState })}`);
+  }
+  if (compositor.getDiagnostics().surfaceCreations !== 1) throw new Error("Compositor allocated more than one scratch surface");
+  compositor.release();
+  if (compositor.getDiagnostics().liveSurfaces !== 0 || compositor.getDiagnostics().scratchBytes !== 0) {
+    throw new Error("Compositor did not release its reusable surface");
+  }
+  result.textContent = "PASS";
+} catch (error) {
+  failure.textContent = String(error?.stack ?? error);
+  result.textContent = "FAIL";
+}
+</script>
+</body>
+</html>
+
