@@ -1236,6 +1236,7 @@ async function play() {
 async function replay() {
   stopPlayback();
   try {
+    captureCurrentScene();
     const first = sequenceEditor.scenes[0];
     await activateStudioScene(first.id, { globalTimeMs: 0, localTimeMs: 0 });
     sequenceTimeMs = 0;

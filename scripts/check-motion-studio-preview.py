@@ -213,6 +213,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         page.wait_for_function("Number(document.querySelector('#seek').value) > 100", timeout=3000)
         page.locator("#playPauseButton").click()
         assert page.locator("#playPauseButton").inner_text() == "متابعة"
+        assert page.locator(".visual-effect-clip").count() == 1, "Replay preserves the latest edited scene timeline"
         page.locator(".visual-effect-clip").click()
         page.locator("#audioInput").set_input_files(str(audio_sample))
         page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('تم التحقق من الملف')")

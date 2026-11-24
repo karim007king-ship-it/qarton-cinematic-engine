@@ -282,7 +282,8 @@ test("browser module uses the engine sampling API and includes deterministic see
   assert.match(source, /import \{[^}]*compileProject[^}]*sampleFrame[^}]*\} from "@qarton\/cinematic-engine\/motion-studio"/);
   assert.match(source, /seek\.addEventListener\("input"/);
   assert.match(source, /function replay\(\)/);
-  assert.match(source, /async function replay\(\)[\s\S]*?const first = sequenceEditor\.scenes\[0\][\s\S]*?globalTimeMs: 0, localTimeMs: 0[\s\S]*?sequenceTimeMs = 0[\s\S]*?await play\(\)/);
+  assert.match(source, /async function replay\(\)[\s\S]*?captureCurrentScene\(\)[\s\S]*?const first = sequenceEditor\.scenes\[0\][\s\S]*?globalTimeMs: 0, localTimeMs: 0[\s\S]*?sequenceTimeMs = 0[\s\S]*?await play\(\)/,
+    "Replay captures the active scene before seeking so recent timeline edits survive the sequence reset");
   assert.match(source, /decodeImageBitmap\(file/);
   assert.match(source, /imageRequest\.isCurrent\(requestToken\)/);
   assert.match(source, /projectInput\.addEventListener\("change"[\s\S]*?imageRequest\.begin\(\)/);
