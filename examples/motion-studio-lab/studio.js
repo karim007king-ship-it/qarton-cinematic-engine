@@ -490,6 +490,8 @@ function refreshIntegratedControls() {
   const blocked = Boolean(activeExport || pendingImageRequest !== null || pendingAudioRequest !== null || !currentFileInfo);
   integratedProbeButton.disabled = blocked;
   integratedExportButton.disabled = blocked || !hasVerified;
+  integratedExportButton.textContent = blocked ? "التصدير غير متاح حاليًا" : hasVerified ? "تصدير المشروع مع الصوت" : "افحص الصيغة والدقة أولًا";
+  integratedExportButton.title = blocked ? "انتظر اكتمال تحميل الأصول أو انتهاء التصدير" : hasVerified ? "ابدأ تصدير المشروع" : "اضغط زر فحص الصيغة والدقة";
   for (const control of [integratedQuality, integratedFormat, integratedAudio, integratedMissingAudio, integratedFrom, integratedTo]) control.disabled = Boolean(activeExport);
 }
 function setExportBusy(busy) {
@@ -771,6 +773,7 @@ async function probeIntegratedExport() {
   if (activeExport || !currentFileInfo) return;
   const raster = integratedRaster();
   const audioMode = integratedAudio.value;
+  const capabilityKey = integratedCapabilityKey();
   const formats = integratedFormat.value === "auto" ? ["mp4", "webm"] : [integratedFormat.value];
   integratedProbeButton.disabled = true;
   integratedExportButton.disabled = true;
@@ -780,7 +783,11 @@ async function probeIntegratedExport() {
   try {
     const capabilities = await probeExport({ width: raster.width, height: raster.height,
       fps: project.viewport.fps, audioMode, formats, durationMs: 800 });
-    integratedCapabilities.set(integratedCapabilityKey(), capabilities);
+    integratedCapabilities.set(capabilityKey, capabilities);
+    if (capabilityKey !== integratedCapabilityKey()) {
+      integratedStatus.textContent = "تغيّرت إعدادات التصدير أثناء الفحص؛ أعد فحص الإعدادات الحالية.";
+      return;
+    }
     const verified = capabilities.filter(({ verification }) => verification === "verified");
     integratedStatus.textContent = verified.length
       ? `تم التحقق فعليًا من ${verified.map(({ mimeType }) => mimeType).join(" و")} على هذه الدقة. الفحص يثبت التشغيل وفك الوسائط للمقطع القصير فقط.${verified.some(({ durationMetadata }) => durationMetadata === "unavailable") ? " مدة الحاوية والبحث قرب النهاية غير متاحين لهذا المتصفح." : ""}`
