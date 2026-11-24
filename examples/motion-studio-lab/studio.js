@@ -329,13 +329,14 @@ function assetMetadataToAudio(asset) {
 }
 function persistSequenceMetadata() {
   try {
-    localStorage.setItem(CURRENT_PROJECT_KEY, projectStorageId);
     const settingsByScene = Object.fromEntries(sequenceEditor.scenes.map(scene => {
       const settings = sceneImageSettings(scene.id);
       return [scene.id, { aspectPreset: settings.aspectPreset, fitMode: settings.fitMode }];
     }));
     const text = serializeStudioSequenceFile(sequenceEditor, { projectId: projectStorageId, aspectPreset, fitMode, audioMasterVolume, sceneSettings: settingsByScene });
     localStorage.setItem(`qarton-motion-studio-sequence:${projectStorageId}`, text);
+    // Publish the current-project pointer only after its metadata is saved.
+    localStorage.setItem(CURRENT_PROJECT_KEY, projectStorageId);
   } catch (error) {
     $("assetLibraryMessage").textContent = `تعذر حفظ بيانات التسلسل محليًا: ${errorText(error)}`;
   }
