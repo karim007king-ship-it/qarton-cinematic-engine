@@ -5,7 +5,8 @@ import {
   createStudioSequenceV1, createStudioSequenceV2, deleteStudioSequenceScene, deleteStudioSequenceSceneV2,
   duplicateStudioSequenceScene, duplicateStudioSequenceSceneV2, legacyStudioProjectToSequence,
   migrateStudioSequenceV1ToV2, migrateStudioSequenceV2ToV1, reorderStudioSequenceScene,
-  reorderStudioSequenceSceneV2, sampleStudioSequence, sampleStudioSequenceV2,
+  parseStudioSequenceV2, reorderStudioSequenceSceneV2, sampleStudioSequence, sampleStudioSequenceV2,
+  serializeStudioSequenceV2,
   validateStudioSequenceV1, validateStudioSequenceV2
 } from "../packages/motion-studio/index.js";
 
@@ -197,7 +198,12 @@ test("V1 migration preserves local scene and asset data and round-trips Cut proj
   assert.deepEqual(migrated.scenes, legacy.scenes);
   assert.deepEqual(migrated.assets, legacy.assets);
   assert.equal(migrated.scenes[0].audioTracks[0].clips[0].startMs, 200, "local audio timestamps are unchanged");
+  const savedAndRestored = parseStudioSequenceV2(serializeStudioSequenceV2(migrated));
+  assert.deepEqual(savedAndRestored, migrated, "V2 save/parse preserves scene and asset metadata");
+  assert.equal(savedAndRestored.scenes[0].project.layers[0].assetId, image.id);
+  assert.equal(savedAndRestored.assets.find(asset => asset.id === audio.id).size, audio.size);
   assert.deepEqual(legacy, before, "migration does not mutate the source project or its asset records");
+  assert.throws(() => parseStudioSequenceV2("{"), /JSON is invalid/iu);
   assert.deepEqual(migrateStudioSequenceV2ToV1(migrated), legacy);
 });
 
