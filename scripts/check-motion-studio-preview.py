@@ -495,7 +495,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             sync_page.locator("#audioInput").set_input_files(str(sync_audio_sample))
             sync_page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('تم التحقق من الملف')")
             sync_page.locator('[data-editor-section="audio"]').click()
-    sync_page.locator("#audioTrackType").select_option("dialogue")
+            sync_page.locator("#audioTrackType").select_option("dialogue")
             sync_page.locator("#seek").evaluate("""el => { el.value = '0'; el.dispatchEvent(new Event('input', {bubbles: true})); }""")
             sync_page.locator("#addAudioClip").click()
             assert sync_page.locator(".audio-clip").count() == 1
