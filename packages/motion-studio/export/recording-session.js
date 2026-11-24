@@ -341,7 +341,7 @@ export async function startExport(plan, host = {}, { signal, onProgress } = {}) 
     audioContext?.removeEventListener?.("statechange", onAudioStateChange);
     for (const [track, listener] of boundTracks) track.removeEventListener?.("ended", listener);
     try { mixer?.stop(); } catch {}
-    for (const track of stream?.getTracks?.() ?? []) { try { track.stop(); } catch {} }
+    for (const track of new Set([...(stream?.getTracks?.() ?? []), ...(videoStream?.getTracks?.() ?? [])])) { try { track.stop(); } catch {} }
     try { await awaitWork(audioContext?.close?.(), host.audioContextCloseTimeoutMs ?? 1000, "AudioContext cleanup timed out"); } catch {}
     if (canvas) { canvas.width = 1; canvas.height = 1; }
     chunks = [];
@@ -467,11 +467,17 @@ export async function startExport(plan, host = {}, { signal, onProgress } = {}) 
       if (released || finished || stopReason) return;
       try {
         const current = Number.isFinite(timestamp) ? timestamp : now();
-        const elapsed = current - clockPerfEpoch;
+        const elapsed = clockAudioEpoch === null ? current - clockPerfEpoch : (audioContext.currentTime - clockAudioEpoch) * 1000;
         if (elapsed >= 0) {
           const due = Math.min(frameCount - 1, Math.floor(elapsed / frameIntervalMs));
           if (due >= nextFrame) {
-            if (due > nextFrame) droppedFrames += due - nextFrame;
+            if (due > nextFrame) {
+              const skipped = due - nextFrame;
+              droppedFrames += skipped;
+              if (skipped * frameIntervalMs >= 250) {
+                throw error("CLOCK_STALLED", "Export skipped too many consecutive frames; retry at a lower quality");
+              }
+            }
             paint(due, elapsed);
             nextFrame = due + 1;
           }
