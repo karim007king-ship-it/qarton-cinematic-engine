@@ -36,3 +36,18 @@ test("unused asset removal releases bytes without changing original snapshot",()
   r.add(asset("new")); assert.equal(r.sequence.assets.length,2);
   assert.throws(()=>r.add(asset("new")),TypeError);
 });
+
+test("character frames, blink frames and sprite sheets protect shared assets",()=>{
+ const assets=["background","face","blink","sheet","unused"].map(asset);
+ const characterTracks=[{character:{id:"hero",animation:{blink:{intervalMs:1000,durationMs:100},clips:{
+ idle:{frames:["face"],blinkFrames:["blink"],fps:1},
+ moving:{frames:[0],fps:1,spriteSheet:{asset:"sheet",frameWidth:32,frameHeight:32,columns:1,frameCount:1}}
+ }}},keyframes:[]}];
+ const sequence=createStudioSequenceV1({viewport,assets,scenes:[{id:"scene",characterTracks,project:{version:1,durationMs:1000,viewport,layers:[{id:"layer",assetId:"background",z:0}]}}]});
+ const r=createAssetRegistry(sequence);
+ for(const id of ["face","blink","sheet"]){
+  assert.deepEqual(r.references(id),["scene"]);
+  assert.throws(()=>r.remove(id),/referenced/);
+ }
+ assert.equal(r.remove("unused").assets.length,4);
+});
