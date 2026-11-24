@@ -16,11 +16,18 @@ function drawCharacterWithCamera(ctx, pose, width, height, camera) {
 
 /** Shared deterministic compositor for preview and every export backend. */
 export function drawStudioScene({ ctx, compiledProject, timeMs, characterAnimation, characterTrack,
-  audioSample = null, visualEffectsCompiled, viewport = compiledProject.viewport }) {
+  characterTracks = null, audioSample = null, visualEffectsCompiled, viewport = compiledProject.viewport }) {
   const effectSample = sampleVisualEffects(visualEffectsCompiled, timeMs);
   drawFrame(ctx, { ...sampleFrame(compiledProject, timeMs), camera: effectSample.camera });
   const dialogue = audioSample?.dialogue ?? [];
-  if (characterTrack.keyframes.length || dialogue.length) {
+  if (characterTracks) {
+    characterTracks.forEach(({ track, animation }, index) => {
+      if (!track.keyframes.length && !(index === 0 && dialogue.length)) return;
+      const pose = { ...animation.sample(timeMs) };
+      if (index === 0 && dialogue.length) pose.mouthOpen = Math.max(...dialogue.map(({ mouthOpen }) => mouthOpen));
+      drawCharacterWithCamera(ctx, pose, viewport.width, viewport.height, effectSample.camera);
+    });
+  } else if (characterTrack && characterAnimation && (characterTrack.keyframes.length || dialogue.length)) {
     const pose = { ...characterAnimation.sample(timeMs) };
     if (dialogue.length) pose.mouthOpen = Math.max(...dialogue.map(({ mouthOpen }) => mouthOpen));
     drawCharacterWithCamera(ctx, pose, viewport.width, viewport.height, effectSample.camera);
