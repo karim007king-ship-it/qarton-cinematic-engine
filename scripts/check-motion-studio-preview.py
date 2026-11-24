@@ -808,6 +808,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         assert touch_page.locator("#playPauseButton").text_content() == "متابعة"
         touch_tap(touch_page.locator("#replayButton"))
         touch_page.wait_for_function("document.querySelector('#sceneName').value === 'المشهد 1' && Number(document.querySelector('#sequenceSeek').value) > 0")
+        touch_tap(touch_page.locator('[data-editor-mode-button="simple"]'))
         assert touch_page.locator(".studio").get_attribute("data-editor-mode") == "simple", "Simple mode is the mobile default"
         simple_times = lambda: [int(value) for value in touch_page.locator(".keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")]
         camera_before_quick_motion = simple_times()
