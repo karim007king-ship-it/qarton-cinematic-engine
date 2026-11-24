@@ -771,7 +771,11 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         order_before = touch_page.locator("#sceneThumbnails .scene-card").evaluate_all("els => els.map(el => el.dataset.sceneId)")
         third_scene = touch_page.locator("#sceneThumbnails .scene-card").nth(2)
         third_scene.scroll_into_view_if_needed()
-        third_scene.get_by_role("button", name="إلى اليسار: المشهد 3").tap()
+        reorder_button = third_scene.get_by_role("button", name="إلى اليسار: المشهد 3")
+        reorder_button.evaluate("el => el.scrollIntoView({block:'center', inline:'center', behavior:'instant'})")
+        reorder_box = reorder_button.bounding_box()
+        assert reorder_button.evaluate("el => { const r=el.getBoundingClientRect(); return document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.closest('button') === el; }"), "scene reorder button must be the actual touch hit target"
+        touch_page.touchscreen.tap(reorder_box["x"] + reorder_box["width"] / 2, reorder_box["y"] + reorder_box["height"] / 2)
         order_after = touch_page.locator("#sceneThumbnails .scene-card").evaluate_all("els => els.map(el => el.dataset.sceneId)")
         assert order_after[1] == order_before[2] and order_after != order_before, (order_before, order_after)
         touch_page.locator("#duplicateSceneButton").tap()
