@@ -22,6 +22,13 @@ export function createPersistentAssetRegistry(sequence, {storage, projectId, max
         registry.relink(id, blob);
       });
     },
+    remove(id, options = {}) {
+      return enqueue(async () => {
+        registry.validateRemoval(id);
+        await storage.remove(projectId, id, options);
+        return registry.remove(id);
+      });
+    },
     restore(options = {}) {
       return enqueue(async () => {
         const missing = [];
