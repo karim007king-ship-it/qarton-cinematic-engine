@@ -438,6 +438,9 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             page.locator("#legacyExportDetails > summary").click()
         page.locator("#exportDuration").select_option("3000")
         page.locator("#exportQuality").select_option("economy")
+        page.locator('nav.bottom-dock [data-editor-section="motion"]').click()
+        if not page.locator("#professionalMotionControls").evaluate("el => el.open"):
+            page.locator("#professionalMotionControls > summary").click()
         drag_key(7000, 8000, 96)
         assert page.locator("#timelineLane").get_attribute("data-dragging") == "true"
         page.locator("#exportButton").evaluate("el => el.click()")
