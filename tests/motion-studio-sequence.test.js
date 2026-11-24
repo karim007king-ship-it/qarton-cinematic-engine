@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  addStudioSequenceScene, compileStudioSequence, createStudioSequenceV1, deleteStudioSequenceScene,
-  duplicateStudioSequenceScene, legacyStudioProjectToSequence, reorderStudioSequenceScene,
-  sampleStudioSequence, validateStudioSequenceV1
+  addStudioSequenceScene, addStudioSequenceSceneV2, compileStudioSequence, compileStudioSequenceV2,
+  createStudioSequenceV1, createStudioSequenceV2, deleteStudioSequenceScene, deleteStudioSequenceSceneV2,
+  duplicateStudioSequenceScene, duplicateStudioSequenceSceneV2, legacyStudioProjectToSequence,
+  migrateStudioSequenceV1ToV2, migrateStudioSequenceV2ToV1, reorderStudioSequenceScene,
+  reorderStudioSequenceSceneV2, sampleStudioSequence, sampleStudioSequenceV2,
+  validateStudioSequenceV1, validateStudioSequenceV2
 } from "../packages/motion-studio/index.js";
 
 const viewport = Object.freeze({ width: 360, height: 640, fps: 24 });
@@ -173,4 +176,130 @@ test("only adjacent zero-duration Cuts are accepted; dissolves and corrupt links
     { fromSceneId: "scene-b", toSceneId: "scene-a", type: "cut", durationMs: 0 }
   ] }), /adjacent scenes/iu);
   assert.throws(() => validateStudioSequenceV1({ ...structuredClone(base), transitions: [] }), /exactly one Cut/iu);
+});
+
+function sequenceV2(scenes, transitions) {
+  return createStudioSequenceV2({ viewport, scenes, assets: [image, audio], transitions });
+}
+
+function transition(fromSceneId, toSceneId, type = "cut", durationMs = 0, audioCrossfadeMs = 0) {
+  return { fromSceneId, toSceneId, type, durationMs, audioCrossfadeMs };
+}
+
+test("V1 migration preserves local scene and asset data and round-trips Cut projects", () => {
+  const legacy = sequence([scene("scene-a", 1000, { audioTracks: [{ id: "music", type: "music", clips: [
+    { id: "song", asset: audio.id, startMs: 200, durationMs: 300, loop: false }
+  ] }] }), scene("scene-b", 1200)], [image, audio]);
+  const before = structuredClone(legacy);
+  const migrated = migrateStudioSequenceV1ToV2(legacy);
+  assert.equal(migrated.version, 2);
+  assert.deepEqual(migrated.transitions, [transition("scene-a", "scene-b")]);
+  assert.deepEqual(migrated.scenes, legacy.scenes);
+  assert.deepEqual(migrated.assets, legacy.assets);
+  assert.equal(migrated.scenes[0].audioTracks[0].clips[0].startMs, 200, "local audio timestamps are unchanged");
+  assert.deepEqual(legacy, before, "migration does not mutate the source project or its asset records");
+  assert.deepEqual(migrateStudioSequenceV2ToV1(migrated), legacy);
+});
+
+test("V2 overlap timeline samples both scenes and centered short audio crossfade deterministically", () => {
+  const compiled = compileStudioSequenceV2(sequenceV2([scene("scene-a", 1000), scene("scene-b", 1000)], [
+    transition("scene-a", "scene-b", "dissolve", 400, 100)
+  ]));
+  assert.equal(compiled.durationMs, 1600);
+  assert.deepEqual(compiled.transitionIntervals.map(({ startMs, endMs }) => [startMs, endMs]), [[600, 1000]]);
+  const start = sampleStudioSequenceV2(compiled, 600);
+  assert.equal(start.kind, "transition");
+  assert.equal(start.progress, 0);
+  assert.equal(start.outgoing.sceneTimeMs, 600);
+  assert.equal(start.incoming.sceneTimeMs, 0);
+  assert.equal(start.outgoing.opacity, 1);
+  assert.equal(start.incoming.opacity, 0);
+  assert.equal(start.audioMix.phase, "before");
+  assert.deepEqual([start.audioMix.outgoingGain, start.audioMix.incomingGain], [1, 0]);
+  const audioStart = sampleStudioSequenceV2(compiled, 750).audioMix;
+  assert.equal(audioStart.phase, "crossfade");
+  assert.equal(audioStart.progress, 0);
+  assert.equal(audioStart.outgoingGain, 1);
+  assert.equal(audioStart.incomingGain, 0);
+  const audioMiddle = sampleStudioSequenceV2(compiled, 800).audioMix;
+  assert.ok(Math.abs(audioMiddle.outgoingGain - Math.SQRT1_2) < 1e-12);
+  assert.ok(Math.abs(audioMiddle.incomingGain - Math.SQRT1_2) < 1e-12);
+  const audioEnd = sampleStudioSequenceV2(compiled, 850).audioMix;
+  assert.equal(audioEnd.phase, "after", "the crossfade window is half-open");
+  assert.deepEqual([audioEnd.outgoingGain, audioEnd.incomingGain], [0, 1]);
+  const end = sampleStudioSequenceV2(compiled, 1000);
+  assert.equal(end.kind, "scene");
+  assert.equal(end.sceneId, "scene-b");
+  assert.equal(end.sceneTimeMs, 400, "incoming local time advances through the overlap");
+  assert.equal(sampleStudioSequenceV2(compiled, 1600).sceneTimeMs, 1000, "final endpoint remains inclusive");
+  assert.deepEqual(sampleStudioSequenceV2(compiled, 800), sampleStudioSequenceV2(compiled, 800));
+});
+
+test("zero-duration audio crossfade is a hard cut and Fade has a defined black midpoint", () => {
+  const cut = compileStudioSequenceV2(sequenceV2([scene("a", 1000), scene("b", 1000)], [transition("a", "b")]));
+  assert.equal(cut.durationMs, 2000);
+  assert.equal(sampleStudioSequenceV2(cut, 1000).kind, "scene");
+  const fade = compileStudioSequenceV2(sequenceV2([scene("a", 1000), scene("b", 1000)], [
+    transition("a", "b", "fade", 400, 0)
+  ]));
+  const middle = sampleStudioSequenceV2(fade, 800);
+  assert.equal(middle.progress, 0.5);
+  assert.equal(middle.outgoing.opacity, 0);
+  assert.equal(middle.incoming.opacity, 0);
+  assert.equal(middle.blackOpacity, 1);
+  assert.equal(middle.audioMix.phase, "hard-cut");
+  assert.deepEqual([middle.audioMix.outgoingGain, middle.audioMix.incomingGain], [0, 1],
+    "a zero-length audio crossfade switches at the visual transition midpoint");
+  assert.deepEqual([sampleStudioSequenceV2(fade, 799).audioMix.outgoingGain,
+    sampleStudioSequenceV2(fade, 799).audioMix.incomingGain], [1, 0]);
+  assert.equal(sampleStudioSequenceV2(fade, 600).blackOpacity, 0);
+  assert.equal(sampleStudioSequenceV2(fade, 1000).kind, "scene");
+});
+
+test("V2 rejects malformed transitions, out-of-scene overlaps, and triple-scene overlap", () => {
+  const scenes = [scene("a", 1000), scene("b", 500), scene("c", 1000)];
+  const valid = sequenceV2(scenes, [transition("a", "b", "dissolve", 200, 100), transition("b", "c")]);
+  assert.equal(compileStudioSequenceV2(valid).durationMs, 2300);
+  assert.throws(() => sequenceV2(scenes, [transition("a", "b", "dissolve", 200, 201), transition("b", "c")]), /audioCrossfadeMs/iu);
+  assert.throws(() => sequenceV2(scenes, [transition("a", "b", "fade", 501, 0), transition("b", "c")]), /longer than an adjacent scene/iu);
+  assert.throws(() => sequenceV2([scene("a", 1000), scene("b", 300), scene("c", 1000)], [
+    transition("a", "b", "fade", 200), transition("b", "c", "dissolve", 101)
+  ]), /overlap inside scene b/iu);
+  assert.throws(() => validateStudioSequenceV2({ ...structuredClone(valid), version: 1 }), /StudioSequenceV2/iu);
+  assert.throws(() => validateStudioSequenceV2({ ...structuredClone(valid), unexpected: true }), /invalid fields/iu);
+  assert.throws(() => sequenceV2([scene("a"), scene("b")], [transition("a", "b", "wipe", 100)]), /unsupported type/iu);
+  assert.throws(() => sequenceV2([scene("a"), scene("b")], [transition("b", "a")]), /adjacent scenes/iu);
+  assert.throws(() => sequenceV2([scene("a"), scene("b")], [transition("a", "b", "cut", 10)]), /Cut transitions/iu);
+  assert.throws(() => sequenceV2([scene("a"), scene("b")], [transition("a", "b", "fade", 0)]), /positive duration/iu);
+  assert.throws(() => sampleStudioSequenceV2(compileStudioSequenceV2(valid), Infinity), TypeError);
+});
+
+test("V2 migrate-down rejects lossy transitions", () => {
+  const dissolve = sequenceV2([scene("a", 1000), scene("b", 1000)], [transition("a", "b", "dissolve", 200, 100)]);
+  assert.throws(() => migrateStudioSequenceV2ToV1(dissolve), /cannot represent/iu);
+});
+
+test("V2 scene edits preserve unchanged edges and make new adjacency a hard Cut", () => {
+  const original = sequenceV2([scene("a", 1000), scene("b", 1000), scene("c", 1000), scene("d", 1000)], [
+    transition("a", "b", "dissolve", 100, 50), transition("b", "c", "fade", 100, 0), transition("c", "d")
+  ]);
+  const copy = duplicateStudioSequenceSceneV2(original, "b", { newId: "b-copy" });
+  assert.deepEqual(copy.scenes.map(item => item.id), ["a", "b", "b-copy", "c", "d"]);
+  assert.deepEqual(copy.transitions, [transition("a", "b", "dissolve", 100, 50), transition("b", "b-copy"),
+    transition("b-copy", "c"), transition("c", "d")]);
+  assert.deepEqual(original.transitions[0], transition("a", "b", "dissolve", 100, 50));
+
+  const deleted = deleteStudioSequenceSceneV2(original, "b");
+  assert.deepEqual(deleted.scenes.map(item => item.id), ["a", "c", "d"]);
+  assert.deepEqual(deleted.transitions, [transition("a", "c"), transition("c", "d")]);
+
+  const reordered = reorderStudioSequenceSceneV2(original, "d", 2);
+  assert.deepEqual(reordered.scenes.map(item => item.id), ["a", "b", "d", "c"]);
+  assert.deepEqual(reordered.transitions, [transition("a", "b", "dissolve", 100, 50), transition("b", "d"), transition("d", "c")]);
+  const added = addStudioSequenceSceneV2(original, scene("x", 1000), 2);
+  assert.deepEqual(added.scenes.map(item => item.id), ["a", "b", "x", "c", "d"]);
+  assert.deepEqual(added.transitions, [transition("a", "b", "dissolve", 100, 50), transition("b", "x"),
+    transition("x", "c"), transition("c", "d")]);
+  assert.equal(added.assets.length, original.assets.length, "scene edits retain asset records for registry cleanup later");
+  assert.deepEqual(original.scenes.map(item => item.id), ["a", "b", "c", "d"], "edits never mutate the source");
 });
