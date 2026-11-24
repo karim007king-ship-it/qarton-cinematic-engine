@@ -1674,6 +1674,15 @@ async function loadStudioScene(sceneId, { globalTimeMs = null, localTimeMs = 0, 
   aspectSelect.value = aspectPreset; fitSelect.value = fitMode;
   previewViewport = safePreviewSize(project.viewport.width, project.viewport.height);
   applyCanvasDimensions(previewViewport);
+  status.textContent = "جارٍ تحميل أصول المشهد…";
+  const loadingSurface = makePlaceholder(previewViewport);
+  context.save();
+  try {
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.globalAlpha = 1;
+    context.globalCompositeOperation = "source-over";
+    context.drawImage(loadingSurface, 0, 0);
+  } finally { context.restore(); }
   await restoreSceneAssets(target);
   if (token !== sceneLoadToken || activeExport) return;
   audioAssets = sequenceEditor.sequence.assets.filter(asset => asset.kind === "audio").map(assetMetadataToAudio);
@@ -1706,7 +1715,7 @@ async function loadStudioScene(sceneId, { globalTimeMs = null, localTimeMs = 0, 
   if (wasPlaying) { sequenceBaseMs = sequenceTimeMs; sequenceEpochMs = performance.now(); }
   makeThumbnail();
   renderSequenceOverview(); refreshExportControls();
-  status.textContent = currentFileInfo ? `المشهد جاهز: ${sequenceEditor.nameOf(sceneId)}` : `المشهد جاهز؛ أعد ربط أصوله: ${sequenceEditor.nameOf(sceneId)}`;
+  status.textContent = currentFileInfo ? `المشهد جاهز: ${sequenceEditor.nameOf(sceneId)}` : `صورة المشهد غير متاحة؛ أعد ربطها: ${sequenceEditor.nameOf(sceneId)}`;
 }
 async function addScene() {
   if (activeExport || sequenceEditor.scenes.length >= 32) return;
