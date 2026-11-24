@@ -106,3 +106,48 @@ adapter clones and validates the old data without modifying it.
 This core does not render or encode multi-scene video, manage the asset store,
 or implement dissolve transitions or UI. Rendering integration remains a
 separate phase.
+
+## StudioSequenceV2 transition core (L11-H1)
+
+`createStudioSequenceV2`, `validateStudioSequenceV2`, `compileStudioSequenceV2`
+and `sampleStudioSequenceV2` add a versioned metadata contract for `cut`,
+`fade` (fade-through-black), and `dissolve`. V1 remains unchanged. Use
+`migrateStudioSequenceV1ToV2` to validate and clone V1 into V2, adding zero
+audio-crossfade Cuts. The migration preserves scene IDs, scene-local projects
+and tracks, asset descriptors, and references; it does not write storage or
+copy media bytes. `serializeStudioSequenceV2` and `parseStudioSequenceV2`
+provide a strict JSON round-trip for the metadata snapshot (2 MiB limit); image
+and audio bytes remain with the asset registry. `migrateStudioSequenceV2ToV1`
+succeeds only for zero-duration Cuts, so a lossy downgrade is rejected.
+
+V2 transition records require adjacent `fromSceneId`/`toSceneId`, `type`,
+`durationMs`, and `audioCrossfadeMs`. Cuts require both durations to be zero;
+Fade/Dissolve require a positive visual duration (at most 3000ms), and audio
+crossfade duration must be in `[0, durationMs]`. Zero audio duration means a
+hard cut at the visual transition midpoint (at the exact scene boundary for a
+Cut). A shorter positive audio window is centered within the visual transition:
+the outgoing scene alone is audible before it, equal-power cosine/sine gains are
+reported during it, and the incoming scene alone is audible after it. The
+sampler describes the future audio mix; it does not schedule AudioNodes or
+change preview/export audio in H1.
+
+Scene durations remain local and are never stretched. Each visual transition
+overlaps the tail of its outgoing scene with the head of the incoming scene,
+so `totalDurationMs = sum(scene durations) - sum(transition durations)`. A
+middle scene's incoming and outgoing transition durations may not exceed its
+local duration in total, preventing a three-scene overlap. The sampler uses
+absolute project time and returns both local times and visual opacities during
+a transition. Fade intentionally reaches black at its midpoint; Dissolve uses
+linear opacity and has no black midpoint.
+
+V2 scene add/duplicate/delete/reorder operations preserve a transition only
+when the same directed scene pair remains adjacent. Newly adjacent pairs become
+zero-duration Cuts. Scene edits are immutable, require a fresh duplicate ID,
+and retain asset descriptors; deleting unused asset records remains the
+asset-registry's responsibility.
+
+H1 changes no UI, audio scheduler, compositor, encoder, or export-size profile.
+It never reduces output resolution. The current recorder duration check remains
+`max(150ms, 1000/fps)` and is not loosened here; it still rejects a 187ms drift
+at 24fps. Multi-scene export integration must supply the overlap-adjusted V2
+duration to that existing check and revalidate measured container duration.
