@@ -312,8 +312,10 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         page.mouse.move(audio_box["x"] + audio_box["width"] * 0.8, audio_box["y"] + audio_box["height"] / 2)
         assert page.locator(".audio-clip").get_attribute("aria-label") == drag_start, "export lock ignores trailing pointer motion"
         page.mouse.up()
+        page.locator('[data-editor-section="more"]').click()
         page.locator("#cancelExportButton").click()
         page.get_by_text("أُلغي التسجيل ونُظّفت موارده.", exact=True).wait_for(timeout=10000)
+        page.locator('[data-editor-section="audio"]').click()
         assert "00:01.34" in page.locator(".audio-clip").get_attribute("aria-label"), "cancelled audio drag keeps its last valid timing"
         page.locator("#seek").evaluate("""(el, value) => { el.value = String(value); el.dispatchEvent(new Event('input', {bubbles: true})); }""", 0)
         page.locator("#playPauseButton").click()
@@ -439,8 +441,10 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
                         lane.bounding_box()["y"] + 20)
         assert page.locator('.keyframe-marker[data-key-time="8000"]').count() == 1, "export lock rejects trailing pointer moves"
         page.mouse.up()
+        page.locator('[data-editor-section="more"]').click()
         page.locator("#cancelExportButton").click()
         page.get_by_text("أُلغي التسجيل ونُظّفت موارده.", exact=True).wait_for(timeout=10000)
+        page.locator('[data-editor-section="audio"]').click()
 
         page.locator("#aspectPreset").select_option("landscape")
         page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
