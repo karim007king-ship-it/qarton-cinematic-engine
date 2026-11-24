@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 32799)
-Total output lines: 2312
-
 import { errorText, setExportErrorMessage } from "./studio-errors.js";
 import { compileProject, sampleFrame, planExport, rasterForQuality, probeExport, startExport } from "@qarton/cinematic-engine/motion-studio";
 import { createStudioSequenceV1 } from "@qarton/cinematic-engine/motion-studio";
@@ -1056,7 +1053,193 @@ function renderVisualEffectInspector() {
       }
       input.value = String(values[channel.key]);
       input.disabled = Boolean(activeExport);
-      label.appe…2799 tokens truncated…sequenceEditor.sequence);
+      label.append(input); container.append(label);
+    }
+  };
+  buildFields("visualEffectFrom", "from", selected?.from);
+  buildFields("visualEffectTo", "to", selected?.to);
+  $("visualEffectType").disabled = Boolean(activeExport);
+  $("addVisualEffect").disabled = Boolean(activeExport);
+}
+function renderAt(timeMs, preparedAudioSample = null) {
+  currentMs = Math.max(0, Math.min(project.durationMs, timeMs));
+  const audioSample = preparedAudioSample ?? audioPlayer?.sample(currentMs);
+  drawStudioScene({ ctx: context, compiledProject: compiled, timeMs: currentMs,
+    characterAnimation, characterTrack, audioSample, visualEffectsCompiled, viewport: previewViewport });
+  seek.value = String(currentMs);
+  timeReadout.textContent = formatTime(currentMs);
+  timelineEditor?.renderPlayhead();
+  characterTimeline?.render();
+  audioTimeline?.renderPlayhead();
+  visualEffectsTimeline?.renderPlayhead();
+  if (sequenceEditor) {
+    if (!isPlaying) sequenceTimeMs = sequenceEditor.timeFor(activeSceneId, currentMs);
+    renderSequencePlayhead();
+  }
+}
+function renderSequencePlayhead() {
+  const total = sequenceEditor?.durationMs ?? 1;
+  const time = Math.max(0, Math.min(total, sequenceTimeMs));
+  $("sequenceSeek").max = String(total);
+  $("sequenceSeek").value = String(time);
+  $("sequenceDuration").textContent = `${formatTime(time)} / ${formatTime(total)}`;
+  for (const button of $("sequenceBlocks").querySelectorAll(".sequence-block")) {
+    const current = button.dataset.sceneId === activeSceneId;
+    button.setAttribute("aria-current", String(current));
+  }
+  for (const button of $("sceneThumbnails").querySelectorAll("[data-scene-id] .scene-select")) {
+    button.setAttribute("aria-current", String(button.closest("[data-scene-id]").dataset.sceneId === activeSceneId));
+  }
+}
+function renderSequenceOverview({ rebuildCards = true, rebuildAssets = true } = {}) {
+  if (!sequenceEditor) return;
+  const cards = $("sceneThumbnails");
+  const scenes = sequenceEditor.scenes;
+  if (rebuildCards) cards.replaceChildren();
+  for (const scene of rebuildCards ? scenes : []) {
+    const card = document.createElement("article");
+    card.className = "scene-card";
+    card.dataset.sceneId = scene.id;
+    const select = document.createElement("button");
+    select.type = "button"; select.className = "scene-select"; select.dataset.sceneSelect = scene.id;
+    select.setAttribute("aria-current", String(scene.id === activeSceneId));
+    const thumb = document.createElement("span"); thumb.className = "scene-thumb";
+    const image = sceneThumbnails.get(scene.id);
+    if (image) { const preview = document.createElement("img"); preview.src = image; preview.alt = ""; thumb.append(preview); }
+    else { thumb.textContent = `${scene.index + 1}`; }
+    const title = document.createElement("span"); title.className = "scene-card-title"; title.textContent = `${scene.index + 1}. ${scene.name}`;
+    select.append(thumb, title);
+    select.addEventListener("click", () => { void activateStudioScene(scene.id); });
+    card.append(select); cards.append(card);
+  }
+  const blocks = $("sequenceBlocks"); blocks.replaceChildren();
+  const total = Math.max(1, sequenceEditor.durationMs);
+  for (const scene of scenes) {
+    const block = document.createElement("button"); block.type = "button"; block.className = "sequence-block";
+    block.dataset.sceneId = scene.id; block.style.flexGrow = String(scene.project.durationMs);
+    block.style.flexBasis = "0"; block.style.flexShrink = "1";
+    block.title = `${scene.name} · ${formatTime(scene.project.durationMs)}`;
+    block.setAttribute("aria-label", `${scene.name}, ${formatTime(scene.startMs)} إلى ${formatTime(scene.endMs)}`);
+    const label = document.createElement("span"); label.textContent = scene.name; block.append(label);
+    block.addEventListener("click", event => {
+      const rect = block.getBoundingClientRect();
+      const fraction = rect.width ? Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) : 0;
+      seekSequenceTo(scene.startMs + fraction * scene.project.durationMs);
+    });
+    blocks.append(block);
+  }
+  const current = getCurrentScene();
+  $("sceneName").value = current?.name ?? "";
+  $("sceneDuration").value = current ? String(current.project.durationMs / 1000) : "";
+  $("deleteSceneButton").disabled = scenes.length <= 1 || Boolean(activeExport);
+  $("duplicateSceneButton").disabled = Boolean(activeExport) || scenes.length >= 32;
+  $("addSceneButton").disabled = Boolean(activeExport) || scenes.length >= 32;
+  $("moveSceneLeftButton").disabled = Boolean(activeExport) || (current?.index ?? 0) <= 0;
+  $("moveSceneRightButton").disabled = Boolean(activeExport) || (current?.index ?? 0) >= scenes.length - 1;
+  renderSequencePlayhead();
+  if (rebuildAssets) renderAssetLibrary();
+}
+function currentAssetReferences(assetId) {
+  return sequenceEditor.sequence.scenes.filter(scene => scene.project.layers.some(layer => layer.assetId === assetId) ||
+    scene.audioTracks.some(track => track.clips.some(clip => clip.asset === assetId)) ||
+    scene.characterTracks.some(track => Object.values(track.character.animation?.clips ?? {}).some(clip =>
+      clip.spriteSheet ? clip.spriteSheet.asset.trim() === assetId : [...clip.frames, ...(clip.blinkFrames ?? [])].includes(assetId))))
+    .map(scene => scene.id);
+}
+function renderAssetLibrary() {
+  const root = $("assetLibraryList");
+  if (!root) return;
+  $("assetBudgetLabel").textContent = assetStorageStatus;
+  root.replaceChildren();
+  for (const asset of sequenceEditor.sequence.assets) {
+    const uses = [...new Set([...(persistentAssets?.references(asset.id) ?? []), ...currentAssetReferences(asset.id)])];
+    const row = document.createElement("div"); row.className = "asset-entry"; row.dataset.assetId = asset.id;
+    const name = document.createElement("span"); name.className = "asset-entry-name"; name.textContent = asset.name;
+    const meta = document.createElement("span"); meta.className = "asset-entry-meta";
+    meta.textContent = `${asset.kind === "image" ? "صورة" : asset.kind === "audio" ? "صوت" : asset.kind} · ${(asset.size / 1024 / 1024).toFixed(2)} MiB · ${uses.length ? `مستخدم في ${uses.length} مشهد` : "غير مستخدم"}`;
+    const use = document.createElement("button"); use.type = "button"; use.textContent = "استخدم"; use.setAttribute("aria-label", `استخدم الأصل ${asset.name}`);
+    use.disabled = !getAssetBlob(asset.id) || Boolean(activeExport);
+    use.addEventListener("click", () => { void useLibraryAsset(asset.id); });
+    const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "حذف"; remove.setAttribute("aria-label", `حذف الأصل ${asset.name}`);
+    remove.disabled = uses.length > 0 || Boolean(activeExport) || !persistentAssets;
+    remove.addEventListener("click", () => { void removeLibraryAsset(asset.id); });
+    row.append(name, meta, use, remove); root.append(row);
+  }
+}
+function makeThumbnail() {
+  try {
+    const thumb = document.createElement("canvas"); thumb.width = 120; thumb.height = 68;
+    thumb.getContext("2d").drawImage(canvas, 0, 0, thumb.width, thumb.height);
+    sceneThumbnails.set(activeSceneId, thumb.toDataURL("image/jpeg", 0.55));
+  } catch { /* A missing or tainted preview leaves the accessible scene label visible. */ }
+}
+function createSequenceSceneFromCurrent(id, { freshTracks = false } = {}) {
+  return { id,
+    project: structuredClone(project),
+    audioTracks: freshTracks ? makeAudioTracks() : structuredClone(audioTracks),
+    characterTracks: freshTracks ? [makeCharacterTrack()] : structuredClone([characterTrack, ...(sceneExtraCharacterTracks.get(activeSceneId) ?? [])]),
+    visualEffectsTrack: freshTracks ? makeVisualEffectsTrack() : structuredClone(visualEffectsTrack) };
+}
+function replaceCurrentSceneAndAssets(nextAssets = sequenceEditor.sequence.assets) {
+  const old = sequenceEditor.sequence;
+  const current = currentScenePayload();
+  const scenes = old.scenes.map(scene => scene.id === activeSceneId ? current : scene);
+  const next = createStudioSequenceV1({ viewport: project.viewport, scenes, assets: nextAssets });
+  sequenceEditor.replaceSequence(next);
+  persistSequenceMetadata();
+  void persistentAssets?.replaceSequence(next).catch(error => {
+    $("assetLibraryMessage").textContent = `تعذر حفظ مراجع الأصول: ${errorText(error)}`;
+  });
+  audioAssets = next.assets.filter(asset => asset.kind === "audio").map(assetMetadataToAudio);
+  renderAssetLibrary();
+  return next;
+}
+async function useLibraryAsset(id) {
+  try {
+    await assetReady;
+    const asset = sequenceEditor.sequence.assets.find(item => item.id === id);
+    const blob = getAssetBlob(id);
+    if (!asset || !blob) throw new Error("الأصل غير مرتبط؛ أعد اختياره من الهاتف.");
+    if (asset.kind === "audio") {
+      let audio = audioFiles.get(id);
+      if (!audio) {
+        const file = new File([blob], asset.name, { type: asset.mimeType });
+        const url = URL.createObjectURL(file);
+        let durationMs = 0; try { durationMs = await readAudioDuration(file); } catch { /* Timeline clips retain their authored duration. */ }
+        audio = { file, url, durationMs }; audioFiles.set(id, audio);
+      }
+      activeAudioAssetId = id;
+      $("audioFileName").textContent = `${asset.name} · ${(asset.size / 1024 / 1024).toFixed(2)} MiB`;
+      $("audioTimelineMessage").textContent = `الأصل ${asset.name} جاهز للمسار الحالي.`;
+      renderAudioInspector();
+      return;
+    }
+    if (asset.kind !== "image") throw new TypeError("هذا النوع من الأصول لا يمكن وضعه في المشهد بعد.");
+    const file = new File([blob], asset.name, { type: asset.mimeType });
+    const imageRequestToken = imageRequest.begin();
+    pendingImageRequest = imageRequestToken; refreshExportControls();
+    const bitmap = await decodeImageBitmap(file, { isCurrent: () => imageRequest.isCurrent(imageRequestToken) });
+    try {
+      selectedImageDimensions = { width: bitmap.width, height: bitmap.height };
+      const surface = drawBitmap(bitmap);
+      const nextProject = structuredClone(project);
+      nextProject.layers[0].assetId = id;
+      project = nextProject; selectedImageFile = file; currentFileInfo = { name: asset.name, type: asset.mimeType, size: asset.size };
+      imageSource = surface; sceneImageSources.set(id, surface);
+      compiled = compileProject(projectForRaster(project, previewViewport), imageProvider);
+      replaceCurrentSceneAndAssets();
+      sceneSettings.set(activeSceneId, { aspectPreset, fitMode, image: currentFileInfo });
+      imageName.textContent = `${asset.name} · ${bitmap.width}×${bitmap.height}`;
+      renderAt(currentMs); status.textContent = "تم ربط الصورة بالمشهد";
+    } finally { bitmap.close?.(); }
+  } catch (error) { $("assetLibraryMessage").textContent = errorText(error); }
+  finally { if (pendingImageRequest !== null) pendingImageRequest = null; refreshExportControls(); }
+}
+async function removeLibraryAsset(id) {
+  try {
+    captureCurrentScene();
+    await assetReady;
+    await persistentAssets?.replaceSequence(sequenceEditor.sequence);
     if (persistentAssets) {
       await persistentAssets.remove(id);
       sequenceEditor.replaceSequence(persistentAssets.sequence);
