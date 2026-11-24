@@ -162,11 +162,11 @@ try {
   loopEngine.dispose();
 
   // The middle scene's incoming and outgoing windows touch at the same time.
-  const middle = { id: "middle", project: { version: 1, durationMs: 400, viewport,
+  const middleScene = { id: "middle", project: { version: 1, durationMs: 400, viewport,
     layers: [{ id: "layer-middle", assetId: image.id, z: 0 }] }, audioTracks: [{ id: "track-middle", type: "music", volume: 1,
     clips: [{ id: "clip-middle", asset: toneB.id, startMs: 0, durationMs: 400, volume: 0.8 }] }],
     characterTracks: [], visualEffectsTrack: { version: 1, seed: 1, clips: [] } };
-  const threeScenes = [scene("first", toneA.id, 0, 1000), middle, scene("last", toneA.id, 0, 1000)];
+  const threeScenes = [scene("first", toneA.id, 0, 1000), middleScene, scene("last", toneA.id, 0, 1000)];
   const continuous = compileStudioSequenceV2(createStudioSequenceV2({ viewport, scenes: threeScenes, assets: [image, toneA, toneB],
     transitions: [
       { fromSceneId: "first", toSceneId: "middle", type: "dissolve", durationMs: 200, audioCrossfadeMs: 200 },
