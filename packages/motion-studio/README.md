@@ -115,8 +115,10 @@ and `sampleStudioSequenceV2` add a versioned metadata contract for `cut`,
 `migrateStudioSequenceV1ToV2` to validate and clone V1 into V2, adding zero
 audio-crossfade Cuts. The migration preserves scene IDs, scene-local projects
 and tracks, asset descriptors, and references; it does not write storage or
-copy media bytes. `migrateStudioSequenceV2ToV1` succeeds only for zero-duration
-Cuts, so a lossy downgrade is rejected.
+copy media bytes. `serializeStudioSequenceV2` and `parseStudioSequenceV2`
+provide a strict JSON round-trip for the metadata snapshot (2 MiB limit); image
+and audio bytes remain with the asset registry. `migrateStudioSequenceV2ToV1`
+succeeds only for zero-duration Cuts, so a lossy downgrade is rejected.
 
 V2 transition records require adjacent `fromSceneId`/`toSceneId`, `type`,
 `durationMs`, and `audioCrossfadeMs`. Cuts require both durations to be zero;
