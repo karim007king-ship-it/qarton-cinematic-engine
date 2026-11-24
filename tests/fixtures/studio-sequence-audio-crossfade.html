@@ -99,11 +99,12 @@ try {
     audioBuffers: new Map([[toneA.id, makeTone(cutOffline, 440)], [toneB.id, makeTone(cutOffline, 880)]]) });
   cutEngine.schedule({ epoch: 0 });
   const cutValues = (await cutOffline.startRendering()).getChannelData(0);
-  const early440 = componentRms(cutValues, 700, 790, 440);
-  const early880 = componentRms(cutValues, 700, 790, 880);
-  const late440 = componentRms(cutValues, 810, 900, 440);
-  const late880 = componentRms(cutValues, 810, 900, 880);
-  if (early440 < 0.25 || early880 > 0.002 || late880 < 0.25 || late440 > 0.002) {
+  // Use 100 ms windows (44 and 88 whole cycles) to avoid FFT projection leakage.
+  const early440 = componentRms(cutValues, 700, 800, 440);
+  const early880 = componentRms(cutValues, 700, 800, 880);
+  const late440 = componentRms(cutValues, 800, 900, 440);
+  const late880 = componentRms(cutValues, 800, 900, 880);
+  if (early440 < 0.25 || early880 > 0.001 || late880 < 0.25 || late440 > 0.001) {
     throw new Error(`zero-window midpoint cut leaked/missed audio: ${JSON.stringify({ early440, early880, late440, late880 })}`);
   }
   cutEngine.dispose();
