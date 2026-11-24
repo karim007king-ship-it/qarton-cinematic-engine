@@ -84,6 +84,13 @@ test("Cut, zero audio windows, and visual-longer-than-audio windows have determi
   const engine = createStudioSequenceAudioCrossfadeEngine(cut, { audioContext: ctx, audioBuffers: { [sound.id]: buffer() } });
   assert.deepEqual(engine.sample(999).gains, [{ sceneId: "left", gain: 1 }]);
   assert.deepEqual(engine.sample(1000).gains, [{ sceneId: "right", gain: 1 }]);
+  const cutSession = engine.schedule({ epoch: 2 });
+  const cutSceneGainNodes = ctx.gains.slice(2, 4);
+  assert.ok(cutSceneGainNodes[0].gain.events.some(event => event[0] === "set" && event[1] === 0 && event[2] === 3),
+    "outgoing scene audio must stop on the exact Cut boundary");
+  assert.ok(cutSceneGainNodes[1].gain.events.some(event => event[0] === "set" && event[1] === 1 && event[2] === 3),
+    "incoming scene audio must start on the exact Cut boundary");
+  cutSession.stop();
   engine.dispose();
 
   const fade = compile({ scenes: [audioScene("out", 1000, [music("out")]), audioScene("in", 1000, [music("in")])],
