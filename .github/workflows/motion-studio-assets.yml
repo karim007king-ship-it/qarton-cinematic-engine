@@ -1,0 +1,19 @@
+name: Motion Studio asset storage
+on:
+  push:
+    branches: [feature/shared-assets-l11c]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  storage:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+      - run: python -m pip install playwright==1.55.0
+      - run: python -m playwright install --with-deps chromium
+      - run: python scripts/check-motion-studio-assets.py
