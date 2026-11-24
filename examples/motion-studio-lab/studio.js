@@ -1,3 +1,4 @@
+import { errorText, setExportErrorMessage } from "./studio-errors.js";
 import { compileProject, sampleFrame, planExport, rasterForQuality, probeExport, startExport } from "@qarton/cinematic-engine/motion-studio";
 import { createStudioSequenceV1 } from "@qarton/cinematic-engine/motion-studio";
 import { createRequestToken, makeProject, makeProjectFile, parseProjectFile, prepareProjectUpdate, VIEWPORT } from "./studio-model.js?v=l7b-character-01";
@@ -329,13 +330,14 @@ function assetMetadataToAudio(asset) {
 }
 function persistSequenceMetadata() {
   try {
-    localStorage.setItem(CURRENT_PROJECT_KEY, projectStorageId);
     const settingsByScene = Object.fromEntries(sequenceEditor.scenes.map(scene => {
       const settings = sceneImageSettings(scene.id);
       return [scene.id, { aspectPreset: settings.aspectPreset, fitMode: settings.fitMode }];
     }));
     const text = serializeStudioSequenceFile(sequenceEditor, { projectId: projectStorageId, aspectPreset, fitMode, audioMasterVolume, sceneSettings: settingsByScene });
     localStorage.setItem(`qarton-motion-studio-sequence:${projectStorageId}`, text);
+    // Publish the current-project pointer only after its metadata is saved.
+    localStorage.setItem(CURRENT_PROJECT_KEY, projectStorageId);
   } catch (error) {
     $("assetLibraryMessage").textContent = `تعذر حفظ بيانات التسلسل محليًا: ${errorText(error)}`;
   }
@@ -391,32 +393,6 @@ function makePlaceholder(size) {
   return surface;
 }
 
-const errorText = (error) => error?.message || String(error);
-function setExportErrorMessage(target, error, suggestion = "") {
-  const arabic = error?.name === "NotSupportedError" ? "صيغة التصدير غير مدعومة على هذا الجهاز."
-    : error?.code === "UNSUPPORTED_FORMAT" ? "صيغة الفيديو غير مدعومة أو تعذّر تشغيل مرمّزها."
-      : error?.code === "CLOCK_STALLED" ? "توقفت ساعة التصدير أو تأخرت الإطارات. جرّب جودة أقل أو مدة أقصر."
-        : error?.code === "BUDGET_EXCEEDED" ? "حجم الفيديو تجاوز الحد الآمن. قلّل الجودة أو مدة الفيديو."
-          : error?.code === "BACKGROUNDED" ? "توقف التصدير لأن الصفحة انتقلت إلى الخلفية."
-            : error?.code === "CAPTURE_FAILED" ? "تعذّر بدء التسجيل أو التقاط إطارات الفيديو."
-              : error?.code === "INVALID_OUTPUT" ? "تعذّر التحقق من الفيديو الناتج. جرّب صيغة أو جودة أخرى."
-                : "فشل تصدير الفيديو. راجع الصورة والصوت والصيغة والمساحة المتاحة.";
-  const message = document.createElement("span");
-  message.textContent = suggestion ? `${arabic} ${suggestion}` : arabic;
-  const detailsText = [error?.code, error?.name, error?.message || String(error),
-    error?.details?.assetIds?.length ? `الأصول: ${error.details.assetIds.join(", ")}` : ""]
-    .filter(Boolean).join(" · ");
-  target.replaceChildren(message);
-  if (detailsText) {
-    const details = document.createElement("details");
-    const summary = document.createElement("summary");
-    const code = document.createElement("code");
-    summary.textContent = "عرض التفاصيل التقنية";
-    code.textContent = detailsText;
-    details.append(summary, code);
-    target.append(details);
-  }
-}
 function fail(error) {
   errorMessage.textContent = errorText(error);
   errorMessage.hidden = false;
@@ -427,35 +403,32 @@ function formatTime(ms) {
   const seconds = Math.max(0, ms) / 1000;
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${(seconds % 60).toFixed(2).padStart(5, "0")}`;
 }
+// Both export paths own a video element and an object URL. Release them consistently.
+function resetExportMedia(video, download, objectUrl) {
+  video.pause();
+  video.removeAttribute("src");
+  video.load();
+  video.hidden = true;
+  download.hidden = true;
+  download.removeAttribute("href");
+  if (objectUrl) URL.revokeObjectURL(objectUrl);
+  return null;
+}
 function clearExportResult() {
   exportStatusHasResult = false;
   exportError.hidden = true;
   exportError.textContent = "";
   tryWebmButton.hidden = true;
-  exportVideo.pause();
-  exportVideo.removeAttribute("src");
-  exportVideo.load();
-  exportVideo.hidden = true;
-  exportDownload.hidden = true;
-  exportDownload.removeAttribute("href");
+  exportVideoUrl = resetExportMedia(exportVideo, exportDownload, exportVideoUrl);
   exportMetadata.textContent = "لم يُنشأ فيديو بعد.";
   exportProgress.value = 0;
-  if (exportVideoUrl) URL.revokeObjectURL(exportVideoUrl);
-  exportVideoUrl = null;
 }
 function clearIntegratedResult() {
   integratedError.hidden = true;
   integratedError.textContent = "";
   integratedProgress.value = 0;
-  integratedVideo.pause();
-  integratedVideo.removeAttribute("src");
-  integratedVideo.load();
-  integratedVideo.hidden = true;
-  integratedDownload.hidden = true;
-  integratedDownload.removeAttribute("href");
+  integratedVideoUrl = resetExportMedia(integratedVideo, integratedDownload, integratedVideoUrl);
   integratedMetadata.textContent = "لم يُنشأ تصدير متكامل بعد.";
-  if (integratedVideoUrl) URL.revokeObjectURL(integratedVideoUrl);
-  integratedVideoUrl = null;
 }
 function cancelActiveExport(reason = "تغير المشروع أثناء التصدير.") {
   const running = activeExport;
@@ -747,13 +720,18 @@ async function prepareSequenceExportImages(sequence, viewport, signal) {
       const effects = compilePreviewEffects(scene.visualEffectsTrack, scene.project, viewport);
       sceneRenderers.push(Object.freeze({ sceneId: scene.id, compiledProject, characters, effects }));
     }
+    // Raster surfaces now own the pixels; decoded source bitmaps are no longer needed.
     return { sceneRenderers, release() {
-      for (const bitmap of bitmapCache.values()) bitmap.close?.();
-      bitmapCache.clear(); surfaces.clear(); sceneRenderers.length = 0;
+      surfaces.clear();
+      sceneRenderers.length = 0;
     } };
   } catch (error) {
-    for (const bitmap of bitmapCache.values()) bitmap.close?.();
+    surfaces.clear();
+    sceneRenderers.length = 0;
     throw error;
+  } finally {
+    for (const bitmap of bitmapCache.values()) bitmap.close?.();
+    bitmapCache.clear();
   }
 }
 async function prepareSequenceAudioInfo(sequence, signal) {
@@ -2213,6 +2191,8 @@ projectInput.addEventListener("change", async () => {
     if (audioPlayer) { try { audioPlayer.destroy(); } catch (error) { $("audioTimelineMessage").textContent = `تعذر تنظيف الصوت القديم: ${errorText(error)}`; } }
     for (const { url } of audioFiles.values()) if (url) URL.revokeObjectURL(url);
     audioFiles.clear(); activeAudioAssetId = null;
+    // Legacy imports also start a new project; never reuse another project's cached assets.
+    localAssetFiles.clear(); sceneThumbnails.clear(); sceneExtraCharacterTracks.clear();
     audioTracks = parsed.audioTracks; audioAssets = parsed.audioAssets; audioMasterVolume = parsed.audioMasterVolume;
     visualEffectsTrack = parsed.visualEffectsTrack; visualEffectSelection = null;
     audioClipSelection = null;
