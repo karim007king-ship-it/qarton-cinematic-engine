@@ -467,7 +467,7 @@ export async function startExport(plan, host = {}, { signal, onProgress } = {}) 
       if (released || finished || stopReason) return;
       try {
         const current = Number.isFinite(timestamp) ? timestamp : now();
-        const elapsed = current - clockPerfEpoch;
+        const elapsed = clockAudioEpoch === null ? current - clockPerfEpoch : (audioContext.currentTime - clockAudioEpoch) * 1000;
         if (elapsed >= 0) {
           const due = Math.min(frameCount - 1, Math.floor(elapsed / frameIntervalMs));
           if (due >= nextFrame) {
