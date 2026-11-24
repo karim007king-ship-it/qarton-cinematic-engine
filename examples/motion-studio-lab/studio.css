@@ -1,12 +1,12 @@
 Warning: truncated output (original token count: 4962)
 Total output lines: 97
 
-:root { color-scheme: dark; font-family: system-ui, -apple-system, "Noto Sans Arabic", sans-serif; background: #101118; color: #f2eee5; --gold: #e7bd69; --line: #34333b; --muted: #a8a6ad; }
+:root { color-scheme: only dark; font-family: system-ui, -apple-system, "Noto Sans Arabic", sans-serif; background: #101118; color: #f2eee5; --gold: #e7bd69; --line: #34333b; --muted: #a8a6ad; }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body { margin: 0; min-height: 100vh; overflow-x: hidden; background: radial-gradient(ellipse at 18% 0%, #27212a 0, transparent 38%), #101118; }
 button, input { font: inherit; }
-button { color: inherit; cursor: pointer; }
+button { color: #f2eee5; cursor: pointer; }
 button:disabled { cursor: wait; opacity: .58; }
 .studio { width: min(1120px, 100%); margin: auto; padding: max(18px, env(safe-area-inset-top)) 18px max(20px, env(safe-area-inset-bottom)); }
 .topbar, .preview-heading, .transport, .button-row, .field-label { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -379,3 +379,15 @@ body {
   .editor-mode-switch button { min-height: 34px; }
   .bottom-dock { grid-row: 4; min-height: 48px; }
 }
+
+/* Android local-document theme: keep native controls and inherited text legible. */
+body, .studio, .studio-preview, .tool-drawer, .tool-panel { color: #f2eee5; color-scheme: only dark; }
+.studio { -webkit-text-fill-color: currentColor; }
+.studio :is(button, input, select, textarea) { font-family: inherit; }
+.studio input[type="range"] { accent-color: #e7bd69; }
+.studio .transport .primary-button { background: #e7bd69; color: #1b1710; }
+.studio .transport .icon-button, .studio .fullscreen-button, .studio #timeReadout { color: #e7bd69; }
+.tool-panel :is(h2,h3) { color: #f2eee5; }
+.tool-panel .sequence-actions > button:not(.danger-button) { color: #f2eee5; }
+.tool-panel .sequence-actions > .danger-button { color: #ffd9dd; }
+.tool-panel { -webkit-overflow-scrolling: touch; }
