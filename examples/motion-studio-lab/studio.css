@@ -399,3 +399,7 @@ body, .studio, .studio-preview, .tool-drawer, .tool-panel { color: #f2eee5; colo
   .tool-panel .sequence-actions > label { grid-column: 1 / -1; }
   .tool-panel .sequence-actions > label input { max-width: none; }
 }
+
+/* Export actions must remain legible even before capability probing. */
+.studio .export-card .primary-button { background: #e7bd69; color: #1b1710; border: 1px solid #e7bd69; min-height: 48px; }
+.studio .export-card .primary-button:disabled { background: #343039; color: #c5bba9; border-color: #645a4b; opacity: 1; cursor: not-allowed; }
