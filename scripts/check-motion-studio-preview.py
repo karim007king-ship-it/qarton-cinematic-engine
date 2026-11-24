@@ -752,6 +752,8 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         touch_page.wait_for_function("document.querySelectorAll('#assetLibraryList .asset-entry').length >= 2")
         used_asset = touch_page.locator("#assetLibraryList .asset-entry").last
         assert used_asset.get_by_role("button", name="حذف").is_disabled(), "scene-referenced assets cannot be deleted"
+        touch_page.locator("#addSceneButton").scroll_into_view_if_needed()
+        print("Mobile add-scene hit test:", __import__("json").dumps(touch_page.locator("#addSceneButton").evaluate("el => { const r=el.getBoundingClientRect(), hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2); return {width:innerWidth,height:innerHeight,scrollY,coarse:matchMedia('(pointer: coarse)').matches,previewPosition:getComputedStyle(document.querySelector('.preview-panel')).position,rect:{x:r.x,y:r.y,w:r.width,h:r.height},hit:hit?.outerHTML?.slice(0,180)}; }"), ensure_ascii=False), flush=True)
         touch_page.locator("#addSceneButton").tap()
         touch_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 2")
         assert touch_page.locator("#sequenceBlocks .sequence-block").count() == 2

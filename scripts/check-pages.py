@@ -250,6 +250,8 @@ def exercise(context, url):
     set_studio_time(0)
     set_studio_time(6000)
     assert preview.evaluate("el => el.toDataURL()") == at_middle
+    page.locator("#playPauseButton").scroll_into_view_if_needed()
+    print("Mobile transport hit test:", json.dumps(page.locator("#playPauseButton").evaluate("el => { const r=el.getBoundingClientRect(), hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2); return {width:innerWidth,height:innerHeight,scrollY,coarse:matchMedia('(pointer: coarse)').matches,previewPosition:getComputedStyle(document.querySelector('.preview-panel')).position,rect:{x:r.x,y:r.y,w:r.width,h:r.height},hit:hit?.outerHTML?.slice(0,180)}; }"), ensure_ascii=False), flush=True)
     page.locator("#playPauseButton").click()
     page.wait_for_function("Number(document.querySelector('#seek').value) > 6200")
     page.locator("#playPauseButton").click()
