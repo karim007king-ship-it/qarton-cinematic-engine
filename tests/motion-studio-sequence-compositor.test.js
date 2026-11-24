@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createStudioSequenceCompositor } from "../packages/motion-studio/index.js";
+import { compileProject, createStudioSequenceCompositor, createStudioSequenceV2, compileStudioSequenceV2,
+  sampleFrame, sampleStudioSequenceV2 } from "../packages/motion-studio/index.js";
+import { createCharacterAnimation } from "../src/character/animation-core.js";
+import { compileCinematicEffects, sampleCinematicEffects } from "../src/effects/cinematic-effects.js";
 
 class FakeContext {
   constructor(canvas) {
@@ -8,18 +11,27 @@ class FakeContext {
     this.globalAlpha = 1;
     this.globalCompositeOperation = "source-over";
     this.fillStyle = "#000";
+    this.filter = "none";
+    this.shadowColor = "rgba(0, 0, 0, 0)";
+    this.shadowBlur = 0;
+    this.shadowOffsetX = 0;
+    this.shadowOffsetY = 0;
     this.calls = [];
     this.stack = [];
   }
-  save() { this.stack.push([this.globalAlpha, this.globalCompositeOperation, this.fillStyle]); }
+  save() { this.stack.push([this.globalAlpha, this.globalCompositeOperation, this.fillStyle, this.filter,
+    this.shadowColor, this.shadowBlur, this.shadowOffsetX, this.shadowOffsetY]); }
   restore() {
     const state = this.stack.pop();
-    if (state) [this.globalAlpha, this.globalCompositeOperation, this.fillStyle] = state;
+    if (state) [this.globalAlpha, this.globalCompositeOperation, this.fillStyle, this.filter,
+      this.shadowColor, this.shadowBlur, this.shadowOffsetX, this.shadowOffsetY] = state;
   }
   setTransform() {}
   clearRect(...args) { this.calls.push(["clearRect", ...args]); }
-  fillRect(...args) { this.calls.push(["fillRect", this.fillStyle, this.globalAlpha, this.globalCompositeOperation, ...args]); }
-  drawImage(...args) { this.calls.push(["drawImage", this.globalAlpha, this.globalCompositeOperation, ...args]); }
+  fillRect(...args) { this.calls.push(["fillRect", this.fillStyle, this.globalAlpha, this.globalCompositeOperation, ...args,
+    this.filter, this.shadowColor, this.shadowBlur, this.shadowOffsetX, this.shadowOffsetY]); }
+  drawImage(...args) { this.calls.push(["drawImage", this.globalAlpha, this.globalCompositeOperation, ...args,
+    this.filter, this.shadowColor, this.shadowBlur, this.shadowOffsetX, this.shadowOffsetY]); }
 }
 
 class FakeCanvas {
@@ -89,4 +101,95 @@ test("compositor restores Canvas state and reports unsupported asynchronous scen
   assert.equal(target.context.globalCompositeOperation, "multiply");
   assert.throws(() => compositor.draw(target.context, { kind: "transition", transition: { type: "wipe" },
     progress: 0.5, outgoing: { scene: {}, sceneTimeMs: 0 }, incoming: { scene: {}, sceneTimeMs: 0 } }, () => {}), /valid StudioSequenceV2/iu);
+});
+
+test("compositor isolates filters, shadows, alpha, and compositing state for each scene", () => {
+  const target = new FakeCanvas(10, 10);
+  const compositor = createStudioSequenceCompositor({ createSurface: (w, h) => new FakeCanvas(w, h) });
+  Object.assign(target.context, { filter: "blur(3px)", shadowColor: "gold", shadowBlur: 9,
+    shadowOffsetX: 5, shadowOffsetY: 4, globalAlpha: 0.37, globalCompositeOperation: "multiply" });
+  const sceneState = [];
+  compositor.draw(target.context, sample("dissolve", 0.5), context => {
+    sceneState.push([context.filter, context.shadowColor, context.shadowBlur, context.shadowOffsetX,
+      context.shadowOffsetY, context.globalAlpha, context.globalCompositeOperation]);
+    Object.assign(context, { filter: "blur(20px)", shadowColor: "red", shadowBlur: 20,
+      shadowOffsetX: 20, shadowOffsetY: 20, globalAlpha: 0.1, globalCompositeOperation: "copy" });
+  });
+  assert.deepEqual(sceneState, Array(2).fill(["none", "rgba(0, 0, 0, 0)", 0, 0, 0, 1, "source-over"]));
+  const imageDraws = target.context.calls.filter(call => call[0] === "drawImage");
+  assert.equal(imageDraws.at(-1)[2], "lighter");
+  assert.equal(imageDraws.at(-1)[8], "none");
+  assert.equal(imageDraws.at(-1)[9], "rgba(0, 0, 0, 0)");
+  assert.equal(imageDraws.at(-1)[10], 0);
+  assert.deepEqual([target.context.filter, target.context.shadowColor, target.context.shadowBlur,
+    target.context.shadowOffsetX, target.context.shadowOffsetY, target.context.globalAlpha,
+    target.context.globalCompositeOperation], ["blur(3px)", "gold", 9, 5, 4, 0.37, "multiply"]);
+});
+
+test("render errors and AbortSignal cancellation release the reusable surface", () => {
+  const target = new FakeCanvas(10, 10);
+  let allocations = 0;
+  const compositor = createStudioSequenceCompositor({ createSurface: (w, h) => { allocations++; return new FakeCanvas(w, h); } });
+  assert.throws(() => compositor.draw(target.context, sample("dissolve", 0.5), (_context, scene) => {
+    if (scene.id === "in") throw new Error("scene painter failed");
+  }), /scene painter failed/iu);
+  assert.equal(allocations, 1);
+  assert.equal(compositor.getDiagnostics().liveSurfaces, 0);
+  assert.equal(compositor.getDiagnostics().scratchBytes, 0);
+
+  compositor.draw(target.context, sample("dissolve", 0.5), () => {});
+  assert.equal(compositor.getDiagnostics().liveSurfaces, 1);
+  const controller = new AbortController();
+  assert.throws(() => compositor.draw(target.context, sample("dissolve", 0.5), (_context, scene) => {
+    if (scene.id === "in") controller.abort();
+  }, { signal: controller.signal }), error => error.name === "AbortError");
+  assert.equal(compositor.getDiagnostics().liveSurfaces, 0, "cancellation inside a scene painter frees its surface");
+
+  compositor.draw(target.context, sample("dissolve", 0.5), () => {});
+  assert.equal(compositor.getDiagnostics().liveSurfaces, 1);
+  const preAborted = new AbortController();
+  preAborted.abort();
+  assert.throws(() => compositor.draw(target.context, sample("dissolve", 0.5), () => {}, { signal: preAborted.signal }),
+    error => error.name === "AbortError");
+  assert.equal(compositor.getDiagnostics().liveSurfaces, 0);
+  assert.equal(compositor.getDiagnostics().scratchBytes, 0);
+  compositor.release();
+  assert.equal(compositor.getDiagnostics().liveSurfaces, 0, "release remains idempotent");
+});
+
+test("compositor samples real per-scene camera, character, and effect tracks", () => {
+  const viewport = { width: 2, height: 2, fps: 30 };
+  const image = { id: "poster", kind: "image", name: "poster.png", mimeType: "image/png", size: 4 };
+  const makeRealScene = (id, x) => ({ id, project: { version: 1, durationMs: 1000, viewport,
+    camera: [{ atMs: 0, value: { x, y: 0, zoom: 1, rotation: 0 } },
+      { atMs: 1000, value: { x: x + 10, y: 4, zoom: 2, rotation: 5 } }],
+    layers: [{ id: `layer-${id}`, assetId: image.id, z: 0 }] }, audioTracks: [],
+    characterTracks: [{ character: { id: `hero-${id}`, initial: { mouthOpen: 0 } },
+      keyframes: [{ atMs: 0, values: { mouthOpen: 0 } }, { atMs: 1000, values: { mouthOpen: 1 } }] }],
+    visualEffectsTrack: { version: 1, seed: 7, clips: [{ id: `tint-${id}`, type: "tint", atMs: 0, durationMs: 1000,
+      from: { strength: 0, color: "#000000" }, to: { strength: 1, color: "#ffffff" }, easing: "linear" }] } });
+  const sequence = createStudioSequenceV2({ viewport, scenes: [makeRealScene("a", 0), makeRealScene("b", 20)],
+    assets: [image], transitions: [{ fromSceneId: "a", toSceneId: "b", type: "dissolve", durationMs: 200, audioCrossfadeMs: 0 }] });
+  const compiled = compileStudioSequenceV2(sequence);
+  const target = new FakeCanvas(2, 2);
+  const compositor = createStudioSequenceCompositor({ createSurface: (w, h) => new FakeCanvas(w, h) });
+  const seen = [];
+  compositor.draw(target.context, sampleStudioSequenceV2(compiled, 900), (_context, scene, localTimeMs) => {
+    const project = compileProject(scene.project, { get: () => ({ width: 2, height: 2 }) });
+    const frame = sampleFrame(project, localTimeMs);
+    const characterTrack = scene.characterTracks[0];
+    const character = createCharacterAnimation({ character: characterTrack.character,
+      durationMs: scene.project.durationMs, keyframes: characterTrack.keyframes }).sample(localTimeMs);
+    const effects = compileCinematicEffects({ version: "CinematicEffectsV1", width: 2, height: 2,
+      durationMs: scene.project.durationMs, seed: scene.visualEffectsTrack.seed, layers: [],
+      clips: scene.visualEffectsTrack.clips });
+    const effect = sampleCinematicEffects(effects, localTimeMs);
+    seen.push({ id: scene.id, localTimeMs, cameraX: frame.camera.x, mouthOpen: character.mouthOpen,
+      tint: effect.tint.strength });
+  });
+  assert.deepEqual(seen, [
+    { id: "a", localTimeMs: 900, cameraX: 9.96, mouthOpen: 0.996, tint: 0.9 },
+    { id: "b", localTimeMs: 100, cameraX: 20.04, mouthOpen: 0.004000000000000001, tint: 0.1 }
+  ]);
+  compositor.release();
 });

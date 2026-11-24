@@ -2,6 +2,18 @@ function resetContext(context) {
   context.setTransform?.(1, 0, 0, 1, 0, 0);
   context.globalAlpha = 1;
   context.globalCompositeOperation = "source-over";
+  context.filter = "none";
+  context.shadowColor = "rgba(0, 0, 0, 0)";
+  context.shadowBlur = 0;
+  context.shadowOffsetX = 0;
+  context.shadowOffsetY = 0;
+}
+
+function throwIfAborted(signal) {
+  if (!signal?.aborted) return;
+  const error = new Error("StudioSequenceV2 composition was cancelled");
+  error.name = "AbortError";
+  throw error;
 }
 
 function defaultSurface(width, height) {
@@ -43,7 +55,7 @@ export function createStudioSequenceCompositor({ createSurface = defaultSurface 
     return scratchContext;
   }
 
-  function renderScene(context, width, height, scene, sceneTimeMs, drawScene, { clear = true, alpha = 1 } = {}) {
+  function renderScene(context, width, height, scene, sceneTimeMs, drawScene, signal, { clear = true, alpha = 1 } = {}) {
     context.save();
     try {
       resetContext(context);
@@ -51,62 +63,74 @@ export function createStudioSequenceCompositor({ createSurface = defaultSurface 
       if (clear) context.clearRect(0, 0, width, height);
       const result = drawScene(context, scene, sceneTimeMs);
       if (result?.then) throw new TypeError("Scene drawing must be synchronous");
+      throwIfAborted(signal);
     } finally { context.restore(); }
   }
 
-  function draw(context, sample, drawScene) {
-    const width = context?.canvas?.width;
-    const height = context?.canvas?.height;
-    if (!context || typeof context.save !== "function" || typeof context.drawImage !== "function" ||
-        !Number.isSafeInteger(width) || width < 1 || !Number.isSafeInteger(height) || height < 1) {
-      throw new TypeError("A 2D context with positive Canvas dimensions is required");
-    }
-    if (typeof drawScene !== "function") throw new TypeError("drawScene(scene, localTimeMs) is required");
-    if (sample?.kind === "scene") {
-      renderScene(context, width, height, sample.scene, sample.sceneTimeMs, drawScene);
-      return;
-    }
-    if (sample?.kind !== "transition" || !["fade", "dissolve"].includes(sample.transition?.type) ||
-        !Number.isFinite(sample.progress) || sample.progress < 0 || sample.progress > 1 ||
-        !sample.outgoing?.scene || !sample.incoming?.scene) {
-      throw new TypeError("Expected a valid StudioSequenceV2 scene or transition sample");
-    }
-
-    context.save();
+  function draw(context, sample, drawScene, options = {}) {
     try {
-      resetContext(context);
-      context.clearRect(0, 0, width, height);
-      if (sample.transition.type === "fade") {
-        context.fillStyle = "#000";
-        context.fillRect(0, 0, width, height);
-        const visible = sample.outgoing.opacity > 0 ? sample.outgoing : sample.incoming;
-        const opacity = sample.outgoing.opacity > 0 ? sample.outgoing.opacity : sample.incoming.opacity;
-        if (opacity > 0) {
-          const overlay = ensureScratch(width, height, context.canvas);
-          renderScene(overlay, width, height, visible.scene, visible.sceneTimeMs, drawScene);
-          context.globalAlpha = opacity;
-          context.drawImage(scratch, 0, 0, width, height);
-        }
+      const signal = options?.signal;
+      if (signal !== undefined && (!signal || typeof signal.aborted !== "boolean")) {
+        throw new TypeError("draw options signal must be an AbortSignal");
+      }
+      throwIfAborted(signal);
+      const width = context?.canvas?.width;
+      const height = context?.canvas?.height;
+      if (!context || typeof context.save !== "function" || typeof context.drawImage !== "function" ||
+          !Number.isSafeInteger(width) || width < 1 || !Number.isSafeInteger(height) || height < 1) {
+        throw new TypeError("A 2D context with positive Canvas dimensions is required");
+      }
+      if (typeof drawScene !== "function") throw new TypeError("drawScene(scene, localTimeMs) is required");
+      if (sample?.kind === "scene") {
+        renderScene(context, width, height, sample.scene, sample.sceneTimeMs, drawScene, signal);
         return;
       }
+      if (sample?.kind !== "transition" || !["fade", "dissolve"].includes(sample.transition?.type) ||
+          !Number.isFinite(sample.progress) || sample.progress < 0 || sample.progress > 1 ||
+          !sample.outgoing?.scene || !sample.incoming?.scene) {
+        throw new TypeError("Expected a valid StudioSequenceV2 scene or transition sample");
+      }
 
-      const progress = sample.progress;
-      renderScene(context, width, height, sample.outgoing.scene, sample.outgoing.sceneTimeMs,
-        drawScene);
       context.save();
       try {
         resetContext(context);
-        context.globalCompositeOperation = "destination-in";
-        context.globalAlpha = 1 - progress;
-        context.fillStyle = "#fff";
-        context.fillRect(0, 0, width, height);
+        context.clearRect(0, 0, width, height);
+        if (sample.transition.type === "fade") {
+          context.fillStyle = "#000";
+          context.fillRect(0, 0, width, height);
+          const visible = sample.outgoing.opacity > 0 ? sample.outgoing : sample.incoming;
+          const opacity = sample.outgoing.opacity > 0 ? sample.outgoing.opacity : sample.incoming.opacity;
+          if (opacity > 0) {
+            const overlay = ensureScratch(width, height, context.canvas);
+            renderScene(overlay, width, height, visible.scene, visible.sceneTimeMs, drawScene, signal);
+            throwIfAborted(signal);
+            context.globalAlpha = opacity;
+            context.drawImage(scratch, 0, 0, width, height);
+          }
+          return;
+        }
+
+        const progress = sample.progress;
+        renderScene(context, width, height, sample.outgoing.scene, sample.outgoing.sceneTimeMs, drawScene, signal);
+        context.save();
+        try {
+          resetContext(context);
+          context.globalCompositeOperation = "destination-in";
+          context.globalAlpha = 1 - progress;
+          context.fillStyle = "#fff";
+          context.fillRect(0, 0, width, height);
+        } finally { context.restore(); }
+        const overlay = ensureScratch(width, height, context.canvas);
+        renderScene(overlay, width, height, sample.incoming.scene, sample.incoming.sceneTimeMs, drawScene, signal);
+        throwIfAborted(signal);
+        context.globalCompositeOperation = "lighter";
+        context.globalAlpha = progress;
+        context.drawImage(scratch, 0, 0, width, height);
       } finally { context.restore(); }
-      const overlay = ensureScratch(width, height, context.canvas);
-      renderScene(overlay, width, height, sample.incoming.scene, sample.incoming.sceneTimeMs, drawScene);
-      context.globalCompositeOperation = "lighter";
-      context.globalAlpha = progress;
-      context.drawImage(scratch, 0, 0, width, height);
-    } finally { context.restore(); }
+    } catch (error) {
+      release();
+      throw error;
+    }
   }
 
   function release() {

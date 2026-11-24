@@ -328,6 +328,30 @@ test("V2 validates local scene durations against the overlap-adjusted project li
   assert.equal(compileStudioSequenceV2(project).durationMs, 300_000);
 });
 
+test("V2 rejects duplicate scene IDs and freezes the scenes collection and cloned data", () => {
+  assert.throws(() => sequenceV2([scene("reused"), scene("reused")], [transition("reused", "reused")]),
+    /Duplicate sequence scene id: reused/iu);
+
+  const sourceTracks = [{ character: { id: "hero", initial: { mouthOpen: 0 } }, keyframes: [] }];
+  const sourceScenes = [scene("immutable-a", 1000, { characterTracks: sourceTracks }), scene("immutable-b")];
+  const snapshot = sequenceV2(sourceScenes, [transition("immutable-a", "immutable-b", "dissolve", 200)]);
+  const compiled = compileStudioSequenceV2(snapshot);
+  assert.ok(Object.isFrozen(snapshot.scenes));
+  assert.ok(Object.isFrozen(snapshot.scenes[0]));
+  assert.ok(Object.isFrozen(snapshot.scenes[0].project.layers));
+  assert.ok(Object.isFrozen(snapshot.scenes[0].characterTracks));
+  assert.ok(Object.isFrozen(snapshot.scenes[0].characterTracks[0].character.initial));
+  assert.ok(Object.isFrozen(compiled.scenes));
+
+  sourceScenes[0].project.layers[0].z = 12;
+  sourceTracks[0].character.initial.mouthOpen = 1;
+  sourceScenes.push(scene("later"));
+  assert.equal(snapshot.scenes.length, 2);
+  assert.equal(snapshot.scenes[0].project.layers[0].z, 0);
+  assert.equal(snapshot.scenes[0].characterTracks[0].character.initial.mouthOpen, 0);
+  assert.throws(() => snapshot.scenes.push(scene("forbidden")), TypeError);
+});
+
 test("V2 migrate-down rejects lossy transitions", () => {
   const dissolve = sequenceV2([scene("a", 1000), scene("b", 1000)], [transition("a", "b", "dissolve", 200, 100)]);
   assert.throws(() => migrateStudioSequenceV2ToV1(dissolve), /cannot represent/iu);
