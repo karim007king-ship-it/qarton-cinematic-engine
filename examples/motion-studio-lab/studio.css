@@ -100,8 +100,6 @@ footer { margin-top: 16px; color: #89879…462 tokens truncated…overflow:ellip
 
 /* L11-F2 Android compact workspace */
 :root {
-  color-scheme: dark;
-  --gold: #e7bd69;
   --ink: #090a0f;
   --panel: #15161d;
   --line: #34343d;
@@ -317,7 +315,6 @@ body {
 .studio-preview:fullscreen,
 .studio-preview.preview-fullscreen { position: fixed; inset: 0; z-index: 20; width: 100vw; height: 100vh; height: 100dvh; max-height: 100dvh; padding: max(8px, env(safe-area-inset-top)) 12px max(8px, env(safe-area-inset-bottom)); border: 0; border-radius: 0; background: #08090d; }
 .tool-panel :is(input, select, button, summary) { scroll-margin-block: 12px; }
-button:disabled { opacity: .58; }
 .studio-footer { display: none; }
 .error-message { margin: 0; }
 .error-message details { margin-top: 6px; color: #f4d5b5; font-size: 11px; }
@@ -337,12 +334,11 @@ button:disabled { opacity: .58; }
   .editor-mode-switch button { min-height: 38px; font-size: 10px; }
   .studio-preview { grid-column: 1; grid-row: 3; gap: 4px; padding: 5px; }
   .tool-drawer { grid-column: 1; grid-row: 4; }
-  .preview-heading strong { font-size: 10px; }
   .preview-canvas-host { grid-template-rows: 44px minmax(0, 1fr); gap: 2px; }
   .preview-heading { gap: 5px; position: static; inset: auto; z-index: auto; min-height: 44px; padding: 0 2px; border-radius: 7px; background: transparent; }
   .preview-heading > div { padding-inline-end: 4px; }
   .preview-heading .eyebrow { display: none; }
-  .preview-heading strong { max-width: 32vw; }
+  .preview-heading strong { font-size: 10px; max-width: 32vw; }
   .fullscreen-button { flex-basis: 44px; width: 44px; min-width: 44px; min-height: 44px; }
   .stage-wrap { padding-top: 0; }
   .preview-transport-host .transport { min-height: 44px; }
@@ -353,10 +349,7 @@ button:disabled { opacity: .58; }
   .tool-panel > .motion-mode-panel { padding: 7px; }
   .tool-panel .sequence-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
   .tool-panel .sequence-actions > button { min-height: 44px; font-size: 10px; }
-  .tool-panel .simple-motion-presets,
-  .tool-panel .automatic-motion-options { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .tool-panel .motion-preset-button { min-height: 52px; }
-  .tool-panel .simple-motion-settings { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tool-panel .audio-track-actions > * { flex: 1 1 130px; }
   .tool-panel .audio-timeline-card,
   .tool-panel .visual-effects-card { padding: 6px; }
@@ -372,7 +365,7 @@ button:disabled { opacity: .58; }
   .bottom-dock button { font-size: 9px; }
   .tool-panel .sequence-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tool-panel .simple-motion-presets,
-  .tool-panel .automatic-motion-options { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+  .tool-panel .automatic-motion-options { gap: 5px; }
   .tool-panel .motion-preset-button { min-height: 48px; }
   .scene-card { flex-basis: 118px; min-width: 118px; }
   .scene-select { grid-template-columns: 44px minmax(0, 1fr); gap: 4px; }
