@@ -589,15 +589,28 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             }""")
             sync_page.wait_for_function("document.querySelector('#integratedVideo').currentTime > 0.1", timeout=5000)
             integrated_video.evaluate("video => video.pause()")
-            if media_state["seekable"]:
-                seek_start, seek_end = media_state["seekable"][-1]
+            finite_seekable = [(start, end) for start, end in media_state["seekable"]
+                               if math.isfinite(start) and math.isfinite(end) and end > start]
+            if finite_seekable:
+                seek_start, seek_end = finite_seekable[-1]
                 seek_target = max(seek_start, seek_end - 0.2)
+            elif media_state["seekable"]:
+                # Some Chromium WebM demuxers mark the live range end as +Infinity.
+                # The tested file has a finite frame-derived duration, so seek inside
+                # that measured interval instead of forwarding Infinity to currentTime.
+                seek_target = max(0, video_timeline["duration"] - 0.2)
+            else:
+                seek_target = None
+            if seek_target is not None:
+                assert math.isfinite(seek_target), seek_target
                 integrated_video.evaluate("(video, target) => { video.currentTime = target; }", seek_target)
                 sync_page.wait_for_function(
                     "(target) => Math.abs(document.querySelector('#integratedVideo').currentTime - target) < 0.08",
                     arg=seek_target, timeout=5000)
+                playback_navigation = "seeked"
             else:
-                print("L10-B playback: playable; Chromium did not expose a seekable range for this WebM container.")
+                playback_navigation = "playback-only (no seekable range)"
+            print(f"L10-B playback: played; navigation={playback_navigation}")
             assert video_stream["width"] == expected_width and video_stream["height"] == expected_height, (video_stream, (expected_width, expected_height))
             video_start = video_timeline["start"]
             audio_start = audio_timeline["start"]
