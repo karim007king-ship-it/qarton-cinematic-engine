@@ -458,6 +458,9 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         page.locator("#cancelExportButton").click()
         page.get_by_text("أُلغي التسجيل ونُظّفت موارده.", exact=True).wait_for(timeout=10000)
         page.locator('nav.bottom-dock [data-editor-section="audio"]').click()
+        page.locator('nav.bottom-dock [data-editor-section="more"]').click()
+        if not page.locator("#advancedProjectOptions").evaluate("el => el.open"):
+            page.locator("#advancedProjectOptions > summary").click()
 
         page.locator("#aspectPreset").select_option("landscape")
         page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
