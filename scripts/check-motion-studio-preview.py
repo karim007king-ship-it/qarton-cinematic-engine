@@ -833,6 +833,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         assert touch_page.locator("#automaticMotionPanel").is_visible()
         touch_tap(touch_page.locator('[data-editor-mode-button="simple"]'))
         assert simple_times() == switched_times, "switching editing modes preserves camera keyframes"
+        touch_tap(touch_page.locator('[data-editor-mode-button="automatic"]'))
         for preset in ["zoom-in", "pan-horizontal", "cinematic"]:
             touch_tap(touch_page.locator(f'[data-motion-preset="{preset}"][data-automatic-motion="true"]'))
             assert "اقتراح" in touch_page.locator("#motionPresetMessage").inner_text(), preset
