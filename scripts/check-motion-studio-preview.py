@@ -698,6 +698,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             assert max(drifts) - min(drifts) <= 50, drifts
             print(f"L10-B output sync: markers={len(sync_marks)}, drift_ms={drifts}, streams={video_stream['codec_name']}/{audio_stream['codec_name']}")
             sync_page.close()
+        page.locator('nav.bottom-dock [data-editor-section="effects"]').click()
         effect_lane = page.locator('#visualEffectsTracks .visual-effect-lane[data-effect-type="fade"]')
         effect_clip = page.locator(".visual-effect-clip")
         effect_lane.scroll_into_view_if_needed()
