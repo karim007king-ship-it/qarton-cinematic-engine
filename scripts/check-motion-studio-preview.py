@@ -805,7 +805,47 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         assert touch_page.locator("#playPauseButton").text_content() == "متابعة"
         touch_tap(touch_page.locator("#replayButton"))
         touch_page.wait_for_function("document.querySelector('#sceneName').value === 'المشهد 1' && Number(document.querySelector('#sequenceSeek').value) > 0")
+        assert touch_page.locator(".studio").get_attribute("data-editor-mode") == "simple", "Simple mode is the mobile default"
+        simple_times = lambda: [int(value) for value in touch_page.locator(".keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")]
+        camera_before_quick_motion = simple_times()
+        touch_page.locator("#motionFromSeconds").fill("1")
+        touch_page.locator("#motionToSeconds").fill("5")
+        touch_page.locator("#motionSpeed").select_option("1.5")
+        for control, value in [("motionStrength", "72"), ("motionFocusX", "30"), ("motionFocusY", "68")]:
+            touch_page.locator(f"#{control}").evaluate("(el, next) => { el.value = next; el.dispatchEvent(new Event('input', {bubbles:true})); }", value)
+        first_preset = touch_page.locator('[data-motion-preset="zoom-in"]:not([data-automatic-motion])')
+        touch_tap(first_preset)
+        assert simple_times() != camera_before_quick_motion, "quick preset creates camera keyframes immediately"
+        assert touch_page.locator("#undoMotionButton").is_enabled()
+        touch_tap(touch_page.locator("#undoMotionButton"))
+        assert simple_times() == camera_before_quick_motion, "undo restores the camera track before quick motion"
+        for preset in ["zoom-in", "zoom-out", "static", "pan-horizontal", "pan-vertical", "cinematic"]:
+            touch_tap(touch_page.locator(f'[data-motion-preset="{preset}"]:not([data-automatic-motion])'))
+            assert "طُبّقت" in touch_page.locator("#motionPresetMessage").inner_text(), preset
+        switched_times = simple_times()
+        touch_tap(touch_page.locator('[data-editor-mode-button="professional"]'))
+        assert touch_page.locator(".studio").get_attribute("data-editor-mode") == "professional"
+        touch_tap(touch_page.locator('[data-editor-mode-button="automatic"]'))
+        assert touch_page.locator("#automaticMotionPanel").is_visible()
+        touch_tap(touch_page.locator('[data-editor-mode-button="simple"]'))
+        assert simple_times() == switched_times, "switching editing modes preserves camera keyframes"
+        for preset in ["zoom-in", "pan-horizontal", "cinematic"]:
+            touch_tap(touch_page.locator(f'[data-motion-preset="{preset}"][data-automatic-motion="true"]'))
+            assert "اقتراح" in touch_page.locator("#motionPresetMessage").inner_text(), preset
+            touch_tap(touch_page.locator("#undoMotionAutomatic"))
+        touch_tap(touch_page.locator('[data-editor-section="audio"]'))
+        assert touch_page.locator(".studio").get_attribute("data-editor-mode") == "professional"
+        assert touch_page.locator("#audioToolsSection").is_visible()
+        touch_tap(touch_page.locator('[data-editor-section="effects"]'))
+        assert touch_page.locator("#effectsToolsSection").is_visible()
+        touch_tap(touch_page.locator('[data-editor-section="motion"]'))
+        assert touch_page.locator(".studio").get_attribute("data-editor-mode") == "simple"
+        assert touch_page.locator("#motionStrength").input_value() == "72"
+        assert touch_page.locator("#motionFocusX").input_value() == "30"
+        assert touch_page.locator("#motionFocusY").input_value() == "68"
+        assert touch_page.locator("#motionFromSeconds").input_value() == "1"
+        assert touch_page.locator("#motionToSeconds").input_value() == "5"
         assert not touch_errors, touch_errors
-        print("L11-D touch UI: scene add, rename, duration, reorder, duplicate, delete, Cut seek, pause and replay passed")
+        print("L11-D/F1 touch UI: scene editing, mode switching, six camera presets, auto suggestions, undo, focus, preview, pause and replay passed")
         touch_context.close()
         browser.close()
