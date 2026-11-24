@@ -21,6 +21,7 @@ import { createStudioSequenceEditor, parseStudioSequenceFile, serializeStudioSeq
 import { CAMERA_MOTION_PRESETS, createCameraMotionProject } from "./studio-motion-presets.js?v=l11f1-smart-editor-01";
 import { createPersistentAssetRegistry } from "../../packages/motion-studio/asset-persistence.js";
 import { openAssetStorage } from "../../packages/motion-studio/asset-storage.js";
+import { prepareStudioSequenceExport, sampleStudioSequenceExport } from "./studio-sequence-export.js?v=l11e-sequence-export-01";
 
 const $ = (id) => document.getElementById(id);
 const studioRoot = document.querySelector(".studio");
@@ -234,6 +235,8 @@ const localAssetFiles = new Map();
 const sceneSettings = new Map([[activeSceneId, { aspectPreset, fitMode, image: null }]]);
 const sceneThumbnails = new Map();
 let sceneLoadToken = 0;
+let pendingSceneActivation = null;
+let exportPreparing = false;
 let sequenceAutosaveTimer = 0;
 const assetReady = openAssetStorage().then(async storage => {
   assetStorage = storage;
@@ -691,19 +694,91 @@ function readRequiredMilliseconds(input, label) {
   if (!Number.isSafeInteger(value)) throw new TypeError(`${label}: أدخل وقتًا صحيحًا بالميلي ثانية.`);
   return value;
 }
-function makeIntegratedSnapshot() {
-  return {
-    project: structuredClone(project),
-    audioTracks: structuredClone(audioTracks),
-    audioAssets: structuredClone(audioAssets),
-    audioAssetInfo: audioAssets.flatMap(({ id }) => {
-      const local = audioFiles.get(id);
-      return local?.durationMs ? [{ id, durationMs: Math.max(1, Math.round(local.durationMs)), channels: 2, sampleRate: 48_000 }] : [];
-    }),
-    audioMasterVolume,
-    characterTrack: structuredClone(characterTrack),
-    visualEffectsTrack: structuredClone(visualEffectsTrack)
-  };
+function syncIntegratedRange() {
+  const durationMs = sequenceEditor?.durationMs ?? project.durationMs;
+  integratedFrom.max = String(Math.max(0, durationMs - 1));
+  integratedTo.max = String(durationMs);
+  integratedFrom.value = String(Math.max(0, Math.min(durationMs - 1, Number(integratedFrom.value) || 0)));
+  integratedTo.value = String(durationMs);
+}
+async function prepareSequenceExportImages(sequence, viewport, signal) {
+  const surfaces = new Map();
+  const bitmapCache = new Map();
+  const sceneRenderers = [];
+  const bytesPerSurface = viewport.width * viewport.height * 4;
+  let reservedBytes = 0;
+  const maxSequenceImageBytes = 64 * 1024 * 1024;
+  try {
+    for (const scene of sequence.scenes) {
+      const fit = sceneSettings.get(scene.id)?.fitMode ?? "fit";
+      const required = new Set(scene.project.layers.map(layer => layer.assetId));
+      const sceneSources = new Map();
+      for (const assetId of required) {
+        const asset = sequence.assets.find(item => item.id === assetId && item.kind === "image");
+        const blob = getAssetBlob(assetId);
+        if (!asset || !blob) throw new Error(`الأصل الصوري للمشهد ${scene.id} غير متاح: ${assetId}`);
+        let bitmap = bitmapCache.get(assetId);
+        if (!bitmap) {
+          const file = new File([blob], asset.name, { type: asset.mimeType });
+          bitmap = await decodeImageBitmap(file, { isCurrent: () => !signal?.aborted });
+          bitmapCache.set(assetId, bitmap);
+        }
+        const key = `${scene.id}:${assetId}`;
+        if (!surfaces.has(key)) {
+          if (reservedBytes + bytesPerSurface > maxSequenceImageBytes) {
+            throw new RangeError("تجاوزت صور المشاهد حد ذاكرة التصدير الآمن 64 MiB؛ قلل الجودة أو عدد المشاهد.");
+          }
+          const surface = typeof OffscreenCanvas === "function"
+            ? new OffscreenCanvas(viewport.width, viewport.height)
+            : Object.assign(document.createElement("canvas"), { width: viewport.width, height: viewport.height });
+          const context = surface.getContext("2d", { alpha: false });
+          if (!context) throw new Error("لم تتوفر ذاكرة كافية لتحضير صور المشاهد للتصدير.");
+          context.fillStyle = "#101118"; context.fillRect(0, 0, viewport.width, viewport.height);
+          const rect = imageRect(bitmap.width, bitmap.height, viewport.width, viewport.height, fit);
+          context.drawImage(bitmap, rect.x, rect.y, rect.width, rect.height);
+          surfaces.set(key, surface); reservedBytes += bytesPerSurface;
+        }
+        sceneSources.set(assetId, surfaces.get(key));
+      }
+      const sceneProject = projectForRaster(scene.project, viewport);
+      const compiledProject = compileProject(sceneProject, { get: id => sceneSources.get(id) ?? null });
+      const characters = scene.characterTracks.map(track => ({ track,
+        animation: compileCharacterTrack(track, scene.project.durationMs) }));
+      const effects = compilePreviewEffects(scene.visualEffectsTrack, scene.project, viewport);
+      sceneRenderers.push(Object.freeze({ sceneId: scene.id, compiledProject, characters, effects }));
+    }
+    return { sceneRenderers, release() {
+      for (const bitmap of bitmapCache.values()) bitmap.close?.();
+      bitmapCache.clear(); surfaces.clear(); sceneRenderers.length = 0;
+    } };
+  } catch (error) {
+    for (const bitmap of bitmapCache.values()) bitmap.close?.();
+    throw error;
+  }
+}
+async function prepareSequenceAudioInfo(sequence, signal) {
+  await assetReady;
+  const referencedIds = new Set(sequence.scenes.flatMap(scene => scene.audioTracks.flatMap(track => track.clips.map(clip => clip.asset))));
+  const info = [];
+  for (const id of referencedIds) {
+    if (signal?.aborted) throw signal.reason ?? new DOMException("تم إلغاء التصدير.", "AbortError");
+    const asset = sequence.assets.find(item => item.id === id && item.kind === "audio");
+    const blob = getAssetBlob(id);
+    if (!asset || !blob) throw new Error(`ملف الصوت المرتبط بالمشاهد غير متاح: ${id}`);
+    let source = audioFiles.get(id);
+    if (!source) {
+      const file = new File([blob], asset.name, { type: asset.mimeType });
+      const url = URL.createObjectURL(file);
+      let durationMs;
+      try { durationMs = await readAudioDuration(file); }
+      catch (cause) { URL.revokeObjectURL(url); throw new Error(`تعذر قراءة مدة ملف الصوت ${asset.name}: ${errorText(cause)}`); }
+      source = { file, url, durationMs };
+      audioFiles.set(id, source);
+    }
+    if (!source.durationMs) throw new Error(`مدة ملف الصوت غير معروفة: ${asset.name}`);
+    info.push({ id, durationMs: Math.max(1, Math.round(source.durationMs)), channels: 2, sampleRate: 48_000 });
+  }
+  return info;
 }
 function getVerifiedIntegratedCapabilities() {
   const capabilities = integratedCapabilities.get(integratedCapabilityKey()) ?? [];
@@ -746,32 +821,52 @@ async function probeIntegratedExport() {
   } finally { refreshIntegratedControls(); }
 }
 async function exportIntegratedProject() {
-  if (activeExport) return;
-  const verified = getVerifiedIntegratedCapabilities();
-  if (!verified.length) {
-    integratedError.textContent = "افحص دعم الصيغة والدقة المحددتين أولًا.";
+  if (activeExport || exportPreparing) return;
+  exportPreparing = true;
+  setExportBusy(true);
+  try {
+    const sceneActivation = pendingSceneActivation;
+    if (sceneActivation) await sceneActivation;
+  } catch (error) {
+    exportPreparing = false;
+    setExportBusy(false);
+    refreshExportControls();
+    setExportErrorMessage(integratedError, error);
     integratedError.hidden = false;
+    integratedStatus.textContent = "تعذر تثبيت المشهد الحالي قبل التصدير.";
     return;
   }
-  clearIntegratedResult();
+  if (activeExport) {
+    exportPreparing = false;
+    setExportBusy(false);
+    refreshExportControls();
+    return;
+  }
+  exportPreparing = false;
   const controller = new AbortController();
   const running = { kind: "integrated", controller, session: null, rafId: 0, stopTimer: 0 };
   activeExport = running;
-  setExportBusy(true);
-  stopPlayback();
   let result = null;
+  let sequenceImages = null;
   try {
-    const snapshot = makeIntegratedSnapshot();
+    const verified = getVerifiedIntegratedCapabilities();
+    if (!verified.length) throw new Error("افحص دعم الصيغة والدقة المحددتين أولًا.");
+    clearIntegratedResult();
+    stopPlayback();
+    captureCurrentScene();
+    await persistentAssets?.replaceSequence(sequenceEditor.sequence);
+    const prepared = prepareStudioSequenceExport(sequenceEditor.sequence, {
+      audioAssetInfo: integratedAudio.value === "mix"
+        ? await prepareSequenceAudioInfo(sequenceEditor.sequence, controller.signal) : [], audioMasterVolume
+    });
+    const snapshot = prepared.snapshot;
     const range = { startMs: readRequiredMilliseconds(integratedFrom, "البداية"),
       endMs: readRequiredMilliseconds(integratedTo, "النهاية") };
-    if (range.endMs <= range.startMs) throw new RangeError("نهاية النطاق يجب أن تكون بعد بدايته.");
+    if (range.endMs <= range.startMs || range.endMs > prepared.compiledSequence.durationMs) throw new RangeError("نطاق التصدير يجب أن يقع داخل مدة المشروع الكاملة.");
     const plan = planExport(snapshot, { range, quality: integratedQuality.value, fps: project.viewport.fps,
       format: integratedFormat.value, audio: integratedAudio.value, missingAudio: integratedMissingAudio.value }, verified);
-    const rasterProject = projectForRaster(snapshot.project, plan.viewport);
-    const compiledProject = compileProject(rasterProject, imageProvider);
-    const compiledCharacter = compileCharacterTrack(snapshot.characterTrack, snapshot.project.durationMs);
+    sequenceImages = await prepareSequenceExportImages(prepared.compiledSequence.sequence, plan.viewport, controller.signal);
     const compiledAudio = compileAudioTracks(snapshot.audioTracks, snapshot.project.durationMs);
-    const compiledEffects = compilePreviewEffects(snapshot.visualEffectsTrack, snapshot.project, plan.viewport);
     const missingAudio = new Set(plan.missingAudioAssetIds);
     const audioInfo = new Map(snapshot.audioAssetInfo.map(({ id, durationMs }) => [id, durationMs]));
     const unavailableDialogueClips = new Set(compiledAudio.clips.filter(clip => clip.type === "dialogue" &&
@@ -788,14 +883,17 @@ async function exportIntegratedProject() {
       },
       resolveAudio: async assetId => audioFiles.get(assetId)?.file ?? null,
       renderFrame: (ctx, timeMs, viewport, frameContext) => {
+        const activeScene = sampleStudioSequenceExport(prepared, timeMs);
+        const sceneRenderer = sequenceImages.sceneRenderers[activeScene.sceneIndex];
         let sample = compiledAudio.sample(timeMs);
         if (plan.audio === "mix" && unavailableDialogueClips.size) sample = Object.freeze({ ...sample,
           dialogue: Object.freeze(sample.dialogue.filter(cue => !unavailableDialogueClips.has(cue.clipId))) });
-        return drawStudioScene({ ctx, compiledProject, timeMs, characterAnimation: compiledCharacter,
-          characterTrack: snapshot.characterTrack, audioSample: sample, visualEffectsCompiled: compiledEffects, viewport, frameContext });
+        return drawStudioScene({ ctx, compiledProject: sceneRenderer.compiledProject, timeMs: activeScene.sceneTimeMs,
+          characterTracks: sceneRenderer.characters, audioSample: sample,
+          visualEffectsCompiled: sceneRenderer.effects, viewport, frameContext });
       }
     };
-    integratedStatus.textContent = `جارٍ تحضير ${plan.format.toUpperCase()} ${plan.viewport.width}×${plan.viewport.height} لمدة ${(plan.durationMs / 1000).toFixed(2)} ث…`;
+    integratedStatus.textContent = `جارٍ تحضير ${plan.format.toUpperCase()} ${plan.viewport.width}×${plan.viewport.height} · ${sequenceEditor.scenes.length} مشاهد · ${(plan.durationMs / 1000).toFixed(2)} ث…`;
     result = await startExport(plan, host, { signal: controller.signal, onProgress: setIntegratedProgress });
     if (activeExport !== running || controller.signal.aborted) return;
     integratedVideoUrl = URL.createObjectURL(result.blob);
@@ -816,10 +914,23 @@ async function exportIntegratedProject() {
       integratedStatus.textContent = "فشل التصدير؛ راجع الملفات والصيغة وحدود الذاكرة.";
     }
   } finally {
+    sequenceImages?.release();
+    const restorePreview = activeExport === running;
+    const completedStatus = integratedStatus.textContent;
     if (activeExport === running) activeExport = null;
+    if (restorePreview) {
+      exportPreparing = true;
+      try {
+        await loadStudioScene(activeSceneId, { globalTimeMs: sequenceTimeMs, localTimeMs: currentMs });
+        integratedStatus.textContent = completedStatus;
+      } catch (error) {
+        try { renderAt(currentMs); } catch {}
+        status.textContent = `تعذرت استعادة معاينة المشهد: ${errorText(error)}`;
+      } finally { exportPreparing = false; }
+    }
     setExportBusy(false);
     refreshExportControls();
-    renderAt(currentMs);
+    try { renderAt(currentMs); } catch (error) { status.textContent = `تعذرت استعادة المعاينة: ${errorText(error)}`; }
   }
 }
 function audioAdapterPlay(assetId, options) {
@@ -1380,10 +1491,7 @@ function updateProject({ resetPlayback = false, viewport = project.viewport, edi
     applyCanvasDimensions(nextPreview);
     seek.max = String(durationMs);
     syncMotionTimeBounds();
-    integratedFrom.max = String(Math.max(0, durationMs - 1));
-    integratedTo.max = String(durationMs);
-    if (Number(integratedTo.value) === previousDurationMs || Number(integratedTo.value) > durationMs) integratedTo.value = String(durationMs);
-    if (Number(integratedFrom.value) >= durationMs) integratedFrom.value = String(Math.max(0, durationMs - 1));
+    syncIntegratedRange();
     syncLegacyCameraInputs();
     timelineEditor?.render();
     refreshCharacterTimeline();
@@ -1530,7 +1638,16 @@ async function restoreSceneAssets(scene) {
   if (currentFileInfo) sceneSettings.set(scene.id, { aspectPreset, fitMode, image: currentFileInfo });
   return firstImage;
 }
-async function activateStudioScene(sceneId, { globalTimeMs = null, localTimeMs = 0, keepPlaying = false } = {}) {
+function activateStudioScene(sceneId, options = {}) {
+  if (activeExport || exportPreparing) return;
+  const loading = loadStudioScene(sceneId, options);
+  pendingSceneActivation = loading;
+  void loading.finally(() => {
+    if (pendingSceneActivation === loading) pendingSceneActivation = null;
+  }).catch(() => {});
+  return loading;
+}
+async function loadStudioScene(sceneId, { globalTimeMs = null, localTimeMs = 0, keepPlaying = false } = {}) {
   if (activeExport) return;
   if (!keepPlaying && isPlaying) stopPlayback();
   const wasPlaying = keepPlaying && isPlaying;
@@ -1560,7 +1677,7 @@ async function activateStudioScene(sceneId, { globalTimeMs = null, localTimeMs =
   previewViewport = safePreviewSize(project.viewport.width, project.viewport.height);
   applyCanvasDimensions(previewViewport);
   await restoreSceneAssets(target);
-  if (token !== sceneLoadToken) return;
+  if (token !== sceneLoadToken || activeExport) return;
   audioAssets = sequenceEditor.sequence.assets.filter(asset => asset.kind === "audio").map(assetMetadataToAudio);
   if (activeAudioAssetId && !audioAssets.some(asset => asset.id === activeAudioAssetId)) activeAudioAssetId = null;
   const audioAsset = audioAssets.find(item => audioFiles.has(item.id));
@@ -1579,9 +1696,7 @@ async function activateStudioScene(sceneId, { globalTimeMs = null, localTimeMs =
   seek.max = String(project.durationMs);
   syncMotionTimeBounds();
   $("duration").value = String(project.durationMs / 1000);
-  integratedFrom.max = String(Math.max(0, project.durationMs - 1)); integratedTo.max = String(project.durationMs);
-  if (Number(integratedTo.value) > project.durationMs) integratedTo.value = String(project.durationMs);
-  if (Number(integratedFrom.value) >= project.durationMs) integratedFrom.value = String(Math.max(0, project.durationMs - 1));
+  syncIntegratedRange();
   if (currentFileInfo) imageName.textContent = `${currentFileInfo.name} · ${selectedImageDimensions?.width ?? "?"}×${selectedImageDimensions?.height ?? "?"}`;
   else imageName.textContent = "أعد ربط صورة المشهد من مكتبة الأصول";
   timelineEditor?.clearSelection(); timelineEditor?.render();
@@ -2157,6 +2272,7 @@ refreshCharacterTimeline();
 renderAt(0);
 refreshExportControls();
 renderSequenceOverview();
+syncIntegratedRange();
 void restoreMostRecentSequence();
 exportButton.addEventListener("click", () => { void exportVideoFile(); });
 cancelExportButton.addEventListener("click", () => cancelActiveExport("ألغى المستخدم التسجيل."));

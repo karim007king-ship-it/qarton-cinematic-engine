@@ -8,6 +8,7 @@ import math
 import re
 import struct
 import wave
+import zlib
 
 from playwright.sync_api import sync_playwright
 
@@ -55,6 +56,17 @@ def measure_media_timeline(entries, timestamp_fields, duration_fields):
         end = max(end, timestamps[-1] + final_unit)
     assert end > start, f"ffprobe timestamps do not establish a positive timeline for {timestamp_fields}"
     return {"start": start, "end": end, "duration": end - start}
+
+
+def write_solid_png(path, rgb, width=256, height=256):
+    """Create a small lossless color card so sequence cuts can be checked in encoded frames."""
+    def chunk(kind, data):
+        payload = kind + data
+        return struct.pack(">I", len(data)) + payload + struct.pack(">I", zlib.crc32(payload) & 0xffffffff)
+    row = b"\x00" + bytes(rgb) * width
+    raw = row * height
+    path.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)) +
+                     chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
 
 
 # Regression coverage for streams without container or packet-duration metadata.
@@ -107,6 +119,19 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
                 sample_value = int(10000 * envelope * math.sin(2 * math.pi * 440 * at))
             samples.append(struct.pack("<h", sample_value))
         wav.writeframes(b"".join(samples))
+    sequence_cards = [Path(tmp) / f"sequence-{name}.png" for name in ("red", "green", "blue")]
+    for path, color in zip(sequence_cards, ((240, 20, 20), (20, 230, 20), (20, 30, 240))):
+        write_solid_png(path, color)
+    sequence_audio = [Path(tmp) / f"sequence-{name}.wav" for name in ("red", "green", "blue")]
+    for path, duration, frequency in zip(sequence_audio, (3, 4, 3), (440, 660, 880)):
+        with wave.open(str(path), "wb") as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(48000)
+            wav.writeframes(b"".join(
+                struct.pack("<h", int(10000 * math.sin(2 * math.pi * frequency * i / 48000)))
+                for i in range(48000 * duration)
+            ))
     with sync_playwright() as pw:
         executable = environ.get("CHROMIUM_EXECUTABLE_PATH")
         browser = pw.chromium.launch(executable_path=executable) if executable else pw.chromium.launch(channel="chrome")
@@ -769,6 +794,133 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
                         print(f"L11-F2 real export: {export_format}/{audio_mode}/{seconds}s video={video_timeline['duration']:.3f}s audio={audio_duration:.3f}s")
             assert verified_runs >= 8, f"Expected WebM 3/5/10/30 s with and without audio; verified {verified_runs} exports"
             sync_page.close()
+
+        # L11-E: record three actual scenes in one MediaRecorder output and decode
+        # frames on both sides of each exact 3s/7s Cut boundary.
+        sequence_page = browser.new_page(accept_downloads=True)
+        sequence_errors = []
+        sequence_page.on("pageerror", lambda error: sequence_errors.append(str(error)))
+        sequence_page.goto(preview.as_uri())
+        sequence_page.wait_for_function("document.querySelector('#stage')?.width === 720")
+        sequence_page.locator('nav.bottom-dock [data-editor-section="scenes"]').click()
+        def set_scene_card(card):
+            sequence_page.locator("#imageInput").set_input_files(str(card))
+            sequence_page.wait_for_function("document.querySelector('#imageName').textContent.includes('sequence-')")
+        def set_scene_duration(seconds):
+            sequence_page.locator("#sceneDuration").fill(str(seconds))
+            sequence_page.locator("#sceneDuration").dispatch_event("change")
+            assert sequence_page.locator("#sceneDuration").input_value() == str(seconds)
+        def add_scene_audio(audio_file):
+            sequence_page.locator('nav.bottom-dock [data-editor-section="audio"]').click()
+            sequence_page.locator("#audioInput").set_input_files(str(audio_file))
+            sequence_page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('تم التحقق من الملف')")
+            sequence_page.locator("#audioTrackType").select_option("music")
+            sequence_page.locator("#addAudioClip").click()
+            assert sequence_page.locator(".audio-clip").count() >= 1, sequence_page.locator("#audioTimelineMessage").inner_text()
+            sequence_page.locator('nav.bottom-dock [data-editor-section="scenes"]').click()
+
+        set_scene_card(sequence_cards[0])
+        set_scene_duration(3)
+        add_scene_audio(sequence_audio[0])
+        sequence_page.locator("#addSceneButton").click()
+        sequence_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 2")
+        set_scene_card(sequence_cards[1])
+        set_scene_duration(4)
+        add_scene_audio(sequence_audio[1])
+        sequence_page.locator("#addSceneButton").click()
+        sequence_page.wait_for_function("document.querySelectorAll('#sceneThumbnails .scene-card').length === 3")
+        set_scene_card(sequence_cards[2])
+        set_scene_duration(3)
+        add_scene_audio(sequence_audio[2])
+        sequence_page.wait_for_function("document.querySelector('#sequenceDuration').textContent.includes('00:10')")
+        assert sequence_page.locator("#sequenceBlocks .sequence-block").count() == 3
+        assert sequence_page.locator("#integratedTo").input_value() == "10000"
+        sequence_page.locator('nav.bottom-dock [data-editor-section="more"]').click()
+        sequence_page.locator(".integrated-export-card details.export-options > summary").click()
+        sequence_page.locator("#integratedFormat").select_option("webm")
+        sequence_page.locator("#integratedAudio").select_option("mix")
+        sequence_page.locator("#integratedQuality").select_option("480p")
+        sequence_page.locator("#integratedProbeButton").click()
+        sequence_page.wait_for_function("document.querySelector('#integratedStatus').textContent.includes('تم التحقق فعليًا') || !document.querySelector('#integratedError').hidden", timeout=30000)
+        assert "تم التحقق فعليًا" in sequence_page.locator("#integratedStatus").inner_text(), sequence_page.locator("#integratedError").inner_text()
+        sequence_page.locator("#integratedExportButton").click()
+        sequence_page.wait_for_function("document.querySelector('#integratedStatus').textContent.includes('اكتمل التصدير المتكامل') || !document.querySelector('#integratedError').hidden", timeout=45000)
+        assert "اكتمل التصدير المتكامل" in sequence_page.locator("#integratedStatus").inner_text(), sequence_page.locator("#integratedError").inner_text()
+        with sequence_page.expect_download(timeout=15000) as sequence_download:
+            sequence_page.locator("#integratedDownload").click()
+        sequence_output = Path(tmp) / "l11e-three-scenes-10s.webm"
+        sequence_download.value.save_as(sequence_output)
+        sequence_probe = __import__("json").loads(subprocess.check_output([
+            "ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(sequence_output)
+        ], text=True, timeout=60))
+        sequence_video_streams = [stream for stream in sequence_probe["streams"] if stream["codec_type"] == "video"]
+        sequence_audio_streams = [stream for stream in sequence_probe["streams"] if stream["codec_type"] == "audio"]
+        assert len(sequence_video_streams) == 1, sequence_probe["streams"]
+        assert len(sequence_audio_streams) == 1, sequence_probe["streams"]
+        sequence_frames = __import__("json").loads(subprocess.check_output([
+            "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_frames",
+            "-show_entries", "frame=best_effort_timestamp_time,pkt_duration_time,duration_time",
+            "-of", "json", str(sequence_output)
+        ], text=True, timeout=60)).get("frames", [])
+        sequence_timeline = measure_media_timeline(
+            sequence_frames, ("best_effort_timestamp_time", "pts_time"), ("pkt_duration_time", "duration_time"))
+        duration = sequence_timeline["duration"]
+        assert abs(duration - 10) <= 0.150, (duration, sequence_probe["format"])
+        def decoded_center_color(seconds):
+            return subprocess.check_output([
+                "ffmpeg", "-v", "error", "-ss", str(seconds), "-i", str(sequence_output), "-frames:v", "1",
+                "-vf", "crop=1:1:iw/2:ih/2,format=rgb24", "-f", "rawvideo", "-"
+            ], timeout=60)
+        for timestamp, expected in ((1, 0), (2.95, 0), (3.05, 1), (6.95, 1), (7.05, 2), (8.5, 2)):
+            color = decoded_center_color(timestamp)
+            assert len(color) == 3 and color[expected] > max(color[(expected + 1) % 3], color[(expected + 2) % 3]) * 2, (timestamp, list(color))
+        def dominant_audio_frequency(seconds):
+            raw = subprocess.check_output([
+                "ffmpeg", "-v", "error", "-ss", str(seconds), "-i", str(sequence_output), "-t", "0.2",
+                "-vn", "-ac", "1", "-ar", "48000", "-f", "s16le", "-acodec", "pcm_s16le", "-"
+            ], timeout=60)
+            samples = [value[0] for value in struct.iter_unpack("<h", raw)]
+            assert len(samples) >= 8000, (seconds, len(samples))
+            return max((440, 660, 880), key=lambda frequency: abs(sum(
+                sample * math.cos(2 * math.pi * frequency * index / 48000)
+                for index, sample in enumerate(samples)
+            )))
+        for timestamp, expected_frequency in ((2.7, 440), (3.2, 660), (6.7, 660), (7.2, 880)):
+            actual_frequency = dominant_audio_frequency(timestamp)
+            assert actual_frequency == expected_frequency, (timestamp, expected_frequency, actual_frequency)
+        print(f"L11-E three-scene export: one WebM video/audio track each, duration={duration:.3f}s, picture and sound verified across 3s/7s Cuts")
+        preview_color = sequence_page.locator("#stage").evaluate("el => [...el.getContext('2d').getImageData(el.width / 2, el.height / 2, 1, 1).data]")
+        assert preview_color[2] > preview_color[0] * 2, ("editor preview was not restored after WebM export", preview_color)
+        assert sequence_page.locator("#integratedError").is_hidden(), sequence_page.locator("#integratedError").inner_text()
+
+        # Repeat the same sequence as MP4 to catch duplicated scene offsets and stale
+        # preview/error state after one successful export.
+        sequence_page.locator("#integratedFormat").select_option("mp4")
+        sequence_page.locator("#integratedProbeButton").click()
+        sequence_page.wait_for_function("document.querySelector('#integratedStatus').textContent.includes('تم التحقق فعليًا') || !document.querySelector('#integratedError').hidden", timeout=30000)
+        assert "تم التحقق فعليًا" in sequence_page.locator("#integratedStatus").inner_text(), sequence_page.locator("#integratedError").inner_text()
+        sequence_page.locator("#integratedExportButton").click()
+        sequence_page.wait_for_function("document.querySelector('#integratedStatus').textContent.includes('جارٍ تحضير')", timeout=10000)
+        sequence_page.wait_for_function("document.querySelector('#integratedStatus').textContent.includes('اكتمل التصدير المتكامل') || !document.querySelector('#integratedError').hidden", timeout=45000)
+        assert "اكتمل التصدير المتكامل" in sequence_page.locator("#integratedStatus").inner_text(), sequence_page.locator("#integratedError").inner_text()
+        assert sequence_page.locator("#integratedError").is_hidden(), sequence_page.locator("#integratedError").inner_text()
+        preview_color = sequence_page.locator("#stage").evaluate("el => [...el.getContext('2d').getImageData(el.width / 2, el.height / 2, 1, 1).data]")
+        assert preview_color[2] > preview_color[0] * 2, ("editor preview was not restored after repeated MP4 export", preview_color)
+        with sequence_page.expect_download(timeout=15000) as mp4_download:
+            sequence_page.locator("#integratedDownload").click()
+        mp4_output = Path(tmp) / "l11e-three-scenes-10s.mp4"
+        mp4_download.value.save_as(mp4_output)
+        mp4_probe = __import__("json").loads(subprocess.check_output([
+            "ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(mp4_output)
+        ], text=True, timeout=60))
+        mp4_video = [stream for stream in mp4_probe["streams"] if stream["codec_type"] == "video"]
+        mp4_audio = [stream for stream in mp4_probe["streams"] if stream["codec_type"] == "audio"]
+        assert len(mp4_video) == len(mp4_audio) == 1, mp4_probe["streams"]
+        mp4_duration = float(mp4_probe["format"].get("duration") or mp4_video[0].get("duration"))
+        assert abs(mp4_duration - 10) <= 0.150, (mp4_duration, mp4_probe["format"])
+        print(f"L11-E repeated scene export: one MP4 video/audio track each, duration={mp4_duration:.3f}s; preview restored")
+        assert not sequence_errors, sequence_errors
+        sequence_page.close()
         page.locator('nav.bottom-dock [data-editor-section="effects"]').click()
         effect_lane = page.locator('#visualEffectsTracks .visual-effect-lane[data-effect-type="fade"]')
         effect_clip = page.locator(".visual-effect-clip")

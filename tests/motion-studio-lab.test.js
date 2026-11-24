@@ -27,7 +27,7 @@ test("mobile interface exposes portrait preview, image input, camera controls an
   assert.match(html, /value="original" selected/);
   assert.match(html, /value="fit" selected/);
   assert.match(html, /<h2 id="exportHeading">تصدير الفيديو · L5<\/h2>/);
-  assert.match(html, /<h2 id="integratedExportHeading">تصدير سينمائي متكامل · L10-B<\/h2>/);
+  assert.match(html, /<h2 id="integratedExportHeading">تصدير جميع المشاهد · L11-E<\/h2>/);
   assert.match(html, /value="mp4"/);
   assert.match(html, /value="webm"/);
   assert.match(html, /viewport" content="width=device-width, initial-scale=1/);

@@ -5,6 +5,7 @@ import { createStudioSequenceEditor, parseStudioSequenceFile, serializeStudioSeq
 
 const viewport = { width: 360, height: 640, fps: 24 };
 const asset = { id: "image", kind: "image", name: "image.png", mimeType: "image/png", size: 0 };
+const audioAsset = { id: "audio", kind: "audio", name: "audio.wav", mimeType: "audio/wav", size: 1 };
 const makeScene = (id, durationMs = 3000) => ({ id, project: { version: 1, durationMs, viewport,
   layers: [{ id: "background", assetId: "image", z: 0 }],
   camera: [{ atMs: 0, value: { x: 0, y: 0, zoom: 1, rotation: 0 } },
@@ -56,6 +57,32 @@ test("scene duration editing moves endpoint key and rejects invalid or sequence-
   const long = createStudioSequenceV1({ viewport, assets: [asset], scenes: [makeScene("long", 60_000), makeScene("long2", 60_000), makeScene("long3", 60_000), makeScene("long4", 60_000), makeScene("long5", 60_000)] });
   const bounded = createStudioSequenceEditor(long);
   assert.throws(() => bounded.setDuration("long", 60_001), RangeError);
+});
+
+test("scene duration edits keep audio times local and reject clips that no longer fit without mutating them", () => {
+  const first = makeScene("a", 4000);
+  first.audioTracks = [{ id: "music", type: "music", volume: 1,
+    clips: [{ id: "local-music", asset: audioAsset.id, startMs: 2400, durationMs: 800, volume: 1, loop: false }] }];
+  const sequence = createStudioSequenceV1({ viewport, assets: [asset, audioAsset], scenes: [first, makeScene("b", 5000)] });
+  const editor = createStudioSequenceEditor(sequence);
+  editor.setDuration("a", 3500);
+  const retained = editor.sequence.scenes[0].audioTracks[0].clips[0];
+  assert.deepEqual([retained.startMs, retained.durationMs], [2400, 800]);
+  assert.equal(editor.scenes[1].startMs, 3500);
+  assert.throws(() => editor.setDuration("a", 3000), /مقطع الصوت local-music.*النهاية المحلية/iu);
+  assert.equal(editor.sequence.scenes[0].project.durationMs, 3500);
+  assert.deepEqual([editor.sequence.scenes[0].audioTracks[0].clips[0].startMs,
+    editor.sequence.scenes[0].audioTracks[0].clips[0].durationMs], [2400, 800]);
+});
+
+test("scene duration edits identify out-of-range local effects instead of leaking export validation errors", () => {
+  const first = makeScene("a", 4000);
+  first.visualEffectsTrack = { version: 1, seed: 1, clips: [{ id: "late-fade", type: "fade", atMs: 3200,
+    durationMs: 500, from: { opacity: 0, color: "#000000" }, to: { opacity: 1, color: "#000000" } }] };
+  const editor = createStudioSequenceEditor(createStudioSequenceV1({ viewport, assets: [asset], scenes: [first, makeScene("b", 5000)] }));
+  assert.throws(() => editor.setDuration("a", 3000), /المؤثر late-fade.*النهاية المحلية/iu);
+  assert.equal(editor.sequence.scenes[0].project.durationMs, 4000);
+  assert.equal(editor.sequence.scenes[0].visualEffectsTrack.clips[0].atMs, 3200);
 });
 
 test("names reject empty and oversized values without changing saved metadata", () => {

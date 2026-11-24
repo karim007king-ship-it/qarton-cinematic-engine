@@ -104,6 +104,12 @@ export function createStudioSequenceEditor(sequence, { names = {}, activeSceneId
       }
       return updateScene(id, scene => {
         const oldDuration = scene.project.durationMs;
+        const effect = scene.visualEffectsTrack?.clips?.find(clip => clip.atMs > durationMs || clip.atMs + clip.durationMs > durationMs);
+        if (effect) throw new RangeError(`لا يمكن تقصير المشهد: المؤثر ${effect.id} يتجاوز النهاية المحلية (${effect.atMs}ms). حرّكه أو احذفه أولًا.`);
+        const audio = scene.audioTracks?.flatMap(track => track.clips).find(clip => clip.startMs + clip.durationMs > durationMs);
+        if (audio) throw new RangeError(`لا يمكن تقصير المشهد: مقطع الصوت ${audio.id} يتجاوز النهاية المحلية (${audio.startMs}ms). عدّل مدته أو موضعه أولًا.`);
+        const character = scene.characterTracks?.flatMap(track => track.keyframes).find(key => key.atMs > durationMs);
+        if (character) throw new RangeError(`لا يمكن تقصير المشهد: مفتاح الشخصية عند ${character.atMs}ms يتجاوز النهاية المحلية. حرّكه أو احذفه أولًا.`);
         const project = structuredClone(scene.project);
         project.durationMs = durationMs;
         if (project.camera?.at(-1)?.atMs === oldDuration) project.camera.at(-1).atMs = durationMs;
