@@ -84,6 +84,9 @@ export async function prepareAudioMix(plan, { audioContext, resolveAudio } = {},
     }
     checkAbort(signal);
     if (!blob || typeof blob.arrayBuffer !== "function" || blob.size === 0) fail("ASSET_MISSING", `Local audio asset is unavailable: ${assetId}`);
+    if (!Number.isSafeInteger(blob.size) || blob.size > 20 * 1024 * 1024) {
+      fail("BUDGET_EXCEEDED", `Compressed audio asset exceeds the 20 MiB input limit: ${assetId}`);
+    }
     let buffer;
     try { buffer = await awaitAudioWork(audioContext.decodeAudioData(await blob.arrayBuffer()), decodeTimeoutMs,
       signal, "DECODE_FAILED", `Audio decode timed out for asset: ${assetId}`); }
