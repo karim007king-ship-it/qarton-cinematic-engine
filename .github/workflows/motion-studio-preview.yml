@@ -16,7 +16,9 @@ on:
       - 'tests/motion-studio-visual-effects.test.js'
       - 'tests/motion-studio-export-*.test.js'
       - 'scripts/build-motion-studio-preview.mjs'
+      - 'scripts/motion-studio-preview-html.js'
       - 'scripts/check-motion-studio-preview.py'
+      - 'tests/motion-studio-preview-builder.test.js'
   push:
     branches:
       - feature/motion-studio-video-export-l5

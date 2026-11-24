@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import { inlinePreviewAssets } from "./motion-studio-preview-html.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sourceDirectory = resolve(root, "examples/motion-studio-lab");
@@ -33,11 +34,7 @@ const bundled = await build({
   }
 });
 
-let html = htmlSource
-  .replace(/\s*<script type="importmap">[\s\S]*?<\/script>\s*/u, "\n")
-  .replace(/<link rel="stylesheet" href="\.\/studio\.css[^"]*">/u, `<style>\n${css}\n</style>`)
-  .replace(/<script type="module" src="\.\/studio\.js[^"]*"><\/script>/u,
-    `<script>\n${bundled.outputFiles[0].text.replace(/<\/script/giu, "<\\/script")}\n</script>`);
+const html = inlinePreviewAssets(htmlSource, css, bundled.outputFiles[0].text);
 
 if (html === htmlSource || /<script type="importmap">|type="module" src=\.\/studio\.js/u.test(html) || /from\s+["'](?:\.|@qarton)\//u.test(bundled.outputFiles[0].text)) {
   throw new Error("Could not produce a self-contained Motion Studio preview document.");

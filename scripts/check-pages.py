@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 10026)
+Total output lines: 686
+
 """Exercise the staged Pages site in desktop and touch Chromium contexts."""
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -222,7 +225,7 @@ def exercise(context, url):
     assert "1080 × 1920" in page.locator("#viewportValue").inner_text()
     fit_frame = page.locator("#stage").evaluate("el => el.toDataURL()")
     page.locator("#fitMode").select_option("fill")
-    page.wait_for_function("previous => document.querySelector('#stage').toDataURL() !== previous", fit_frame)
+    page.wait_for_function("previous => document.querySelector('#stage').toDataURL() !== previous", arg=fit_frame)
     fill_frame = page.locator("#stage").evaluate("el => el.toDataURL()")
     assert fit_frame != fill_frame
 
@@ -349,8 +352,7 @@ def exercise(context, url):
     page.mouse.move(lane_box["x"] + lane_box["width"] * 7000 / 12000,
                     lane_box["y"] + lane_box["height"] / 2, steps=8)
     page.mouse.up()
-    moved_camera_keys = page.locator(".keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")
-    if page.locator('.keyframe-marker[data-key-time="7000"]').count() != 1:
+    moved_camera_keys = page.locator(".keyframe-…26 tokens truncated…er[data-key-time="7000"]').count() != 1:
         raise AssertionError({
             "camera_keys_after_drag": moved_camera_keys,
             "timeline_message": page.locator("#timelineMessage").inner_text(),
