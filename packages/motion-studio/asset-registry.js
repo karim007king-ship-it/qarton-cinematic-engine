@@ -11,13 +11,17 @@ export function createAssetRegistry(sequence, { maxBytes = 64 * 1024 * 1024 } = 
       scene.audioTracks.some(track => track.clips.some(clip => clip.asset === id))
     ).map(scene => scene.id));
   }
-  function relink(id, blob) {
+  function validateLink(id, blob) {
     const asset = snapshot.assets.find(item => item.id === id);
     if (!asset) throw new RangeError("Unknown asset");
     if (!(blob instanceof Blob) || blob.size !== asset.size || blob.type.toLowerCase() !== asset.mimeType)
       throw new TypeError("Asset bytes do not match metadata");
     const next = bytes - (blobs.get(id)?.size ?? 0) + blob.size;
     if (next > maxBytes) throw new RangeError("Asset budget exceeded");
+    return next;
+  }
+  function relink(id, blob) {
+    const next = validateLink(id, blob);
     blobs.set(id, blob);
     bytes = next;
   }
@@ -37,5 +41,5 @@ export function createAssetRegistry(sequence, { maxBytes = 64 * 1024 * 1024 } = 
     return snapshot;
   }
   return Object.freeze({ get sequence() { return snapshot; }, get linkedBytes() { return bytes; },
-    references, relink, remove, add, get: id => blobs.get(id) ?? null });
+    references, validateLink, relink, remove, add, get: id => blobs.get(id) ?? null });
 }
