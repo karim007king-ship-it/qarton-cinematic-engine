@@ -9,6 +9,9 @@ function freeze(value) {
 
 /** Freeze one StudioSequenceV1 and map its scene-local audio tracks onto the project clock. */
 export function prepareStudioSequenceExport(sequence, { audioAssetInfo = [], audioMasterVolume = 1 } = {}) {
+  if (!Number.isFinite(audioMasterVolume) || audioMasterVolume < 0 || audioMasterVolume > 1) {
+    throw new RangeError("Sequence export master volume must be between 0 and 1");
+  }
   const compiledSequence = compileStudioSequence(sequence);
   const snapshotSequence = compiledSequence.sequence;
   const audioTracks = AUDIO_TYPES.map(type => ({ id: `sequence-audio-${type}`, type, volume: 1, clips: [] }));
@@ -24,16 +27,13 @@ export function prepareStudioSequenceExport(sequence, { audioAssetInfo = [], aud
     }
     startMs += scene.project.durationMs;
   }
-  if (!Number.isFinite(audioMasterVolume) || audioMasterVolume < 0 || audioMasterVolume > 1) {
-    throw new RangeError("Sequence export master volume must be between 0 and 1");
-  }
   const audioAssets = snapshotSequence.assets.filter(asset => asset.kind === "audio").map(asset => ({
     id: asset.id, name: asset.name, type: asset.mimeType, size: asset.size
   }));
   const firstProject = snapshotSequence.scenes[0].project;
   const snapshot = freeze({
     project: structuredClone({ ...firstProject, durationMs: compiledSequence.durationMs }),
-    audioTracks: structuredClone(audioTracks), audioAssets,
+    audioTracks, audioAssets,
     audioAssetInfo: structuredClone(audioAssetInfo), audioMasterVolume
   });
   return Object.freeze({ compiledSequence, snapshot });
