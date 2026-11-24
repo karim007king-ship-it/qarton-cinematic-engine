@@ -105,6 +105,27 @@ try {
   const alphaPixels = [...ctx.getImageData(0, 0, 2, 1).data];
   assertPixel(alphaPixels.slice(0, 4), [255, 0, 0, 128], 1, "Dissolve preserves outgoing transparency");
   assertPixel(alphaPixels.slice(4, 8), [0, 255, 0, 128], 1, "Dissolve preserves incoming transparency");
+  const stateCanvas = document.createElement("canvas");
+  stateCanvas.width = 2; stateCanvas.height = 2;
+  const stateContext = stateCanvas.getContext("2d");
+  Object.assign(stateContext, { filter: "blur(2px)", shadowColor: "rgba(255, 0, 0, 1)", shadowBlur: 7,
+    shadowOffsetX: 3, shadowOffsetY: 4, globalAlpha: 0.25, globalCompositeOperation: "multiply" });
+  const painterStates = [];
+  compositor.draw(stateContext, sampleStudioSequenceV2(dissolve, 800), context => {
+    painterStates.push([context.filter, context.shadowColor, context.shadowBlur, context.shadowOffsetX,
+      context.shadowOffsetY, context.globalAlpha, context.globalCompositeOperation]);
+    Object.assign(context, { filter: "blur(20px)", shadowColor: "blue", shadowBlur: 20,
+      shadowOffsetX: 20, shadowOffsetY: 20, globalAlpha: 0.1, globalCompositeOperation: "copy" });
+  });
+  if (painterStates.length !== 2 || painterStates.some(state =>
+      JSON.stringify(state) !== JSON.stringify(["none", "rgba(0, 0, 0, 0)", 0, 0, 0, 1, "source-over"]))) {
+    throw new Error(`Painter inherited Canvas filter or shadow state: ${JSON.stringify(painterStates)}`);
+  }
+  if (stateContext.filter !== "blur(2px)" || stateContext.shadowColor !== "rgba(255, 0, 0, 1)" ||
+      stateContext.shadowBlur !== 7 || stateContext.shadowOffsetX !== 3 || stateContext.shadowOffsetY !== 4 ||
+      stateContext.globalAlpha !== 0.25 || stateContext.globalCompositeOperation !== "multiply") {
+    throw new Error("Compositor did not restore all caller Canvas state");
+  }
   if (compositor.getDiagnostics().surfaceCreations !== 1) throw new Error("Compositor allocated more than one scratch surface");
   compositor.release();
   if (compositor.getDiagnostics().liveSurfaces !== 0 || compositor.getDiagnostics().scratchBytes !== 0) {
