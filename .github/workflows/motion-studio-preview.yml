@@ -2,7 +2,7 @@ name: Motion Studio Android preview
 
 on:
   pull_request:
-    branches: [main, integration/character-animation-timeline-l7, feature/audio-dialogue-timeline-l8b, feature/integrated-av-export-l10b, fix/integrated-av-export-l10c, docs/motion-studio-export-l10a, docs/motion-studio-multiscene-l11a, feature/shared-assets-l11c]
+    branches: [main, integration/character-animation-timeline-l7, feature/audio-dialogue-timeline-l8b, feature/integrated-av-export-l10b, fix/integrated-av-export-l10c, docs/motion-studio-export-l10a, docs/motion-studio-multiscene-l11a, feature/motion-studio-multiscene-editor-l11d, feature/shared-assets-l11c]
     paths:
       - '.github/workflows/motion-studio-preview.yml'
       - 'examples/motion-studio-lab/**'
