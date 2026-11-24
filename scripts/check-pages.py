@@ -175,6 +175,21 @@ def exercise(context, url):
         };
     })();""")
     page.goto(url + "examples/motion-studio-lab/")
+    def activate_studio_button(locator):
+        """Use a real centered touch tap on touch devices and verify hit testing."""
+        if page.evaluate("matchMedia('(pointer: coarse)').matches"):
+            locator.evaluate("el => el.scrollIntoView({block:'center', inline:'center', behavior:'instant'})")
+            box = locator.bounding_box()
+            hit = locator.evaluate("""el => {
+                const rect = el.getBoundingClientRect();
+                const target = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+                return target === el || target?.closest('button') === el;
+            }""")
+            assert hit, f"touch target is covered: {locator.get_attribute('id')}"
+            page.touchscreen.tap(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        else:
+            locator.click()
+
     export_support = page.evaluate("""() => {
         const Recorder = window.MediaRecorder;
         const candidates = {
@@ -222,7 +237,7 @@ def exercise(context, url):
     assert "1080 × 1920" in page.locator("#viewportValue").inner_text()
     fit_frame = page.locator("#stage").evaluate("el => el.toDataURL()")
     page.locator("#fitMode").select_option("fill")
-    page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+    page.wait_for_function("previous => document.querySelector('#stage').toDataURL() !== previous", arg=fit_frame)
     fill_frame = page.locator("#stage").evaluate("el => el.toDataURL()")
     assert fit_frame != fill_frame
 
@@ -250,9 +265,25 @@ def exercise(context, url):
     set_studio_time(0)
     set_studio_time(6000)
     assert preview.evaluate("el => el.toDataURL()") == at_middle
-    page.locator("#playPauseButton").click()
+    page.locator("#playPauseButton").scroll_into_view_if_needed()
+    print("Mobile transport hit test:", json.dumps(page.locator("#playPauseButton").evaluate("el => { const r=el.getBoundingClientRect(), hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2); return {width:innerWidth,height:innerHeight,scrollY,coarse:matchMedia('(pointer: coarse)').matches,previewPosition:getComputedStyle(document.querySelector('.preview-panel')).position,rect:{x:r.x,y:r.y,w:r.width,h:r.height},hit:hit?.outerHTML?.slice(0,180)}; }"), ensure_ascii=False), flush=True)
+    if page.evaluate("matchMedia('(pointer: coarse)').matches"):
+        play_button = page.locator("#playPauseButton")
+        play_button.evaluate("el => el.scrollIntoView({block:'center', inline:'center', behavior:'instant'})")
+        box = play_button.bounding_box()
+        assert play_button.evaluate("el => { const r=el.getBoundingClientRect(); return document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.closest('button') === el; }"), "touch Play button must be the actual hit target"
+        page.touchscreen.tap(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    else:
+        page.locator("#playPauseButton").click()
     page.wait_for_function("Number(document.querySelector('#seek').value) > 6200")
-    page.locator("#playPauseButton").click()
+    if page.evaluate("matchMedia('(pointer: coarse)').matches"):
+        play_button = page.locator("#playPauseButton")
+        play_button.evaluate("el => el.scrollIntoView({block:'center', inline:'center', behavior:'instant'})")
+        box = play_button.bounding_box()
+        assert play_button.evaluate("el => { const r=el.getBoundingClientRect(); return document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.closest('button') === el; }"), "touch Pause button must be the actual hit target"
+        page.touchscreen.tap(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    else:
+        page.locator("#playPauseButton").click()
     paused_value = studio_seek.input_value()
     page.locator("#aspectPreset").select_option("landscape")
     page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
@@ -266,11 +297,18 @@ def exercise(context, url):
     assert studio_seek.input_value() == paused_value
     assert page.locator("#playPauseButton").inner_text() == "متابعة"
     assert page.locator("#stage").evaluate("el => [el.width, el.height]") == [858, 1073]
-    page.locator("#replayButton").click()
+    if page.evaluate("matchMedia('(pointer: coarse)').matches"):
+        replay_button = page.locator("#replayButton")
+        replay_button.evaluate("el => el.scrollIntoView({block:'center', inline:'center', behavior:'instant'})")
+        box = replay_button.bounding_box()
+        assert replay_button.evaluate("el => { const r=el.getBoundingClientRect(); return document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.closest('button') === el; }"), "touch Replay button must be the actual hit target"
+        page.touchscreen.tap(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    else:
+        page.locator("#replayButton").click()
     page.wait_for_function("Number(document.querySelector('#seek').value) > 0")
     page.wait_for_function("Number(document.querySelector('#seek').value) < 1000")
     with page.expect_download() as download_info:
-        page.locator("#saveProjectButton").click()
+        activate_studio_button(page.locator("#saveProjectButton"))
     project_download = download_info.value
     project_path = Path("/tmp/qarton-motion-studio-check.json")
     project_download.save_as(project_path)
@@ -286,7 +324,7 @@ def exercise(context, url):
     assert project_data["project"]["camera"][1]["value"]["y"] == -21
     project_data["project"]["layers"][0]["assetId"] = "imported-portrait-42"
     project_path.write_text(json.dumps(project_data))
-    page.locator("#loadProjectButton").click()
+    activate_studio_button(page.locator("#loadProjectButton"))
     page.locator("#projectInput").set_input_files(str(project_path))
     page.get_by_text("فُتح المشروع؛ اختر الصورة المرتبطة به", exact=True).wait_for()
     assert "أعد اختيار الصورة" in page.locator("#imageName").inner_text()
@@ -295,7 +333,7 @@ def exercise(context, url):
     page.locator("#imageInput").set_input_files(str(site / "examples/motion-studio-lab/preview-test.png"))
     page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
     with page.expect_download() as rebound_download_info:
-        page.locator("#saveProjectButton").click()
+        activate_studio_button(page.locator("#saveProjectButton"))
     rebound_path = Path("/tmp/qarton-motion-studio-rebound.json")
     rebound_download_info.value.save_as(rebound_path)
     rebound_data = json.loads(rebound_path.read_text())
@@ -307,7 +345,7 @@ def exercise(context, url):
     legacy_data.pop("settings")
     legacy_path = Path("/tmp/qarton-motion-studio-legacy.json")
     legacy_path.write_text(json.dumps(legacy_data))
-    page.locator("#loadProjectButton").click()
+    activate_studio_button(page.locator("#loadProjectButton"))
     page.locator("#projectInput").set_input_files(str(legacy_path))
     page.get_by_text("فُتح المشروع؛ اختر الصورة المرتبطة به", exact=True).wait_for()
     assert page.locator("#aspectPreset").input_value() == "portrait"
@@ -317,7 +355,7 @@ def exercise(context, url):
         "name": "preview-test-slow.png", "mimeType": "image/png",
         "buffer": (site / "examples/motion-studio-lab/preview-test.png").read_bytes()
     })
-    page.locator("#loadProjectButton").click()
+    activate_studio_button(page.locator("#loadProjectButton"))
     page.locator("#projectInput").set_input_files(str(project_path))
     page.get_by_text("فُتح المشروع؛ اختر الصورة المرتبطة به", exact=True).wait_for()
     relink_label = page.locator("#imageName").inner_text()
@@ -330,7 +368,7 @@ def exercise(context, url):
     studio_seek.evaluate("""(el, value) => {
         el.value = String(value); el.dispatchEvent(new Event('input', {bubbles:true}));
     }""", 5000)
-    page.locator("#addKeyframeButton").click()
+    activate_studio_button(page.locator("#addKeyframeButton"))
     assert page.locator(".keyframe-marker").count() == 3
     assert page.locator('.keyframe-marker[aria-pressed="true"]').get_attribute("data-key-time") == "5000"
     studio_seek.evaluate("""(el, value) => {
@@ -373,12 +411,12 @@ def exercise(context, url):
     assert horizontal_overflow["scrollWidth"] <= horizontal_overflow["viewportWidth"], horizontal_overflow
 
     with page.expect_download() as timeline_download_info:
-        page.locator("#saveProjectButton").click()
+        activate_studio_button(page.locator("#saveProjectButton"))
     timeline_path = Path("/tmp/qarton-motion-studio-l6b.json")
     timeline_download_info.value.save_as(timeline_path)
     timeline_data = json.loads(timeline_path.read_text())
     assert [key["atMs"] for key in timeline_data["project"]["camera"]] == [0, 7000, 12000]
-    page.locator("#loadProjectButton").click()
+    activate_studio_button(page.locator("#loadProjectButton"))
     page.locator("#projectInput").set_input_files(str(timeline_path))
     page.get_by_text("فُتح المشروع؛ اختر الصورة المرتبطة به", exact=True).wait_for()
     assert page.locator(".keyframe-marker").count() == 3
@@ -394,7 +432,7 @@ def exercise(context, url):
     }""", 6000)
     assert preview.evaluate("el => el.toDataURL()") == repeat_frame
     page.locator('.keyframe-marker[data-key-time="7000"]').evaluate("el => el.click()")
-    page.locator("#deleteKeyframeButton").click()
+    activate_studio_button(page.locator("#deleteKeyframeButton"))
     assert [int(value) for value in page.locator(".keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")] == [0, 12000]
 
     # Exercise the separate character lane through real DOM events and Canvas sampling.
@@ -402,7 +440,7 @@ def exercise(context, url):
         studio_seek.evaluate("""(el, value) => {
             el.value = String(value); el.dispatchEvent(new Event('input', {bubbles:true}));
         }""", position)
-        page.locator("#addCharacterKeyframe").click()
+        activate_studio_button(page.locator("#addCharacterKeyframe"))
     assert page.locator(".character-keyframe-marker").count() == 3
     focus_marker = page.locator('.character-keyframe-marker[data-key-time="6000"]')
     focus_marker.evaluate("el => el.focus()")
@@ -552,7 +590,7 @@ def exercise(context, url):
     page.mouse.up()
 
     with page.expect_download() as character_download_info:
-        page.locator("#saveProjectButton").click()
+        activate_studio_button(page.locator("#saveProjectButton"))
     character_path = Path("/tmp/qarton-motion-studio-character.json")
     character_download_info.value.save_as(character_path)
     character_data = json.loads(character_path.read_text())
@@ -563,12 +601,12 @@ def exercise(context, url):
         "timeline_message": page.locator("#characterTimelineMessage").inner_text(),
         "selection": page.locator("#characterTimelineSelection").inner_text(),
     }
-    page.locator("#loadProjectButton").click()
+    activate_studio_button(page.locator("#loadProjectButton"))
     page.locator("#projectInput").set_input_files(str(character_path))
     page.get_by_text("فُتح المشروع؛ اختر الصورة المرتبطة به", exact=True).wait_for()
     assert page.locator(".character-keyframe-marker").count() == 3
     page.locator('.character-keyframe-marker[data-key-time="7500"]').evaluate("el => el.click()")
-    page.locator("#deleteCharacterKeyframe").click()
+    activate_studio_button(page.locator("#deleteCharacterKeyframe"))
     remaining_character_times = [int(value) for value in page.locator(".character-keyframe-marker")
         .evaluate_all("els => els.map(el => el.dataset.keyTime)")]
     assert remaining_character_times == sorted([collision_candidates[-1], 10000]), {

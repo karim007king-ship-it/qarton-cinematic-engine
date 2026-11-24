@@ -1,4 +1,5 @@
 import { compileProject, sampleFrame, planExport, rasterForQuality, probeExport, startExport } from "@qarton/cinematic-engine/motion-studio";
+import { createStudioSequenceV1 } from "@qarton/cinematic-engine/motion-studio";
 import { createRequestToken, makeProject, makeProjectFile, parseProjectFile, prepareProjectUpdate, VIEWPORT } from "./studio-model.js?v=l7b-character-01";
 import { decodeImageBitmap } from "./studio-image.js?v=l4-flex-01";
 import { DEFAULT_OUTPUT_VIEWPORT, imageRect, inferAspectPreset, projectSizeForPreset, safePreviewSize } from "./studio-dimensions.js?v=l4-flex-01";
@@ -10,12 +11,15 @@ import {
 import { createStudioTimeline } from "./studio-timeline.js?v=l6b-cleanup-01";
 import { compileCharacterTrack, makeCharacterTrack } from "./studio-character-track.js?v=l7b-character-01";
 import { createCharacterTimeline } from "./studio-character-timeline.js?v=l7b-character-01";
-import { compileAudioTracks, makeAudioTracks, addAudioClip, editAudioClip, deleteAudioClip, setAudioTrackVolume, setAudioViseme, makeAudioAssetMetadata, validateAudioFile, readAudioDuration } from "./studio-audio-model.js?v=l8b-audio-timeline-01";
+import { compileAudioTracks, makeAudioTracks, addAudioClip, editAudioClip, deleteAudioClip, setAudioTrackVolume, setAudioViseme, validateAudioFile, readAudioDuration } from "./studio-audio-model.js?v=l8b-audio-timeline-01";
 import { createStudioAudioTimeline } from "./studio-audio-timeline.js?v=l8b-audio-timeline-01";
 import { createCinematicAudioPlayer } from "../../src/audio/cinematic-audio-core.js";
 import { addVisualEffect, deleteVisualEffect, editVisualEffect, moveVisualEffect, makeVisualEffectsTrack, compileVisualEffectsTrack, VISUAL_EFFECT_CHANNELS, VISUAL_EFFECT_TYPES } from "./studio-visual-effects-model.js?v=l9b-effects-01";
 import { createStudioVisualEffectsTimeline } from "./studio-visual-effects-timeline.js?v=l9b-effects-01";
 import { drawStudioScene } from "./studio-scene-renderer.js?v=l10b-integrated-01";
+import { createStudioSequenceEditor, parseStudioSequenceFile, serializeStudioSequenceFile, STUDIO_SEQUENCE_FILE_FORMAT } from "./studio-sequence-editor.js?v=l11d-multiscene-01";
+import { createPersistentAssetRegistry } from "../../packages/motion-studio/asset-persistence.js";
+import { openAssetStorage } from "../../packages/motion-studio/asset-storage.js";
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("stage");
@@ -100,7 +104,8 @@ canvas.width = previewViewport.width;
 canvas.height = previewViewport.height;
 canvas.style.aspectRatio = `${previewViewport.width} / ${previewViewport.height}`;
 
-const imageProvider = { get: (assetId) => project.layers.some((layer) => layer.assetId === assetId) ? imageSource : null };
+const sceneImageSources = new Map();
+const imageProvider = { get: (assetId) => sceneImageSources.get(assetId) ?? (project.layers.some((layer) => layer.assetId === assetId) ? imageSource : null) };
 let compiled;
 let visualEffectsCompiled;
 let timelineEditor = null;
@@ -120,9 +125,170 @@ let audioTimeline = null;
 let pendingAudioRequest = null;
 let visualEffectsTimeline = null;
 let visualEffectSelection = null;
+const makeLocalId = (prefix) => `${prefix}-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
+const initialImageAsset = { id: project.layers[0].assetId, kind: "image", name: "image-placeholder.png", mimeType: "image/png", size: 0 };
+const CURRENT_PROJECT_KEY = "qarton-motion-studio-current-project";
+function readStoredProjectId() {
+  try {
+    const id = localStorage.getItem(CURRENT_PROJECT_KEY);
+    return typeof id === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u.test(id) ? id : null;
+  } catch { return null; }
+}
+let projectStorageId = readStoredProjectId() ?? makeLocalId("project");
+let sequenceEditor = createStudioSequenceEditor(createStudioSequenceV1({
+  viewport: project.viewport,
+  scenes: [{ id: "scene-1", project, audioTracks, characterTracks: [characterTrack], visualEffectsTrack }],
+  assets: [initialImageAsset]
+}), { names: { "scene-1": "المشهد 1" } });
+let activeSceneId = sequenceEditor.activeSceneId;
+let sequenceTimeMs = 0;
+let sequenceEpochMs = 0;
+let sequenceBaseMs = 0;
+let assetStorage = null;
+let persistentAssets = null;
+let assetStorageStatus = "جارٍ فتح التخزين المحلي…";
+const localAssetFiles = new Map();
+const sceneSettings = new Map([[activeSceneId, { aspectPreset, fitMode, image: null }]]);
+const sceneThumbnails = new Map();
+let sceneLoadToken = 0;
+let sequenceAutosaveTimer = 0;
+const assetReady = openAssetStorage().then(async storage => {
+  assetStorage = storage;
+  persistentAssets = createPersistentAssetRegistry(sequenceEditor.sequence, { storage, projectId: projectStorageId });
+  await persistentAssets.restore();
+  assetStorageStatus = "محفوظة محليًا على هذا الجهاز";
+  renderAssetLibrary();
+}).catch(error => {
+  assetStorageStatus = `التخزين المحلي غير متاح: ${errorText(error)}`;
+  $("assetLibraryMessage").textContent = assetStorageStatus;
+  return null;
+});
 
 function compilePreviewEffects(track, sourceProject = project, viewport = previewViewport) {
   return compileVisualEffectsTrack(track, projectForRaster(sourceProject, viewport));
+}
+function getCurrentScene() { return sequenceEditor.scenes.find(scene => scene.id === activeSceneId) ?? null; }
+function currentScenePayload() {
+  return { id: activeSceneId, project, audioTracks, characterTracks: [characterTrack, ...(sceneExtraCharacterTracks.get(activeSceneId) ?? [])], visualEffectsTrack };
+}
+function sceneImageSettings(sceneId = activeSceneId) {
+  const stored = sceneSettings.get(sceneId);
+  if (stored?.aspectPreset && stored?.fitMode) return stored;
+  const scene = sequenceEditor.sequence.scenes.find(item => item.id === sceneId);
+  return { aspectPreset: scene ? inferAspectPreset(scene.project.viewport.width, scene.project.viewport.height) : aspectPreset, fitMode: "fit" };
+}
+const sceneExtraCharacterTracks = new Map();
+function captureCurrentScene({ refresh = false } = {}) {
+  if (!sequenceEditor) return null;
+  const next = sequenceEditor.updateScene(activeSceneId, () => currentScenePayload());
+  void persistentAssets?.replaceSequence(next.sequence).catch(error => {
+    $("assetLibraryMessage").textContent = `تعذر تحديث فهرس الأصول: ${errorText(error)}`;
+  });
+  persistSequenceMetadata();
+  if (refresh) renderSequenceOverview();
+  return next;
+}
+function scheduleSequenceAutosave() {
+  if (sequenceAutosaveTimer) clearTimeout(sequenceAutosaveTimer);
+  sequenceAutosaveTimer = setTimeout(() => {
+    sequenceAutosaveTimer = 0;
+    try { captureCurrentScene(); }
+    catch (error) { $("assetLibraryMessage").textContent = `تعذر حفظ تعديلات المشهد: ${errorText(error)}`; }
+  }, 250);
+}
+async function ensureAssetStorage() {
+  await assetReady;
+  if (!persistentAssets) throw new Error("التخزين المحلي غير متاح في هذا المتصفح.");
+  return persistentAssets;
+}
+function mimeForFile(file) {
+  if (file.type) return file.type.toLowerCase();
+  const ext = file.name.toLowerCase().split(".").at(-1);
+  return ({ jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", avif: "image/avif", gif: "image/gif",
+    mp3: "audio/mpeg", m4a: "audio/mp4", aac: "audio/aac", wav: "audio/wav", ogg: "audio/ogg", oga: "audio/ogg", webm: "audio/webm" })[ext] ?? "";
+}
+function sequenceAssetFromFile(file, id = makeLocalId("asset")) {
+  let mimeType = mimeForFile(file);
+  const kind = mimeType.startsWith("image/") ? "image" : mimeType.startsWith("audio/") ? "audio" : null;
+  if (!kind || !Number.isSafeInteger(file.size) || file.size < 1 || file.size > 64 * 1024 * 1024) {
+    throw new TypeError("اختر صورة أو ملف صوت صالحًا بحجم لا يتجاوز 64 MiB.");
+  }
+  if (kind === "audio") mimeType = validateAudioFile(file).mime;
+  return { id, kind, name: file.name.slice(0, 255), mimeType, size: file.size };
+}
+async function registerAssetFile(file) {
+  await assetReady;
+  const registry = persistentAssets;
+  const candidate = sequenceAssetFromFile(file);
+  const found = sequenceEditor.sequence.assets.find(asset => asset.kind === candidate.kind && asset.name === candidate.name &&
+    asset.mimeType === candidate.mimeType && asset.size === candidate.size);
+  const asset = found ?? candidate;
+  const linkedFile = (file.type || "").toLowerCase() === candidate.mimeType ? file : new File([file], file.name, { type: candidate.mimeType });
+  if (!found) {
+    const oldSequence = sequenceEditor.sequence;
+    const next = createStudioSequenceV1({ viewport: oldSequence.viewport, scenes: oldSequence.scenes,
+      assets: [...oldSequence.assets, asset] });
+    sequenceEditor.replaceSequence(next);
+    await registry?.replaceSequence(next);
+  }
+  localAssetFiles.set(asset.id, linkedFile);
+  if (registry && !registry.get(asset.id)) await registry.relink(asset.id, linkedFile);
+  renderAssetLibrary();
+  persistSequenceMetadata();
+  return asset;
+}
+function getAssetBlob(id) { return persistentAssets?.get(id) ?? localAssetFiles.get(id) ?? null; }
+function assetMetadataToAudio(asset) {
+  return { id: asset.id, name: asset.name, type: asset.mimeType, size: asset.size };
+}
+function persistSequenceMetadata() {
+  try {
+    localStorage.setItem(CURRENT_PROJECT_KEY, projectStorageId);
+    const settingsByScene = Object.fromEntries(sequenceEditor.scenes.map(scene => {
+      const settings = sceneImageSettings(scene.id);
+      return [scene.id, { aspectPreset: settings.aspectPreset, fitMode: settings.fitMode }];
+    }));
+    const text = serializeStudioSequenceFile(sequenceEditor, { projectId: projectStorageId, aspectPreset, fitMode, audioMasterVolume, sceneSettings: settingsByScene });
+    localStorage.setItem(`qarton-motion-studio-sequence:${projectStorageId}`, text);
+  } catch (error) {
+    $("assetLibraryMessage").textContent = `تعذر حفظ بيانات التسلسل محليًا: ${errorText(error)}`;
+  }
+}
+async function restoreMostRecentSequence() {
+  try {
+    const id = readStoredProjectId();
+    if (!id) return;
+    const text = localStorage.getItem(`qarton-motion-studio-sequence:${id}`);
+    if (!text) return;
+    const loaded = parseStudioSequenceFile(text);
+    aspectPreset = loaded.settings.aspectPreset; fitMode = loaded.settings.fitMode; audioMasterVolume = loaded.audioMasterVolume;
+    aspectSelect.value = aspectPreset; fitSelect.value = fitMode; $("audioMasterVolume").value = String(audioMasterVolume);
+    await attachSequenceProject(loaded.editor, loaded.projectId, loaded.sceneSettings);
+    await activateStudioScene(sequenceEditor.scenes[0].id, { globalTimeMs: 0, localTimeMs: 0 });
+    $("assetLibraryMessage").textContent = "استُعيد تسلسل المشروع من هذا الجهاز. الأصول غير المتاحة تحتاج إلى إعادة ربط.";
+  } catch (error) { $("assetLibraryMessage").textContent = `تعذر استعادة التسلسل المحلي: ${errorText(error)}`; }
+}
+async function attachSequenceProject(nextEditor, nextProjectId, nextSceneSettings = null) {
+  await assetReady;
+  sequenceEditor = nextEditor;
+  projectStorageId = nextProjectId;
+  activeSceneId = sequenceEditor.activeSceneId;
+  sceneSettings.clear();
+  for (const scene of sequenceEditor.scenes) {
+    const stored = nextSceneSettings?.[scene.id];
+    sceneSettings.set(scene.id, stored
+      ? { ...stored, image: null }
+      : { aspectPreset: inferAspectPreset(scene.project.viewport.width, scene.project.viewport.height), fitMode: fitMode, image: null });
+  }
+  persistentAssets = assetStorage ? createPersistentAssetRegistry(sequenceEditor.sequence, { storage: assetStorage, projectId: projectStorageId }) : null;
+  if (persistentAssets) {
+    const missing = await persistentAssets.restore();
+    $("assetLibraryMessage").textContent = missing.length
+      ? `تم فتح المشروع. أعد ربط ${missing.length} أصل من مكتبة هذا الجهاز.`
+      : "تم فتح المشروع واستعادة الأصول المحلية.";
+  }
+  renderSequenceOverview();
+  persistSequenceMetadata();
 }
 
 function makePlaceholder(size) {
@@ -588,6 +754,7 @@ function commitAudioTracks(nextTracks, { resume = true } = {}) {
   audioTimeline?.render();
   renderAudioInspector();
   renderAt(currentMs);
+  scheduleSequenceAutosave();
 }
 function selectedAudioClip() {
   if (!audioClipSelection) return null;
@@ -624,6 +791,7 @@ function commitVisualEffectsTrack(nextTrack, message = "تم تحديث المؤ
   if (refreshTimeline) visualEffectsTimeline?.render();
   if (refreshInspector) renderVisualEffectInspector();
   renderAt(currentMs);
+  scheduleSequenceAutosave();
   $("visualEffectsMessage").textContent = message;
 }
 function commitVisualEffectPatch(patch, options) {
@@ -687,6 +855,198 @@ function renderAt(timeMs, preparedAudioSample = null) {
   characterTimeline?.render();
   audioTimeline?.renderPlayhead();
   visualEffectsTimeline?.renderPlayhead();
+  if (sequenceEditor) {
+    if (!isPlaying) sequenceTimeMs = sequenceEditor.timeFor(activeSceneId, currentMs);
+    renderSequencePlayhead();
+  }
+}
+function renderSequencePlayhead() {
+  const total = sequenceEditor?.durationMs ?? 1;
+  const time = Math.max(0, Math.min(total, sequenceTimeMs));
+  $("sequenceSeek").max = String(total);
+  $("sequenceSeek").value = String(time);
+  $("sequenceDuration").textContent = `${formatTime(time)} / ${formatTime(total)}`;
+  for (const button of $("sequenceBlocks").querySelectorAll(".sequence-block")) {
+    const current = button.dataset.sceneId === activeSceneId;
+    button.setAttribute("aria-current", String(current));
+  }
+  for (const button of $("sceneThumbnails").querySelectorAll("[data-scene-id] .scene-select")) {
+    button.setAttribute("aria-current", String(button.closest("[data-scene-id]").dataset.sceneId === activeSceneId));
+  }
+}
+function renderSequenceOverview({ rebuildCards = true, rebuildAssets = true } = {}) {
+  if (!sequenceEditor) return;
+  const cards = $("sceneThumbnails");
+  const scenes = sequenceEditor.scenes;
+  if (rebuildCards) cards.replaceChildren();
+  for (const scene of rebuildCards ? scenes : []) {
+    const card = document.createElement("article");
+    card.className = "scene-card";
+    card.dataset.sceneId = scene.id;
+    const select = document.createElement("button");
+    select.type = "button"; select.className = "scene-select"; select.dataset.sceneSelect = scene.id;
+    select.setAttribute("aria-current", String(scene.id === activeSceneId));
+    const thumb = document.createElement("span"); thumb.className = "scene-thumb";
+    const image = sceneThumbnails.get(scene.id);
+    if (image) { const preview = document.createElement("img"); preview.src = image; preview.alt = ""; thumb.append(preview); }
+    else { thumb.textContent = `${scene.index + 1}`; }
+    const title = document.createElement("span"); title.className = "scene-card-title"; title.textContent = `${scene.index + 1}. ${scene.name}`;
+    select.append(thumb, title);
+    select.addEventListener("click", () => { void activateStudioScene(scene.id); });
+    const controls = document.createElement("div"); controls.className = "scene-card-controls";
+    for (const [label, text, targetIndex] of [["إلى اليسار", "◀", scene.index - 1], ["نسخ المشهد", "⧉", null], ["إلى اليمين", "▶", scene.index + 1]]) {
+      const button = document.createElement("button"); button.type = "button"; button.textContent = text; button.setAttribute("aria-label", `${label}: ${scene.name}`);
+      button.disabled = label === "إلى اليسار" ? scene.index === 0 : label === "إلى اليمين" ? scene.index === scenes.length - 1 : Boolean(activeExport);
+      button.addEventListener("click", () => {
+        if (label === "نسخ المشهد") void duplicateActiveScene(scene.id);
+        else void reorderScene(scene.id, targetIndex);
+      });
+      controls.append(button);
+    }
+    card.append(select, controls); cards.append(card);
+  }
+  const blocks = $("sequenceBlocks"); blocks.replaceChildren();
+  const total = Math.max(1, sequenceEditor.durationMs);
+  for (const scene of scenes) {
+    const block = document.createElement("button"); block.type = "button"; block.className = "sequence-block";
+    block.dataset.sceneId = scene.id; block.style.flexGrow = String(scene.project.durationMs);
+    block.style.flexBasis = "0"; block.style.flexShrink = "1";
+    block.title = `${scene.name} · ${formatTime(scene.project.durationMs)}`;
+    block.setAttribute("aria-label", `${scene.name}, ${formatTime(scene.startMs)} إلى ${formatTime(scene.endMs)}`);
+    const label = document.createElement("span"); label.textContent = scene.name; block.append(label);
+    block.addEventListener("click", event => {
+      const rect = block.getBoundingClientRect();
+      const fraction = rect.width ? Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) : 0;
+      seekSequenceTo(scene.startMs + fraction * scene.project.durationMs);
+    });
+    blocks.append(block);
+  }
+  const current = getCurrentScene();
+  $("sceneName").value = current?.name ?? "";
+  $("sceneDuration").value = current ? String(current.project.durationMs / 1000) : "";
+  $("deleteSceneButton").disabled = scenes.length <= 1 || Boolean(activeExport);
+  $("duplicateSceneButton").disabled = Boolean(activeExport) || scenes.length >= 32;
+  $("addSceneButton").disabled = Boolean(activeExport) || scenes.length >= 32;
+  renderSequencePlayhead();
+  if (rebuildAssets) renderAssetLibrary();
+}
+function currentAssetReferences(assetId) {
+  return sequenceEditor.sequence.scenes.filter(scene => scene.project.layers.some(layer => layer.assetId === assetId) ||
+    scene.audioTracks.some(track => track.clips.some(clip => clip.asset === assetId)) ||
+    scene.characterTracks.some(track => Object.values(track.character.animation?.clips ?? {}).some(clip =>
+      clip.spriteSheet ? clip.spriteSheet.asset.trim() === assetId : [...clip.frames, ...(clip.blinkFrames ?? [])].includes(assetId))))
+    .map(scene => scene.id);
+}
+function renderAssetLibrary() {
+  const root = $("assetLibraryList");
+  if (!root) return;
+  $("assetBudgetLabel").textContent = assetStorageStatus;
+  root.replaceChildren();
+  for (const asset of sequenceEditor.sequence.assets) {
+    const uses = [...new Set([...(persistentAssets?.references(asset.id) ?? []), ...currentAssetReferences(asset.id)])];
+    const row = document.createElement("div"); row.className = "asset-entry"; row.dataset.assetId = asset.id;
+    const name = document.createElement("span"); name.className = "asset-entry-name"; name.textContent = asset.name;
+    const meta = document.createElement("span"); meta.className = "asset-entry-meta";
+    meta.textContent = `${asset.kind === "image" ? "صورة" : asset.kind === "audio" ? "صوت" : asset.kind} · ${(asset.size / 1024 / 1024).toFixed(2)} MiB · ${uses.length ? `مستخدم في ${uses.length} مشهد` : "غير مستخدم"}`;
+    const use = document.createElement("button"); use.type = "button"; use.textContent = "استخدم"; use.setAttribute("aria-label", `استخدم الأصل ${asset.name}`);
+    use.disabled = !getAssetBlob(asset.id) || Boolean(activeExport);
+    use.addEventListener("click", () => { void useLibraryAsset(asset.id); });
+    const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "حذف"; remove.setAttribute("aria-label", `حذف الأصل ${asset.name}`);
+    remove.disabled = uses.length > 0 || Boolean(activeExport) || !persistentAssets;
+    remove.addEventListener("click", () => { void removeLibraryAsset(asset.id); });
+    row.append(name, meta, use, remove); root.append(row);
+  }
+}
+function makeThumbnail() {
+  try {
+    const thumb = document.createElement("canvas"); thumb.width = 120; thumb.height = 68;
+    thumb.getContext("2d").drawImage(canvas, 0, 0, thumb.width, thumb.height);
+    sceneThumbnails.set(activeSceneId, thumb.toDataURL("image/jpeg", 0.55));
+  } catch { /* A missing or tainted preview leaves the accessible scene label visible. */ }
+}
+function createSequenceSceneFromCurrent(id, { freshTracks = false } = {}) {
+  return { id,
+    project: structuredClone(project),
+    audioTracks: freshTracks ? makeAudioTracks() : structuredClone(audioTracks),
+    characterTracks: freshTracks ? [makeCharacterTrack()] : structuredClone([characterTrack, ...(sceneExtraCharacterTracks.get(activeSceneId) ?? [])]),
+    visualEffectsTrack: freshTracks ? makeVisualEffectsTrack() : structuredClone(visualEffectsTrack) };
+}
+function replaceCurrentSceneAndAssets(nextAssets = sequenceEditor.sequence.assets) {
+  const old = sequenceEditor.sequence;
+  const current = currentScenePayload();
+  const scenes = old.scenes.map(scene => scene.id === activeSceneId ? current : scene);
+  const next = createStudioSequenceV1({ viewport: project.viewport, scenes, assets: nextAssets });
+  sequenceEditor.replaceSequence(next);
+  persistSequenceMetadata();
+  void persistentAssets?.replaceSequence(next).catch(error => {
+    $("assetLibraryMessage").textContent = `تعذر حفظ مراجع الأصول: ${errorText(error)}`;
+  });
+  audioAssets = next.assets.filter(asset => asset.kind === "audio").map(assetMetadataToAudio);
+  renderAssetLibrary();
+  return next;
+}
+async function useLibraryAsset(id) {
+  try {
+    await assetReady;
+    const asset = sequenceEditor.sequence.assets.find(item => item.id === id);
+    const blob = getAssetBlob(id);
+    if (!asset || !blob) throw new Error("الأصل غير مرتبط؛ أعد اختياره من الهاتف.");
+    if (asset.kind === "audio") {
+      let audio = audioFiles.get(id);
+      if (!audio) {
+        const file = new File([blob], asset.name, { type: asset.mimeType });
+        const url = URL.createObjectURL(file);
+        let durationMs = 0; try { durationMs = await readAudioDuration(file); } catch { /* Timeline clips retain their authored duration. */ }
+        audio = { file, url, durationMs }; audioFiles.set(id, audio);
+      }
+      activeAudioAssetId = id;
+      $("audioFileName").textContent = `${asset.name} · ${(asset.size / 1024 / 1024).toFixed(2)} MiB`;
+      $("audioTimelineMessage").textContent = `الأصل ${asset.name} جاهز للمسار الحالي.`;
+      renderAudioInspector();
+      return;
+    }
+    if (asset.kind !== "image") throw new TypeError("هذا النوع من الأصول لا يمكن وضعه في المشهد بعد.");
+    const file = new File([blob], asset.name, { type: asset.mimeType });
+    const imageRequestToken = imageRequest.begin();
+    pendingImageRequest = imageRequestToken; refreshExportControls();
+    const bitmap = await decodeImageBitmap(file, { isCurrent: () => imageRequest.isCurrent(imageRequestToken) });
+    try {
+      selectedImageDimensions = { width: bitmap.width, height: bitmap.height };
+      const surface = drawBitmap(bitmap);
+      const nextProject = structuredClone(project);
+      nextProject.layers[0].assetId = id;
+      project = nextProject; selectedImageFile = file; currentFileInfo = { name: asset.name, type: asset.mimeType, size: asset.size };
+      imageSource = surface; sceneImageSources.set(id, surface);
+      compiled = compileProject(projectForRaster(project, previewViewport), imageProvider);
+      replaceCurrentSceneAndAssets();
+      sceneSettings.set(activeSceneId, { aspectPreset, fitMode, image: currentFileInfo });
+      imageName.textContent = `${asset.name} · ${bitmap.width}×${bitmap.height}`;
+      renderAt(currentMs); status.textContent = "تم ربط الصورة بالمشهد";
+    } finally { bitmap.close?.(); }
+  } catch (error) { $("assetLibraryMessage").textContent = errorText(error); }
+  finally { if (pendingImageRequest !== null) pendingImageRequest = null; refreshExportControls(); }
+}
+async function removeLibraryAsset(id) {
+  try {
+    captureCurrentScene();
+    await assetReady;
+    await persistentAssets?.replaceSequence(sequenceEditor.sequence);
+    if (persistentAssets) {
+      await persistentAssets.remove(id);
+      sequenceEditor.replaceSequence(persistentAssets.sequence);
+    } else {
+      if (currentAssetReferences(id).length) throw new Error("لا يمكن حذف أصل تستخدمه المشاهد.");
+      const sequence = sequenceEditor.sequence;
+      const next = createStudioSequenceV1({ viewport: sequence.viewport, scenes: sequence.scenes,
+        assets: sequence.assets.filter(asset => asset.id !== id) });
+      sequenceEditor.replaceSequence(next); localAssetFiles.delete(id);
+    }
+    persistSequenceMetadata();
+    audioAssets = sequenceEditor.sequence.assets.filter(asset => asset.kind === "audio").map(assetMetadataToAudio);
+    const audio = audioFiles.get(id); if (audio?.url) URL.revokeObjectURL(audio.url); audioFiles.delete(id);
+    renderAssetLibrary();
+    $("assetLibraryMessage").textContent = "حُذف الأصل غير المستخدم من هذا الجهاز.";
+  } catch (error) { $("assetLibraryMessage").textContent = errorText(error); }
 }
 function inputNumber(id) { return Number($(id).value); }
 function syncOutputs() {
@@ -718,6 +1078,7 @@ function commitKeyframeProject(nextProject) {
   visualEffectsCompiled = nextEffectsCompiled;
   syncLegacyCameraInputs();
   renderAt(currentMs);
+  scheduleSequenceAutosave();
   status.textContent = currentFileInfo ? "تم تحديث حركة الكاميرا" : "الحركة جاهزة؛ اختر صورة للمعاينة";
 }
 function commitCharacterTrack(nextTrack) {
@@ -726,6 +1087,7 @@ function commitCharacterTrack(nextTrack) {
   characterTrack = nextTrack;
   characterAnimation = nextAnimation;
   renderAt(currentMs);
+  scheduleSequenceAutosave();
   status.textContent = "تم تحديث حركة الشخصية";
 }
 function applyCanvasDimensions(size) {
@@ -775,6 +1137,20 @@ function updateProject({ resetPlayback = false, viewport = project.viewport, edi
     });
     const nextCharacterAnimation = compileCharacterTrack(characterTrack, durationMs);
     const nextVisualEffectsCompiled = compilePreviewEffects(visualEffectsTrack,nextProject,nextPreview);
+    const viewportChanged = nextViewport.width !== project.viewport.width || nextViewport.height !== project.viewport.height;
+    if (durationMs !== previousDurationMs || viewportChanged) {
+      const sequence = sequenceEditor.sequence;
+      const scenes = sequence.scenes.map(scene => {
+        if (scene.id === activeSceneId) return { ...currentScenePayload(), project: nextProject };
+        return viewportChanged ? { ...scene, project: { ...scene.project, viewport: { ...nextViewport } } } : scene;
+      });
+      const nextSequence = createStudioSequenceV1({ viewport: nextViewport, scenes, assets: sequence.assets });
+      sequenceEditor.replaceSequence(nextSequence);
+      persistSequenceMetadata();
+      void persistentAssets?.replaceSequence(nextSequence).catch(error => {
+        $("assetLibraryMessage").textContent = `تعذر تحديث أبعاد التسلسل: ${errorText(error)}`;
+      });
+    }
     project = nextProject;
     compiled = nextCompiled;
     visualEffectsCompiled = nextVisualEffectsCompiled;
@@ -798,9 +1174,12 @@ function updateProject({ resetPlayback = false, viewport = project.viewport, edi
     status.textContent = currentFileInfo ? "المعاينة جاهزة" : "اختر صورة للبدء";
     syncOutputs();
     refreshIntegratedControls();
+    scheduleSequenceAutosave();
+    if (durationMs !== previousDurationMs || viewportChanged) renderSequenceOverview({ rebuildCards: false, rebuildAssets: false });
   } catch (error) { fail(error); }
 }
 function stopPlayback() {
+  if (isPlaying) sequenceTimeMs = currentSequenceTime();
   if (audioPlayer?.state === "playing") {
     try { const sampled = audioPlayer.pause(); currentMs = sampled.timeMs; }
     catch (error) { try { audioPlayer.recover(); } catch { /* Keep the last stable preview time after adapter failure. */ } $("audioTimelineMessage").textContent = `توقفت المعاينة بعد خطأ صوتي: ${errorText(error)}`; }
@@ -808,10 +1187,19 @@ function stopPlayback() {
   isPlaying = false;
   pausedAt = null;
   cancelAnimationFrame(rafId);
+  sequenceEpochMs = 0;
   playPauseButton.textContent = "تشغيل";
 }
-function playbackTick() {
+async function playbackTick(now = performance.now()) {
   if (!isPlaying) return;
+  const globalMs = Math.min(sequenceEditor.durationMs, sequenceBaseMs + Math.max(0, now - sequenceEpochMs));
+  const sequenceSample = sequenceEditor.sample(globalMs);
+  sequenceTimeMs = globalMs;
+  if (sequenceSample.sceneId !== activeSceneId) {
+    await activateStudioScene(sequenceSample.sceneId, { globalTimeMs: globalMs, localTimeMs: sequenceSample.sceneTimeMs, keepPlaying: true });
+    if (isPlaying) rafId = requestAnimationFrame(playbackTick);
+    return;
+  }
   let audioSample;
   try { audioSample = audioPlayer.tick(); }
   catch (error) {
@@ -819,19 +1207,24 @@ function playbackTick() {
     isPlaying = false; pausedAt = currentMs; playPauseButton.textContent = "متابعة"; cancelAnimationFrame(rafId);
     $("audioTimelineMessage").textContent = `تعذر تحديث مسار الصوت: ${errorText(error)}`; return;
   }
-  const elapsed = audioSample.timeMs;
-  renderAt(elapsed, audioSample);
-  if (elapsed >= project.durationMs) {
+  renderAt(sequenceSample.sceneTimeMs, audioSample);
+  if (globalMs >= sequenceEditor.durationMs) {
     stopPlayback();
+    sequenceTimeMs = sequenceEditor.durationMs;
+    renderSequencePlayhead();
     return;
   }
   rafId = requestAnimationFrame(playbackTick);
 }
-function play() {
-  if (currentMs >= project.durationMs) renderAt(0);
+async function play() {
+  if (sequenceTimeMs >= sequenceEditor.durationMs) {
+    const first = sequenceEditor.scenes[0];
+    await activateStudioScene(first.id, { globalTimeMs: 0, localTimeMs: 0 });
+  }
   try {
     const sample = audioPlayer.play();
     pausedAt = null; currentMs = sample.timeMs; isPlaying = true;
+    sequenceBaseMs = sequenceTimeMs; sequenceEpochMs = performance.now();
     playPauseButton.textContent = "إيقاف مؤقت";
     renderAt(currentMs, sample); rafId = requestAnimationFrame(playbackTick);
   } catch (error) {
@@ -840,12 +1233,18 @@ function play() {
     $("audioTimelineMessage").textContent = `تعذر تشغيل الصوت: ${errorText(error)}`;
   }
 }
-function replay() {
+async function replay() {
   stopPlayback();
-  try { const sample = audioPlayer.replay(); renderAt(sample.timeMs, sample); isPlaying = true; pausedAt = null; playPauseButton.textContent = "إيقاف مؤقت"; rafId = requestAnimationFrame(playbackTick); }
-  catch (error) { try { audioPlayer.recover(); } catch { /* Retry remains possible after resource cleanup. */ } $("audioTimelineMessage").textContent = `تعذرت إعادة التشغيل: ${errorText(error)}`; }
+  try {
+    captureCurrentScene();
+    const first = sequenceEditor.scenes[0];
+    await activateStudioScene(first.id, { globalTimeMs: 0, localTimeMs: 0 });
+    sequenceTimeMs = 0;
+    await play();
+  } catch (error) { try { audioPlayer?.recover(); } catch { /* Retry remains possible after resource cleanup. */ } $("audioTimelineMessage").textContent = `تعذرت إعادة التشغيل: ${errorText(error)}`; }
 }
 function seekTo(timeMs) {
+  if (sequenceEditor) { seekSequenceTo(sequenceEditor.timeFor(activeSceneId, timeMs)); return; }
   const wasPlaying = isPlaying;
   try {
     const sampled = audioPlayer.seek(timeMs);
@@ -857,9 +1256,198 @@ function seekTo(timeMs) {
     $("audioTimelineMessage").textContent = `تعذر الانتقال إلى الزمن المطلوب: ${errorText(error)}`;
   }
 }
+function pauseSequencePlayback() {
+  if (!isPlaying) return;
+  const target = currentSequenceTime();
+  isPlaying = false; sequenceTimeMs = target; sequenceEpochMs = 0;
+  cancelAnimationFrame(rafId);
+  try { audioPlayer?.pause(); } catch { try { audioPlayer?.recover(); } catch { /* Continue with deterministic visual time. */ } }
+  const sample = sequenceEditor.sample(target);
+  if (sample.sceneId !== activeSceneId) {
+    void activateStudioScene(sample.sceneId, { globalTimeMs: target, localTimeMs: sample.sceneTimeMs });
+  } else {
+    renderAt(sample.sceneTimeMs, audioPlayer?.sample(sample.sceneTimeMs));
+  }
+  pausedAt = sample.sceneTimeMs;
+  playPauseButton.textContent = "متابعة";
+}
 function dimensionsForCurrentPreset() {
   const size = projectSizeForPreset(aspectPreset, selectedImageDimensions?.width, selectedImageDimensions?.height);
   return { ...size, fps: VIEWPORT.fps };
+}
+async function restoreSceneAssets(scene) {
+  sceneImageSources.clear();
+  imageSource = makePlaceholder(previewViewport);
+  let firstImage = null;
+  for (const layer of scene.project.layers) {
+    const asset = sequenceEditor.sequence.assets.find(item => item.id === layer.assetId && item.kind === "image");
+    const blob = getAssetBlob(layer.assetId);
+    if (!asset || !blob) continue;
+    try {
+      const file = new File([blob], asset.name, { type: asset.mimeType });
+      const bitmap = await decodeImageBitmap(file);
+      try {
+        const surface = drawBitmap(bitmap);
+        sceneImageSources.set(asset.id, surface);
+        if (!firstImage) firstImage = { file, surface, asset, width: bitmap.width, height: bitmap.height };
+      } finally { bitmap.close?.(); }
+    } catch (error) { $("assetLibraryMessage").textContent = `تعذر فك الصورة ${asset.name}: ${errorText(error)}`; }
+  }
+  for (const track of scene.audioTracks) for (const clip of track.clips) {
+    if (audioFiles.has(clip.asset)) continue;
+    const asset = sequenceEditor.sequence.assets.find(item => item.id === clip.asset && item.kind === "audio");
+    const blob = getAssetBlob(clip.asset);
+    if (!asset || !blob) continue;
+    const file = new File([blob], asset.name, { type: asset.mimeType });
+    const url = URL.createObjectURL(file);
+    let durationMs = 0;
+    try { durationMs = await readAudioDuration(file); } catch { /* The clip remains visible; playback reports unsupported audio. */ }
+    audioFiles.set(asset.id, { file, url, durationMs });
+  }
+  imageSource = firstImage?.surface ?? imageSource;
+  currentFileInfo = firstImage ? { name: firstImage.asset.name, type: firstImage.asset.mimeType, size: firstImage.asset.size } : null;
+  selectedImageFile = firstImage?.file ?? null;
+  selectedImageDimensions = firstImage ? { width: firstImage.width, height: firstImage.height } : null;
+  if (currentFileInfo) sceneSettings.set(scene.id, { aspectPreset, fitMode, image: currentFileInfo });
+  return firstImage;
+}
+async function activateStudioScene(sceneId, { globalTimeMs = null, localTimeMs = 0, keepPlaying = false } = {}) {
+  if (activeExport) return;
+  if (!keepPlaying && isPlaying) stopPlayback();
+  const wasPlaying = keepPlaying && isPlaying;
+  const target = sequenceEditor.sequence.scenes.find(scene => scene.id === sceneId);
+  if (!target) return;
+  if (sceneId !== activeSceneId) {
+    sceneSettings.set(activeSceneId, { aspectPreset, fitMode, image: currentFileInfo });
+    makeThumbnail();
+    captureCurrentScene();
+    try { await persistentAssets?.replaceSequence(sequenceEditor.sequence); }
+    catch (error) { $("assetLibraryMessage").textContent = `تعذر حفظ المشهد الحالي: ${errorText(error)}`; return; }
+    sequenceEditor.activate(sceneId);
+  }
+  const token = ++sceneLoadToken;
+  activeSceneId = sceneId;
+  const imageSettings = sceneImageSettings(sceneId);
+  aspectPreset = imageSettings.aspectPreset;
+  fitMode = imageSettings.fitMode;
+  project = structuredClone(target.project);
+  audioTracks = structuredClone(target.audioTracks);
+  characterTrack = structuredClone(target.characterTracks[0] ?? makeCharacterTrack());
+  sceneExtraCharacterTracks.set(sceneId, structuredClone(target.characterTracks.slice(1)));
+  visualEffectsTrack = structuredClone(target.visualEffectsTrack);
+  visualEffectSelection = null; audioClipSelection = null;
+  aspectSelect.value = aspectPreset; fitSelect.value = fitMode;
+  previewViewport = safePreviewSize(project.viewport.width, project.viewport.height);
+  applyCanvasDimensions(previewViewport);
+  await restoreSceneAssets(target);
+  if (token !== sceneLoadToken) return;
+  audioAssets = sequenceEditor.sequence.assets.filter(asset => asset.kind === "audio").map(assetMetadataToAudio);
+  if (activeAudioAssetId && !audioAssets.some(asset => asset.id === activeAudioAssetId)) activeAudioAssetId = null;
+  const audioAsset = audioAssets.find(item => audioFiles.has(item.id));
+  if (!activeAudioAssetId) activeAudioAssetId = audioAsset?.id ?? null;
+  characterAnimation = compileCharacterTrack(characterTrack, project.durationMs);
+  compiled = compileProject(projectForRaster(project, previewViewport), imageProvider);
+  visualEffectsCompiled = compilePreviewEffects(visualEffectsTrack, project, previewViewport);
+  if (audioPlayer) { try { audioPlayer.destroy(); } catch { /* Rebuilt immediately below. */ } }
+  audioPlayer = null;
+  audioCompiled = compileAudioTracks(audioTracks, project.durationMs);
+  audioPlayer = createCinematicAudioPlayer(audioCompiled, { play: audioAdapterPlay, stop: audioAdapterStop,
+    setVolume: audioAdapterSetVolume, masterVolume: audioMasterVolume, now: () => performance.now() });
+  currentMs = Math.max(0, Math.min(project.durationMs, localTimeMs));
+  if (currentMs > 0) audioPlayer.seek(currentMs);
+  if (wasPlaying) audioPlayer.play();
+  seek.max = String(project.durationMs);
+  $("duration").value = String(project.durationMs / 1000);
+  integratedFrom.max = String(Math.max(0, project.durationMs - 1)); integratedTo.max = String(project.durationMs);
+  if (Number(integratedTo.value) > project.durationMs) integratedTo.value = String(project.durationMs);
+  if (Number(integratedFrom.value) >= project.durationMs) integratedFrom.value = String(Math.max(0, project.durationMs - 1));
+  if (currentFileInfo) imageName.textContent = `${currentFileInfo.name} · ${selectedImageDimensions?.width ?? "?"}×${selectedImageDimensions?.height ?? "?"}`;
+  else imageName.textContent = "أعد ربط صورة المشهد من مكتبة الأصول";
+  timelineEditor?.clearSelection(); timelineEditor?.render();
+  refreshCharacterTimeline(); audioTimeline?.clearSelection(); audioTimeline?.render();
+  visualEffectsTimeline?.clearSelection(); visualEffectsTimeline?.render();
+  renderAudioInspector(); renderVisualEffectInspector(); syncLegacyCameraInputs(); syncOutputs();
+  sequenceTimeMs = globalTimeMs ?? sequenceEditor.timeFor(sceneId, currentMs);
+  renderAt(currentMs);
+  if (wasPlaying) { sequenceBaseMs = sequenceTimeMs; sequenceEpochMs = performance.now(); }
+  renderSequenceOverview(); refreshExportControls();
+  status.textContent = currentFileInfo ? `المشهد جاهز: ${sequenceEditor.nameOf(sceneId)}` : `المشهد جاهز؛ أعد ربط أصوله: ${sequenceEditor.nameOf(sceneId)}`;
+}
+async function addScene() {
+  if (activeExport || sequenceEditor.scenes.length >= 32) return;
+  try {
+    stopPlayback(); captureCurrentScene();
+    const id = makeLocalId("scene");
+    const scene = createSequenceSceneFromCurrent(id, { freshTracks: true });
+    const result = sequenceEditor.add(scene, sequenceEditor.scenes.length, `المشهد ${sequenceEditor.scenes.length + 1}`);
+    sceneSettings.set(id, { aspectPreset, fitMode, image: currentFileInfo });
+    persistSequenceMetadata();
+    await persistentAssets?.replaceSequence(result.sequence);
+    activeSceneId = id;
+    await activateStudioScene(id, { localTimeMs: 0 });
+    $("assetLibraryMessage").textContent = "أُضيف المشهد. الأصول المشتركة تبقى مرتبطة بمعرّفاتها.";
+  } catch (error) { fail(error); }
+}
+async function duplicateActiveScene(sceneId = activeSceneId) {
+  if (activeExport || sequenceEditor.scenes.length >= 32) return;
+  try {
+    stopPlayback(); captureCurrentScene(); makeThumbnail();
+    const id = makeLocalId("scene-copy");
+    const sourceThumb = sceneThumbnails.get(sceneId);
+    const sourceSettings = sceneImageSettings(sceneId);
+    sequenceEditor.duplicate(sceneId, id);
+    sceneSettings.set(id, { aspectPreset: sourceSettings.aspectPreset, fitMode: sourceSettings.fitMode, image: currentFileInfo });
+    persistSequenceMetadata();
+    if (sourceThumb) sceneThumbnails.set(id, sourceThumb);
+    await persistentAssets?.replaceSequence(sequenceEditor.sequence);
+    activeSceneId = id;
+    await activateStudioScene(id, { localTimeMs: 0 });
+  } catch (error) { fail(error); }
+}
+async function deleteActiveScene() {
+  if (activeExport || sequenceEditor.scenes.length <= 1) return;
+  try {
+    stopPlayback(); captureCurrentScene(); makeThumbnail();
+    const removed = activeSceneId;
+    const result = sequenceEditor.remove(removed);
+    persistSequenceMetadata();
+    sceneThumbnails.delete(removed); sceneSettings.delete(removed); sceneExtraCharacterTracks.delete(removed);
+    activeSceneId = result.activeSceneId;
+    await persistentAssets?.replaceSequence(result.sequence);
+    await activateStudioScene(activeSceneId, { localTimeMs: 0 });
+  } catch (error) { fail(error); }
+}
+async function reorderScene(sceneId, toIndex) {
+  if (activeExport || toIndex < 0 || toIndex >= sequenceEditor.scenes.length) return;
+  try {
+    captureCurrentScene();
+    sequenceEditor.reorder(sceneId, toIndex);
+    persistSequenceMetadata();
+    await persistentAssets?.replaceSequence(sequenceEditor.sequence);
+    renderSequenceOverview();
+  } catch (error) { fail(error); }
+}
+function seekSequenceTo(timeMs) {
+  if (!Number.isFinite(timeMs)) return;
+  const wasPlaying = isPlaying;
+  const target = Math.max(0, Math.min(sequenceEditor.durationMs, timeMs));
+  sequenceTimeMs = target;
+  if (wasPlaying) { sequenceBaseMs = target; sequenceEpochMs = performance.now(); }
+  const sample = sequenceEditor.sample(target);
+  if (sample.sceneId !== activeSceneId) {
+    void activateStudioScene(sample.sceneId, { globalTimeMs: target, localTimeMs: sample.sceneTimeMs, keepPlaying: wasPlaying });
+    return;
+  }
+  let audioSample;
+  try { audioSample = audioPlayer?.seek(sample.sceneTimeMs); } catch { audioSample = null; }
+  if (wasPlaying && audioPlayer?.state !== "playing") { try { audioPlayer?.play(); } catch { /* The timeline continues silently if an audio adapter rejects playback. */ } }
+  renderAt(sample.sceneTimeMs, audioSample);
+  if (!wasPlaying && target >= sequenceEditor.durationMs) {
+    isPlaying = false; pausedAt = currentMs; playPauseButton.textContent = "إعادة التشغيل";
+  } else if (!wasPlaying) playPauseButton.textContent = pausedAt === null ? "تشغيل" : "متابعة";
+}
+function currentSequenceTime(now = performance.now()) {
+  return isPlaying ? Math.min(sequenceEditor.durationMs, sequenceBaseMs + Math.max(0, now - sequenceEpochMs)) : sequenceTimeMs;
 }
 function drawBitmap(bitmap) {
   const surface = typeof OffscreenCanvas === "function"
@@ -894,6 +1482,8 @@ async function refreshSelectedImage() {
     const prepared = await loadImageSurface(selectedImageFile, requestToken);
     if (!prepared || !imageRequest.isCurrent(requestToken)) return;
     imageSource = prepared.surface;
+    for (const layer of project.layers) sceneImageSources.set(layer.assetId, prepared.surface);
+    sceneSettings.set(activeSceneId, { aspectPreset, fitMode, image: currentFileInfo });
     compiled = compileProject(projectForRaster(project, previewViewport), imageProvider);
     renderAt(currentMs);
     status.textContent = "المعاينة جاهزة";
@@ -906,17 +1496,47 @@ async function refreshSelectedImage() {
 }
 
 playPauseButton.addEventListener("click", () => {
-  if (isPlaying) {
-    try { const sampled = audioPlayer.pause(); pausedAt = sampled.timeMs; renderAt(sampled.timeMs, sampled); }
-    catch (error) { try { audioPlayer.recover(); } catch { /* Keep audio resources in the paused recovery state. */ } pausedAt = currentMs; $("audioTimelineMessage").textContent = `تعذر إيقاف الصوت بأمان: ${errorText(error)}`; }
-    isPlaying = false;
-    cancelAnimationFrame(rafId);
-    playPauseButton.textContent = "متابعة";
-  } else play();
+  if (isPlaying) pauseSequencePlayback(); else void play();
 });
-$("replayButton").addEventListener("click", replay);
+$("replayButton").addEventListener("click", () => { void replay(); });
 seek.addEventListener("input", () => {
   seekTo(Number(seek.value));
+});
+$("sequenceSeek").addEventListener("input", () => seekSequenceTo(Number($("sequenceSeek").value)));
+$("addSceneButton").addEventListener("click", () => { void addScene(); });
+$("duplicateSceneButton").addEventListener("click", () => { void duplicateActiveScene(); });
+$("deleteSceneButton").addEventListener("click", () => { void deleteActiveScene(); });
+$("sceneName").addEventListener("change", () => {
+  try {
+    sequenceEditor.rename(activeSceneId, $("sceneName").value);
+    persistSequenceMetadata();
+    renderSequenceOverview();
+    $("sceneName").removeAttribute("aria-invalid");
+  } catch (error) {
+    $("sceneName").setAttribute("aria-invalid", "true");
+    $("sceneName").value = sequenceEditor.nameOf(activeSceneId);
+    $("assetLibraryMessage").textContent = errorText(error);
+  }
+});
+$("sceneDuration").addEventListener("change", () => {
+  try {
+    const text = $("sceneDuration").value.trim();
+    if (!text || $("sceneDuration").validity.badInput) throw new TypeError("أدخل مدة صالحة للمشهد بين 3 و60 ثانية.");
+    const seconds = Number(text);
+    if (!Number.isSafeInteger(seconds)) throw new TypeError("مدة المشهد يجب أن تكون عددًا صحيحًا بالثواني.");
+    captureCurrentScene();
+    sequenceEditor.setDuration(activeSceneId, seconds * 1000);
+    persistSequenceMetadata();
+    project = structuredClone(sequenceEditor.sequence.scenes.find(scene => scene.id === activeSceneId).project);
+    $("duration").value = String(seconds);
+    updateProject({ resetPlayback: true });
+    renderSequenceOverview();
+    $("sceneDuration").removeAttribute("aria-invalid");
+  } catch (error) {
+    $("sceneDuration").setAttribute("aria-invalid", "true");
+    $("sceneDuration").value = String(project.durationMs / 1000);
+    $("assetLibraryMessage").textContent = errorText(error);
+  }
 });
 timelineEditor = createStudioTimeline({
   lane: timelineLane,
@@ -1030,6 +1650,25 @@ function renderCharacterRuler() {
 }
 const renderCharacterTimeline = characterTimeline.render.bind(characterTimeline);
 function refreshCharacterTimeline() { renderCharacterRuler(); renderCharacterTimeline(); }
+$("assetLibraryInput").addEventListener("change", async () => {
+  const files = Array.from($("assetLibraryInput").files ?? []);
+  if (!files.length) return;
+  $("assetLibraryMessage").textContent = "جارٍ إضافة الأصول وتخزينها محليًا…";
+  try {
+    for (const file of files) {
+      const asset = await registerAssetFile(file);
+      if (asset.kind === "audio" && !audioFiles.has(asset.id)) {
+        let durationMs = 0; try { durationMs = await readAudioDuration(file); } catch { /* Keep the asset available for relinking. */ }
+        audioFiles.set(asset.id, { file, url: URL.createObjectURL(file), durationMs });
+      }
+    }
+    audioAssets = sequenceEditor.sequence.assets.filter(asset => asset.kind === "audio").map(assetMetadataToAudio);
+    renderAssetLibrary();
+    $("assetLibraryMessage").textContent = `أُضيف ${files.length} أصل إلى المكتبة المشتركة على هذا الجهاز.`;
+  } catch (error) { $("assetLibraryMessage").textContent = errorText(error); }
+  finally { $("assetLibraryInput").value = ""; renderAssetLibrary(); }
+});
+
 $("audioInput").addEventListener("change", async () => {
   const file = $("audioInput").files?.[0];
   if (!file) return;
@@ -1040,13 +1679,13 @@ $("audioInput").addEventListener("change", async () => {
     $("audioTimelineMessage").textContent = "جارٍ التحقق من فك ترميز الصوت وقراءة مدته…";
     const durationMs = await readAudioDuration(file);
     if (!audioRequest.isCurrent(requestToken)) return;
-    const known = audioAssets.find((asset) => asset.name === metadata.name && asset.type === metadata.mime && asset.size === metadata.size);
-    const id = known?.id ?? `audio-asset-${Date.now()}-${++audioAssetSerial}`;
+    const shared = await registerAssetFile(file);
+    const id = shared.id;
     const url = URL.createObjectURL(file);
     const previous = audioFiles.get(id);
     if (previous?.url) URL.revokeObjectURL(previous.url);
     audioFiles.set(id, { file, url, durationMs });
-    if (!known) audioAssets = [...audioAssets, makeAudioAssetMetadata(id, file)];
+    audioAssets = sequenceEditor.sequence.assets.filter(asset => asset.kind === "audio").map(assetMetadataToAudio);
     activeAudioAssetId = id;
     rebuildAudioPlayer({ resume: isPlaying });
     $("audioFileName").textContent = `${metadata.name} · ${(metadata.size / 1024 / 1024).toFixed(2)} MiB · ${(durationMs / 1000).toFixed(2)} ث`;
@@ -1117,12 +1756,16 @@ for (const id of ["duration", "startZoom", "endZoom", "startX", "endX", "startY"
 
 aspectSelect.addEventListener("change", () => {
   aspectPreset = aspectSelect.value;
+  sceneSettings.set(activeSceneId, { aspectPreset, fitMode, image: currentFileInfo });
+  persistSequenceMetadata();
   updateProject({ viewport: dimensionsForCurrentPreset() });
   refreshSelectedImage();
 });
 fitSelect.addEventListener("change", () => {
   invalidateExport("تغيّرت طريقة عرض الصورة.");
   fitMode = fitSelect.value;
+  sceneSettings.set(activeSceneId, { aspectPreset, fitMode, image: currentFileInfo });
+  persistSequenceMetadata();
   refreshSelectedImage();
 });
 
@@ -1141,11 +1784,18 @@ imageInput.addEventListener("change", async () => {
   renderAt(currentMs);
   status.textContent = "جارٍ تحميل الصورة…";
   try {
+    const asset = await registerAssetFile(file);
+    if (!imageRequest.isCurrent(requestToken)) return;
     const prepared = await loadImageSurface(file, requestToken);
     if (!prepared || !imageRequest.isCurrent(requestToken)) return;
     imageSource = prepared.surface;
-    currentFileInfo = { name: file.name.slice(0, 180), type: file.type, size: file.size };
+    sceneImageSources.set(asset.id, imageSource);
+    project = { ...project, layers: project.layers.map((layer, index) => index === 0 ? { ...layer, assetId: asset.id } : layer) };
+    currentFileInfo = { name: asset.name, type: asset.mimeType, size: asset.size };
     compiled = compileProject(projectForRaster(project, previewViewport), imageProvider);
+    sceneSettings.set(activeSceneId, { aspectPreset, fitMode, image: currentFileInfo });
+    captureCurrentScene({ refresh: true });
+    await persistentAssets?.replaceSequence(sequenceEditor.sequence);
     imageName.textContent = `${currentFileInfo.name} · ${prepared.dimensions.width}×${prepared.dimensions.height}`;
     renderAt(currentMs);
     status.textContent = "المعاينة جاهزة";
@@ -1160,17 +1810,21 @@ imageInput.addEventListener("change", async () => {
   }
 });
 
-$("saveProjectButton").addEventListener("click", () => {
+$("saveProjectButton").addEventListener("click", async () => {
   clearFailure();
   try {
-    const data = JSON.stringify(makeProjectFile(project, currentFileInfo, { aspectPreset, fitMode }, characterTrack, audioTracks, audioAssets, audioMasterVolume, visualEffectsTrack), null, 2);
+    captureCurrentScene();
+    await persistentAssets?.replaceSequence(sequenceEditor.sequence);
+    const data = sequenceEditor.scenes.length > 1
+      ? serializeStudioSequenceFile(sequenceEditor, { projectId: projectStorageId, aspectPreset, fitMode, audioMasterVolume })
+      : JSON.stringify(makeProjectFile(project, currentFileInfo, { aspectPreset, fitMode }, characterTrack, audioTracks, audioAssets, audioMasterVolume, visualEffectsTrack), null, 2);
     const url = URL.createObjectURL(new Blob([data], { type: "application/json" }));
     const link = document.createElement("a");
     link.href = url;
-    link.download = "qarton-motion-project.json";
+    link.download = sequenceEditor.scenes.length > 1 ? "qarton-motion-sequence.json" : "qarton-motion-project.json";
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    status.textContent = "تم تجهيز ملف المشروع JSON";
+    status.textContent = "تم تجهيز ملف المشروع JSON؛ الأصول محفوظة محليًا بشكل منفصل";
   } catch (error) { fail(error); }
 });
 $("loadProjectButton").addEventListener("click", () => projectInput.click());
@@ -1182,8 +1836,26 @@ projectInput.addEventListener("change", async () => {
   const file = projectInput.files?.[0];
   if (!file) return;
   try {
-    if (file.size > 128 * 1024) throw new RangeError("ملف المشروع أكبر من الحد المسموح (128 كيلوبايت).");
-    const parsed = parseProjectFile(await file.text());
+    if (file.size > 2 * 1024 * 1024) throw new RangeError("ملف المشروع أكبر من الحد المسموح (2 MiB).");
+    const fileText = await file.text();
+    let header;
+    try { header = JSON.parse(fileText); } catch { throw new TypeError("ملف JSON غير صالح."); }
+    if (header.format === STUDIO_SEQUENCE_FILE_FORMAT) {
+      const loaded = parseStudioSequenceFile(fileText);
+      stopPlayback();
+      for (const { url } of audioFiles.values()) if (url) URL.revokeObjectURL(url);
+      audioFiles.clear(); localAssetFiles.clear(); sceneThumbnails.clear(); sceneSettings.clear(); sceneExtraCharacterTracks.clear();
+      aspectPreset = loaded.settings.aspectPreset; fitMode = loaded.settings.fitMode; audioMasterVolume = loaded.audioMasterVolume;
+      aspectSelect.value = aspectPreset; fitSelect.value = fitMode; $("audioMasterVolume").value = String(audioMasterVolume);
+      await attachSequenceProject(loaded.editor, loaded.projectId, loaded.sceneSettings);
+      await activateStudioScene(sequenceEditor.scenes[0].id, { globalTimeMs: 0, localTimeMs: 0 });
+      stopPlayback(); sequenceTimeMs = 0;
+      status.textContent = "فُتح تسلسل المشاهد؛ أعد ربط الأصول غير المتاحة على هذا الجهاز";
+      refreshExportControls();
+      return;
+    }
+    if (file.size > 128 * 1024) throw new RangeError("ملف المشروع القديم أكبر من الحد المسموح (128 كيلوبايت).");
+    const parsed = parseProjectFile(fileText);
     const importedImageProvider = { get: (assetId) => parsed.project.layers.some((layer) => layer.assetId === assetId) ? placeholder : null };
     compileProject(parsed.project, importedImageProvider);
     const parsedCharacterAnimation = compileCharacterTrack(parsed.characterTrack, parsed.project.durationMs);
@@ -1210,6 +1882,23 @@ projectInput.addEventListener("change", async () => {
     selectedImageDimensions = null;
     currentFileInfo = null;
     imageSource = placeholder;
+    sceneImageSources.clear();
+    const legacyAssetMap = new Map(parsed.project.layers.map((layer, index) => [layer.assetId, {
+      id: layer.assetId, kind: "image", name: parsed.image?.name ?? `legacy-image-${index + 1}.png`,
+      mimeType: parsed.image?.type || "image/png", size: parsed.image?.size ?? 0
+    }]));
+    for (const asset of parsed.audioAssets) legacyAssetMap.set(asset.id, { id: asset.id, kind: "audio", name: asset.name,
+      mimeType: asset.type, size: asset.size });
+    for (const id of parsedCharacterAnimation.frameAssets ?? []) if (!legacyAssetMap.has(id)) legacyAssetMap.set(id, {
+      id, kind: "image", name: `${id}.png`, mimeType: "image/png", size: 0
+    });
+    const legacySequence = createStudioSequenceV1({ viewport: parsed.project.viewport, assets: [...legacyAssetMap.values()], scenes: [{
+      id: "legacy-scene", project: parsed.project, audioTracks: parsed.audioTracks,
+      characterTracks: [parsed.characterTrack], visualEffectsTrack: parsed.visualEffectsTrack
+    }] });
+    await attachSequenceProject(createStudioSequenceEditor(legacySequence, { names: { "legacy-scene": "المشهد 1" } }), makeLocalId("project"), {
+      "legacy-scene": { aspectPreset, fitMode }
+    });
     const start = project.camera?.[0]?.value;
     const end = project.camera?.at(-1)?.value;
     $("duration").value = String(project.durationMs / 1000);
@@ -1222,6 +1911,7 @@ projectInput.addEventListener("change", async () => {
     renderAt(0);
     syncOutputs();
     status.textContent = "فُتح المشروع؛ اختر الصورة المرتبطة به";
+    sequenceTimeMs = 0; renderSequenceOverview(); persistSequenceMetadata();
     refreshExportControls();
   } catch (error) { fail(error); }
   finally { projectInput.value = ""; }
@@ -1232,6 +1922,8 @@ timelineEditor.render();
 refreshCharacterTimeline();
 renderAt(0);
 refreshExportControls();
+renderSequenceOverview();
+void restoreMostRecentSequence();
 exportButton.addEventListener("click", () => { void exportVideoFile(); });
 cancelExportButton.addEventListener("click", () => cancelActiveExport("ألغى المستخدم التسجيل."));
 tryWebmButton.addEventListener("click", () => {
@@ -1256,6 +1948,8 @@ for (const control of [exportFormat, exportDuration, exportQuality, exportAudioE
   });
 }
 window.addEventListener("pagehide", () => {
+  if (sequenceAutosaveTimer) clearTimeout(sequenceAutosaveTimer);
+  try { captureCurrentScene(); } catch { /* The current JSON remains available from the last valid edit. */ }
   cancelActiveExport("غادرت الصفحة أثناء التصدير.");
   audioRequest.begin();
   try { audioPlayer?.destroy(); } catch { /* Browser is unloading; all local playback handles are being discarded. */ }
