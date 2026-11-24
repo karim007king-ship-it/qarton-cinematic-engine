@@ -175,6 +175,21 @@ def exercise(context, url):
         };
     })();""")
     page.goto(url + "examples/motion-studio-lab/")
+    def activate_studio_button(locator):
+        """Use a real centered touch tap on touch devices and verify hit testing."""
+        if page.evaluate("matchMedia('(pointer: coarse)').matches"):
+            locator.evaluate("el => el.scrollIntoView({block:'center', inline:'center', behavior:'instant'})")
+            box = locator.bounding_box()
+            hit = locator.evaluate("""el => {
+                const rect = el.getBoundingClientRect();
+                const target = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+                return target === el || target?.closest('button') === el;
+            }""")
+            assert hit, f"touch target is covered: {locator.get_attribute('id')}"
+            page.touchscreen.tap(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        else:
+            locator.click()
+
     export_support = page.evaluate("""() => {
         const Recorder = window.MediaRecorder;
         const candidates = {
@@ -293,7 +308,7 @@ def exercise(context, url):
     page.wait_for_function("Number(document.querySelector('#seek').value) > 0")
     page.wait_for_function("Number(document.querySelector('#seek').value) < 1000")
     with page.expect_download() as download_info:
-        page.locator("#saveProjectButton").click()
+        activate_studio_button(page.locator("#saveProjectButton"))
     project_download = download_info.value
     project_path = Path("/tmp/qarton-motion-studio-check.json")
     project_download.save_as(project_path)
@@ -309,7 +324,7 @@ def exercise(context, url):
     assert project_data["project"]["camera"][1]["value"]["y"] == -21
     project_data["project"]["layers"][0]["assetId"] = "imported-portrait-42"
     project_path.write_text(json.dumps(project_data))
-    page.locator("#loadProjectButton").click()
+    activate_studio_button(page.locator("#loadProjectButton"))
     page.locator("#projectInput").set_input_files(str(project_path))
     page.get_by_text("فُتح المشروع؛ اختر الصورة المرتبطة به", exact=True).wait_for()
     assert "أعد اختيار الصورة" in page.locator("#imageName").inner_text()
@@ -318,7 +333,7 @@ def exercise(context, url):
     page.locator("#imageInput").set_input_files(str(site / "examples/motion-studio-lab/preview-test.png"))
     page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
     with page.expect_download() as rebound_download_info:
-        page.locator("#saveProjectButton").click()
+        activate_studio_button(page.locator("#saveProjectButton"))
     rebound_path = Path("/tmp/qarton-motion-studio-rebound.json")
     rebound_download_info.value.save_as(rebound_path)
     rebound_data = json.loads(rebound_path.read_text())
@@ -330,7 +345,7 @@ def exercise(context, url):
     legacy_data.pop("settings")
     legacy_path = Path("/tmp/qarton-motion-studio-legacy.json")
     legacy_path.write_text(json.dumps(legacy_data))
-    page.locator("#loadProjectButton").click()
+    activate_studio_button(page.locator("#loadProjectButton"))
     page.locator("#projectInput").set_input_files(str(legacy_path))
     page.get_by_text("فُتح المشروع؛ اختر الصورة المرتبطة به", exact=True).wait_for()
     assert page.locator("#aspectPreset").input_value() == "portrait"
@@ -340,7 +355,7 @@ def exercise(context, url):
         "name": "preview-test-slow.png", "mimeType": "image/png",
         "buffer": (site / "examples/motion-studio-lab/preview-test.png").read_bytes()
     })
-    page.locator("#loadProjectButton").click()
+    activate_studio_button(page.locator("#loadProjectButton"))
     page.locator("#projectInput").set_input_files(str(project_path))
     page.get_by_text("فُتح المشروع؛ اختر الصورة المرتبطة به", exact=True).wait_for()
     relink_label = page.locator("#imageName").inner_text()
@@ -396,12 +411,12 @@ def exercise(context, url):
     assert horizontal_overflow["scrollWidth"] <= horizontal_overflow["viewportWidth"], horizontal_overflow
 
     with page.expect_download() as timeline_download_info:
-        page.locator("#saveProjectButton").click()
+        activate_studio_button(page.locator("#saveProjectButton"))
     timeline_path = Path("/tmp/qarton-motion-studio-l6b.json")
     timeline_download_info.value.save_as(timeline_path)
     timeline_data = json.loads(timeline_path.read_text())
     assert [key["atMs"] for key in timeline_data["project"]["camera"]] == [0, 7000, 12000]
-    page.locator("#loadProjectButton").click()
+    activate_studio_button(page.locator("#loadProjectButton"))
     page.locator("#projectInput").set_input_files(str(timeline_path))
     page.get_by_text("فُتح المشروع؛ اختر الصورة المرتبطة به", exact=True).wait_for()
     assert page.locator(".keyframe-marker").count() == 3
@@ -575,7 +590,7 @@ def exercise(context, url):
     page.mouse.up()
 
     with page.expect_download() as character_download_info:
-        page.locator("#saveProjectButton").click()
+        activate_studio_button(page.locator("#saveProjectButton"))
     character_path = Path("/tmp/qarton-motion-studio-character.json")
     character_download_info.value.save_as(character_path)
     character_data = json.loads(character_path.read_text())
@@ -586,7 +601,7 @@ def exercise(context, url):
         "timeline_message": page.locator("#characterTimelineMessage").inner_text(),
         "selection": page.locator("#characterTimelineSelection").inner_text(),
     }
-    page.locator("#loadProjectButton").click()
+    activate_studio_button(page.locator("#loadProjectButton"))
     page.locator("#projectInput").set_input_files(str(character_path))
     page.get_by_text("فُتح المشروع؛ اختر الصورة المرتبطة به", exact=True).wait_for()
     assert page.locator(".character-keyframe-marker").count() == 3
