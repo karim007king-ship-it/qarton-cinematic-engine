@@ -8,7 +8,7 @@ const sequence=createStudioSequenceV1({viewport,assets,scenes:[{id:"scene",proje
 const blob=()=>new Blob(["1234"],{type:"image/png"});
 function fixture(maxBytes=8){
  const data=new Map();
- const storage={async put(p,id,b){data.set(p+"/"+id,b)},async get(p,id){return data.get(p+"/"+id)??null}};
+ const storage={async put(p,id,b){data.set(p+"/"+id,b)},async get(p,id){return data.get(p+"/"+id)??null},async remove(p,id){data.delete(p+"/"+id)}};
  const open=()=>createPersistentAssetRegistry(sequence,{storage,projectId:"project",maxBytes});
  return {data,storage,open};
 }
@@ -36,4 +36,15 @@ test("concurrent links serialize preflight and never persist over budget",async(
  assert.deepEqual(results.map(x=>x.status),["fulfilled","rejected"]);
  assert.equal(data.size,1);
  assert.equal(r.linkedBytes,4);
+});
+
+test("persistent deletion protects referenced assets and survives storage failure",async()=>{
+ const {open,storage,data}=fixture(); const r=open();
+ await r.relink("a",blob()); await r.relink("b",blob());
+ await assert.rejects(r.remove("a"),/referenced/);
+ const remove=storage.remove; storage.remove=async()=>{throw new Error("disk")};
+ await assert.rejects(r.remove("b"),/disk/); assert.equal(r.linkedBytes,8);
+ storage.remove=remove; await r.remove("b");
+ assert.equal(r.linkedBytes,4); assert.equal(data.has("project/b"),false);
+ assert.equal(data.has("project/a"),true); assert.equal(r.sequence.assets.length,1);
 });
