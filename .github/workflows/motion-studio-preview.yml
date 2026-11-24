@@ -63,7 +63,7 @@ jobs:
             PREVIEW_LABEL='L10-B'
           elif [ "$BRANCH_NAME" = 'fix/l10c-export-safety-regressions' ]; then
             PREVIEW_SLUG='motion-studio-l10c-safety-android-preview'
-            PREVIEW_LABEL='L10-C Safety'
+            PREVIEW_LABEL='L10-C'
           else
             PREVIEW_SLUG='motion-studio-l5-android-preview'
             PREVIEW_LABEL='L5'
