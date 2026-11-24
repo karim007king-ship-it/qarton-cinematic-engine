@@ -256,7 +256,8 @@ function normalizeSequenceScene(scene, index, viewport, assetsById) {
   }
   const characterIds = new Set();
   for (const track of characterTracks) {
-    createCharacterAnimation({ character: track?.character, durationMs: project.durationMs, keyframes: track?.keyframes });
+    const animation = createCharacterAnimation({ character: track?.character, durationMs: project.durationMs, keyframes: track?.keyframes });
+    for (const assetId of animation.frameAssets) assertAssetReference(assetsById, assetId, "image", `Sequence scene ${scene.id} character frame`);
     const id = track.character.id;
     if (characterIds.has(id)) throw new TypeError(`Sequence scene ${scene.id} has duplicate character track id: ${id}`);
     characterIds.add(id);
