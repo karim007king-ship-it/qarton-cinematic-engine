@@ -533,19 +533,19 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
 
             probe = __import__("json").loads(subprocess.check_output([
                 "ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(sync_output)
-            ], text=True))
+            ], text=True, timeout=60))
             video_stream = next(stream for stream in probe["streams"] if stream["codec_type"] == "video")
             audio_stream = next(stream for stream in probe["streams"] if stream["codec_type"] == "audio")
             video_frames = __import__("json").loads(subprocess.check_output([
                 "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_frames",
                 "-show_entries", "frame=best_effort_timestamp_time,pkt_duration_time,duration_time",
                 "-of", "json", str(sync_output)
-            ], text=True)).get("frames", [])
+            ], text=True, timeout=60)).get("frames", [])
             audio_packets = __import__("json").loads(subprocess.check_output([
                 "ffprobe", "-v", "error", "-select_streams", "a:0", "-show_packets",
                 "-show_entries", "packet=pts_time,dts_time,duration_time",
                 "-of", "json", str(sync_output)
-            ], text=True)).get("packets", [])
+            ], text=True, timeout=60)).get("packets", [])
             video_timeline = measure_media_timeline(
                 video_frames, ("best_effort_timestamp_time", "pts_time"), ("pkt_duration_time", "duration_time"))
             audio_timeline = measure_media_timeline(
@@ -598,11 +598,11 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             frame_pts = [float(value) for value in subprocess.check_output([
                 "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "frame=best_effort_timestamp_time",
                 "-of", "csv=p=0", str(sync_output)
-            ], text=True).splitlines() if value.strip()]
+            ], text=True, timeout=60).splitlines() if value.strip()]
             luma_raw = subprocess.check_output([
                 "ffmpeg", "-v", "error", "-i", str(sync_output), "-map", "0:v:0", "-vf", "scale=1:1,format=gray",
                 "-vsync", "0", "-f", "rawvideo", "-"
-            ])
+            ], timeout=60)
             assert len(luma_raw) == len(frame_pts), (len(luma_raw), len(frame_pts))
             bright_frames = [frame_pts[index] - video_start for index, value in enumerate(luma_raw) if value >= 225]
             bright_groups = []
@@ -615,7 +615,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             pcm = subprocess.check_output([
                 "ffmpeg", "-v", "error", "-i", str(sync_output), "-map", "0:a:0", "-ac", "1", "-ar", "48000",
                 "-f", "s16le", "-"
-            ])
+            ], timeout=60)
             pcm_values = struct.unpack("<" + "h" * (len(pcm) // 2), pcm)
             window = 480  # 10 ms RMS windows at 48 kHz.
             loud_windows = []
