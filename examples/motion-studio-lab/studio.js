@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 30988)
-Total output lines: 2174
-
 import { compileProject, sampleFrame, planExport, rasterForQuality, probeExport, startExport } from "@qarton/cinematic-engine/motion-studio";
 import { createStudioSequenceV1 } from "@qarton/cinematic-engine/motion-studio";
 import { createRequestToken, makeProject, makeProjectFile, parseProjectFile, prepareProjectUpdate, VIEWPORT } from "./studio-model.js?v=l7b-character-01";
@@ -1045,7 +1042,76 @@ function makeThumbnail() {
     sceneThumbnails.set(activeSceneId, thumb.toDataURL("image/jpeg", 0.55));
   } catch { /* A missing or tainted preview leaves the accessible scene label visible. */ }
 }
-function c…988 tokens truncated…   sequenceEditor.replaceSequence(persistentAssets.sequence);
+function createSequenceSceneFromCurrent(id, { freshTracks = false } = {}) {
+  return { id,
+    project: structuredClone(project),
+    audioTracks: freshTracks ? makeAudioTracks() : structuredClone(audioTracks),
+    characterTracks: freshTracks ? [makeCharacterTrack()] : structuredClone([characterTrack, ...(sceneExtraCharacterTracks.get(activeSceneId) ?? [])]),
+    visualEffectsTrack: freshTracks ? makeVisualEffectsTrack() : structuredClone(visualEffectsTrack) };
+}
+function replaceCurrentSceneAndAssets(nextAssets = sequenceEditor.sequence.assets) {
+  const old = sequenceEditor.sequence;
+  const current = currentScenePayload();
+  const scenes = old.scenes.map(scene => scene.id === activeSceneId ? current : scene);
+  const next = createStudioSequenceV1({ viewport: project.viewport, scenes, assets: nextAssets });
+  sequenceEditor.replaceSequence(next);
+  persistSequenceMetadata();
+  void persistentAssets?.replaceSequence(next).catch(error => {
+    $("assetLibraryMessage").textContent = `تعذر حفظ مراجع الأصول: ${errorText(error)}`;
+  });
+  audioAssets = next.assets.filter(asset => asset.kind === "audio").map(assetMetadataToAudio);
+  renderAssetLibrary();
+  return next;
+}
+async function useLibraryAsset(id) {
+  try {
+    await assetReady;
+    const asset = sequenceEditor.sequence.assets.find(item => item.id === id);
+    const blob = getAssetBlob(id);
+    if (!asset || !blob) throw new Error("الأصل غير مرتبط؛ أعد اختياره من الهاتف.");
+    if (asset.kind === "audio") {
+      let audio = audioFiles.get(id);
+      if (!audio) {
+        const file = new File([blob], asset.name, { type: asset.mimeType });
+        const url = URL.createObjectURL(file);
+        let durationMs = 0; try { durationMs = await readAudioDuration(file); } catch { /* Timeline clips retain their authored duration. */ }
+        audio = { file, url, durationMs }; audioFiles.set(id, audio);
+      }
+      activeAudioAssetId = id;
+      $("audioFileName").textContent = `${asset.name} · ${(asset.size / 1024 / 1024).toFixed(2)} MiB`;
+      $("audioTimelineMessage").textContent = `الأصل ${asset.name} جاهز للمسار الحالي.`;
+      renderAudioInspector();
+      return;
+    }
+    if (asset.kind !== "image") throw new TypeError("هذا النوع من الأصول لا يمكن وضعه في المشهد بعد.");
+    const file = new File([blob], asset.name, { type: asset.mimeType });
+    const imageRequestToken = imageRequest.begin();
+    pendingImageRequest = imageRequestToken; refreshExportControls();
+    const bitmap = await decodeImageBitmap(file, { isCurrent: () => imageRequest.isCurrent(imageRequestToken) });
+    try {
+      selectedImageDimensions = { width: bitmap.width, height: bitmap.height };
+      const surface = drawBitmap(bitmap);
+      const nextProject = structuredClone(project);
+      nextProject.layers[0].assetId = id;
+      project = nextProject; selectedImageFile = file; currentFileInfo = { name: asset.name, type: asset.mimeType, size: asset.size };
+      imageSource = surface; sceneImageSources.set(id, surface);
+      compiled = compileProject(projectForRaster(project, previewViewport), imageProvider);
+      replaceCurrentSceneAndAssets();
+      sceneSettings.set(activeSceneId, { aspectPreset, fitMode, image: currentFileInfo });
+      imageName.textContent = `${asset.name} · ${bitmap.width}×${bitmap.height}`;
+      renderAt(currentMs); status.textContent = "تم ربط الصورة بالمشهد";
+    } finally { bitmap.close?.(); }
+  } catch (error) { $("assetLibraryMessage").textContent = errorText(error); }
+  finally { if (pendingImageRequest !== null) pendingImageRequest = null; refreshExportControls(); }
+}
+async function removeLibraryAsset(id) {
+  try {
+    captureCurrentScene();
+    await assetReady;
+    await persistentAssets?.replaceSequence(sequenceEditor.sequence);
+    if (persistentAssets) {
+      await persistentAssets.remove(id);
+      sequenceEditor.replaceSequence(persistentAssets.sequence);
     } else {
       if (currentAssetReferences(id).length) throw new Error("لا يمكن حذف أصل تستخدمه المشاهد.");
       const sequence = sequenceEditor.sequence;
