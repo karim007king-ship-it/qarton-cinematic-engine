@@ -121,9 +121,13 @@ jobs:
           python scripts/check-motion-studio-preview.py
       - name: Verify recorded microphone, restored playback, and exported signal
         if: github.head_ref == 'feature/audio-core-fix-a-final'
+        env:
+          MOTION_STUDIO_PREVIEW_SLUG: ${{ steps.preview.outputs.slug }}
         run: python scripts/check-motion-studio-microphone-recording.py
       - name: Verify imported audio playback and exported signal
         if: github.head_ref == 'feature/audio-core-fix-a-final'
+        env:
+          MOTION_STUDIO_PREVIEW_SLUG: ${{ steps.preview.outputs.slug }}
         run: python scripts/check-motion-studio-audio-import.py
       - name: Verify IndexedDB storage
         if: github.head_ref == 'feature/shared-assets-l11c' || github.head_ref == 'feature/motion-studio-multiscene-editor-l11d' || github.head_ref == 'refactor/motion-studio-l11g' || github.ref_name == 'refactor/motion-studio-l11g' || github.head_ref == 'feature/motion-studio-integrated-cinematic-preview-export-l11h4' || github.head_ref == 'fix/motion-studio-audio-import-l11h4-audio-fix' || github.head_ref == 'fix/motion-studio-audio-recording-l11h4-fix2'
