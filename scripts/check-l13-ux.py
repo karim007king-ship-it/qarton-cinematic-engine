@@ -46,6 +46,7 @@ try:
         assert page.locator("#app").get_attribute("data-mode")=="simple"
         for w,h in sizes:
             page.set_viewport_size({"width":w,"height":h})
+            print("prototype",w,h,page.evaluate("() => ({viewport:[innerWidth,innerHeight],app:document.querySelector('.app').getBoundingClientRect().toJSON(),work:document.querySelector('.work').getBoundingClientRect().toJSON(),dock:document.querySelector('.dock').getBoundingClientRect().toJSON()})"),flush=True)
             for section in ("scenes","motion","audio","characters","effects","project"):
                 page.locator(f'[data-tab="{section}"]').click()
                 data=page.evaluate("""() => {
