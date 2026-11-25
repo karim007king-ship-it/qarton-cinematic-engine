@@ -197,7 +197,9 @@ def exercise(context, url):
         control_id = locator.get_attribute("id")
         if control_id in {"saveProjectButton", "loadProjectButton", "exportButton", "cancelExportButton"}:
             reveal_editor_section("project")
-        elif control_id in {"addKeyframeButton", "deleteKeyframeButton", "addCharacterKeyframe", "deleteCharacterKeyframe"}:
+        elif control_id in {"addCharacterKeyframe", "deleteCharacterKeyframe"}:
+            reveal_editor_section("characters")
+        elif control_id in {"addKeyframeButton", "deleteKeyframeButton"}:
             reveal_editor_section("motion")
         if page.evaluate("matchMedia('(pointer: coarse)').matches"):
             locator.evaluate("el => el.scrollIntoView({block:'center', inline:'center', behavior:'instant'})")
