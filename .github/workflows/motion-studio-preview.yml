@@ -95,7 +95,7 @@ jobs:
             PREVIEW_LABEL='L11-H4'
           elif [ "$BRANCH_NAME" = 'fix/motion-studio-audio-recording-l11h4-fix2' ]; then
             PREVIEW_SLUG='motion-studio-l11h4-audio-recording-fix-android-preview'
-            PREVIEW_LABEL='L11-H4 Audio Fix 2'
+            PREVIEW_LABEL='L11-H4'
           else
             PREVIEW_SLUG='motion-studio-l5-android-preview'
             PREVIEW_LABEL='L5'
