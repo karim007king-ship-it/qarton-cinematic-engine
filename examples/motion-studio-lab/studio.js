@@ -209,6 +209,10 @@ let audioMasterVolume = 1;
 let audioClipSelection = null;
 let audioTimeline = null;
 let pendingAudioRequest = null;
+let microphoneButton = null;
+let microphoneSession = null;
+let microphoneStarting = false;
+let microphoneFinalizing = false;
 let visualEffectsTimeline = null;
 let visualEffectSelection = null;
 const makeLocalId = (prefix) => `${prefix}-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
@@ -221,6 +225,36 @@ function readStoredProjectId() {
   } catch { return null; }
 }
 let projectStorageId = readStoredProjectId() ?? makeLocalId("project");
+const AUDIO_DURATION_METADATA_PREFIX = "qarton-motion-studio-audio-durations:";
+function readAudioDurationHint(assetId) {
+  try {
+    const metadata = JSON.parse(localStorage.getItem(`${AUDIO_DURATION_METADATA_PREFIX}${projectStorageId}`) || "{}");
+    const durationMs = metadata?.[assetId];
+    if (Number.isSafeInteger(durationMs) && durationMs > 0 && durationMs <= 3_600_000) return durationMs;
+  } catch { /* Storage metadata is advisory; the browser decoder remains authoritative when available. */ }
+  let inferredMs = 0;
+  for (const scene of sequenceEditor?.sequence.scenes ?? []) for (const track of scene.audioTracks) {
+    for (const clip of track.clips) if (clip.asset === assetId && Number.isSafeInteger(clip.durationMs)) {
+      inferredMs = Math.max(inferredMs, clip.durationMs);
+    }
+  }
+  return inferredMs;
+}
+function rememberAudioDuration(assetId, durationMs) {
+  const value = Math.round(durationMs);
+  if (typeof assetId !== "string" || !Number.isSafeInteger(value) || value <= 0 || value > 3_600_000) return false;
+  try {
+    const key = `${AUDIO_DURATION_METADATA_PREFIX}${projectStorageId}`;
+    let metadata = {};
+    try { metadata = JSON.parse(localStorage.getItem(key) || "{}"); } catch { /* Replace corrupt advisory metadata. */ }
+    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) metadata = {};
+    metadata[assetId] = value;
+    const keys = Object.keys(metadata);
+    for (const staleId of keys.slice(0, Math.max(0, keys.length - 256))) delete metadata[staleId];
+    localStorage.setItem(key, JSON.stringify(metadata));
+    return true;
+  } catch { return false; }
+}
 let sequenceEditor = createStudioSequenceEditor(createStudioSequenceV1({
   viewport: project.viewport,
   scenes: [{ id: "scene-1", project, audioTracks, characterTracks: [characterTrack], visualEffectsTrack }],
@@ -256,6 +290,7 @@ function compilePreviewEffects(track, sourceProject = project, viewport = previe
   return compileVisualEffectsTrack(track, projectForRaster(sourceProject, viewport));
 }
 function getCurrentScene() { return sequenceEditor.scenes.find(scene => scene.id === activeSceneId) ?? null; }
+function microphoneOperationActive() { return microphoneStarting || microphoneSession !== null || microphoneFinalizing; }
 function currentScenePayload() {
   return { id: activeSceneId, project, audioTracks, characterTracks: [characterTrack, ...(sceneExtraCharacterTracks.get(activeSceneId) ?? [])], visualEffectsTrack };
 }
@@ -483,8 +518,9 @@ function refreshExportControls() {
   if (preferred && (!exportFormatInitialized || exportCapability[exportFormat.value]?.length === 0)) exportFormat.value = preferred;
   exportFormatInitialized = true;
   const available = Boolean(preferred);
-  exportButton.disabled = !available || !currentFileInfo || Boolean(activeExport) || pendingImageRequest !== null || pendingAudioRequest !== null;
-  exportFormat.disabled = Boolean(activeExport);
+  const recordingBlocked = microphoneOperationActive();
+  exportButton.disabled = !available || !currentFileInfo || Boolean(activeExport) || recordingBlocked || pendingImageRequest !== null || pendingAudioRequest !== null;
+  exportFormat.disabled = Boolean(activeExport || recordingBlocked);
   if (!exportStatusHasResult && !activeExport) {
     exportStatus.textContent = !hasMediaRecorder
       ? "التصدير غير متاح: هذا المتصفح لا يوفر MediaRecorder وCanvas captureStream."
@@ -505,33 +541,69 @@ function refreshIntegratedControls() {
   let hasVerified = false;
   try { hasVerified = getVerifiedIntegratedCapabilities().length > 0; }
   catch { hasVerified = false; }
-  const blocked = Boolean(activeExport || pendingImageRequest !== null || pendingAudioRequest !== null || !currentFileInfo);
+  const blocked = Boolean(activeExport || microphoneOperationActive() || pendingImageRequest !== null || pendingAudioRequest !== null || !currentFileInfo);
   integratedProbeButton.disabled = blocked;
   integratedExportButton.disabled = blocked || !hasVerified;
   integratedExportButton.textContent = blocked ? "التصدير غير متاح حاليًا" : hasVerified ? "تصدير المشروع مع الصوت" : "افحص الصيغة والدقة أولًا";
   integratedExportButton.title = blocked ? "انتظر اكتمال تحميل الأصول أو انتهاء التصدير" : hasVerified ? "ابدأ تصدير المشروع" : "اضغط زر فحص الصيغة والدقة";
-  for (const control of [integratedQuality, integratedFormat, integratedAudio, integratedMissingAudio, integratedFrom, integratedTo]) control.disabled = Boolean(activeExport);
+  for (const control of [integratedQuality, integratedFormat, integratedAudio, integratedMissingAudio, integratedFrom, integratedTo]) control.disabled = Boolean(activeExport || microphoneOperationActive());
+}
+function refreshMicrophoneBusyControls() {
+  const recording = microphoneOperationActive();
+  if (microphoneButton) {
+    microphoneButton.textContent = microphoneStarting ? "انتظر إذن الميكروفون…"
+      : microphoneFinalizing ? "جارٍ اعتماد التسجيل…"
+        : microphoneSession ? "إيقاف التسجيل" : "تسجيل بالميكروفون";
+    microphoneButton.disabled = microphoneStarting || microphoneFinalizing || (!microphoneSession && (Boolean(activeExport) || pendingAudioRequest !== null));
+  }
+  const locked = recording || Boolean(activeExport);
+  for (const id of ["imageInput", "projectInput", "audioInput", "audioTrackType", "addAudioClip", "deleteAudioClip", "audioClipStart", "audioClipDuration", "audioClipVolume", "sceneName", "sceneDuration", "addSceneButton", "duplicateSceneButton", "deleteSceneButton", "moveSceneLeftButton", "moveSceneRightButton", "playPauseButton", "replayButton", "seek", "sequenceSeek", "duration", "aspectPreset", "fitMode", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "saveProjectButton", "loadProjectButton"]) {
+    const control = $(id); if (control) control.disabled = locked;
+  }
+  for (const control of document.querySelectorAll(".scene-select, .sequence-block")) control.disabled = locked;
+  timelineEditor?.setBusy(locked);
+  characterTimeline?.setBusy(locked);
+  audioTimeline?.setBusy(locked);
+  visualEffectsTimeline?.setBusy(locked);
+  if (!recording) {
+    renderAudioInspector();
+    renderVisualEffectInspector();
+    renderSequenceOverview({ rebuildCards: false, rebuildAssets: false });
+  }
+  refreshExportControls();
 }
 function setExportBusy(busy) {
+  const locked = busy || microphoneOperationActive();
   for (const id of ["imageInput", "projectInput", "audioInput", "audioTrackType", "addAudioClip", "deleteAudioClip", "audioClipStart", "audioClipDuration", "audioClipVolume", "dialogueLanguage", "visemeType", "phonemeLabel", "addViseme", "audioMasterVolume", "visualEffectType", "addVisualEffect", "deleteVisualEffect", "visualEffectStart", "visualEffectDuration", "visualEffectEasing", "aspectPreset", "fitMode", "duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "saveProjectButton", "loadProjectButton", "motionSpeed", "motionStrength", "motionFocusX", "motionFocusY", "motionFromSeconds", "motionToSeconds", "integratedQuality", "integratedFormat", "integratedAudio", "integratedMissingAudio", "integratedFrom", "integratedTo"]) {
-    $(id).disabled = busy;
+    $(id).disabled = locked;
   }
-  for (const button of document.querySelectorAll("[data-motion-preset]")) button.disabled = busy;
+  for (const button of document.querySelectorAll("[data-motion-preset]")) button.disabled = locked;
+  for (const id of ["sceneName", "sceneDuration", "addSceneButton", "duplicateSceneButton", "deleteSceneButton", "moveSceneLeftButton", "moveSceneRightButton", "playPauseButton", "replayButton", "seek", "sequenceSeek"]) {
+    const control = $(id); if (control) control.disabled = locked;
+  }
+  for (const button of document.querySelectorAll(".scene-select, .sequence-block")) button.disabled = locked;
   timelineEditor?.setBusy(busy);
   characterTimeline?.setBusy(busy);
   audioTimeline?.setBusy(busy);
   visualEffectsTimeline?.setBusy(busy);
+  if (microphoneOperationActive()) {
+    timelineEditor?.setBusy(true);
+    characterTimeline?.setBusy(true);
+    audioTimeline?.setBusy(true);
+    visualEffectsTimeline?.setBusy(true);
+  }
   renderVisualEffectInspector();
   renderAudioInspector();
-  exportButton.disabled = busy || !currentFileInfo || !exportCapability.mp4.length && !exportCapability.webm.length;
-  exportFormat.disabled = busy;
-  exportDuration.disabled = busy;
-  exportQuality.disabled = busy;
-  exportAudioEnabled.disabled = busy;
+  exportButton.disabled = locked || !currentFileInfo || !exportCapability.mp4.length && !exportCapability.webm.length;
+  exportFormat.disabled = locked;
+  exportDuration.disabled = locked;
+  exportQuality.disabled = locked;
+  exportAudioEnabled.disabled = locked;
+  if (microphoneButton) microphoneButton.disabled = busy || microphoneStarting || microphoneFinalizing || (!microphoneSession && pendingAudioRequest !== null);
   cancelExportButton.hidden = !busy;
   cancelExportButton.disabled = !busy;
-  integratedProbeButton.disabled = busy || !currentFileInfo || pendingImageRequest !== null || pendingAudioRequest !== null;
-  integratedExportButton.disabled = busy || !currentFileInfo || getVerifiedIntegratedCapabilities().length === 0;
+  integratedProbeButton.disabled = locked || !currentFileInfo || pendingImageRequest !== null || pendingAudioRequest !== null;
+  integratedExportButton.disabled = locked || !currentFileInfo || getVerifiedIntegratedCapabilities().length === 0;
   refreshMotionUndoButtons();
 }
 function createTestAudioGraph() {
@@ -551,6 +623,7 @@ function renderExportFrame(ctx, exportCompiled, exportCharacter, exportAudio, ex
     visualEffectsCompiled: exportEffects, viewport: exportCompiled.viewport });
 }
 async function exportVideoFile() {
+  if (microphoneOperationActive()) return;
   const unlock = exportLock.acquire();
   if (!unlock) return;
   if (!currentFileInfo) {
@@ -770,6 +843,7 @@ async function prepareSequenceAudioInfo(sequence, signal) {
       source = { file, url, durationMs };
       audioFiles.set(id, source);
     }
+    if (!source.durationMs) source.durationMs = readAudioDurationHint(id);
     if (!source.durationMs) throw new Error(`مدة ملف الصوت غير معروفة: ${asset.name}`);
     info.push({ id, durationMs: Math.max(1, Math.round(source.durationMs)), channels: 2, sampleRate: 48_000 });
   }
@@ -788,7 +862,7 @@ function setIntegratedProgress(progress) {
   integratedStatus.textContent = `${labels[progress.phase] ?? progress.phase} ${Math.round(integratedProgress.value * 100)}%`;
 }
 async function probeIntegratedExport() {
-  if (activeExport || !currentFileInfo) return;
+  if (activeExport || microphoneOperationActive() || !currentFileInfo) return;
   const raster = integratedRaster();
   const audioMode = integratedAudio.value;
   const capabilityKey = integratedCapabilityKey();
@@ -821,7 +895,7 @@ async function probeIntegratedExport() {
   } finally { refreshIntegratedControls(); }
 }
 async function exportIntegratedProject() {
-  if (activeExport || exportPreparing) return;
+  if (activeExport || exportPreparing || microphoneOperationActive()) return;
   exportPreparing = true;
   setExportBusy(true);
   try {
@@ -1041,7 +1115,7 @@ function renderAudioInspector() {
     marker.setAttribute("aria-label", `Viseme ${cue.viseme} عند ${cue.atMs} ملي ثانية`);
     marker.addEventListener("click", () => { seekTo(selected.clip.startMs + cue.atMs); }); markerRoot.append(marker);
   }
-  $("addAudioClip").disabled = !activeAudioAssetId || pendingAudioRequest !== null || Boolean(activeExport);
+  $("addAudioClip").disabled = !activeAudioAssetId || pendingAudioRequest !== null || Boolean(activeExport) || microphoneOperationActive();
 }
 function selectedVisualEffect() {
   return visualEffectsTrack.clips.find(({ id }) => id === visualEffectSelection) ?? null;
@@ -1148,6 +1222,7 @@ function renderSequenceOverview({ rebuildCards = true, rebuildAssets = true } = 
     card.dataset.sceneId = scene.id;
     const select = document.createElement("button");
     select.type = "button"; select.className = "scene-select"; select.dataset.sceneSelect = scene.id;
+    select.disabled = microphoneOperationActive() || Boolean(activeExport);
     select.setAttribute("aria-current", String(scene.id === activeSceneId));
     const thumb = document.createElement("span"); thumb.className = "scene-thumb";
     const image = sceneThumbnails.get(scene.id);
@@ -1162,6 +1237,7 @@ function renderSequenceOverview({ rebuildCards = true, rebuildAssets = true } = 
   const total = Math.max(1, sequenceEditor.durationMs);
   for (const scene of scenes) {
     const block = document.createElement("button"); block.type = "button"; block.className = "sequence-block";
+    block.disabled = microphoneOperationActive() || Boolean(activeExport);
     block.dataset.sceneId = scene.id; block.style.flexGrow = String(scene.project.durationMs);
     block.style.flexBasis = "0"; block.style.flexShrink = "1";
     block.title = `${scene.name} · ${formatTime(scene.project.durationMs)}`;
@@ -1177,7 +1253,7 @@ function renderSequenceOverview({ rebuildCards = true, rebuildAssets = true } = 
   const current = getCurrentScene();
   $("sceneName").value = current?.name ?? "";
   $("sceneDuration").value = current ? String(current.project.durationMs / 1000) : "";
-  $("deleteSceneButton").disabled = scenes.length <= 1 || Boolean(activeExport);
+  $("deleteSceneButton").disabled = scenes.length <= 1 || Boolean(activeExport) || microphoneOperationActive();
   $("duplicateSceneButton").disabled = Boolean(activeExport) || scenes.length >= 32;
   $("addSceneButton").disabled = Boolean(activeExport) || scenes.length >= 32;
   $("moveSceneLeftButton").disabled = Boolean(activeExport) || (current?.index ?? 0) <= 0;
@@ -1251,7 +1327,8 @@ async function useLibraryAsset(id) {
       if (!audio) {
         const file = new File([blob], asset.name, { type: asset.mimeType });
         const url = URL.createObjectURL(file);
-        let durationMs = 0; try { durationMs = await readAudioDuration(file); } catch { /* Timeline clips retain their authored duration. */ }
+        let durationMs = 0; try { durationMs = await readAudioDuration(file); } catch { /* Use the validated duration captured when this asset was recorded/imported. */ }
+        durationMs ||= readAudioDurationHint(id);
         audio = { file, url, durationMs }; audioFiles.set(id, audio);
       }
       activeAudioAssetId = id;
@@ -1588,6 +1665,7 @@ async function playbackTick(now = performance.now()) {
   rafId = requestAnimationFrame(playbackTick);
 }
 async function play() {
+  if (microphoneOperationActive() || activeExport) return;
   if (sequenceTimeMs >= sequenceEditor.durationMs) {
     const first = sequenceEditor.scenes[0];
     await activateStudioScene(first.id, { globalTimeMs: 0, localTimeMs: 0 });
@@ -1605,6 +1683,7 @@ async function play() {
   }
 }
 async function replay() {
+  if (microphoneOperationActive() || activeExport) return;
   stopPlayback();
   try {
     captureCurrentScene();
@@ -1615,6 +1694,7 @@ async function replay() {
   } catch (error) { try { audioPlayer?.recover(); } catch { /* Retry remains possible after resource cleanup. */ } $("audioTimelineMessage").textContent = `تعذرت إعادة التشغيل: ${errorText(error)}`; }
 }
 function seekTo(timeMs) {
+  if (microphoneOperationActive() || activeExport) return;
   if (sequenceEditor) { seekSequenceTo(sequenceEditor.timeFor(activeSceneId, timeMs)); return; }
   const wasPlaying = isPlaying;
   try {
@@ -1674,7 +1754,10 @@ async function restoreSceneAssets(scene) {
     const url = URL.createObjectURL(file);
     let durationMs = 0;
     try { durationMs = await readAudioDuration(file); }
-    catch (error) { $("audioTimelineMessage").textContent = `تعذر قراءة الصوت ${asset.name}: ${errorText(error)}`; }
+    catch (error) {
+      durationMs = readAudioDurationHint(asset.id);
+      if (!durationMs) $("audioTimelineMessage").textContent = `تعذر قراءة الصوت ${asset.name}: ${errorText(error)}`;
+    }
     if (cached?.url) URL.revokeObjectURL(cached.url);
     audioFiles.set(asset.id, { file, url, durationMs });
   }
@@ -1686,7 +1769,7 @@ async function restoreSceneAssets(scene) {
   return firstImage;
 }
 function activateStudioScene(sceneId, options = {}) {
-  if (activeExport || exportPreparing) return;
+  if (activeExport || exportPreparing || microphoneOperationActive()) return;
   const loading = loadStudioScene(sceneId, options);
   pendingSceneActivation = loading;
   void loading.finally(() => {
@@ -1695,7 +1778,7 @@ function activateStudioScene(sceneId, options = {}) {
   return loading;
 }
 async function loadStudioScene(sceneId, { globalTimeMs = null, localTimeMs = 0, keepPlaying = false } = {}) {
-  if (activeExport) return;
+  if (activeExport || microphoneOperationActive()) return;
   if (!keepPlaying && isPlaying) stopPlayback();
   const wasPlaying = keepPlaying && isPlaying;
   const target = sequenceEditor.sequence.scenes.find(scene => scene.id === sceneId);
@@ -1767,7 +1850,7 @@ async function loadStudioScene(sceneId, { globalTimeMs = null, localTimeMs = 0, 
   status.textContent = currentFileInfo ? `المشهد جاهز: ${sequenceEditor.nameOf(sceneId)}` : `صورة المشهد غير متاحة؛ أعد ربطها: ${sequenceEditor.nameOf(sceneId)}`;
 }
 async function addScene() {
-  if (activeExport || sequenceEditor.scenes.length >= 32) return;
+  if (activeExport || microphoneOperationActive() || sequenceEditor.scenes.length >= 32) return;
   try {
     stopPlayback(); captureCurrentScene(); makeThumbnail();
     const id = makeLocalId("scene");
@@ -1782,7 +1865,7 @@ async function addScene() {
   } catch (error) { fail(error); }
 }
 async function duplicateActiveScene(sceneId = activeSceneId) {
-  if (activeExport || sequenceEditor.scenes.length >= 32) return;
+  if (activeExport || microphoneOperationActive() || sequenceEditor.scenes.length >= 32) return;
   try {
     stopPlayback(); captureCurrentScene(); makeThumbnail();
     const id = makeLocalId("scene-copy");
@@ -1798,7 +1881,7 @@ async function duplicateActiveScene(sceneId = activeSceneId) {
   } catch (error) { fail(error); }
 }
 async function deleteActiveScene() {
-  if (activeExport || sequenceEditor.scenes.length <= 1) return;
+  if (activeExport || microphoneOperationActive() || sequenceEditor.scenes.length <= 1) return;
   try {
     stopPlayback(); captureCurrentScene(); makeThumbnail();
     const removed = activeSceneId;
@@ -1811,7 +1894,7 @@ async function deleteActiveScene() {
   } catch (error) { fail(error); }
 }
 async function reorderScene(sceneId, toIndex) {
-  if (activeExport || toIndex < 0 || toIndex >= sequenceEditor.scenes.length) return;
+  if (activeExport || microphoneOperationActive() || toIndex < 0 || toIndex >= sequenceEditor.scenes.length) return;
   try {
     captureCurrentScene();
     sequenceEditor.reorder(sceneId, toIndex);
@@ -1821,7 +1904,7 @@ async function reorderScene(sceneId, toIndex) {
   } catch (error) { fail(error); }
 }
 function seekSequenceTo(timeMs) {
-  if (!Number.isFinite(timeMs)) return;
+  if (!Number.isFinite(timeMs) || microphoneOperationActive() || activeExport) return;
   const wasPlaying = isPlaying;
   const target = Math.max(0, Math.min(sequenceEditor.durationMs, timeMs));
   sequenceTimeMs = target;
@@ -2068,20 +2151,169 @@ $("assetLibraryInput").addEventListener("change", async () => {
   finally { $("assetLibraryInput").value = ""; renderAssetLibrary(); }
 });
 
-$("audioInput").addEventListener("change", async () => {
-  const file = $("audioInput").files?.[0];
-  if (!file) return;
+$("audioInput").addEventListener("change", () => { void importStudioAudio($("audioInput").files?.[0]); });
+microphoneButton = document.createElement("button");
+microphoneButton.type = "button";
+microphoneButton.className = "secondary-button microphone-record-button";
+microphoneButton.textContent = "تسجيل بالميكروفون";
+microphoneButton.setAttribute("aria-label", "بدء التسجيل بالميكروفون");
+const microphoneHelp = document.createElement("p");
+microphoneHelp.className = "hint microphone-record-help";
+microphoneHelp.textContent = "التسجيل يحتاج إذن الميكروفون واتصالًا آمنًا مثل HTTPS. اختيار ملف من الهاتف، بما فيه content://، يبقى عبر منتقي Android. الصيغ المدعومة يحددها المتصفح؛ AMR غير متاح قياسيًا في Chromium.";
+$("audioInput").after(microphoneButton, microphoneHelp);
+const MICROPHONE_MIME_TYPES = Object.freeze([
+  { mime: "audio/webm;codecs=opus", base: "audio/webm", extension: "webm" },
+  { mime: "audio/mp4", base: "audio/mp4", extension: "m4a" },
+  { mime: "audio/webm", base: "audio/webm", extension: "webm" },
+  { mime: "audio/ogg;codecs=opus", base: "audio/ogg", extension: "ogg" }
+]);
+function microphoneRecordingMime(RecorderClass) {
+  return MICROPHONE_MIME_TYPES.find(({ mime }) => RecorderClass.isTypeSupported(mime)) ?? null;
+}
+function addRecordedAudioToTimeline(imported, capture) {
+  if (activeSceneId !== capture.sceneId) throw new Error("تغير المشهد أثناء اعتماد التسجيل؛ أُبقي الملف في مكتبة الأصول ولم أضعه في مشهد آخر.");
+  const track = audioTracks.find(item => item.id === capture.trackId);
+  if (!track) throw new Error("مسار التسجيل المحدد لم يعد متاحًا.");
+  const startMs = Math.max(0, Math.min(capture.startMs, project.durationMs - 1));
+  const durationMs = Math.max(1, Math.min(Math.round(imported.durationMs), project.durationMs - startMs));
+  const clip = { id: `audio-clip-${Date.now()}-${++audioAssetSerial}`, asset: imported.id, name: imported.metadata.name,
+    startMs, durationMs, volume: 1,
+    ...(track.type === "dialogue" ? { language: $("dialogueLanguage").value, visemes: [] } : {}) };
+  const next = addAudioClip(audioTracks, project.durationMs, track.id, clip);
+  commitAudioTracks(next, { resume: false });
+  const committed = audioTracks.find(item => item.id === track.id)?.clips.find(item => item.id === clip.id);
+  if (!committed) throw new Error("لم يُعتمد التسجيل في Timeline.");
+  audioClipSelection = { trackId: track.id, clipId: clip.id };
+  audioTimeline.select(audioClipSelection);
+  renderAudioInspector();
+  $("audioTimelineMessage").textContent = `تم التحقق وإضافة التسجيل إلى مسار ${track.type === "music" ? "الموسيقى" : track.type === "sfx" ? "المؤثرات" : "الحوار"} عند ${formatTime(startMs)} لمدة ${formatTime(durationMs)}.`;
+}
+microphoneButton.addEventListener("click", async () => {
+  if (microphoneSession) {
+    if (microphoneSession.recorder.state === "recording") {
+      microphoneSession.stopRequestedAt = performance.now();
+      try { microphoneSession.recorder.stop(); }
+      catch (error) { $("audioTimelineMessage").textContent = `تعذر إيقاف التسجيل: ${errorText(error)}`; }
+    }
+    return;
+  }
+  if (microphoneStarting || microphoneFinalizing || activeExport || pendingAudioRequest !== null) return;
+  const track = audioTracks.find(item => item.type === $("audioTrackType").value);
+  if (!track) { $("audioTimelineMessage").textContent = "اختر مسارًا صوتيًا قبل التسجيل."; return; }
+  if (currentMs >= project.durationMs) { $("audioTimelineMessage").textContent = "حرّك المؤشر إلى داخل مدة المشهد قبل التسجيل."; return; }
+  microphoneStarting = true;
+  stopPlayback();
+  refreshMicrophoneBusyControls();
+  let stream;
+  let recorder;
+  let timer = 0;
+  try {
+    if (!isSecureContext || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder !== "function") {
+      throw new Error("الميكروفون يتطلب HTTPS أو WebView يتيح getUserMedia بصلاحية آمنة. افتح رابط HTTPS أو استورد ملفًا صوتيًا.");
+    }
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    if (activeExport || pendingAudioRequest !== null) throw new Error("انتظر انتهاء العملية الحالية قبل التسجيل.");
+    const supported = microphoneRecordingMime(MediaRecorder);
+    if (!supported) throw new Error("لا يدعم هذا المتصفح تسجيل WebM أو MP4 أو OGG. AMR غير متاح في MediaRecorder القياسي.");
+    recorder = new MediaRecorder(stream, { mimeType: supported.mime });
+    const capture = { sceneId: activeSceneId, startMs: Math.round(currentMs), trackId: track.id };
+    const session = { recorder, stream, chunks: [], bytes: 0, failed: false,
+      startedAt: 0, stopRequestedAt: null, timer: 0, capture, mime: supported };
+    microphoneSession = session;
+    recorder.ondataavailable = event => {
+      if (!event.data?.size) return;
+      session.bytes += event.data.size;
+      if (session.bytes > 20 * 1024 * 1024) {
+        session.failed = true;
+        if (recorder.state === "recording") {
+          session.stopRequestedAt = performance.now();
+          try { recorder.stop(); } catch { /* onstop still owns cleanup */ }
+        }
+        return;
+      }
+      session.chunks.push(event.data);
+    };
+    recorder.onerror = event => {
+      session.failed = true;
+      session.error = event.error;
+      if (recorder.state === "recording") {
+        session.stopRequestedAt = performance.now();
+        try { recorder.stop(); } catch { /* onstop still owns cleanup */ }
+      }
+    };
+    recorder.onstop = async () => {
+      clearTimeout(session.timer);
+      session.stopRequestedAt ??= performance.now();
+      stream.getTracks().forEach(mediaTrack => mediaTrack.stop());
+      microphoneSession = null;
+      microphoneFinalizing = true;
+      refreshMicrophoneBusyControls();
+      try {
+        if (session.failed || !session.bytes) throw session.error ?? new Error("لم ينتج التسجيل أي بيانات صوتية.");
+        const baseMime = (recorder.mimeType || supported.base).split(";")[0].toLowerCase();
+        const elapsedMs = Math.round(session.stopRequestedAt - session.startedAt);
+        if (!Number.isFinite(elapsedMs) || elapsedMs < 250) throw new Error("التسجيل قصير جدًا؛ سجّل لمدة ربع ثانية على الأقل.");
+        const file = new File(session.chunks, `recording-${Date.now()}.${supported.extension}`, { type: baseMime });
+        const imported = await importStudioAudio(file, { durationHintMs: elapsedMs, recorded: true });
+        if (!imported) throw new Error("تعذر التحقق من التسجيل؛ لم تتم إضافته إلى Timeline.");
+        addRecordedAudioToTimeline(imported, session.capture);
+      } catch (error) {
+        $("audioTimelineMessage").textContent = `تعذر اعتماد التسجيل: ${errorText(error)}`;
+      } finally {
+        microphoneFinalizing = false;
+        refreshMicrophoneBusyControls();
+      }
+    };
+    recorder.start(250);
+    session.startedAt = performance.now();
+    session.timer = setTimeout(() => {
+      if (microphoneSession === session && recorder.state === "recording") {
+        session.stopRequestedAt = performance.now();
+        try { recorder.stop(); } catch { /* onstop still owns cleanup */ }
+      }
+    }, 60000);
+    $("audioTimelineMessage").textContent = `جارٍ التسجيل بصيغة ${supported.base} (الحد 60 ثانية). أوقفه لإضافته تلقائيًا إلى Timeline.`;
+  } catch (error) {
+    stream?.getTracks().forEach(mediaTrack => mediaTrack.stop());
+    if (microphoneSession?.recorder === recorder) microphoneSession = null;
+    let message = errorText(error);
+    if (error?.name === "NotAllowedError" || error?.name === "SecurityError") message = "لم يُسمح بالميكروفون. اسمح للموقع باستخدامه وافتح Motion Studio عبر HTTPS أو WebView آمن.";
+    else if (error?.name === "NotFoundError" || error?.name === "DevicesNotFoundError") message = "لم يعثر Android على ميكروفون متاح.";
+    else if (error?.name === "NotReadableError" || error?.name === "TrackStartError") message = "الميكروفون مشغول أو رفض Android بدء الالتقاط.";
+    $("audioTimelineMessage").textContent = message;
+  } finally {
+    microphoneStarting = false;
+    refreshMicrophoneBusyControls();
+  }
+});
+window.addEventListener("pagehide", () => {
+  const session = microphoneSession;
+  if (!session) return;
+  clearTimeout(session.timer);
+  session.recorder.onstop = null;
+  try { if (session.recorder.state === "recording") session.recorder.stop(); } catch { /* Closing the page releases the encoder. */ }
+  session.stream.getTracks().forEach(track => track.stop());
+  microphoneSession = null;
+});
+async function importStudioAudio(file, { durationHintMs = null, recorded = false } = {}) {
+  if (!file) return null;
   const requestToken = audioRequest.begin();
   pendingAudioRequest = requestToken;
+  let imported = null;
   // Do not let an Add tap during metadata/storage work attach the previous file.
   activeAudioAssetId = null;
   $("audioFileName").textContent = file.name || "جارٍ تجهيز الملف الصوتي…";
   $("audioTimelineMessage").textContent = "جارٍ تجهيز الملف الصوتي؛ سيُفعّل زر الإضافة بعد اكتمال التحقق.";
-  renderAudioInspector(); refreshExportControls();
+  renderAudioInspector(); refreshMicrophoneBusyControls();
   try {
     const metadata = validateAudioFile(file);
     $("audioTimelineMessage").textContent = "جارٍ التحقق من فك ترميز الصوت وقراءة مدته…";
-    const durationMs = await readAudioDuration(file);
+    let durationMs;
+    try { durationMs = await readAudioDuration(file); }
+    catch (error) {
+      if (!recorded || !Number.isFinite(durationHintMs) || durationHintMs <= 0) throw error;
+      durationMs = Math.round(durationHintMs);
+    }
     if (!audioRequest.isCurrent(requestToken)) return;
     const shared = await registerAssetFile(file);
     if (!audioRequest.isCurrent(requestToken)) return;
@@ -2091,13 +2323,24 @@ $("audioInput").addEventListener("change", async () => {
     const previous = audioFiles.get(id);
     if (previous?.url) URL.revokeObjectURL(previous.url);
     audioFiles.set(id, { file: normalizedFile, url, durationMs });
+    rememberAudioDuration(id, durationMs);
     audioAssets = sequenceEditor.sequence.assets.filter(asset => asset.kind === "audio").map(assetMetadataToAudio);
     activeAudioAssetId = id;
     rebuildAudioPlayer({ resume: isPlaying });
     $("audioFileName").textContent = `${metadata.name} · ${(metadata.size / 1024 / 1024).toFixed(2)} MiB · ${(durationMs / 1000).toFixed(2)} ث`;
     $("audioTimelineMessage").textContent = `تم التحقق من الملف. مدته ${(durationMs / 1000).toFixed(2)} ثانية؛ أضفه إلى مسار عند المؤشر.`;
     renderAudioInspector();
-  } catch (error) { if (audioRequest.isCurrent(requestToken)) $("audioTimelineMessage").textContent = errorText(error); }
+    imported = { id, durationMs, metadata };
+  } catch (error) {
+    if (audioRequest.isCurrent(requestToken)) {
+      activeAudioAssetId = null;
+      const reason = /\.amr$/i.test(file.name) || /^audio\/amr(?:-wb)?$/i.test(file.type)
+        ? "تسجيل AMR غير مدعوم في Chromium. اختر M4A أو WAV أو WebM أو MP3."
+        : errorText(error);
+      $("audioFileName").textContent = `لم يُعتمد الملف: ${reason}`;
+      $("audioTimelineMessage").textContent = reason;
+    }
+  }
   finally {
     const isCurrentRequest = audioRequest.isCurrent(requestToken);
     if (pendingAudioRequest === requestToken) pendingAudioRequest = null;
@@ -2106,12 +2349,13 @@ $("audioInput").addEventListener("change", async () => {
       // The inspector was rendered while pendingAudioRequest was still set.
       // Re-render only after clearing it so Add is enabled for the imported asset.
       renderAudioInspector();
-      refreshExportControls();
+      refreshMicrophoneBusyControls();
     }
   }
-});
+  return imported;
+}
 $("addAudioClip").addEventListener("click", () => {
-  if (activeExport) return;
+  if (activeExport || microphoneOperationActive()) return;
   if (pendingAudioRequest !== null) {
     $("audioTimelineMessage").textContent = "انتظر اكتمال تجهيز الملف الصوتي قبل إضافته.";
     return;
@@ -2148,7 +2392,7 @@ $("addAudioClip").addEventListener("click", () => {
   } catch (error) { $("audioTimelineMessage").textContent = errorText(error); }
 });
 $("deleteAudioClip").addEventListener("click", () => {
-  if (activeExport || !audioClipSelection) return;
+  if (activeExport || microphoneOperationActive() || !audioClipSelection) return;
   try {
     audioTracks = deleteAudioClip(audioTracks, project.durationMs, audioClipSelection.trackId, audioClipSelection.clipId);
     audioClipSelection = null; rebuildAudioPlayer({ resume: true }); audioTimeline.clearSelection(); renderAudioInspector(); renderAt(currentMs);
@@ -2156,7 +2400,7 @@ $("deleteAudioClip").addEventListener("click", () => {
 });
 for (const [id, field] of [["audioClipStart", "startMs"], ["audioClipDuration", "durationMs"], ["audioClipVolume", "volume"]]) {
   $(id).addEventListener("change", () => {
-    const selected = selectedAudioClip(); if (!selected || activeExport) return;
+    const selected = selectedAudioClip(); if (!selected || activeExport || microphoneOperationActive()) return;
     try {
       const value = Number($(id).value);
       const next = editAudioClip(audioTracks, project.durationMs, selected.track.id, selected.clip.id, { [field]: value });
@@ -2166,7 +2410,7 @@ for (const [id, field] of [["audioClipStart", "startMs"], ["audioClipDuration", 
   });
 }
 $("dialogueLanguage").addEventListener("change", () => {
-  const selected = selectedAudioClip(); if (!selected || selected.track.type !== "dialogue" || activeExport) return;
+  const selected = selectedAudioClip(); if (!selected || selected.track.type !== "dialogue" || activeExport || microphoneOperationActive()) return;
   try { commitAudioTracks(editAudioClip(audioTracks, project.durationMs, selected.track.id, selected.clip.id, { language: $("dialogueLanguage").value })); }
   catch (error) { $("audioTimelineMessage").textContent = errorText(error); }
 });
