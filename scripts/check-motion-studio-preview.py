@@ -785,7 +785,22 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
                                 "-of", "json", str(output)
                             ], text=True, timeout=60)).get("packets", [])
                             audio_timeline = measure_media_timeline(packets, ("pts_time", "dts_time"), ("duration_time",))
-                            expected_audio_duration = min(seconds, 3)
+                            # The integrated recorder now carries silence after the
+                            # three-second source ends, keeping its audio track live.
+                            expected_audio_duration = seconds
+                            if seconds > 3:
+                                import array
+                                tail = subprocess.check_output([
+                                    "ffmpeg", "-v", "error", "-ss", "3.25", "-i", str(output),
+                                    "-map", "0:a:0", "-ac", "1", "-ar", "16000",
+                                    "-f", "f32le", "-"
+                                ], timeout=60)
+                                samples = array.array("f")
+                                samples.frombytes(tail)
+                                assert len(samples) >= int((seconds - 3.5) * 16000), (
+                                    "missing silent audio tail", export_format, seconds, len(samples))
+                                rms = (sum(value * value for value in samples) / len(samples)) ** 0.5
+                                assert rms < 0.001, ("unexpected sound in silent tail", export_format, seconds, rms)
                             envelope = max(video_timeline["end"], audio_timeline["end"]) - min(
                                 video_timeline["start"], audio_timeline["start"])
                             assert abs(audio_timeline["duration"] - expected_audio_duration) <= duration_tolerance_s and \
