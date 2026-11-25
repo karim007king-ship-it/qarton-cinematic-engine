@@ -141,6 +141,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-audio-import-") as directory:
         assert restored_signal["rms"] > 0.015 and abs(restored_signal["frequency"] - 660) < 35, restored_signal
 
         page.locator('nav.bottom-dock [data-editor-section="more"]').click()
+        page.locator(".export-options > summary").click()
         page.locator("#integratedFormat").select_option("webm")
         page.locator("#integratedAudio").select_option("mix")
         page.locator("#integratedQuality").select_option("480p")
