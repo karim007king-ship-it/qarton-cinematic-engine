@@ -454,3 +454,17 @@ body, .studio, .studio-preview, .tool-drawer, .tool-panel { color: #f2eee5; colo
   .tool-drawer { grid-column: 2; grid-row: 2; }
   .bottom-dock { grid-column: 1 / -1; grid-row: 3; }
 }
+
+
+/* Keep the dock and active panel visible while the Android keyboard reduces viewport height. */
+@media (max-width: 760px) and (max-height: 500px) {
+  .studio { grid-template-rows: auto minmax(120px, .95fr) minmax(80px, .75fr) auto; gap: 3px; padding: 2px; }
+  .studio-preview { min-height: 120px; }
+  .tool-drawer { min-height: 80px; }
+  #previewSceneStrip { min-height: 42px; }
+  .bottom-dock { min-height: 48px; }
+  .bottom-dock button { min-height: 44px; }
+  .preview-heading { min-height: 40px; }
+  .preview-transport-host .transport,
+  .preview-transport-host .transport button { min-height: 42px; }
+}
