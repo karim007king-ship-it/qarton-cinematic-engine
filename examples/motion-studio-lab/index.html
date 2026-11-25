@@ -179,15 +179,23 @@
         </section>
         <section id="audioToolsSection" class="timeline-card audio-timeline-card" aria-labelledby="audioTimelineHeading">
           <div class="timeline-heading"><div><span class="eyebrow">Ø§Ù„ØµÙˆØª ÙˆØ§Ù„Ø­ÙˆØ§Ø±</span><h2 id="audioTimelineHeading">Ù…Ø³Ø§Ø±Ø§Øª Ø§Ù„ØµÙˆØª</h2></div><span id="audioSelection" class="timeline-selection">Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ù…Ù‚Ø·Ø¹ Ù…Ø­Ø¯Ø¯</span></div>
-          <label class="file-picker audio-file-picker" for="audioInput"><span>ï¼‹</span><span><strong>Ø§Ø³ØªÙŠØ±Ø§Ø¯ ØµÙˆØª Ù…Ù† Ø§Ù„Ù‡Ø§ØªÙ</strong><small id="audioFileName">MP3 Â· M4A Â· AAC Â· WAV Â· OGG Â· WebM Â· Ø­ØªÙ‰ 20 MiB</small></span></label>
+          <div class="audio-quick-actions" aria-label="Ø¥Ø¬Ø±Ø§Ø¡Ø§Øª Ø§Ù„ØµÙˆØª Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠØ©">
+            <div id="microphoneButtonHost" class="microphone-button-host"></div>
+            <button id="quickImportAudio" type="button" class="secondary-button">Ø§Ø³ØªÙˆØ±Ø¯ ØµÙˆØªÙ‹Ø§</button>
+            <button id="quickAddMusic" type="button" class="secondary-button">Ø£Ø¶Ù Ù…ÙˆØ³ÙŠÙ‚Ù‰</button>
+          </div>
+          <div id="microphoneRecordingStatus" class="microphone-recording-status" role="status" aria-live="polite" hidden>
+            <span id="microphoneElapsed">00:00</span><meter id="microphoneLevel" min="0" max="1" value="0" aria-label="Ù‚ÙˆØ© ØµÙˆØª Ø§Ù„Ù…ÙŠÙƒØ±ÙˆÙÙˆÙ†"></meter><span>Ù…Ø³ØªÙˆÙ‰ Ø§Ù„ØµÙˆØª</span>
+          </div>
+          <details class="advanced-audio-drawer">
+            <summary>Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ø§Ù„ØµÙˆØª Ø§Ù„Ù…ØªÙ‚Ø¯Ù…Ø©</summary>
+            <label class="file-picker audio-file-picker" for="audioInput"><span>ï¼‹</span><span><strong>Ø§Ø³ØªÙŠØ±Ø§Ø¯ Ù„Ù„Ù…ÙƒØªØ¨Ø© / Ø§Ù„Ø¥Ø¶Ø§ÙØ© Ø§Ù„ÙŠØ¯ÙˆÙŠØ©</strong><small id="audioFileName">MP3 Â· M4A Â· AAC Â· WAV Â· OGG Â· WebM Â· Ø­ØªÙ‰ 20 MiB</small></span></label>
           <input id="audioInput" class="sr-only" type="file" accept="audio/mpeg,audio/mp4,audio/aac,audio/wav,audio/x-wav,audio/ogg,audio/webm,.mp3,.m4a,.aac,.wav,.ogg,.oga,.webm">
           <div class="audio-track-actions">
             <label>Ø§Ù„Ù…Ø³Ø§Ø± <select id="audioTrackType"><option value="dialogue">Ø­ÙˆØ§Ø±</option><option value="music">Ù…ÙˆØ³ÙŠÙ‚Ù‰</option><option value="sfx">Ù…Ø¤Ø«Ø±Ø§Øª</option></select></label>
             <button id="addAudioClip" class="secondary-button" type="button" disabled>ï¼‹ Ø£Ø¶Ù Ø¹Ù†Ø¯ Ø§Ù„Ù…Ø¤Ø´Ø±</button>
             <button id="deleteAudioClip" class="secondary-button" type="button" disabled>Ø­Ø°Ù Ø§Ù„Ù…Ù‚Ø·Ø¹</button>
           </div>
-          <div id="audioTimelineRuler" class="timeline-ruler" aria-hidden="true"></div>
-          <div id="audioTracks" class="audio-tracks" aria-label="Ù…Ø³Ø§Ø±Ø§Øª Ø§Ù„ØµÙˆØª ÙˆØ§Ù„Ø­ÙˆØ§Ø±"></div>
           <div class="keyframe-editor audio-clip-editor">
             <h3>Ø§Ù„Ù…Ù‚Ø·Ø¹ Ø§Ù„Ù…Ø­Ø¯Ø¯</h3>
             <label>Ø§Ù„Ø¨Ø¯Ø§ÙŠØ© (ms) <input id="audioClipStart" type="number" min="0" step="100" inputmode="numeric" disabled></label>
@@ -204,6 +212,10 @@
             <button id="addViseme" class="secondary-button" type="button" disabled>ï¼‹ Viseme Ø¹Ù†Ø¯ Ø§Ù„Ù…Ø¤Ø´Ø±</button>
             <div id="visemeMarkers" class="viseme-markers" aria-label="Ù…ÙØ§ØªÙŠØ­ Viseme"></div>
           </div>
+          </details>
+          <div id="audioTimelineRuler" class="timeline-ruler" aria-hidden="true"></div>
+          <div id="audioTracks" class="audio-tracks" aria-label="Ù…Ø³Ø§Ø±Ø§Øª Ø§Ù„ØµÙˆØª ÙˆØ§Ù„Ø­ÙˆØ§Ø±"></div>
+          <div class="audio-selected-actions"><button id="playSelectedAudio" type="button" class="secondary-button" disabled>â–¶ ØªØ´ØºÙŠÙ„ Ø§Ù„Ù…Ø­Ø¯Ø¯</button><button id="deleteSelectedAudio" type="button" class="secondary-button" disabled>Ø­Ø°Ù Ø§Ù„Ù…Ø­Ø¯Ø¯</button></div>
           <p id="audioTimelineMessage" class="timeline-message" role="status" aria-live="polite">Ø§Ù„ØµÙˆØª ÙˆØ§Ù„Ø­Ø±ÙƒØ© ÙŠØ³ØªØ®Ø¯Ù…Ø§Ù† Ø³Ø§Ø¹Ø© Ø§Ù„Ù…Ø´Ù‡Ø¯ Ù†ÙØ³Ù‡Ø§. Ø¯Ù‚Ø© Ø§Ù„Ø¬Ø¯ÙˆÙ„Ø© ØªØ¹ØªÙ…Ø¯ Ø¹Ù„Ù‰ Ø§Ù„Ù…ØªØµÙØ­ ÙˆØ§Ù„Ø¬Ù‡Ø§Ø².</p>
         </section>
         <section id="effectsToolsSection" class="timeline-card visual-effects-card" aria-labelledby="visualEffectsHeading">
@@ -349,33 +361,4 @@
           <p id="integratedError" class="error-message" role="alert" hidden></p>
           <a id="integratedDownload" class="download-link" hidden>Ø­ÙØ¸ Ø§Ù„ÙÙŠØ¯ÙŠÙˆ Ø§Ù„Ù…ØªÙƒØ§Ù…Ù„ Ø¹Ù„Ù‰ Ø§Ù„Ù‡Ø§ØªÙ</a>
           <video id="integratedVideo" class="export-video" controls playsinline hidden></video>
-          <p id="integratedMetadata" class="export-metadata">Ù„Ù… ÙŠÙÙ†Ø´Ø£ ØªØµØ¯ÙŠØ± Ù…ØªÙƒØ§Ù…Ù„ Ø¨Ø¹Ø¯.</p>
-
-          <p class="hint">Ø§Ù„Ø­Ø¯ÙˆØ¯ Ø§Ù„Ù…Ø³Ø¨Ù‚Ø©: 24 MiB Ù„Ù„Ù…Ù„Ù Ùˆ32 MiB Ù„Ù„ØµÙˆØª Ø§Ù„Ù…ÙÙƒÙˆÙƒ. Ù‡Ø°Ù‡ Ù…Ø¹Ø§ÙŠÙ†Ø© Ù…ØªØµÙØ­ Android Ù…Ø³ØªÙ‚Ù„Ø©Ø› Ù„Ù… ØªØ«Ø¨Øª Ø¨Ø¹Ø¯ ÙØ¹Ù„ÙŠÙ‹Ø§ Ø¹Ù„Ù‰ Ø§Ù„Ù‡Ø§ØªÙ.</p>
-        </section>
-      </div>
-    </section>
-    <section class="tool-drawer" aria-label="Ø£Ø¯ÙˆØ§Øª Ø§Ù„ØªØ­Ø±ÙŠØ±">
-      <section id="toolPanel-scenes" class="tool-panel" data-tool-panel="scenes" hidden aria-label="Ø£Ø¯ÙˆØ§Øª Ø§Ù„Ù…Ø´Ø§Ù‡Ø¯"></section>
-      <section id="toolPanel-motion" class="tool-panel" data-tool-panel="motion" aria-label="Ø£Ø¯ÙˆØ§Øª Ø§Ù„Ø­Ø±ÙƒØ©"></section>
-      <section id="toolPanel-audio" class="tool-panel" data-tool-panel="audio" hidden aria-label="Ø£Ø¯ÙˆØ§Øª Ø§Ù„ØµÙˆØª"></section>
-      <section id="toolPanel-effects" class="tool-panel" data-tool-panel="effects" hidden aria-label="Ø£Ø¯ÙˆØ§Øª Ø§Ù„Ù…Ø¤Ø«Ø±Ø§Øª"></section>
-      <section id="toolPanel-more" class="tool-panel" data-tool-panel="more" hidden aria-label="Ø§Ù„Ù…Ø²ÙŠØ¯ Ù…Ù† Ø§Ù„Ø£Ø¯ÙˆØ§Øª"></section>
-    </section>
-    <nav class="bottom-dock" aria-label="Ø£Ù‚Ø³Ø§Ù… Ø§Ù„ØªØ­Ø±ÙŠØ±">
-      <button type="button" data-editor-section="scenes" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="8" height="7" rx="1"/><rect x="13" y="4" width="8" height="7" rx="1"/><rect x="3" y="13" width="8" height="7" rx="1"/><rect x="13" y="13" width="8" height="7" rx="1"/></svg><span>Ø§Ù„Ù…Ø´Ø§Ù‡Ø¯</span></button>
-      <button type="button" data-editor-section="motion" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17 17 4l3 3L7 20l-3-3Zm10-10 3 3M5 8V4m-2 2h4m10 12v-4m-2 2h4"/></svg><span>Ø§Ù„Ø­Ø±ÙƒØ©</span></button>
-      <button type="button" data-editor-section="audio" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4m4-8v12m4-15v18m4-14v10m4-7v4"/></svg><span>Ø§Ù„ØµÙˆØª</span></button>
-      <button type="button" data-editor-section="effects" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2Zm7 13 .8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z"/></svg><span>Ø§Ù„Ù…Ø¤Ø«Ø±Ø§Øª</span></button>
-      <button type="button" data-editor-section="more" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg><span>Ø§Ù„Ù…Ø²ÙŠØ¯</span></button>
-    </nav>
-    <details id="professionalMotionControls" class="advanced-motion-drawer">
-      <summary>Ø§Ù„Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ø§Ù„Ø§Ø­ØªØ±Ø§ÙÙŠØ© Ù„Ù„Ø­Ø±ÙƒØ©</summary>
-      <div id="advancedMotionContent" class="advanced-motion-content"></div>
-    </details>
-    <p id="errorMessage" class="error-message" role="alert" hidden></p>
-    <footer class="studio-footer">Ù†Ø³Ø®Ø© ØªØ¬Ø±ÙŠØ¨ÙŠØ© Â· ØªØªÙ… Ø§Ù„Ù…Ø¹Ø§Ù„Ø¬Ø© Ø¹Ù„Ù‰ Ø§Ù„Ø¬Ù‡Ø§Ø²</footer>
-  </main>
-  <script type="module" src="./studio.js?v=l11f2-android-fix-01"></script>
-</body>
-</html>
+          <p id="integratedMetadata" class="export-metadata">Ù„Ù… ÙŠÙÙ†Ø´Ø£ ØªØµØ¯ÙŠØ± Ù…ØªÙƒØ§Ù…Ù„ Ø¨Ø¹Ø¯.<ïM6ÒÚ$z{-®éÜj×gVæ7F–öâ‚&Fö7VÖVçBçVW'•6VÆV7F÷$ÆÂ‚r6VF–õG&6·2æVF–òÖ6Æ—r’æÆVæwF‚ÓÓÒ"ÂF–ÖV÷WCÓ3¢76W'BvRæÆö6F÷"‚"6VF–õ6VÆV7F–öâ"’æ–ææW%÷FW‡B‚’ç7F'G7v—F‚‚-ŠÝ˜Š}‹"’ÂvRæÆö6F÷"‚"6VF–õ6VÆV7F–öâ"’æ–ææW%÷FW‡B‚¢vRæÆö6F÷"‚"7V–6´FD×W6–2"’æ6Æ–6²‚¢vRæÆö6F÷"‚"6VF–ô–çWB"’ç6WEö–çWEöf–ÆW2‡7G"†×2’¢vRçv—Eöf÷%ögVæ7F–öâ‚&Fö7VÖVçBçVW'•6VÆV7F÷$ÆÂ‚r6VF–õG&6·2æVF–òÖ6Æ—r’æÆVæwF‚ÓÓÒ""ÂF–ÖV÷WCÓ3¢76W'BvRæÆö6F÷"‚"6VF–õ6VÆV7F–öâ"’æ–ææW%÷FW‡B‚’ç7F'G7v—F‚‚-˜]˜‹=˜­˜-˜’"’ÂvRæÆö6F÷"‚"6VF–õ6VÆV7F–öâ"’æ–ææW%÷FW‡B‚¢vRæÆö6F÷"‚"6FVÆWFU6VÆV7FVDVF–ò"’æ6Æ–6²‚¢vRçv—Eöf÷%ögVæ7F–öâ‚&Fö7VÖVçBçVW'•6VÆV7F÷$ÆÂ‚r6VF–õG&6·2æVF–òÖ6Æ—r’æÆVæwF‚ÓÓÒ"¢&–çB‚%V–6²VF–ò7F–öç3¢F–ÆöwVR–×÷'BÂ×W6–2–×÷'BÂ6VÆV7F–öâÂæBFVÆWFR76VB"¢vRæÆö6F÷"‚"æGfæ6VBÖVF–òÖG&vW"â7VÖÖ'’"’æ6Æ–6²‚¢7F'Eöf–VÆBÒvRæÆö6F÷"‚"6VF–ô6Æ—7F'B"¢7F'Eöf–VÆBæf–ÆÂ‚##"¢7F'Eöf–VÆBç&W72‚$VçFW""¢76W'BvRæWfÇVFR‚&Fö7VÖVçBæ7F—fTVÆVÖVçCòæ–B"’ÓÒ&VF–ô6Æ—7F'B"Â&VF—F–ær6†÷VÆB¶VW¶W–&ö&Bfö7W2öâF†R7F—fRF–Ö–ærf–VÆB  ¢F÷V6…÷F‡vRÂvRæÆö6F÷"‚"7Æ•W6T'WGFöâ"’¢vRçv—Eöf÷%ögVæ7F–öâ‚'v–æF÷råõ÷'Föå&Wf–Wufö–6W2ç6öÖR‡fö–6RÓâfö–6RçW6VBbbfö–6Ræ7W'&VçEF–ÖRâã"’"ÂF–ÖV÷WCÓ¢&Wf–Wu÷6–væÂÒvRæWfÇVFR‚"""‚’Óâ°¢6öç7Bfö–6RÒv–æF÷råõ÷'Föå&Wf–Wufö–6W2æB‚Ó“°¢6öç7B6–væÂÒfö–6Råõ÷'FöäÖV7W&Sòâ‚“°¢fö–6RçW6R‚“°¢&WGW&â²ââç6–væÂÂF–ÖS¢fö–6Ræ7W'&VçEF–ÖRÂGW&F–öã¢fö–6RæGW&F–öâÓ°¢Ò"""¢76W'B&Wf–Wu÷6–væÅ²'&×2%ÒâãRæB'2‡&Wf–Wu÷6–væÅ²&g&WVVæ7’%ÒÒcc’Â3RÂ&Wf–Wu÷6–væÀ¢76W'B'2‡&Wf–Wu÷6–væÅ²&GW&F–öâ%ÒÒ6÷W&6UöGW&F–öâ’ÂãRÂ&Wf–Wu÷6–væÀ¢&–çB†b$ÆöærÕ2&Wf–Wr6–væÃ¢GW&F–öã×·&Wf–Wu÷6–væÅ²vGW&F–öâuÓ¢ã6g×2Â$Õ3×·&Wf–Wu÷6–væÅ²w&×2uÓ¢ãFgÒÂFöæS×·&Wf–Wu÷6–væÅ²vg&WVVæ7’uÓ¢ãgÔ‡¢" ¢v—F‚vRæW‡V7EöF÷væÆöB‡F–ÖV÷WCÓS’2&ö¦V7EöF÷væÆöC ¢vRæÆö6F÷"‚"76fU&ö¦V7D'WGFöâ"’æWfÇVFR‚&VÂÓâVÂæ6Æ–6²‚’"¢&ö¦V7E÷F‚ÒFV×ò''FöâÖVF–ò×&ö¦V7Bæ§6öâ ¢&ö¦V7EöF÷væÆöBçfÇVRç6fUö2‡&ö¦V7E÷F‚¢6fVBÒ§6öâæÆöG2‡&ö¦V7E÷F‚ç&VE÷FW‡B‚’¢6fVE÷G&6·2Ò6fVBævWB‚&VF–õG&6·2"ÂµÒ¢76W'B7VÒ†ÆVâ‡G&6µ²&6Æ—2%Ò’f÷"G&6²–â6fVE÷G&6·2’ÓÒÂ6fV@¢76W'B6fVE÷G&6·5³Õ²&6Æ—2%Õ³Õ²&GW&F–öä×2%ÒÓÒ3Â6fVE÷G&6·0¢vRç&VÆöB‚¢vRçv—Eöf÷%ögVæ7F–öâ‚&Fö7VÖVçBçVW'•6VÆV7F÷$ÆÂ‚r6VF–õG&6·2æVF–òÖ6Æ—r’æÆVæwF‚ÓÓÒ"ÂF–ÖV÷WCÓ#¢76W'B-Š}‹=Š­˜ý‹˜­Šò"–âvRæÆö6F÷"‚"676WDÆ–'&'”ÖW76vR"’æ–ææW%÷FW‡B‚’ÂvRæÆö6F÷"‚"676WDÆ–'&'”ÖW76vR"’æ–ææW%÷FW‡B‚¢vRæÆö6F÷"‚væbæ&÷GFöÒÖFö6²¶FFÖVF—F÷"×6V7F–öãÒ&VF–ò%Òr’æ6Æ–6²‚¢F÷V6…÷F‡vRÂvRæÆö6F÷"‚"6VF–õG&6·2æVF–òÖ6Æ—"’¢76W'BvRæÆö6F÷"‚"6VF–ô6Æ—GW&F–öâ"’æ–çWE÷fÇVR‚’ÓÒ#3  ¢F÷V6…÷F‡vRÂvRæÆö6F÷"‚"7Æ•W6T'WGFöâ"’¢vRçv—Eöf÷%ögVæ7F–öâ‚'v–æF÷råõ÷'Föå&Wf–Wufö–6W2ç6öÖR‡fö–6RÓâfö–6RçW6VBbbfö–6Ræ7W'&VçEF–ÖRâã"’"ÂF–ÖV÷WCÓ¢&W7F÷&VE÷6–væÂÒvRæWfÇVFR‚"""‚’Óâ°¢6öç7Bfö–6RÒv–æF÷råõ÷'Föå&Wf–Wufö–6W2æf–ÇFW"†—FVÒÓâ—FVÒçW6VB’æB‚Ó“°¢6öç7B6–væÂÒfö–6Råõ÷'FöäÖV7W&Sòâ‚“²fö–6RçW6R‚“²&WGW&â6–væÃ°¢Ò"""¢76W'B&W7F÷&VE÷6–væÅ²'&×2%ÒâãRæB'2‡&W7F÷&VE÷6–væÅ²&g&WVVæ7’%ÒÒcc’Â3RÂ&W7F÷&VE÷6–væÀ ¢vRæÆö6F÷"‚væbæ&÷GFöÒÖFö6²¶FFÖVF—F÷"×6V7F–öãÒ&Ö÷&R%Òr’æ6Æ–6²‚¢vRæÆö6F÷"‚"æW‡÷'BÖ÷F–öç2â7VÖÖ'’"’æ6Æ–6²‚¢vRæÆö6F÷"‚"6–çFVw&FVDf÷&ÖB"’ç6VÆV7Eö÷F–öâ‚'vV&Ò"¢vRæÆö6F÷"‚"6–çFVw&FVDVF–ò"’ç6VÆV7Eö÷F–öâ‚&Ö—‚"¢vRæÆö6F÷"‚"6–çFVw&FVEVÆ—G’"’ç6VÆV7Eö÷F–öâ‚#Cƒ"¢vRæÆö6F÷"‚"6–çFVw&FVE&ö&T'WGFöâ"’æ6Æ–6²‚¢vRçv—Eöf÷%ögVæ7F–öâ‚&Fö7VÖVçBçVW'•6VÆV7F÷"‚r6–çFVw&FVE7FGW2r’çFW‡D6öçFVçBæ–æ6ÇVFW2‚}Š­˜RŠ}˜MŠ­ŠÝ˜-˜"˜‹˜M˜­˜½Šrr’ÇÂFö7VÖVçBçVW'•6VÆV7F÷"‚r6–çFVw&FVDW'&÷"r’æ†–FFVâ"ÂF–ÖV÷WCÓ3¢76W'B-Š­˜RŠ}˜MŠ­ŠÝ˜-˜"˜‹˜M˜­˜½Šr"–âvRæÆö6F÷"‚"6–çFVw&FVE7FGW2"’æ–ææW%÷FW‡B‚’ÂvRæÆö6F÷"‚"6–çFVw&FVDW'&÷""’æ–ææW%÷FW‡B‚¢vRæÆö6F÷"‚"6–çFVw&FVDW‡÷'D'WGFöâ"’æ6Æ–6²‚¢vRçv—Eöf÷%ögVæ7F–öâ‚&Fö7VÖVçBçVW'•6VÆV7F÷"‚r6–çFVw&FVE7FGW2r’çFW‡D6öçFVçBæ–æ6ÇVFW2‚}Š}˜=Š­˜]˜BŠ}˜MŠ­‹]Šý˜­‹Š}˜M˜]Š­˜=Š}˜]˜Br’ÇÂFö7VÖVçBçVW'•6VÆV7F÷"‚r6–çFVw&FVDW'&÷"r’æ†–FFVâ"ÂF–ÖV÷WCÓCS¢76W'B-Š}˜=Š­˜]˜BŠ}˜MŠ­‹]Šý˜­‹Š}˜M˜]Š­˜=Š}˜]˜B"–âvRæÆö6F÷"‚"6–çFVw&FVE7FGW2"’æ–ææW%÷FW‡B‚’ÂvRæÆö6F÷"‚"6–çFVw&FVDW'&÷""’æ–ææW%÷FW‡B‚¢v—F‚vRæW‡V7EöF÷væÆöB‡F–ÖV÷WCÓS’2W‡÷'EöF÷væÆöC ¢vRæÆö6F÷"‚"6–çFVw&FVDF÷væÆöB"’æ6Æ–6²‚¢÷WGWBÒFV×ò&ÆöærÖ×2×F‡&VR×6V6öæB×66VæRçvV&Ò ¢W‡÷'EöF÷væÆöBçfÇVRç6fUö2†÷WGWB¢7G&V×2Ò§6öâæÆöG2‡7V'&ö6W72æ6†V6µö÷WGWB…²&fg&ö&R"Â"×b"Â&W'&÷""Â"×6†÷u÷7G&V×2"Â"×6†÷uöf÷&ÖB"Â"Ööb"Â&§6öâ"Â7G"†÷WGWB•ÒÂFW‡CÕG'VRÂF–ÖV÷WCÓc’¢76W'B7VÒ‡7G&VÕ²&6öFV5÷G—R%ÒÓÒ'f–FVò"f÷"7G&VÒ–â7G&V×5²'7G&V×2%Ò’ÓÒÂ7G&V×0¢76W'B7VÒ‡7G&VÕ²&6öFV5÷G—R%ÒÓÒ&VF–ò"f÷"7G&VÒ–â7G&V×5²'7G&V×2%Ò’ÓÒÂ7G&V×0¢&rÒ7V'&ö6W72æ6†V6µö÷WGWB…²&ff×Vr"Â"×b"Â&W'&÷""Â"Ö’"Â7G"†÷WGWB’Â"×fâ"Â"Ö2"Â#"Â"Ö""Â#Cƒ"Â"Öb"Â&c3&ÆR"Â"Ò%ÒÂF–ÖV÷WCÓc¢FV6öFVBÒ'&’æ'&’‚&b"“²FV6öFVBæg&öÖ'—FW2‡&r¢FV6öFVEöGW&F–öâÒÆVâ†FV6öFVB’òCƒ ¢76W'B'2†FV6öFVEöGW&F–öâÒ2’ÂãRÂ²&FV6öFVDVF–ôGW&F–öâ#¢FV6öFVEöGW&F–öâÂ&f÷&ÖB#¢7G&V×2ævWB‚&f÷&ÖB"—Ð¢6–væÂÒFV6öFVE¶–çBƒãR¢Cƒ“¦–çBƒãR¢Cƒ•Ð¢&×2ÒÖF‚ç7'B‡7VÒ‡fÇVR¢fÇVRf÷"fÇVR–â6–væÂ’òÆVâ‡6–væÂ’¢FöæRÒFöÖ–æçE÷FöæR‡6–væÂÂCƒ¢76W'B&×2âãRæBFöæRÓÒccÂ²'&×2#¢&×2Â'FöæR#¢FöæRÂ'6×ÆW2#¢ÆVâ‡6–væÂ—Ð¢&–çB†b$ÆöærÕ2W‡÷'FVB6–væÃ¢SãS'26÷W&6R–â7266VæRÂFV6öFVBVF–ó×¶FV6öFVEöGW&F–öã¢ã6g×2Â$Õ3×·&×3¢ãFgÒÂFöæS×·FöæWÔ‡¢"¢76W'Bæ÷BvUöW'&÷'2ÂvUöW'&÷'0¢vRç67&VVç6†÷B‡Fƒ×7G"†'F–f7G2ò&ÆöærÖ×2×&V6÷fW&VB×&ö¦V7Bçær"’ÂgVÆÅ÷vSÕG'VR¢'&÷w6W"æ6Æ÷6R‚

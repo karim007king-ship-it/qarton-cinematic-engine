@@ -98,8 +98,8 @@ jobs:
             PREVIEW_SLUG='motion-studio-l11h4-audio-recording-fix-android-preview'
             PREVIEW_LABEL='L11-H4'
           elif [ "$BRANCH_NAME" = 'feature/audio-core-fix-a-final' ]; then
-            PREVIEW_SLUG='motion-studio-audio-core-fix-a-android-preview'
-            PREVIEW_LABEL='L11-H4'
+            PREVIEW_SLUG='motion-studio-l12-a-android-preview'
+            PREVIEW_LABEL='L12-A'
           else
             PREVIEW_SLUG='motion-studio-l5-android-preview'
             PREVIEW_LABEL='L5'
