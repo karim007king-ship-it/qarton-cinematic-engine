@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>QARTON — تشخيص الصوت</title>
+<style>
+*{box-sizing:border-box}body{background:#10141c;color:#f4f2eb;font:16px system-ui;margin:0 auto;padding:16px;max-width:800px}h1{color:#e7b95c;font-size:1.5rem}section{background:#1c2430;padding:14px;margin:12px 0;border-radius:12px}button,input{min-height:44px;max-width:100%;font:inherit;margin:4px;padding:8px}button{background:#e7b95c;color:#151515;border:0;border-radius:8px}button:disabled{opacity:.45}pre{direction:ltr;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;color:#d5e2f3}audio{width:100%}label{display:block}p{line-height:1.6}
+</style>
+<h1>QARTON | مختبر تشخيص الصوت</h1>
+<p>اختبار مستقل لا يغير المشروع. افتح من نفس أصل Motion Studio لقراءة المشاريع المحفوظة. لا تُرسل أي بيانات.</p>
+<section><h2>البيئة والميكروفون</h2><button id="refresh">فحص البيئة</button><pre id="env"></pre><button id="mic">تسجيل ميكروفون (5 ث)</button><button id="tone">تسجيل نغمة اصطناعية (5 ث)</button><p>انطق جملة أثناء التسجيل. النغمة تمر عبر نفس MediaRecorder دون الميكروفون.</p></section>
+<section><h2>نتيجة التسجيل / ملف الهاتف</h2><label>اختيار صوت أو فيديو للتحليل <input id="file" type="file" accept="audio/*,video/*,.amr,.m4a,.webm,.mp4"></label><pre id="result">لم يبدأ الاختبار</pre><audio id="player" controls preload="metadata"></audio><button id="play" disabled>اختبار التشغيل</button><a id="download" hidden download>تنزيل العينة</a></section>
+<section><h2>Timeline والأصول المحفوظة (قراءة فقط)</h2><button id="project">فحص آخر مشروع محفوظ</button><pre id="snapshot">لم يتم الفحص</pre><label>تحليل أصل محفوظ <select id="assets"></select></label><button id="inspect" disabled>تحليل الأصل</button></section>
+<section><h2>سجل الأخطاء والنتائج</h2><button id="report">تنزيل تقرير JSON (دون الصوت)</button><pre id="log"></pre></section>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const formats=['audio/webm;codecs=opus','audio/mp4','audio/webm','audio/ogg;codecs=opus'];
+const state={environment:{},runs:[],project:null,events:[]};
+let busy=false, url=null, selectedBlob=null, projectAssets=[], projectId=null, activeStream=null, cancelled=false;
+const describe=e=>({name:e?.name||'Error',message:e?.message||String(e)});
+function event(stage,detail){state.events.push({stage,detail,time:new Date().toISOString()});$('log').textContent=JSON.stringify(state.events,null,2);}
+function show(id,value){$(id).textContent=JSON.stringify(value,null,2);}
+function setBusy(value){busy=value;for(const id of ['mic','tone','file','project','refresh','play','inspect']) $(id).disabled=value; if(!value){$('play').disabled=!selectedBlob;$('inspect').disabled=!projectAssets.length;}}
+function timeout(p,ms,label){let t;return Promise.race([p,new Promise((_,reject)=>{t=setTimeout(()=>reject(new Error(label+' timeout')),ms);})]).finally(()=>clearTimeout(t));}
+async function environment(){
+ let permission='unknown';try{permission=(await navigator.permissions.query({name:'microphone'})).state;}catch(e){permission='unavailable: '+e.name;}
+ const E={protocol:location.protocol,origin:location.origin,secureContext:isSecureContext,userAgent:navigator.userAgent,getUserMedia:!!navigator.mediaDevices?.getUserMedia,microphonePermission:permission,mediaRecorder:typeof MediaRecorder==='function',audioContext:!!(window.AudioContext||window.webkitAudioContext),indexedDB:!!window.indexedDB,formats:{}};
+ for(const f of formats) E.formats[f]=!!window.MediaRecorder?.isTypeSupported?.(f);
+ state.environment=E;show('env',E);return E;
+}
+function metrics(buffer){let sum=0,peak=0,count=0;for(let c=0;c<buffer.numberOfChannels;c++){const samples=buffer.getChannelData(c);for(const v of samples){sum+=v*v;peak=Math.max(peak,Math.abs(v));count++;}}return {rms:count?Math.sqrt(sum/count):0,peak,samples:count,channels:buffer.numberOfChannels,sampleRate:buffer.sampleRate};}
+function publish(run){show('result',run);}
+function attach(blob,name){const player=$('player');player.pause();player.removeAttribute('src');player.load();if(url)URL.revokeObjectURL(url);url=URL.createObjectURL(blob);selectedBlob=blob;player.src=url;$('download').href=url;$('download').download=name;$('download').hidden=false;}
+async function analyze(blob,run,name,context){
+ run.bytes=blob.size;run.blobMime=blob.type||'(empty)';attach(blob,name);publish(run);
+ try{if(!blob.size||blob.size>24*1024*1024)throw new Error('Empty or exceeds diagnostic 24 MiB limit');
+ const C=window.AudioContext||window.webkitAudioContext; if(!C)throw new Error('AudioContext unavailable');
+ const ctx=context||new C();try{run.decodeContextState=ctx.state;const buffer=await timeout(ctx.decodeAudioData(await blob.arrayBuffer()),15000,'decode');run.decodedDurationMs=Math.round(buffer.duration*1000);Object.assign(run,metrics(buffer));run.signal=run.peak<0.001?'near-silent':'present';}finally{if(!context)await ctx.close();}
+ }catch(e){run.decodeError=describe(e);event('decode',run.decodeError);}
+ publish(run);
+}
+async function record(source){
+ if(busy)return;setBusy(true);cancelled=false;selectedBlob=null;const run={source,microphone:'not requested',status:'starting'};state.runs.push(run);publish(run);
+ let ctx,stream,oscillator,rec;
+ try{
+ const C=window.AudioContext||window.webkitAudioContext;if(!C)throw new Error('AudioContext unavailable');
+ ctx=new C();await timeout(ctx.resume(),5000,'AudioContext resume');run.audioContext=ctx.state;
+ if(source==='mic'){
+ if(!isSecureContext||!navigator.mediaDevices?.getUserMedia)throw new Error('Secure getUserMedia unavailable');
+ run.microphone='requesting';publish(run);
+ let expired=false;const request=navigator.mediaDevices.getUserMedia({audio:true}).then(s=>{if(expired||cancelled){s.getTracks().forEach(t=>t.stop());throw new Error('Capture request expired');}return s;});
+ try{stream=await timeout(request,30000,'microphone permission');}catch(e){expired=true;throw e;}
+ run.microphone='granted';const track=stream.getAudioTracks()[0];run.track={state:track?.readyState,muted:track?.muted,enabled:track?.enabled,settings:track?.getSettings?.()};if(run.track.settings){delete run.track.settings.deviceId;delete run.track.settings.groupId;}
+ }else{const dest=ctx.createMediaStreamDestination();oscillator=ctx.createOscillator();oscillator.frequency.value=660;const gain=ctx.createGain();gain.gain.value=.25;oscillator.connect(gain).connect(dest);stream=dest.stream;oscillator.start();}
+ activeStream=stream;
+ const mime=formats.find(f=>window.MediaRecorder?.isTypeSupported?.(f));if(!mime)throw new Error('No advertised recording MIME');
+ run.requestedMime=mime;rec=new MediaRecorder(stream,{mimeType:mime});run.actualMime=rec.mimeType;
+ const chunks=[];let bytes=0;let start=performance.now(),stopTimer;
+ const recording=new Promise((resolve,reject)=>{
+ rec.ondataavailable=e=>{if(e.data.size){bytes+=e.data.size;if(bytes>20*1024*1024){reject(new Error('Recording size limit'));if(rec.state==='recording')rec.stop();}else chunks.push(e.data);}};
+ rec.onerror=e=>reject(e.error||new Error('MediaRecorder error'));
+ rec.onstop=()=>{run.elapsedMs=Math.round(performance.now()-start);resolve(new Blob(chunks,{type:rec.mimeType||mime}));};
+ rec.start(250);start=performance.now();stopTimer=setTimeout(()=>{if(rec.state==='recording')rec.stop();},5000);
+ });
+ run.status='recording';publish(run);
+ let blob;try{blob=await timeout(recording,12000,'recorder');}finally{clearTimeout(stopTimer);if(rec.state==='recording')rec.stop();}
+ run.status='finalized';run.chunks=chunks.length;stream.getTracks().forEach(t=>t.stop());
+ await analyze(blob,run,'qarton-'+source+(mime.includes('mp4')?'.m4a':mime.includes('ogg')?'.ogg':'.webm'),ctx);
+ }catch(e){run.status='failed';run.error=describe(e);if(run.microphone==='requesting')run.microphone='failed';event(source,run.error);}
+ finally{try{oscillator?.stop();}catch{}stream?.getTracks().forEach(t=>t.stop());activeStream=null;if(ctx)try{await ctx.close();}catch{}publish(run);setBusy(false);void environment();}
+}
+function readExistingDB(){return new Promise((resolve,reject)=>{const req=indexedDB.open('qarton-motion-assets-v1');req.onupgradeneeded=()=>req.transaction.abort();req.onerror=()=>reject(req.error||new Error('Asset database unavailable'));req.onsuccess=()=>resolve(req.result);});}
+async function readAsset(id){let db;try{db=await readExistingDB();return await new Promise((resolve,reject)=>{const tx=db.transaction('assets','readonly');const rq=tx.objectStore('assets').get([projectId,id]);rq.onsuccess=()=>resolve(rq.result||null);rq.onerror=()=>reject(rq.error);tx.onabort=()=>reject(tx.error);});}finally{db?.close();}}
+async function snapshot(){
+ if(busy)return;setBusy(true);projectAssets=[];$('assets').replaceChildren();const result={scope:'last saved project only'};
+ try{projectId=localStorage.getItem('qarton-motion-studio-current-project');if(!projectId)throw new Error('No saved project in this origin');
+ const raw=localStorage.getItem('qarton-motion-studio-sequence:'+projectId);if(!raw)throw new Error('Saved sequence missing');const data=JSON.parse(raw);const sequence=data.sequence;
+ const audio=sequence.assets.filter(a=>a.kind==='audio');const clips=sequence.scenes.flatMap(s=>s.audioTracks.flatMap(t=>t.clips.map(c=>({scene:s.id,track:t.id,asset:c.asset,startMs:c.startMs,durationMs:c.durationMs,volume:c.volume,trackVolume:t.volume}))));
+ result.committedClips=clips.length;result.masterVolume=data.audioMasterVolume;result.clips=clips;result.assets=[];let hints={};try{hints=JSON.parse(localStorage.getItem('qarton-motion-studio-audio-durations:'+projectId)||'{}');}catch(e){result.durationMetadataError=describe(e);}
+ for(const a of audio){const row={id:a.id,mime:a.mimeType,expectedBytes:a.size,durationHintMs:hints?.[a.id]??null};try{const blob=await timeout(readAsset(a.id),3000,'IndexedDB read');row.storedBytes=blob?.size??null;row.linked=blob instanceof Blob&&blob.size===a.size;if(row.linked){projectAssets.push(a);const option=document.createElement('option');option.value=a.id;option.textContent=a.name;$('assets').append(option);}}catch(e){row.error=describe(e);}result.assets.push(row);}
+ result.clipsWithoutLinkedBytes=clips.filter(c=>!result.assets.find(a=>a.id===c.asset&&a.linked)).length;
+ }catch(e){result.error=describe(e);event('project',result.error);}finally{state.project=result;show('snapshot',result);setBusy(false);}
+}
+async function inspect(){if(busy)return;setBusy(true);const a=projectAssets.find(a=>a.id===$('assets').value);const run={source:'saved-asset',asset:a?.id};state.runs.push(run);try{const blob=await timeout(readAsset(a.id),3000,'IndexedDB read');if(!blob)throw new Error('Asset missing');await analyze(blob,run,a.name);}catch(e){run.error=describe(e);event('asset',run.error);publish(run);}finally{setBusy(false);}}
+$('mic').onclick=()=>record('mic');$('tone').onclick=()=>record('synthetic');$('refresh').onclick=environment;$('project').onclick=snapshot;$('inspect').onclick=inspect;
+$('file').onchange=async e=>{const file=e.target.files[0];if(!file||busy)return;setBusy(true);const run={source:'file-picker'};state.runs.push(run);try{await analyze(file,run,file.name);}finally{setBusy(false);}};
+$('player').addEventListener('loadedmetadata',()=>event('media metadata',{duration:Number.isFinite($('player').duration)?$('player').duration:String($('player').duration)}));
+$('player').addEventListener('error',()=>event('media error',{code:$('player').error?.code,message:$('player').error?.message}));
+$('play').onclick=async()=>{try{await $('player').play();event('play','started (not proof of audible output)');}catch(e){event('play',describe(e));}};
+$('report').onclick=()=>{const a=document.createElement('a');const u=URL.createObjectURL(new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));a.href=u;a.download='qarton-audio-diagnostics.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);};
+window.addEventListener('pagehide',()=>{cancelled=true;activeStream?.getTracks().forEach(t=>t.stop());if(url)URL.revokeObjectURL(url);});
+void environment();
+</script>
+</html>
