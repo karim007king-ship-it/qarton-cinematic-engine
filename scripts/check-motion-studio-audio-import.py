@@ -89,6 +89,8 @@ with tempfile.TemporaryDirectory(prefix="qarton-audio-import-") as directory:
         page.wait_for_function("document.querySelector('#stage')?.width > 0")
         page.locator("#imageInput").set_input_files(str(image))
         page.wait_for_function("document.querySelector('#imageName').textContent.includes('preview-test.png')")
+        page.locator('nav.bottom-dock [data-editor-section="more"]').click()
+        page.locator("#advancedProjectOptions > summary").click()
         page.locator("#duration").fill("3")
         page.locator("#duration").dispatch_event("input")
         page.wait_for_function("document.querySelector('#integratedTo').value === '3000'")
