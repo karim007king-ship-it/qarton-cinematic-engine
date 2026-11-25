@@ -2096,15 +2096,22 @@ $("audioInput").addEventListener("change", async () => {
   finally { if (pendingAudioRequest === requestToken) pendingAudioRequest = null; if (audioRequest.isCurrent(requestToken)) $("audioInput").value = ""; refreshExportControls(); }
 });
 $("addAudioClip").addEventListener("click", () => {
-  if (activeExport || !activeAudioAssetId) return;
+  if (activeExport) return;
+  if (!activeAudioAssetId) {
+    $("audioTimelineMessage").textContent = "اختر ملفًا صوتيًا من الهاتف أو مكتبة الأصول أولًا.";
+    return;
+  }
   try {
     const trackType = $("audioTrackType").value;
     const track = audioTracks.find((item) => item.type === trackType);
     if (!track) throw new Error("المسار الصوتي المحدد غير موجود.");
-    const startMs = Math.min(currentMs, project.durationMs - 1);
+    const startMs = Math.max(0, Math.min(Math.round(currentMs), project.durationMs - 1));
     const metadata = audioAssets.find(({ id }) => id === activeAudioAssetId);
     const source = audioFiles.get(activeAudioAssetId);
-    const durationMs = Math.min(source?.durationMs ?? 1000, project.durationMs - startMs);
+    if (!source?.url || !Number.isFinite(source.durationMs) || source.durationMs <= 0) {
+      throw new Error("ملف الصوت غير جاهز للتشغيل. أعد استيراده أو ربطه من المكتبة.");
+    }
+    const durationMs = Math.max(1, Math.min(Math.round(source.durationMs), project.durationMs - startMs));
     const clip = { id: `audio-clip-${Date.now()}-${++audioAssetSerial}`, asset: activeAudioAssetId, name: metadata?.name, startMs, durationMs, volume: 1,
       ...(trackType === "dialogue" ? { language: $("dialogueLanguage").value, visemes: [] } : {}) };
     const next = addAudioClip(audioTracks, project.durationMs, track.id, clip);
