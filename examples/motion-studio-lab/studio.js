@@ -946,6 +946,9 @@ async function exportIntegratedProject() {
     }
     setExportBusy(false);
     refreshExportControls();
+    if (integratedVideoUrl && !integratedDownload.hidden) {
+      integratedDownload.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
     try { renderAt(currentMs); } catch (error) { status.textContent = `تعذرت استعادة المعاينة: ${errorText(error)}`; }
   }
 }
