@@ -112,12 +112,14 @@ with tempfile.TemporaryDirectory(prefix="qarton-audio-import-") as directory:
 
         # The simplified actions import directly into their intended tracks.
         page.locator("#deleteSelectedAudio").click()
-        page.locator("#quickImportAudio").click()
-        page.locator("#audioInput").set_input_files(str(mp3))
+        with page.expect_file_chooser() as dialogue_picker:
+            page.locator("#quickImportAudio").click()
+        dialogue_picker.value.set_files(str(mp3))
         page.wait_for_function("document.querySelectorAll('#audioTracks .audio-clip').length === 1", timeout=30000)
         assert page.locator("#audioSelection").inner_text().startswith("حوار"), page.locator("#audioSelection").inner_text()
-        page.locator("#quickAddMusic").click()
-        page.locator("#audioInput").set_input_files(str(mp3))
+        with page.expect_file_chooser() as music_picker:
+            page.locator("#quickAddMusic").click()
+        music_picker.value.set_files(str(mp3))
         page.wait_for_function("document.querySelectorAll('#audioTracks .audio-clip').length === 2", timeout=30000)
         assert page.locator("#audioSelection").inner_text().startswith("موسيقى"), page.locator("#audioSelection").inner_text()
         page.locator("#deleteSelectedAudio").click()

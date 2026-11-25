@@ -284,12 +284,22 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         }""")
         page.mouse.move(start_x + audio_box["width"] * 0.07, start_y, steps=4)
         assert original_clip.evaluate("el => !el.isConnected"), "drag redraw replaces the clip node while the stable root retains pointer capture"
-        page.wait_for_function("""() => {
-          const root = document.querySelector('#audioTracks');
-          const clip = root.querySelector('.audio-clip');
-          return root.hasPointerCapture(window.lastAudioPointerId) &&
-            clip?.getAttribute('aria-pressed') === 'true' && document.activeElement === clip;
-        }""", timeout=3000)
+        try:
+            page.wait_for_function("""() => {
+              const root = document.querySelector('#audioTracks');
+              const clip = root.querySelector('.audio-clip');
+              return root.hasPointerCapture(window.lastAudioPointerId) &&
+                clip?.getAttribute('aria-pressed') === 'true' && document.activeElement === clip;
+            }""", timeout=3000)
+        except Exception as error:
+            state = page.evaluate("""() => {
+              const root = document.querySelector('#audioTracks'); const clip = root.querySelector('.audio-clip');
+              return { dragging: root.dataset.dragging, pointerCaptured: root.hasPointerCapture(window.lastAudioPointerId),
+                selected: clip?.getAttribute('aria-pressed'), focusedTag: document.activeElement?.tagName,
+                focusedId: document.activeElement?.id, focusedClass: document.activeElement?.className,
+                focusedClipId: document.activeElement?.dataset?.clipId };
+            }""")
+            raise AssertionError(f"audio clip must retain pointer capture, selection, and focus during drag: {state}") from error
         page.mouse.up()
         assert "00:01.34" in page.locator(".audio-clip").get_attribute("aria-label"), "real Chromium drag moves the clip after clip-node replacement"
 
