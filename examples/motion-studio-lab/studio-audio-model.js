@@ -89,30 +89,49 @@ export function makeAudioAssetMetadata(id, file) {
   return { id, name, type: mime, size };
 }
 
-export async function readAudioDuration(file, { AudioClass = globalThis.Audio, timeoutMs = 10000 } = {}) {
-  if (typeof AudioClass !== "function") throw new Error("لا يتوفر قارئ بيانات الصوت في هذا المتصفح.");
+export async function readAudioDuration(file, { AudioClass = globalThis.Audio,
+  AudioContextClass = globalThis.AudioContext ?? globalThis.webkitAudioContext, timeoutMs = 10000 } = {}) {
   const { mime } = validateAudioFile(file);
   const source = file.type === mime ? file : new Blob([file], { type: mime });
-  const audio = new AudioClass();
-  const url = URL.createObjectURL(source);
+  let metadataDuration = null;
+  if (typeof AudioClass === "function") {
+    const audio = new AudioClass();
+    const url = URL.createObjectURL(source);
+    try {
+      metadataDuration = await new Promise(resolve => {
+        let settled = false;
+        const finish = value => { if (settled) return; settled = true; clearTimeout(timer);
+          audio.removeEventListener?.("loadedmetadata", loaded); audio.removeEventListener?.("error", failed); resolve(value); };
+        const timer = setTimeout(() => finish(null), timeoutMs);
+        const loaded = () => finish(Number.isFinite(audio.duration) && audio.duration > 0 && audio.duration <= 3600 ? audio.duration : null);
+        const failed = () => finish(null);
+        audio.addEventListener?.("loadedmetadata", loaded, { once: true });
+        audio.addEventListener?.("error", failed, { once: true });
+        audio.preload = "metadata";
+        audio.src = url;
+        if (!audio.addEventListener) audio.onloadedmetadata = loaded;
+      });
+    } finally {
+      audio.removeAttribute?.("src"); audio.load?.(); URL.revokeObjectURL(url);
+    }
+  }
+  if (Number.isFinite(metadataDuration)) return Math.round(metadataDuration * 1000);
+
+  // Some Android WebViews report Infinity/NaN for valid MediaRecorder output.
+  // Decode only on that path and use the decoded PCM duration as the authority.
+  if (typeof AudioContextClass !== "function") throw new Error("تعذر تحديد مدة الصوت: بيانات الوسائط غير صالحة ولا يتوفر فك الترميز.");
+  const context = new AudioContextClass();
   try {
-    return await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { cleanup(); reject(new Error("انتهت مهلة قراءة مدة ملف الصوت.")); }, timeoutMs);
-      const cleanup = () => { clearTimeout(timer); audio.removeEventListener?.("loadedmetadata", loaded); audio.removeEventListener?.("error", failed); };
-      const loaded = () => {
-        cleanup();
-        if (!Number.isFinite(audio.duration) || audio.duration <= 0 || audio.duration > 3600) reject(new RangeError("مدة ملف الصوت غير صالحة أو أطول من ساعة."));
-        else resolve(Math.round(audio.duration * 1000));
-      };
-      const failed = () => { cleanup(); reject(new Error("تعذر فك ترميز ملف الصوت أو قراءة بياناته.")); };
-      audio.addEventListener?.("loadedmetadata", loaded, { once: true });
-      audio.addEventListener?.("error", failed, { once: true });
-      audio.preload = "metadata";
-      audio.src = url;
-      if (!audio.addEventListener) audio.onloadedmetadata = loaded;
-    });
+    const bytes = await source.arrayBuffer();
+    const buffer = await context.decodeAudioData(bytes.slice(0));
+    if (!Number.isFinite(buffer?.duration) || buffer.duration <= 0 || buffer.duration > 3600) {
+      throw new RangeError("مدة الصوت المفكوك غير صالحة أو أطول من ساعة.");
+    }
+    return Math.round(buffer.duration * 1000);
+  } catch (error) {
+    throw new Error(`تعذر فك ترميز ملف الصوت للتحقق من مدته: ${error?.message || error}`);
   } finally {
-    audio.removeAttribute?.("src"); audio.load?.(); URL.revokeObjectURL(url);
+    try { await context.close?.(); } catch { /* Release best-effort on Android WebView. */ }
   }
 }
 
