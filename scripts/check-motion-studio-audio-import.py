@@ -133,7 +133,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-audio-import-") as directory:
         assert page.locator("#audioClipDuration").input_value() == "3000"
 
         touch_tap(page, page.locator("#playPauseButton"))
-        page.wait_for_function("window.__qartonPreviewVoices.filter(voice => !voice.paused).length > 0", timeout=10000)
+        page.wait_for_function("window.__qartonPreviewVoices.some(voice => !voice.paused && voice.currentTime > 0.2)", timeout=10000)
         restored_signal = page.evaluate("""() => {
           const voice = window.__qartonPreviewVoices.filter(item => !item.paused).at(-1);
           const signal = voice.__qartonMeasure?.(); voice.pause(); return signal;
