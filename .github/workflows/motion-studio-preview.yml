@@ -2,7 +2,7 @@ name: Motion Studio Android preview
 
 on:
   pull_request:
-    branches: [main, integration/character-animation-timeline-l7, feature/audio-dialogue-timeline-l8b, feature/integrated-av-export-l10b, fix/integrated-av-export-l10c, docs/motion-studio-export-l10a, docs/motion-studio-multiscene-l11a, feature/motion-studio-multiscene-editor-l11d, feature/motion-studio-smart-easy-editor-l11f1, feature/motion-studio-compact-mobile-ui-l11f2, feature/shared-assets-l11c, feature/motion-studio-full-multiscene-export-l11e, feature/motion-studio-cinematic-audio-crossfade-l11h3]
+    branches: [main, integration/character-animation-timeline-l7, feature/audio-dialogue-timeline-l8b, feature/integrated-av-export-l10b, fix/integrated-av-export-l10c, docs/motion-studio-export-l10a, docs/motion-studio-multiscene-l11a, feature/motion-studio-multiscene-editor-l11d, feature/motion-studio-smart-easy-editor-l11f1, feature/motion-studio-compact-mobile-ui-l11f2, feature/shared-assets-l11c, feature/motion-studio-full-multiscene-export-l11e, feature/motion-studio-cinematic-audio-crossfade-l11h3, feature/motion-studio-integrated-cinematic-preview-export-l11h4]
     paths:
       - '.github/workflows/motion-studio-preview.yml'
       - 'examples/motion-studio-lab/**'
