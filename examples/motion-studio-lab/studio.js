@@ -216,6 +216,11 @@ let microphoneFinalizing = false;
 let microphoneMeterFrame = 0;
 let microphoneElapsedTimer = 0;
 let audioImportIntent = null;
+let audioPickerOpening = false;
+let microphoneStartupController = null;
+let microphonePageHiding = false;
+let soloAudioPreview = null;
+let lastMicrophoneDiagnostic = { state: "لم يبدأ التسجيل" };
 let visualEffectsTimeline = null;
 let visualEffectSelection = null;
 const makeLocalId = (prefix) => `${prefix}-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
@@ -293,7 +298,9 @@ function compilePreviewEffects(track, sourceProject = project, viewport = previe
   return compileVisualEffectsTrack(track, projectForRaster(sourceProject, viewport));
 }
 function getCurrentScene() { return sequenceEditor.scenes.find(scene => scene.id === activeSceneId) ?? null; }
-function microphoneOperationActive() { return microphoneStarting || microphoneSession !== null || microphoneFinalizing; }
+function microphoneOperationActive() {
+  return microphoneStarting || microphoneSession !== null || microphoneFinalizing || audioImportIntent !== null || pendingAudioRequest !== null;
+}
 function currentScenePayload() {
   return { id: activeSceneId, project, audioTracks, characterTracks: [characterTrack, ...(sceneExtraCharacterTracks.get(activeSceneId) ?? [])], visualEffectsTrack };
 }
@@ -557,10 +564,10 @@ function refreshMicrophoneBusyControls() {
     microphoneButton.textContent = microphoneStarting ? "انتظر إذن الميكروفون…"
       : microphoneFinalizing ? "جارٍ اعتماد التسجيل…"
         : microphoneSession ? "إيقاف التسجيل" : "سجّل صوتك";
-    microphoneButton.disabled = microphoneStarting || microphoneFinalizing || (!microphoneSession && (Boolean(activeExport) || pendingAudioRequest !== null));
+    microphoneButton.disabled = microphoneStarting || microphoneFinalizing || (!microphoneSession && (Boolean(activeExport) || microphoneOperationActive()));
   }
   const locked = recording || Boolean(activeExport);
-  for (const id of ["imageInput", "projectInput", "audioInput", "audioTrackType", "addAudioClip", "deleteAudioClip", "audioClipStart", "audioClipDuration", "audioClipVolume", "sceneName", "sceneDuration", "addSceneButton", "duplicateSceneButton", "deleteSceneButton", "moveSceneLeftButton", "moveSceneRightButton", "playPauseButton", "replayButton", "seek", "sequenceSeek", "duration", "aspectPreset", "fitMode", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "saveProjectButton", "loadProjectButton"]) {
+  for (const id of ["imageInput", "projectInput", "assetLibraryInput", "audioTrackType", "addAudioClip", "deleteAudioClip", "playSelectedAudio", "deleteSelectedAudio", "quickImportAudio", "quickAddMusic", "audioClipStart", "audioClipDuration", "audioClipVolume", "sceneName", "sceneDuration", "addSceneButton", "duplicateSceneButton", "deleteSceneButton", "moveSceneLeftButton", "moveSceneRightButton", "playPauseButton", "replayButton", "seek", "sequenceSeek", "duration", "aspectPreset", "fitMode", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "saveProjectButton", "loadProjectButton"]) {
     const control = $(id); if (control) control.disabled = locked;
   }
   for (const control of document.querySelectorAll(".scene-select, .sequence-block")) control.disabled = locked;
@@ -577,7 +584,7 @@ function refreshMicrophoneBusyControls() {
 }
 function setExportBusy(busy) {
   const locked = busy || microphoneOperationActive();
-  for (const id of ["imageInput", "projectInput", "audioInput", "audioTrackType", "addAudioClip", "deleteAudioClip", "audioClipStart", "audioClipDuration", "audioClipVolume", "dialogueLanguage", "visemeType", "phonemeLabel", "addViseme", "audioMasterVolume", "visualEffectType", "addVisualEffect", "deleteVisualEffect", "visualEffectStart", "visualEffectDuration", "visualEffectEasing", "aspectPreset", "fitMode", "duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "saveProjectButton", "loadProjectButton", "motionSpeed", "motionStrength", "motionFocusX", "motionFocusY", "motionFromSeconds", "motionToSeconds", "integratedQuality", "integratedFormat", "integratedAudio", "integratedMissingAudio", "integratedFrom", "integratedTo"]) {
+  for (const id of ["imageInput", "projectInput", "assetLibraryInput", "audioTrackType", "addAudioClip", "deleteAudioClip", "playSelectedAudio", "deleteSelectedAudio", "quickImportAudio", "quickAddMusic", "audioClipStart", "audioClipDuration", "audioClipVolume", "dialogueLanguage", "visemeType", "phonemeLabel", "addViseme", "audioMasterVolume", "visualEffectType", "addVisualEffect", "deleteVisualEffect", "visualEffectStart", "visualEffectDuration", "visualEffectEasing", "aspectPreset", "fitMode", "duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "saveProjectButton", "loadProjectButton", "motionSpeed", "motionStrength", "motionFocusX", "motionFocusY", "motionFromSeconds", "motionToSeconds", "integratedQuality", "integratedFormat", "integratedAudio", "integratedMissingAudio", "integratedFrom", "integratedTo"]) {
     $(id).disabled = locked;
   }
   for (const button of document.querySelectorAll("[data-motion-preset]")) button.disabled = locked;
@@ -602,7 +609,7 @@ function setExportBusy(busy) {
   exportDuration.disabled = locked;
   exportQuality.disabled = locked;
   exportAudioEnabled.disabled = locked;
-  if (microphoneButton) microphoneButton.disabled = busy || microphoneStarting || microphoneFinalizing || (!microphoneSession && pendingAudioRequest !== null);
+  if (microphoneButton) microphoneButton.disabled = busy || microphoneStarting || microphoneFinalizing || (!microphoneSession && microphoneOperationActive());
   cancelExportButton.hidden = !busy;
   cancelExportButton.disabled = !busy;
   integratedProbeButton.disabled = locked || !currentFileInfo || pendingImageRequest !== null || pendingAudioRequest !== null;
@@ -1087,6 +1094,7 @@ function rebuildAudioPlayer({ resume = false } = {}) {
 }
 function commitAudioTracks(nextTracks, { resume = true } = {}) {
   if (activeExport) throw new Error("أوقف تصدير الفيديو قبل تعديل مسارات الصوت.");
+  stopSelectedAudioPreview();
   const nextCompiled = compileAudioTracks(nextTracks, project.durationMs);
   audioTracks = nextTracks;
   audioCompiled = nextCompiled;
@@ -1102,6 +1110,44 @@ function selectedAudioClip() {
   const clip = track?.clips.find(({ id }) => id === audioClipSelection.clipId);
   return track && clip ? { track, clip } : null;
 }
+function stopSelectedAudioPreview() {
+  if (!soloAudioPreview) return;
+  clearTimeout(soloAudioPreview.timer);
+  soloAudioPreview.audio.pause();
+  soloAudioPreview.audio.removeAttribute("src");
+  soloAudioPreview.audio.load();
+  soloAudioPreview = null;
+  const button = $("playSelectedAudio"); if (button) button.textContent = "▶ تشغيل المحدد";
+}
+async function playSelectedAudioIndependently() {
+  const selected = selectedAudioClip();
+  if (!selected || activeExport || microphoneOperationActive()) return;
+  if (soloAudioPreview?.clipId === selected.clip.id) {
+    stopSelectedAudioPreview();
+    $("audioTimelineMessage").textContent = "توقف تشغيل المقطع المحدد.";
+    return;
+  }
+  const source = audioFiles.get(selected.clip.asset);
+  if (!source?.url) { $("audioTimelineMessage").textContent = "تعذر تشغيل المقطع المحدد؛ أعد ربط الأصل الصوتي من المكتبة."; return; }
+  stopPlayback();
+  stopSelectedAudioPreview();
+  const audio = new Audio(source.url);
+  const preview = { audio, timer: 0, clipId: selected.clip.id };
+  soloAudioPreview = preview;
+  $("playSelectedAudio").textContent = "⏹ إيقاف المحدد";
+  audio.preload = "auto";
+  audio.volume = Math.max(0, Math.min(1, selected.clip.volume * selected.track.volume * audioMasterVolume));
+  audio.addEventListener("ended", () => { if (soloAudioPreview === preview) stopSelectedAudioPreview(); }, { once: true });
+  try {
+    await audio.play();
+    if (soloAudioPreview !== preview) return;
+    preview.timer = setTimeout(() => { if (soloAudioPreview === preview) stopSelectedAudioPreview(); }, selected.clip.durationMs);
+    $("audioTimelineMessage").textContent = `تشغيل مستقل: ${selected.clip.name || selected.clip.id} لمدة ${formatTime(selected.clip.durationMs)}.`;
+  } catch (error) {
+    if (soloAudioPreview === preview) stopSelectedAudioPreview();
+    $("audioTimelineMessage").textContent = `تعذر تشغيل المقطع المحدد: ${errorText(error)}`;
+  }
+}
 function renderAudioInspector() {
   const selected = selectedAudioClip();
   $("audioSelection").textContent = selected ? `${selected.track.type === "dialogue" ? "حوار" : selected.track.type === "music" ? "موسيقى" : "مؤثر"} · ${selected.clip.name || selected.clip.id}` : "لا يوجد مقطع محدد";
@@ -1110,7 +1156,7 @@ function renderAudioInspector() {
     $(id).value = selected ? String(value) : "";
   }
   $("deleteAudioClip").disabled = !selected || Boolean(activeExport);
-  $("playSelectedAudio").disabled = !selected || Boolean(activeExport) || microphoneOperationActive();
+  $("playSelectedAudio").disabled = !selected || !audioFiles.get(selected.clip.asset)?.url || Boolean(activeExport) || microphoneOperationActive();
   $("deleteSelectedAudio").disabled = !selected || Boolean(activeExport) || microphoneOperationActive();
   $("addViseme").disabled = !selected || selected.track.type !== "dialogue" || Boolean(activeExport);
   const markerRoot = $("visemeMarkers"); markerRoot.replaceChildren();
@@ -1632,6 +1678,7 @@ function updateProject({ resetPlayback = false, viewport = project.viewport, edi
   } catch (error) { fail(error); }
 }
 function stopPlayback() {
+  stopSelectedAudioPreview();
   if (isPlaying) sequenceTimeMs = currentSequenceTime();
   if (audioPlayer?.state === "playing") {
     try { const sampled = audioPlayer.pause(); currentMs = sampled.timeMs; }
@@ -1671,6 +1718,7 @@ async function playbackTick(now = performance.now()) {
 }
 async function play() {
   if (microphoneOperationActive() || activeExport) return;
+  stopSelectedAudioPreview();
   if (sequenceTimeMs >= sequenceEditor.durationMs) {
     const first = sequenceEditor.scenes[0];
     await activateStudioScene(first.id, { globalTimeMs: 0, localTimeMs: 0 });
@@ -2156,16 +2204,56 @@ $("assetLibraryInput").addEventListener("change", async () => {
   finally { $("assetLibraryInput").value = ""; renderAssetLibrary(); }
 });
 
-$("audioInput").addEventListener("change", () => {
-  const intent = audioImportIntent;
-  audioImportIntent = null;
-  void importStudioAudio($("audioInput").files?.[0]).then(imported => {
-    if (!imported || !intent?.autoInsert) return;
-    try { addRecordedAudioToTimeline(imported, { sceneId: activeSceneId, startMs: Math.round(currentMs), trackId: audioTracks.find(item => item.type === intent.trackType)?.id }); }
-    catch (error) { $("audioTimelineMessage").textContent = `تعذر إضافة الصوت إلى Timeline: ${errorText(error)}`; }
-  });
+function makeAudioImportIntent({ autoInsert = false, trackType = $("audioTrackType").value } = {}) {
+  const track = audioTracks.find(item => item.type === trackType);
+  return { autoInsert, trackType, sceneId: activeSceneId,
+    startMs: Math.max(0, Math.min(Math.round(currentMs), project.durationMs - 1)), trackId: track?.id ?? null };
+}
+function openAudioPicker(trackType, autoInsert) {
+  if (activeExport || microphoneOperationActive()) return;
+  $("audioTrackType").value = trackType;
+  audioImportIntent = makeAudioImportIntent({ trackType, autoInsert });
+  refreshMicrophoneBusyControls();
+  audioPickerOpening = true;
+  try { $("audioInput").click(); }
+  finally { audioPickerOpening = false; }
+}
+$("audioInput").addEventListener("click", event => {
+  if (audioPickerOpening) return;
+  if (activeExport || microphoneStarting || microphoneSession || microphoneFinalizing || pendingAudioRequest !== null || audioImportIntent !== null) {
+    event.preventDefault(); return;
+  }
+  audioImportIntent = makeAudioImportIntent();
+  refreshMicrophoneBusyControls();
 });
-$("audioInput").addEventListener("cancel", () => { audioImportIntent = null; });
+$("audioInput").addEventListener("change", () => {
+  const file = $("audioInput").files?.[0];
+  if (!file) { audioImportIntent = null; refreshMicrophoneBusyControls(); return; }
+  const intent = audioImportIntent ?? makeAudioImportIntent();
+  audioImportIntent = intent;
+  void (async () => {
+    try {
+      const imported = await importStudioAudio(file);
+      if (!imported || !intent.autoInsert) return;
+      addRecordedAudioToTimeline(imported, intent);
+    } catch (error) {
+      $("audioTimelineMessage").textContent = `تعذر إضافة الصوت إلى Timeline: ${errorText(error)}`;
+    } finally {
+      if (audioImportIntent === intent) audioImportIntent = null;
+      refreshMicrophoneBusyControls();
+    }
+  })();
+});
+$("audioInput").addEventListener("cancel", () => { audioImportIntent = null; refreshMicrophoneBusyControls(); });
+window.addEventListener("focus", () => {
+  if (!audioImportIntent || pendingAudioRequest !== null || audioPickerOpening) return;
+  setTimeout(() => {
+    if (audioImportIntent && pendingAudioRequest === null) {
+      audioImportIntent = null;
+      refreshMicrophoneBusyControls();
+    }
+  }, 120);
+});
 microphoneButton = document.createElement("button");
 microphoneButton.type = "button";
 microphoneButton.id = "quickRecordAudio";
@@ -2177,14 +2265,9 @@ microphoneHelp.className = "hint microphone-record-help";
 microphoneHelp.textContent = "التسجيل يحتاج إذن الميكروفون واتصالًا آمنًا مثل HTTPS. اختيار ملف من الهاتف، بما فيه content://، يبقى عبر منتقي Android. الصيغ المدعومة يحددها المتصفح؛ AMR غير متاح قياسيًا في Chromium.";
 $("microphoneButtonHost").append(microphoneButton);
 $("microphoneButtonHost").parentElement.after(microphoneHelp);
-$("quickImportAudio").addEventListener("click", () => { $("audioTrackType").value = "dialogue"; audioImportIntent = { autoInsert: true, trackType: "dialogue" }; $("audioInput").click(); });
-$("quickAddMusic").addEventListener("click", () => { $("audioTrackType").value = "music"; audioImportIntent = { autoInsert: true, trackType: "music" }; $("audioInput").click(); });
-$("playSelectedAudio").addEventListener("click", () => {
-  const selected = selectedAudioClip();
-  if (!selected || activeExport || microphoneOperationActive()) return;
-  seekTo(selected.clip.startMs);
-  if (!isPlaying) playPauseButton.click();
-});
+$("quickImportAudio").addEventListener("click", () => openAudioPicker("dialogue", true));
+$("quickAddMusic").addEventListener("click", () => openAudioPicker("music", true));
+$("playSelectedAudio").addEventListener("click", () => { void playSelectedAudioIndependently(); });
 $("deleteSelectedAudio").addEventListener("click", () => $("deleteAudioClip").click());
 const MICROPHONE_MIME_TYPES = Object.freeze([
   { mime: "audio/webm;codecs=opus", base: "audio/webm", extension: "webm" },
@@ -2213,17 +2296,69 @@ function addRecordedAudioToTimeline(imported, capture) {
   renderAudioInspector();
   $("audioTimelineMessage").textContent = `تم التحقق وإضافة التسجيل إلى مسار ${track.type === "music" ? "الموسيقى" : track.type === "sfx" ? "المؤثرات" : "الحوار"} عند ${formatTime(startMs)} لمدة ${formatTime(durationMs)}.`;
 }
-function requestMicrophoneWithTimeout(timeoutMs = 30000) {
+async function audioDiagnosticReport() {
+  let permission = "غير متاح";
+  try {
+    const result = await Promise.race([
+      navigator.permissions?.query({ name: "microphone" }) ?? Promise.reject(new Error("Permissions API unavailable")),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("permission query timeout")), 1200))
+    ]);
+    permission = result.state;
+  } catch { /* Android WebView may not expose the microphone Permissions descriptor. */ }
+  const supported = typeof MediaRecorder === "function"
+    ? MICROPHONE_MIME_TYPES.filter(({ mime }) => { try { return MediaRecorder.isTypeSupported(mime); } catch { return false; } }).map(({ mime }) => mime)
+    : [];
+  const liveSession = microphoneSession;
+  const clips = audioTracks.flatMap(track => track.clips.map(clip => ({ track: track.type, id: clip.id, asset: clip.asset })));
+  const report = {
+    capturedAt: new Date().toISOString(), origin: location.origin, secureContext: isSecureContext,
+    microphonePermission: permission, getUserMedia: Boolean(navigator.mediaDevices?.getUserMedia),
+    mediaRecorder: typeof MediaRecorder === "function", supportedRecordingFormats: supported,
+    audioContextState: liveSession?.meterContext?.state ?? lastMicrophoneDiagnostic.audioContextState ?? "not active",
+    latestRecording: { ...lastMicrophoneDiagnostic, liveSignal: liveSession?.signal ?? null, meterError: liveSession?.meterError ?? lastMicrophoneDiagnostic.meterError ?? null },
+    persistentAssetStore: Boolean(persistentAssets), indexedDB: Boolean(globalThis.indexedDB),
+    audioAssetCount: audioAssets.length, activeSceneId, timelineClipCount: clips.length, clips
+  };
+  return JSON.stringify(report, null, 2);
+}
+$("copyAudioDiagnostics").addEventListener("click", async () => {
+  try {
+    const report = await audioDiagnosticReport();
+    $("audioDiagnosticReport").textContent = report;
+    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(report);
+    else {
+      const copy = document.createElement("textarea"); copy.value = report; copy.setAttribute("readonly", "");
+      copy.style.position = "fixed"; copy.style.opacity = "0"; document.body.append(copy); copy.select();
+      const copied = document.execCommand("copy"); copy.remove();
+      if (!copied) throw new Error("المتصفح لا يتيح نسخ التقرير تلقائيًا.");
+    }
+    $("audioDiagnosticStatus").textContent = "نُسخ تقرير الصوت. أرسله للمراجعة عند الحاجة.";
+  } catch (error) { $("audioDiagnosticStatus").textContent = `تعذر نسخ التقرير: ${errorText(error)}`; }
+});
+function requestMicrophoneWithTimeout(timeoutMs = 30000, signal = undefined) {
   let expired = false;
   let timer;
   const request = navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-    if (expired) { stream.getTracks().forEach(track => track.stop()); throw new DOMException("انتهت مهلة طلب الميكروفون.", "TimeoutError"); }
+    if (expired || signal?.aborted || microphonePageHiding) {
+      stream.getTracks().forEach(track => track.stop());
+      throw new DOMException("أُلغي طلب الميكروفون قبل بدء التسجيل.", "AbortError");
+    }
     return stream;
   });
   const timeout = new Promise((_, reject) => {
     timer = setTimeout(() => { expired = true; reject(new DOMException("لم يرد Android على طلب الميكروفون خلال 30 ثانية.", "TimeoutError")); }, timeoutMs);
   });
-  return Promise.race([request, timeout]).finally(() => clearTimeout(timer));
+  const abortRequest = () => rejectAbort(new DOMException("أُلغيت عملية التسجيل عند مغادرة الصفحة.", "AbortError"));
+  let rejectAbort;
+  const aborted = new Promise((_, reject) => {
+    rejectAbort = reject;
+    if (signal?.aborted || microphonePageHiding) abortRequest();
+    else signal?.addEventListener("abort", abortRequest, { once: true });
+  });
+  return Promise.race([request, timeout, aborted]).finally(() => {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", abortRequest);
+  });
 }
 function stopMicrophoneMeter(session) {
   cancelAnimationFrame(microphoneMeterFrame); microphoneMeterFrame = 0;
@@ -2232,22 +2367,55 @@ function stopMicrophoneMeter(session) {
   try { session?.meterSource?.disconnect(); session?.meterAnalyser?.disconnect(); } catch { /* Context shutdown below releases any remaining graph nodes. */ }
   if (session?.meterContext && session.meterContext.state !== "closed") void session.meterContext.close().catch(() => {});
 }
-function startMicrophoneMeter(session) {
-  const samples = new Float32Array(session.meterAnalyser.fftSize);
+async function startMicrophoneMeter(session) {
   $("microphoneRecordingStatus").hidden = false;
-  const draw = () => {
-    if (microphoneSession !== session || session.recorder.state !== "recording") return;
-    session.meterAnalyser.getFloatTimeDomainData(samples);
-    let sum = 0; for (const sample of samples) sum += sample * sample;
-    $("microphoneLevel").value = String(Math.min(1, Math.sqrt(sum / samples.length) * 4));
-    microphoneMeterFrame = requestAnimationFrame(draw);
-  };
-  draw();
   const updateElapsed = () => {
     const elapsed = Math.max(0, Math.floor((performance.now() - session.startedAt) / 1000));
     $("microphoneElapsed").textContent = `${String(Math.floor(elapsed / 60)).padStart(2,"0")}:${String(elapsed % 60).padStart(2,"0")}`;
   };
   updateElapsed(); microphoneElapsedTimer = setInterval(updateElapsed, 250);
+  try {
+    const Context = window.AudioContext || window.webkitAudioContext;
+    if (!Context) throw new Error("AudioContext غير متاح؛ يستمر التسجيل دون مؤشر المستوى.");
+    session.meterContext = new Context();
+    let resumeTimer;
+    try {
+      await Promise.race([
+        Promise.resolve().then(() => session.meterContext.resume()),
+        new Promise((_, reject) => { resumeTimer = setTimeout(() => reject(new DOMException("تجاوز AudioContext مهلة التشغيل.", "TimeoutError")), 2500); })
+      ]);
+    } finally { clearTimeout(resumeTimer); }
+    if (microphonePageHiding || microphoneSession !== session || session.recorder.state !== "recording") return;
+    session.meterSource = session.meterContext.createMediaStreamSource(session.stream);
+    session.meterAnalyser = session.meterContext.createAnalyser(); session.meterAnalyser.fftSize = 1024;
+    session.meterSource.connect(session.meterAnalyser);
+    const samples = new Float32Array(session.meterAnalyser.fftSize);
+    session.meterError = null;
+  const draw = () => {
+    if (microphoneSession !== session || session.recorder.state !== "recording") return;
+    session.meterAnalyser.getFloatTimeDomainData(samples);
+      let sum = 0; let peak = 0;
+      for (const sample of samples) { sum += sample * sample; peak = Math.max(peak, Math.abs(sample)); }
+      const rms = Math.sqrt(sum / samples.length);
+      session.signal = { rms, peak, sampleRate: session.meterContext.sampleRate };
+      $("microphoneLevel").value = String(Math.min(1, rms * 4));
+    microphoneMeterFrame = requestAnimationFrame(draw);
+  };
+  draw();
+  } catch (error) {
+    session.meterError = errorText(error);
+    if (microphonePageHiding || microphoneSession !== session) {
+      const lateContext = session.meterContext;
+      if (lateContext && lateContext.state !== "closed") void lateContext.close().catch(() => {});
+      session.meterContext = null; session.meterSource = null; session.meterAnalyser = null;
+      return;
+    }
+    $("microphoneLevel").value = "0";
+    $("audioDiagnosticStatus").textContent = `التسجيل مستمر؛ تعذر تشغيل مؤشر المستوى: ${session.meterError}`;
+    const context = session.meterContext;
+    if (context && context.state !== "closed") void context.close().catch(() => {});
+    session.meterContext = null; session.meterSource = null; session.meterAnalyser = null;
+  }
 }
 microphoneButton.addEventListener("click", async () => {
   if (microphoneSession) {
@@ -2263,32 +2431,32 @@ microphoneButton.addEventListener("click", async () => {
   if (!track) { $("audioTimelineMessage").textContent = "اختر مسارًا صوتيًا قبل التسجيل."; return; }
   if (currentMs >= project.durationMs) { $("audioTimelineMessage").textContent = "حرّك المؤشر إلى داخل مدة المشهد قبل التسجيل."; return; }
   microphoneStarting = true;
+  microphonePageHiding = false;
+  const startupController = new AbortController();
+  microphoneStartupController = startupController;
+  lastMicrophoneDiagnostic = { state: "طلب إذن الميكروفون", startedAt: new Date().toISOString() };
   stopPlayback();
   refreshMicrophoneBusyControls();
   let stream;
   let recorder;
-  let timer = 0;
-  let meterContext;
+  let session = null;
   try {
     if (!isSecureContext || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder !== "function") {
       throw new Error("الميكروفون يتطلب HTTPS أو WebView يتيح getUserMedia بصلاحية آمنة. افتح رابط HTTPS أو استورد ملفًا صوتيًا.");
     }
-    const Context = window.AudioContext || window.webkitAudioContext;
-    if (!Context) throw new Error("هذا WebView لا يدعم AudioContext اللازم لقياس إشارة الميكروفون.");
-    meterContext = new Context();
-    await meterContext.resume();
-    stream = await requestMicrophoneWithTimeout();
+    // Request capture immediately inside the user gesture. AudioContext is optional
+    // metering and must never gate microphone capture or asset insertion.
+    stream = await requestMicrophoneWithTimeout(30000, startupController.signal);
+    microphoneStartupController = null;
+    if (microphonePageHiding) throw new DOMException("أُغلقت الصفحة أثناء طلب الميكروفون.", "AbortError");
     if (activeExport || pendingAudioRequest !== null) throw new Error("انتظر انتهاء العملية الحالية قبل التسجيل.");
     const supported = microphoneRecordingMime(MediaRecorder);
     if (!supported) throw new Error("لا يدعم هذا المتصفح تسجيل WebM أو MP4 أو OGG. AMR غير متاح في MediaRecorder القياسي.");
     recorder = new MediaRecorder(stream, { mimeType: supported.mime });
     const capture = { sceneId: activeSceneId, startMs: Math.round(currentMs), trackId: track.id };
-    const session = { recorder, stream, meterContext, chunks: [], bytes: 0, failed: false,
+    session = { recorder, stream, meterContext: null, chunks: [], bytes: 0, failed: false,
       startedAt: 0, stopRequestedAt: null, timer: 0, capture, mime: supported };
     microphoneSession = session;
-    session.meterSource = meterContext.createMediaStreamSource(stream);
-    session.meterAnalyser = meterContext.createAnalyser(); session.meterAnalyser.fftSize = 1024;
-    session.meterSource.connect(session.meterAnalyser);
     recorder.ondataavailable = event => {
       if (!event.data?.size) return;
       session.bytes += event.data.size;
@@ -2316,6 +2484,7 @@ microphoneButton.addEventListener("click", async () => {
       stopMicrophoneMeter(session);
       stream.getTracks().forEach(mediaTrack => mediaTrack.stop());
       microphoneSession = null;
+      if (microphonePageHiding) { microphoneFinalizing = false; return; }
       microphoneFinalizing = true;
       refreshMicrophoneBusyControls();
       try {
@@ -2327,8 +2496,19 @@ microphoneButton.addEventListener("click", async () => {
         const imported = await importStudioAudio(file);
         if (!imported) throw new Error("تعذر التحقق من التسجيل؛ لم تتم إضافته إلى Timeline.");
         addRecordedAudioToTimeline(imported, session.capture);
+        lastMicrophoneDiagnostic = {
+          state: "تم التحقق وإضافة التسجيل",
+          mime: file.type, bytes: file.size, decodedDurationMs: imported.durationMs,
+          elapsedMs, assetId: imported.id, rms: session.signal?.rms ?? null,
+          peak: session.signal?.peak ?? null, sampleRate: session.signal?.sampleRate ?? null,
+          meterError: session.meterError ?? null, timelineClipCount: audioTracks.reduce((count, item) => count + item.clips.length, 0)
+        };
+        $("audioDiagnosticStatus").textContent = "تم التحقق من آخر تسجيل وإضافته إلى Timeline.";
       } catch (error) {
+        lastMicrophoneDiagnostic = { state: "فشل اعتماد التسجيل", error: errorText(error), bytes: session.bytes,
+          mime: recorder.mimeType || supported.mime, meterError: session.meterError ?? null };
         $("audioTimelineMessage").textContent = `تعذر اعتماد التسجيل: ${errorText(error)}`;
+        $("audioDiagnosticStatus").textContent = `فشل آخر تسجيل: ${errorText(error)}`;
       } finally {
         microphoneFinalizing = false;
         refreshMicrophoneBusyControls();
@@ -2336,7 +2516,9 @@ microphoneButton.addEventListener("click", async () => {
     };
     recorder.start(250);
     session.startedAt = performance.now();
-    startMicrophoneMeter(session);
+    $("microphoneRecordingStatus").hidden = false;
+    $("microphoneElapsed").textContent = "00:00";
+    void startMicrophoneMeter(session);
     session.timer = setTimeout(() => {
       if (microphoneSession === session && recorder.state === "recording") {
         session.stopRequestedAt = performance.now();
@@ -2345,33 +2527,55 @@ microphoneButton.addEventListener("click", async () => {
     }, 60000);
     $("audioTimelineMessage").textContent = `جارٍ التسجيل بصيغة ${supported.base} (الحد 60 ثانية). أوقفه لإضافته تلقائيًا إلى Timeline.`;
   } catch (error) {
-    stream?.getTracks().forEach(mediaTrack => mediaTrack.stop());
-    if (!microphoneSession || microphoneSession.recorder !== recorder) {
-      try { if (meterContext && meterContext.state !== "closed") await meterContext.close(); } catch { /* Context may have closed as the permission prompt was canceled. */ }
-      $("microphoneRecordingStatus").hidden = true;
+    microphoneStartupController = null;
+    startupController.abort();
+    if (session) {
+      clearTimeout(session.timer);
+      stopMicrophoneMeter(session);
+      session.recorder.ondataavailable = null; session.recorder.onerror = null; session.recorder.onstop = null;
+      if (session.recorder.state === "recording") { try { session.recorder.stop(); } catch { /* Stream cleanup below is authoritative. */ } }
     }
+    stream?.getTracks().forEach(mediaTrack => mediaTrack.stop());
     if (microphoneSession?.recorder === recorder) microphoneSession = null;
+    $("microphoneRecordingStatus").hidden = true;
     let message = errorText(error);
     if (error?.name === "NotAllowedError" || error?.name === "SecurityError") message = "لم يُسمح بالميكروفون. اسمح للموقع باستخدامه وافتح Motion Studio عبر HTTPS أو WebView آمن.";
     else if (error?.name === "TimeoutError") message = "لم يصل رد من Android على طلب الميكروفون خلال 30 ثانية. تحقق من إذن الميكروفون للنظام والتطبيق ثم أعد المحاولة.";
     else if (error?.name === "NotFoundError" || error?.name === "DevicesNotFoundError") message = "لم يعثر Android على ميكروفون متاح.";
     else if (error?.name === "NotReadableError" || error?.name === "TrackStartError") message = "الميكروفون مشغول أو رفض Android بدء الالتقاط.";
-    $("audioTimelineMessage").textContent = message;
+    if (!microphonePageHiding) {
+      $("audioTimelineMessage").textContent = message;
+      lastMicrophoneDiagnostic = { state: "فشل بدء التسجيل", error: message };
+      $("audioDiagnosticStatus").textContent = message;
+    }
   } finally {
+    if (microphoneStartupController === startupController) microphoneStartupController = null;
     microphoneStarting = false;
     refreshMicrophoneBusyControls();
   }
 });
 window.addEventListener("pagehide", () => {
+  microphonePageHiding = true;
+  microphoneStartupController?.abort();
+  microphoneStartupController = null;
+  audioImportIntent = null;
+  stopSelectedAudioPreview();
   const session = microphoneSession;
-  if (!session) return;
+  if (!session) {
+    if (microphoneStarting) lastMicrophoneDiagnostic = { state: "أُلغي طلب الإذن بسبب مغادرة الصفحة" };
+    return;
+  }
   clearTimeout(session.timer);
   stopMicrophoneMeter(session);
   session.recorder.onstop = null;
   try { if (session.recorder.state === "recording") session.recorder.stop(); } catch { /* Closing the page releases the encoder. */ }
   session.stream.getTracks().forEach(track => track.stop());
   microphoneSession = null;
+  microphoneFinalizing = false;
+  lastMicrophoneDiagnostic = { state: "أُلغي التسجيل بسبب مغادرة الصفحة", bytes: session.bytes,
+    mime: session.recorder.mimeType || session.mime?.mime, rms: session.signal?.rms ?? null, peak: session.signal?.peak ?? null };
 });
+window.addEventListener("pageshow", () => { microphonePageHiding = false; });
 async function importStudioAudio(file) {
   if (!file) return null;
   const requestToken = audioRequest.begin();
@@ -2466,6 +2670,7 @@ $("addAudioClip").addEventListener("click", () => {
 $("deleteAudioClip").addEventListener("click", () => {
   if (activeExport || microphoneOperationActive() || !audioClipSelection) return;
   try {
+    stopSelectedAudioPreview();
     audioTracks = deleteAudioClip(audioTracks, project.durationMs, audioClipSelection.trackId, audioClipSelection.clipId);
     audioClipSelection = null; rebuildAudioPlayer({ resume: true }); audioTimeline.clearSelection(); renderAudioInspector(); renderAt(currentMs);
   } catch (error) { $("audioTimelineMessage").textContent = errorText(error); }
@@ -2563,6 +2768,10 @@ imageInput.addEventListener("change", async () => {
 });
 
 $("saveProjectButton").addEventListener("click", async () => {
+  if (microphoneOperationActive() || activeExport) {
+    status.textContent = "أوقف التسجيل أو انتظر انتهاء استيراد الصوت أو التصدير قبل حفظ المشروع.";
+    return;
+  }
   clearFailure();
   try {
     captureCurrentScene();
@@ -2711,6 +2920,9 @@ window.addEventListener("pagehide", () => {
   try { captureCurrentScene(); } catch { /* The current JSON remains available from the last valid edit. */ }
   cancelActiveExport("غادرت الصفحة أثناء التصدير.");
   audioRequest.begin();
+  pendingAudioRequest = null;
+  audioImportIntent = null;
+  stopSelectedAudioPreview();
   try { audioPlayer?.destroy(); } catch { /* Browser is unloading; all local playback handles are being discarded. */ }
   for (const { url } of audioFiles.values()) if (url) URL.revokeObjectURL(url);
   audioFiles.clear();
