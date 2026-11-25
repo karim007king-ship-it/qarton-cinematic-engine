@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>QARTON — تشخيص الصوت</title>
+<style>
+*{box-sizing:border-box}body{background:#10141c;color:#f4f2eb;font:16px system-ui;margin:0 auto;padding:16px;max-width:800px}h1{color:#e7b95c;font-size:1.5rem}section{background:#1c2430;padding:14px;margin:12px 0;border-radius:12px}button,input{min-height:44px;max-width:100%;font:inherit;margin:4px;padding:8px}button{background:#e7b95c;color:#151515;border:0;border-radius:8px}button:disabled{opacity:.45}pre{direction:ltr;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;color:#d5e2f3}audio{width:100%}label{display:block}p{line-height:1.6}
+
+body{padding:12px;min-width:0}section{min-width:0;overflow-wrap:anywhere}button,select,input{min-height:44px}select{max-width:100%;font:inherit}button{cursor:pointer}button:focus-visible{outline:3px solid white}meter{width:100%;height:24px}textarea{width:100%;min-height:120px;font:14px monospace;direction:ltr}#level-text{font-variant-numeric:tabular-nums}#full-status{color:#e7b95c}a{color:#e7b95c;display:inline-block;padding:12px}a[hidden]{display:none}@media(max-width:480px){section{padding:10px}button{width:100%;margin:4px 0}h2{font-size:1.15rem}input{width:100%;margin:4px 0}pre{font-size:12px}}
+</style>
+<h1>QARTON | مختبر تشخيص الصوت</h1>
+<p>اختبار مستقل لا يغير المشروع. افتح من نفس أصل Motion Studio لقراءة المشاريع المحفوظة. لا تُرسل أي بيانات تلقائياً. النسخة المستقلة لا ترى مشاريع Motion Studio إلا على نفس الأصل.</p>
+<section><h2>البيئة والميكروفون</h2><button id="full">اختبار شامل للصوت (حوالي 10 ث)</button><p id="full-status" role="status">جاهز للاختبار</p><label for="level">قوة الميكروفون أثناء التسجيل</label><meter id="level" min="0" max="1" low=".04" high=".65" optimum=".25" value="0"></meter><p id="level-text">غير نشط</p><button id="refresh">فحص البيئة</button><pre id="env"></pre><button id="mic">تسجيل ميكروفون (5 ث)</button><button id="tone">تسجيل نغمة اصطناعية (5 ث)</button><p>انطق جملة أثناء التسجيل. النغمة تمر عبر نفس MediaRecorder دون الميكروفون.</p></section>
+<section><h2>نتيجة التسجيل / ملف الهاتف</h2><label>اختيار صوت أو فيديو للتحليل <input id="file" type="file" accept="audio/*,video/*,.amr,.m4a,.webm,.mp4"></label><pre id="result">لم يبدأ الاختبار</pre><audio id="player" controls preload="metadata"></audio><button id="play" disabled>تشغيل التسجيل مباشرة</button><a id="download" hidden download>تنزيل العينة</a></section>
+<section><h2>Timeline والأصول المحفوظة (قراءة فقط)</h2><button id="project">فحص آخر مشروع محفوظ</button><pre id="snapshot">لم يتم الفحص</pre><label>تحليل أصل محفوظ <select id="assets"></select></label><button id="inspect" disabled>تحليل الأصل</button></section>
+<section><h2>سجل الأخطاء والنتائج</h2><button id="copy">نسخ التقرير</button><button id="share">مشاركة التقرير</button><p id="report-status" role="status"></p><textarea id="report-text" readonly hidden aria-label="تقرير التشخيص للنسخ اليدوي"></textarea><button id="report">تنزيل تقرير JSON (دون الصوت)</button><pre id="log"></pre></section>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const formats=['audio/webm;codecs=opus','audio/mp4','audio/webm','audio/ogg;codecs=opus'];
+const state={environment:{},runs:[],project:null,events:[]};
+let busy=false, fullRunning=false, url=null, selectedBlob=null, projectAssets=[], projectId=null, activeStream=null, cancelled=false;
+const describe=e=>({name:e?.name||'Error',message:e?.message||String(e)});
+function event(stage,detail){state.events.push({stage,detail,time:new Date().toISOString()});$('log').textContent=JSON.stringify(state.events,null,2);}
+function show(id,value){$(id).textContent=JSON.stringify(value,null,2);}
+function setBusy(value){busy=value;for(const id of ['mic','tone','file','project','refresh','play','inspect','full','assets']) $(id).disabled=value||fullRunning; if(!value&&!fullRunning){$('play').disabled=!selectedBlob;$('inspect').disabled=!projectAssets.length;}}
+function timeout(p,ms,label){let t;return Promise.race([p,new Promise((_,reject)=>{t=setTimeout(()=>reject(new Error(label+' timeout')),ms);})]).finally(()=>clearTimeout(t));}
+async function environment(){
+ let permission='unknown';try{permission=(await navigator.permissions.query({name:'microphone'})).state;}catch(e){permission='unavailable: '+e.name;}
+ const E={protocol:location.protocol,origin:location.origin,secureContext:isSecureContext,userAgent:navigator.userAgent,getUserMedia:!!navigator.mediaDevices?.getUserMedia,microphonePermission:permission,mediaRecorder:typeof MediaRecorder==='function',audioContext:!!(window.AudioContext||window.webkitAudioContext),indexedDB:!!window.indexedDB,formats:{}};
+ for(const f of formats) E.formats[f]=!!window.MediaRecorder?.isTypeSupported?.(f);
+ state.environment=E;show('env',E);return E;
+}
+function metrics(buffer){let sum=0,peak=0,count=0;for(let c=0;c<buffer.numberOfChannels;c++){const samples=buffer.getChannelData(c);for(const v of samples){sum+=v*v;peak=Math.max(peak,Math.abs(v));count++;}}return {rms:count?Math.sqrt(sum/count):0,peak,samples:count,channels:buffer.numberOfChannels,sampleRate:buffer.sampleRate};}
+function publish(run){show('result',run);}
+function attach(blob,name){const player=$('player');player.pause();player.removeAttribute('src');player.load();if(url)URL.revokeObjectURL(url);url=URL.createObjectURL(blob);selectedBlob=blob;player.src=url;$('download').href=url;$('download').download=name;$('download').hidden=false;}
+async function analyze(blob,run,name,context){
+ run.bytes=blob.size;run.blobMime=blob.type||'(empty)';attach(blob,name);publish(run);
+ try{if(!blob.size||blob.size>24*1024*1024)throw new Error('Empty or exceeds diagnostic 24 MiB limit');
+ const C=window.AudioContext||window.webkitAudioContext; if(!C)throw new Error('AudioContext unavailable');
+ const ctx=context||new C();try{run.decodeContextState=ctx.state;const buffer=await timeout(ctx.decodeAudioData(await blob.arrayBuffer()),15000,'decode');run.decodedDurationMs=Math.round(buffer.duration*1000);Object.assign(run,metrics(buffer));run.signal=run.peak<0.001?'near-silent':'present';}finally{if(!context)await ctx.close();}
+ }catch(e){run.decodeError=describe(e);event('decode',run.decodeError);}
+ publish(run);
+}
+function monitorMic(ctx,stream,run){
+ const analyser=ctx.createAnalyser();analyser.fftSize=1024;
+ const input=ctx.createMediaStreamSource(stream);input.connect(analyser);
+ const samples=new Float32Array(analyser.fftSize);let frame=0,peak=0,maxRms=0,frames=0;
+ function tick(){analyser.getFloatTimeDomainData(samples);let sum=0;for(const v of samples){sum+=v*v;peak=Math.max(peak,Math.abs(v));}
+ const rms=Math.sqrt(sum/samples.length);maxRms=Math.max(maxRms,rms);frames++;
+ $('level').value=Math.min(1,rms*4);$('level-text').textContent='RMS: '+rms.toFixed(3)+' | Peak: '+peak.toFixed(3);
+ frame=requestAnimationFrame(tick);}
+ tick();return ()=>{cancelAnimationFrame(frame);input.disconnect();run.liveMic={peak,maxRms,frames};$('level').value=0;$('level-text').textContent='انتهى التسجيل — Peak: '+peak.toFixed(3);};
+}
+function clearSample(){const player=$('player');player.pause();player.removeAttribute('src');player.load();if(url)URL.revokeObjectURL(url);url=null;selectedBlob=null;$('download').hidden=true;}
+async function record(source,internal=false){
+ if(busy||fullRunning&&!internal)return;setBusy(true);cancelled=false;clearSample();const run={source,microphone:'not requested',status:'starting'};state.runs.push(run);publish(run);
+ let ctx,stream,oscillator,rec,stopMonitor,blob;
+ try{
+ const C=window.AudioContext||window.webkitAudioContext;if(!C)throw new Error('AudioContext unavailable');
+ ctx=new C();await timeout(ctx.resume(),5000,'AudioContext resume');run.audioContext=ctx.state;
+ if(source==='mic'){
+ if(!isSecureContext||!navigator.mediaDevices?.getUserMedia)throw new Error('Secure getUserMedia unavailable');
+ run.microphone='requesting';publish(run);
+ let expired=false;const request=navigator.mediaDevices.getUserMedia({audio:true}).then(s=>{if(expired||cancelled){s.getTracks().forEach(t=>t.stop());throw new Error('Capture request expired');}return s;});
+ try{stream=await timeout(request,30000,'microphone permission');}catch(e){expired=true;throw e;}
+ run.microphone='granted';const track=stream.getAudioTracks()[0];run.track={state:track?.readyState,muted:track?.muted,enabled:track?.enabled,settings:track?.getSettings?.()};if(run.track.settings){delete run.track.settings.deviceId;delete run.track.settings.groupId;}
+ }else{const dest=ctx.createMediaStreamDestination();oscillator=ctx.createOscillator();oscillator.frequency.value=660;const gain=ctx.createGain();gain.gain.value=.25;oscillator.connect(gain).connect(dest);stream=dest.stream;oscillator.start();}
+ activeStream=stream;
+ if(source==='mic')stopMonitor=monitorMic(ctx,stream,run);
+ const mime=formats.find(f=>window.MediaRecorder?.isTypeSupported?.(f));if(!mime)throw new Error('No advertised recording MIME');
+ run.requestedMime=mime;rec=new MediaRecorder(stream,{mimeType:mime});run.actualMime=rec.mimeType;
+ const chunks=[];let bytes=0;let start=performance.now(),stopTimer;
+ const recording=new Promise((resolve,reject)=>{
+ rec.ondataavailable=e=>{if(e.data.size){bytes+=e.data.size;if(bytes>20*1024*1024){reject(new Error('Recording size limit'));if(rec.state==='recording')rec.stop();}else chunks.push(e.data);}};
+ rec.onerror=e=>reject(e.error||new Error('MediaRecorder error'));
+ rec.onstop=()=>{run.elapsedMs=Math.round(performance.now()-start);resolve(new Blob(chunks,{type:rec.mimeType||mime}));};
+ rec.start(250);start=performance.now();stopTimer=setTimeout(()=>{if(rec.state==='recording')rec.stop();},5000);
+ });
+ run.status='recording';publish(run);
+ try{blob=await timeout(recording,12000,'recorder');}finally{clearTimeout(stopTimer);if(rec.state==='recording')rec.stop();}
+ stopMonitor?.();stopMonitor=null;run.status='finalized';run.chunks=chunks.length;stream.getTracks().forEach(t=>t.stop());
+ await analyze(blob,run,'qarton-'+source+(mime.includes('mp4')?'.m4a':mime.includes('ogg')?'.ogg':'.webm'),ctx);
+ }catch(e){run.status='failed';run.error=describe(e);if(run.microphone==='requesting')run.microphone='failed';event(source,run.error);}
+ finally{stopMonitor?.();try{oscillator?.stop();}catch{}stream?.getTracks().forEach(t=>t.stop());activeStream=null;if(ctx)try{await ctx.close();}catch{}publish(run);setBusy(false);void environment();}
+ return {run,blob};
+}
+function readExistingDB(){return new Promise((resolve,reject)=>{const req=indexedDB.open('qarton-motion-assets-v1');req.onupgradeneeded=()=>req.transaction.abort();req.onerror=()=>reject(req.error||new Error('Asset database unavailable'));req.onsuccess=()=>resolve(req.result);});}
+async function readAsset(id){let db;try{db=await readExistingDB();return await new Promise((resolve,reject)=>{const tx=db.transaction('assets','readonly');const rq=tx.objectStore('assets').get([projectId,id]);rq.onsuccess=()=>resolve(rq.result||null);rq.onerror=()=>reject(rq.error);tx.onabort=()=>reject(tx.error);});}finally{db?.close();}}
+async function snapshot(internal=false){
+ if(busy||fullRunning&&!internal)return;setBusy(true);projectAssets=[];$('assets').replaceChildren();const result={scope:'last saved project only'};
+ try{projectId=localStorage.getItem('qarton-motion-studio-current-project');if(!projectId)throw new Error('No saved project in this origin');
+ const raw=localStorage.getItem('qarton-motion-studio-sequence:'+projectId);if(!raw)throw new Error('Saved sequence missing');const data=JSON.parse(raw);const sequence=data.sequence;
+ const audio=sequence.assets.filter(a=>a.kind==='audio');const clips=sequence.scenes.flatMap(s=>s.audioTracks.flatMap(t=>t.clips.map(c=>({scene:s.id,track:t.id,asset:c.asset,startMs:c.startMs,durationMs:c.durationMs,volume:c.volume,trackVolume:t.volume}))));
+ result.committedClips=clips.length;result.masterVolume=data.audioMasterVolume;result.clips=clips;result.assets=[];let hints={};try{hints=JSON.parse(localStorage.getItem('qarton-motion-studio-audio-durations:'+projectId)||'{}');}catch(e){result.durationMetadataError=describe(e);}
+ for(const a of audio){const row={id:a.id,mime:a.mimeType,expectedBytes:a.size,durationHintMs:hints?.[a.id]??null};try{const blob=await timeout(readAsset(a.id),3000,'IndexedDB read');row.storedBytes=blob?.size??null;row.linked=blob instanceof Blob&&blob.size===a.size;if(row.linked){projectAssets.push(a);const option=document.createElement('option');option.value=a.id;option.textContent=a.name;$('assets').append(option);}}catch(e){row.error=describe(e);}result.assets.push(row);}
+ result.clipsWithoutLinkedBytes=clips.filter(c=>!result.assets.find(a=>a.id===c.asset&&a.linked)).length;
+ }catch(e){result.error=describe(e);event('project',result.error);}finally{state.project=result;show('snapshot',result);setBusy(false);}
+}
+async function inspect(){if(busy)return;setBusy(true);const a=projectAssets.find(a=>a.id===$('assets').value);const run={source:'saved-asset',asset:a?.id};state.runs.push(run);try{const blob=await timeout(readAsset(a.id),3000,'IndexedDB read');if(!blob)throw new Error('Asset missing');await analyze(blob,run,a.name);}catch(e){run.error=describe(e);event('asset',run.error);publish(run);}finally{setBusy(false);}}
+function verdict(run){return run?.status==='finalized'&&!run.decodeError&&run.decodedDurationMs>4000&&run.rms>0.001&&run.peak>0.001?'pass':'failed';}
+async function comprehensive(){
+ if(busy||fullRunning)return;fullRunning=true;setBusy(true);busy=false;
+ const summary={startedAt:new Date().toISOString(),mic:'pending',synthetic:'pending',project:'pending',playback:'manual'};
+ state.fullTest=summary;
+ try{
+ $('full-status').textContent='1/3 — تكلّم الآن بعد السماح بالميكروفون';
+ const mic=await record('mic',true);summary.mic=verdict(mic?.run);
+ $('full-status').textContent='2/3 — اختبار النغمة الاصطناعية';
+ const tone=await record('synthetic',true);summary.synthetic=verdict(tone?.run);
+ $('full-status').textContent='3/3 — فحص المشروع المحفوظ';
+ await snapshot(true);summary.project=state.project?.error?'unavailable':'checked';
+ if(mic?.blob?.size){attach(mic.blob,'qarton-mic'+(mic.blob.type.includes('mp4')?'.m4a':mic.blob.type.includes('ogg')?'.ogg':'.webm'));publish(mic.run);}
+ else if(tone?.blob?.size){publish(tone.run);}
+ await environment();
+ $('full-status').textContent='الميكروفون: '+(summary.mic==='pass'?'نجح':'فشل')+' | النغمة: '+(summary.synthetic==='pass'?'نجحت':'فشلت')+' — اضغط تشغيل للاستماع ثم انسخ التقرير.';
+ }catch(e){summary.error=describe(e);event('full-test',summary.error);$('full-status').textContent='تعذر إكمال الاختبار';}
+ finally{summary.finishedAt=new Date().toISOString();fullRunning=false;setBusy(false);}
+}
+$('full').onclick=comprehensive;
+$('mic').onclick=()=>record('mic');$('tone').onclick=()=>record('synthetic');$('refresh').onclick=environment;$('project').onclick=()=>snapshot();$('inspect').onclick=inspect;
+$('file').onchange=async e=>{const file=e.target.files[0];if(!file||busy)return;setBusy(true);const run={source:'file-picker'};state.runs.push(run);try{await analyze(file,run,file.name);}finally{setBusy(false);}};
+$('player').addEventListener('loadedmetadata',()=>event('media metadata',{duration:Number.isFinite($('player').duration)?$('player').duration:String($('player').duration)}));
+$('player').addEventListener('error',()=>event('media error',{code:$('player').error?.code,message:$('player').error?.message}));
+$('play').onclick=async()=>{try{await $('player').play();event('play','started (not proof of audible output)');if(state.fullTest)state.fullTest.playback='started';}catch(e){event('play',describe(e));if(state.fullTest)state.fullTest.playback=describe(e);}};
+function reportText(){return JSON.stringify(state,null,2);}
+function exposeReport(){const area=$('report-text');area.hidden=false;area.value=reportText();area.focus();area.select();return area;}
+$('copy').onclick=async()=>{try{await navigator.clipboard.writeText(reportText());$('report-status').textContent='تم نسخ التقرير';}catch{const area=exposeReport();let copied=false;try{copied=document.execCommand('copy');}catch{}$('report-status').textContent=copied?'تم نسخ التقرير':'حدد النص وانسخه يدوياً';}};
+$('share').onclick=async()=>{try{if(!navigator.share)throw new Error('Share unavailable');await navigator.share({title:'QARTON Audio Diagnostics',text:reportText()});$('report-status').textContent='تم فتح المشاركة';}catch(e){if(e.name==='AbortError')return;exposeReport();$('report-status').textContent='انسخ التقرير وأرسله للمراجعة';}};
+$('report').onclick=()=>{const a=document.createElement('a');const u=URL.createObjectURL(new Blob([reportText()],{type:'application/json'}));a.href=u;a.download='qarton-audio-diagnostics.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);};
+window.addEventListener('pagehide',()=>{cancelled=true;activeStream?.getTracks().forEach(t=>t.stop());if(url)URL.revokeObjectURL(url);});
+void environment();
+</script>
+</html>

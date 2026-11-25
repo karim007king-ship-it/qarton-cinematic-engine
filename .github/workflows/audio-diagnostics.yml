@@ -1,0 +1,28 @@
+name: Independent audio diagnostics
+on:
+  pull_request:
+    paths:
+      - 'examples/audio-diagnostics/**'
+      - 'scripts/check-audio-diagnostics.py'
+      - '.github/workflows/audio-diagnostics.yml'
+permissions:
+  contents: read
+jobs:
+  diagnostic:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install playwright==1.55.0
+      - run: python -m playwright install --with-deps chrome
+      - run: python scripts/check-audio-diagnostics.py
+      - name: Prepare standalone Android ZIP
+        run: |
+          cd examples/audio-diagnostics
+          zip -9 "${RUNNER_TEMP}/qarton-audio-diagnostics-b2.zip" index.html README.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qarton-audio-diagnostics-b2
+          path: ${{ runner.temp }}/qarton-audio-diagnostics-b2.zip
