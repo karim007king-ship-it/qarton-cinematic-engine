@@ -966,9 +966,10 @@ function audioAdapterPlay(assetId, options) {
   voice.loop = options.loop;
   voice.volume = Math.max(0, Math.min(1, options.volume));
   if (options.offsetMs > 0) voice.currentTime = options.offsetMs / 1000;
+  const owner = audioPlayer;
   const started = voice.play();
   started?.catch((error) => {
-    if (audioPlayer && audioPlayer.state === "playing") {
+    if (voice.hasAttribute("src") && audioPlayer === owner && owner?.state === "playing") {
       try { audioPlayer.pause(); } catch { try { audioPlayer.recover(); } catch { /* Failure is surfaced in the editor status below. */ } }
       isPlaying = false; cancelAnimationFrame(rafId); playPauseButton.textContent = "متابعة";
       $("audioTimelineMessage").textContent = `تعذر تشغيل الصوت على هذا الجهاز: ${errorText(error)}`;
