@@ -246,6 +246,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         assert page.locator(".visual-effect-clip").count() == 1, "Replay preserves the latest edited scene timeline"
         page.locator(".visual-effect-clip").click()
         page.locator('nav.bottom-dock [data-editor-section="audio"]').click()
+        page.locator(".advanced-audio-drawer > summary").click()
         page.locator("#audioInput").set_input_files(str(audio_sample))
         page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('تم التحقق من الملف')")
         page.locator("#audioTrackType").select_option("dialogue")
@@ -264,6 +265,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         audio_lane = page.locator("#audioTracks .audio-track-lane[data-track-id='audio-dialogue']")
         audio_box = audio_lane.bounding_box()
         audio_clip = page.locator(".audio-clip")
+        audio_clip.scroll_into_view_if_needed()
         page.evaluate("""() => {
           window.lastAudioPointerId = null;
           document.querySelector('#audioTracks').addEventListener('pointerdown', event => {
@@ -283,12 +285,22 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         }""")
         page.mouse.move(start_x + audio_box["width"] * 0.07, start_y, steps=4)
         assert original_clip.evaluate("el => !el.isConnected"), "drag redraw replaces the clip node while the stable root retains pointer capture"
-        page.wait_for_function("""() => {
-          const root = document.querySelector('#audioTracks');
-          const clip = root.querySelector('.audio-clip');
-          return root.hasPointerCapture(window.lastAudioPointerId) &&
-            clip?.getAttribute('aria-pressed') === 'true' && document.activeElement === clip;
-        }""", timeout=3000)
+        try:
+            page.wait_for_function("""() => {
+              const root = document.querySelector('#audioTracks');
+              const clip = root.querySelector('.audio-clip');
+              return root.hasPointerCapture(window.lastAudioPointerId) &&
+                clip?.getAttribute('aria-pressed') === 'true' && document.activeElement === clip;
+            }""", timeout=3000)
+        except Exception as error:
+            state = page.evaluate("""() => {
+              const root = document.querySelector('#audioTracks'); const clip = root.querySelector('.audio-clip');
+              return { dragging: root.dataset.dragging, pointerCaptured: root.hasPointerCapture(window.lastAudioPointerId),
+                selected: clip?.getAttribute('aria-pressed'), focusedTag: document.activeElement?.tagName,
+                focusedId: document.activeElement?.id, focusedClass: document.activeElement?.className,
+                focusedClipId: document.activeElement?.dataset?.clipId };
+            }""")
+            raise AssertionError(f"audio clip must retain pointer capture, selection, and focus during drag: {state}") from error
         page.mouse.up()
         assert "00:01.34" in page.locator(".audio-clip").get_attribute("aria-label"), "real Chromium drag moves the clip after clip-node replacement"
 
@@ -552,6 +564,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             sync_page.locator("#audioInput").set_input_files(str(sync_audio_sample))
             sync_page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('تم التحقق من الملف')")
             sync_page.locator('nav.bottom-dock [data-editor-section="audio"]').click()
+            sync_page.locator(".advanced-audio-drawer > summary").click()
             sync_page.locator("#audioTrackType").select_option("dialogue")
             sync_page.locator("#seek").evaluate("""el => { el.value = '0'; el.dispatchEvent(new Event('input', {bubbles: true})); }""")
             sync_page.locator("#addAudioClip").click()
@@ -829,6 +842,8 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             assert sequence_page.locator("#sceneDuration").input_value() == str(seconds)
         def add_scene_audio(audio_file):
             sequence_page.locator('nav.bottom-dock [data-editor-section="audio"]').click()
+            if sequence_page.locator(".advanced-audio-drawer").get_attribute("open") is None:
+                sequence_page.locator(".advanced-audio-drawer > summary").click()
             sequence_page.locator("#audioInput").set_input_files(str(audio_file))
             sequence_page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('تم التحقق من الملف')")
             sequence_page.locator("#audioTrackType").select_option("music")

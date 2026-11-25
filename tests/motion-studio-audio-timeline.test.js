@@ -5,7 +5,7 @@ import { makeProject, makeProjectFile, parseProjectFile } from "../examples/moti
 import { createCinematicAudioPlayer } from "../src/audio/cinematic-audio-core.js";
 import {
   AUDIO_MAX_FILE_BYTES, addAudioClip, compileAudioTracks, deleteAudioClip, editAudioClip,
-  makeAudioAssetMetadata, makeAudioTracks, setAudioTrackVolume, setAudioViseme, validateAudioFile
+  makeAudioAssetMetadata, makeAudioTracks, readAudioDuration, setAudioTrackVolume, setAudioViseme, validateAudioFile
 } from "../examples/motion-studio-lab/studio-audio-model.js";
 
 const audioAsset = { id: "asset-voice-1", name: "dialogue.wav", type: "audio/wav", size: 2048 };
@@ -92,6 +92,101 @@ test("audio file import validates MIME, known extensions, nonzero size and Andro
     { id: "asset-1", name: "voice.wav", type: "audio/wav", size: 100 });
 });
 
+test("Android HONOR 400 Pro metadata Infinity falls back to decoded AudioBuffer duration", async () => {
+  const observed = { permission: "granted", recorder: "successful", mime: "audio/webm;codecs=opus",
+    elapsedMs: 5002, decodedDurationMs: 4920, size: 78052, rms: 0.0494319, peak: 0.4921764, sampleRate: 48000,
+    mediaMetadataDuration: Infinity };
+  let decodedBytes = 0;
+  let closed = false;
+  class AndroidAudioMetadata {
+    duration = observed.mediaMetadataDuration;
+    listeners = new Map();
+    addEventListener(name, callback) { this.listeners.set(name, callback); }
+    removeEventListener(name) { this.listeners.delete(name); }
+    set src(value) { this.url = value; queueMicrotask(() => this.listeners.get("loadedmetadata")?.()); }
+    removeAttribute() {}
+    load() {}
+  }
+  class DecodingAudioContext {
+    async decodeAudioData(bytes) { decodedBytes = bytes.byteLength; return { duration: observed.decodedDurationMs / 1000 }; }
+    async close() { closed = true; }
+  }
+  const file = new Blob([new Uint8Array(observed.size)], { type: observed.mime });
+  file.name = "recording.webm";
+  assert.equal(await readAudioDuration(file, { AudioClass: AndroidAudioMetadata, AudioContextClass: DecodingAudioContext }), 4920);
+  assert.equal(decodedBytes, 78052, "the actual recorder Blob is decoded before its duration is accepted");
+  assert.equal(closed, true, "temporary decoder context is released");
+  assert.equal(observed.rms, 0.0494319);
+  assert.equal(observed.peak, 0.4921764);
+  assert.equal(observed.sampleRate, 48000);
+});
+
+test("invalid or non-finite media duration never becomes zero or the elapsed capture hint", async () => {
+  for (const metadataDuration of [Infinity, NaN]) {
+    class BadMetadataAudio extends Object {
+      duration = metadataDuration;
+      listeners = new Map();
+      addEventListener(name, callback) { this.listeners.set(name, callback); }
+      removeEventListener(name) { this.listeners.delete(name); }
+      set src(value) { queueMicrotask(() => this.listeners.get("loadedmetadata")?.()); }
+      removeAttribute() {}
+      load() {}
+    }
+    class InvalidDecoder { async decodeAudioData() { throw new Error("invalid audio bytes"); } async close() {} }
+    const file = new Blob(["audio"], { type: "audio/webm" });
+    file.name = "recording.webm";
+    await assert.rejects(readAudioDuration(file, { AudioClass: BadMetadataAudio, AudioContextClass: InvalidDecoder }), /تعذر فك ترميز/);
+  }
+});
+
+test("stalled audio decode has its own deadline and closes the temporary context", async () => {
+  let closed = false;
+  class NonFiniteMetadata {
+    duration = Infinity;
+    addEventListener(name, callback) { if (name === "loadedmetadata") queueMicrotask(callback); }
+    removeEventListener() {}
+    set src(value) {}
+    removeAttribute() {}
+    load() {}
+  }
+  class StalledDecoder {
+    decodeAudioData() { return new Promise(() => {}); }
+    async close() { closed = true; }
+  }
+  const file = new Blob(["valid-looking-recorder-data"], { type: "audio/webm" });
+  file.name = "recording.webm";
+  const startedAt = Date.now();
+  await assert.rejects(readAudioDuration(file, {
+    AudioClass: NonFiniteMetadata, AudioContextClass: StalledDecoder, timeoutMs: 20,
+    decodeTimeoutMs: 15, closeTimeoutMs: 20
+  }), /انتهت مهلة فك ترميز الصوت/);
+  assert.ok(Date.now() - startedAt < 500, "decoder timeout must not wait for a native decode promise forever");
+  assert.equal(closed, true, "the temporary decoder context is closed after timeout");
+});
+
+test("a hung AudioContext.close cannot extend the decoder timeout indefinitely", async () => {
+  class NonFiniteMetadata {
+    duration = NaN;
+    addEventListener(name, callback) { if (name === "loadedmetadata") queueMicrotask(callback); }
+    removeEventListener() {}
+    set src(value) {}
+    removeAttribute() {}
+    load() {}
+  }
+  class StalledDecoder {
+    decodeAudioData() { return new Promise(() => {}); }
+    close() { return new Promise(() => {}); }
+  }
+  const file = new Blob(["stalled"], { type: "audio/webm" });
+  file.name = "recording.webm";
+  const startedAt = Date.now();
+  await assert.rejects(readAudioDuration(file, {
+    AudioClass: NonFiniteMetadata, AudioContextClass: StalledDecoder, timeoutMs: 20,
+    decodeTimeoutMs: 15, closeTimeoutMs: 15
+  }), /انتهت مهلة فك ترميز الصوت/);
+  assert.ok(Date.now() - startedAt < 500, "decoder and context cleanup deadlines are independent");
+});
+
 test("JSON stores only audio metadata and tracks and old L4/L5 envelopes default to empty audio", () => {
   const project = makeProject({ durationMs: 12000, startZoom: 1, endZoom: 1.2, startX: 0, endX: 0, startY: 0, endY: 0 });
   let tracks = makeAudioTracks();
@@ -117,9 +212,32 @@ test("phone audio UI exposes three lanes, clip editing, manual visemes, and shar
   const js = await readFile(new URL("../examples/motion-studio-lab/studio.js", import.meta.url), "utf8");
   const module = await readFile(new URL("../examples/motion-studio-lab/studio-audio-timeline.js", import.meta.url), "utf8");
   const renderer = await readFile(new URL("../examples/motion-studio-lab/studio-scene-renderer.js", import.meta.url), "utf8");
+  const workflow = await readFile(new URL("../.github/workflows/motion-studio-preview.yml", import.meta.url), "utf8");
+  for (const id of ["microphoneButtonHost", "quickImportAudio", "quickAddMusic", "microphoneRecordingStatus", "microphoneElapsed", "microphoneLevel", "playSelectedAudio", "deleteSelectedAudio"]) assert.match(html, new RegExp(`id=["']${id}["']`));
+  assert.match(js, /microphoneButton\.id = "quickRecordAudio"/);
+  assert.match(html, /<details class="advanced-audio-drawer">/);
+  assert.match(js, /getUserMedia\(\{ audio: true \}\)/);
+  assert.match(js, /requestMicrophoneWithTimeout\(30000, startupController\.signal\)/);
+  assert.match(js, /startMicrophoneMeter\(session\)/);
+  assert.match(js, /2500\);/);
+  assert.match(js, /getFloatTimeDomainData\(samples\)/);
+  assert.match(js, /makeAudioImportIntent\(\{ trackType, autoInsert \}\)/);
+  assert.match(js, /addRecordedAudioToTimeline\(imported, session\.capture\)/);
+  assert.match(js, /await Promise\.race\(\[/, "resume timeout must be bounded independently from recording startup");
+  assert.match(js, /microphoneStartupController\?\.abort\(\)/, "pagehide must abort a pending permission request");
+  assert.match(js, /audioImportIntent = makeAudioImportIntent\(\{ trackType, autoInsert \}\)/, "import insertion target is frozen before the native picker opens");
+  assert.match(js, /navigator\.clipboard\?\.writeText/);
+  assert.match(workflow, /sha256sum index\.html README\.txt > SHA256SUMS\.txt/);
+  assert.match(workflow, /motion-studio-l12-a2\//);
+  assert.match(workflow, /actions\/deploy-pages@v4/, "L12-A2 has its own HTTPS Pages route without merging the source branch");
+  assert.match(html, /id="audioDiagnosticsPanel"/);
+  assert.match(html, /id="copyAudioDiagnostics"/);
+  assert.match(js, /تشغيل مستقل:/, "selected audio playback is separate from scene playback");
   for (const id of ["audioInput", "audioTrackType", "addAudioClip", "deleteAudioClip", "audioClipStart", "audioClipDuration", "audioClipVolume", "audioMasterVolume", "dialogueLanguage", "visemeType", "addViseme", "audioTracks"]) assert.match(html, new RegExp(`id=["']${id}["']`));
   assert.match(js, /createCinematicAudioPlayer/);
   assert.match(js, /audioPlayer\.tick\(\)/);
+  assert.match(js, /const durationMs = await readAudioDuration\(file\)/);
+  assert.doesNotMatch(js, /durationHintMs|recorded: true/, "capture elapsed time must not substitute for a verified media duration");
   assert.match(js, /drawStudioScene/);
   assert.match(renderer, /audioSample\?\.dialogue/);
   assert.match(renderer, /characterAnimation\.sample\(timeMs\)/);

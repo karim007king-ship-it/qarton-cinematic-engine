@@ -86,10 +86,15 @@ with tempfile.TemporaryDirectory(prefix="qarton-virtual-mic-") as directory:
                                           is_mobile=True, has_touch=True, accept_downloads=True,
                                           permissions=["microphone"])
             context.add_init_script("""(() => {
+              Object.defineProperty(navigator, 'clipboard', {configurable:true, value:{writeText: async text => {window.__qartonCopiedAudioReport = text;}}});
               const NativeAudio = window.Audio;
               window.__qartonRecordedPreviewVoices = [];
               window.Audio = function(...args) {
                 const voice = new NativeAudio(...args);
+                const nativeDuration = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'duration').get;
+                Object.defineProperty(voice, 'duration', {configurable: true, get() {
+                  return typeof window.__qartonForcedAudioDuration === 'number' ? window.__qartonForcedAudioDuration : nativeDuration.call(this);
+                }});
                 const Ctx = window.AudioContext || window.webkitAudioContext;
                 if (Ctx) {
                   const context = new Ctx();
@@ -117,12 +122,64 @@ with tempfile.TemporaryDirectory(prefix="qarton-virtual-mic-") as directory:
             page.goto(f"{origin}/dist/{slug}/index.html")
             page.wait_for_function("document.querySelector('#stage')?.width > 0")
             assert page.evaluate("isSecureContext && !!navigator.mediaDevices?.getUserMedia"), "localhost must expose the secure microphone API"
+            page.locator('nav.bottom-dock [data-editor-section="audio"]').click()
+            for button_id in ("quickRecordAudio", "quickImportAudio", "quickAddMusic"):
+                button = page.locator(f"#{button_id}")
+                assert button.is_visible() and button.evaluate("el => el.getBoundingClientRect().height >= 44"), button_id
+
+            # Surface permission and unanswered WebView prompt failures instead of leaving a disabled button.
+            page.evaluate("""() => {
+              window.__qartonNativeTimeout = window.setTimeout;
+              window.setTimeout = (callback, delay, ...args) => window.__qartonNativeTimeout(callback, delay === 30000 ? 60 : delay, ...args);
+              window.__qartonNativeGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+              Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {configurable:true, value:() => Promise.reject(Object.assign(new Error('permission denied'), {name:'NotAllowedError'}))});
+            }""")
+            page.locator("#quickRecordAudio").click()
+            page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('لم يُسمح بالميكروفون')")
+            assert page.locator(".microphone-record-button").is_enabled(), "permission denial must release the record button"
+            page.evaluate("Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {configurable:true, value:() => new Promise(() => {})})")
+            page.locator("#quickRecordAudio").click()
+            page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('30 ثانية')")
+            assert page.locator(".microphone-record-button").is_enabled(), "microphone timeout must release the record button"
+            page.evaluate("window.setTimeout = window.__qartonNativeTimeout; Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {configurable:true, value:window.__qartonNativeGetUserMedia})")
+            page.evaluate("""() => {
+              const native = window.__qartonNativeGetUserMedia;
+              Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {configurable:true, value:async constraints => {
+                const stream = await native(constraints); window.__qartonDelayedPermissionStream = stream;
+                await new Promise(resolve => setTimeout(resolve, 250)); return stream;
+              }});
+            }""")
+            page.locator("#quickRecordAudio").click()
+            page.wait_for_function("document.querySelector('.microphone-record-button').textContent.includes('انتظر إذن')")
+            page.evaluate("window.dispatchEvent(new PageTransitionEvent('pagehide'))")
+            page.wait_for_function("window.__qartonDelayedPermissionStream?.getTracks().every(track => track.readyState === 'ended')", timeout=3000)
+            page.evaluate("Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {configurable:true, value:window.__qartonNativeGetUserMedia}); window.dispatchEvent(new PageTransitionEvent('pageshow'))")
+            print("pagehide during microphone permission: pending request aborted and late stream tracks stopped")
             capabilities = page.evaluate("""() => ({
               webm: MediaRecorder.isTypeSupported('audio/webm;codecs=opus'),
               mp4: MediaRecorder.isTypeSupported('audio/mp4'),
               ogg: MediaRecorder.isTypeSupported('audio/ogg;codecs=opus'),
               amr: MediaRecorder.isTypeSupported('audio/amr')
             })""")
+
+            # A wedged meter AudioContext must not sit before getUserMedia or block recording finalization.
+            page.evaluate("""() => {
+              const Ctx = window.AudioContext || window.webkitAudioContext;
+              window.__qartonContextPrototype = Ctx.prototype;
+              window.__qartonOriginalResume = Ctx.prototype.resume;
+              Ctx.prototype.resume = function() { return new Promise(() => {}); };
+            }""")
+            page.locator("#quickRecordAudio").click()
+            page.wait_for_function("document.querySelector('.microphone-record-button').textContent === 'إيقاف التسجيل'", timeout=10000)
+            page.wait_for_function("document.querySelector('#audioDiagnosticStatus').textContent.includes('التسجيل مستمر')", timeout=5000)
+            assert page.locator(".microphone-record-button").is_enabled(), "meter resume timeout must leave the recording stop control usable"
+            page.locator("#quickRecordAudio").click()
+            page.wait_for_function("document.querySelectorAll('#audioTracks .audio-clip').length === 1", timeout=30000)
+            assert "تم التحقق وإضافة التسجيل" in page.locator("#audioTimelineMessage").inner_text()
+            page.locator("#deleteSelectedAudio").click()
+            page.wait_for_function("document.querySelectorAll('#audioTracks .audio-clip').length === 0")
+            page.evaluate("() => { window.__qartonContextPrototype.resume = window.__qartonOriginalResume; return true; }")
+            print("Meter AudioContext resume timeout: recording and Timeline commit continued successfully")
 
             # Exercise every genuinely supported audio recording container with the virtual microphone.
             supported = []
@@ -196,21 +253,52 @@ with tempfile.TemporaryDirectory(prefix="qarton-virtual-mic-") as directory:
             assert "تم التحقق فعليًا" in page.locator("#integratedStatus").inner_text(), page.locator("#integratedError").inner_text()
 
             page.locator('nav.bottom-dock [data-editor-section="audio"]').click()
+            page.locator(".advanced-audio-drawer > summary").click()
             page.locator("#audioTrackType").select_option("music")
+            # Reproduce Android WebView's metadata quirk while retaining real Chromium decoding.
+            page.evaluate("window.__qartonForcedAudioDuration = Infinity")
             record_button = page.locator(".microphone-record-button")
-            record_button.click()
+            page.locator("#quickRecordAudio").click()
             page.wait_for_function("document.querySelector('.microphone-record-button').textContent === 'إيقاف التسجيل'", timeout=10000)
+            assert page.locator("#microphoneRecordingStatus").is_visible(), "recording indicator should be visible while capturing"
+            page.wait_for_function("Number(document.querySelector('#microphoneLevel').value) > 0.05", timeout=5000)
             assert page.locator(".scene-select").nth(1).is_disabled(), "scene switching must lock while recording"
             assert page.locator("#integratedExportButton").is_disabled(), "export must lock while recording"
             page.wait_for_timeout(1800)
+            assert page.locator("#microphoneElapsed").inner_text() != "00:00", "elapsed recording time should advance"
             record_button.click()
             page.wait_for_function("document.querySelectorAll('#audioTracks .audio-clip').length === 1", timeout=30000)
+            page.evaluate("window.__qartonForcedAudioDuration = undefined")
             clip = page.locator("#audioTracks .audio-clip")
             assert "recording-" in clip.inner_text(), clip.inner_text()
             duration_ms = int(page.locator("#audioClipDuration").input_value())
             assert 1400 <= duration_ms <= 2300, duration_ms
             assert "تم التحقق وإضافة التسجيل" in page.locator("#audioTimelineMessage").inner_text()
             print(f"Timeline auto-insert: duration={duration_ms}ms, supported audio MIME={supported}")
+
+            # Android WebViews can expose NaN instead of Infinity; decoder duration remains authoritative.
+            page.evaluate("window.__qartonForcedAudioDuration = NaN")
+            page.locator("#quickRecordAudio").click()
+            page.wait_for_function("document.querySelector('.microphone-record-button').textContent === 'إيقاف التسجيل'", timeout=10000)
+            page.wait_for_timeout(1800)
+            page.locator("#quickRecordAudio").click()
+            page.wait_for_function("document.querySelectorAll('#audioTracks .audio-clip').length === 2", timeout=30000)
+            second_duration = int(page.locator("#audioClipDuration").input_value())
+            assert 1400 <= second_duration <= 2300, second_duration
+            page.locator("#deleteSelectedAudio").click()
+            page.wait_for_function("document.querySelectorAll('#audioTracks .audio-clip').length === 1")
+            page.evaluate("window.__qartonForcedAudioDuration = undefined")
+            print(f"NaN metadata fallback: decoded duration={second_duration}ms")
+
+            page.locator("#audioDiagnosticsPanel > summary").click()
+            page.locator("#copyAudioDiagnostics").click()
+            page.wait_for_function("window.__qartonCopiedAudioReport?.includes('decodedDurationMs')")
+            diagnostics = json.loads(page.evaluate("window.__qartonCopiedAudioReport"))
+            latest = diagnostics["latestRecording"]
+            assert latest["state"] == "تم التحقق وإضافة التسجيل" and latest["bytes"] > 0, diagnostics
+            assert 1400 <= latest["decodedDurationMs"] <= 2300 and latest["assetId"], latest
+            assert latest["rms"] > 0.02 and latest["peak"] > 0.05 and latest["sampleRate"] in (44100, 48000), latest
+            print(f"Copied diagnostics: Blob={latest['bytes']} bytes; decoded={latest['decodedDurationMs']}ms; RMS={latest['rms']:.4f}; peak={latest['peak']:.4f}; rate={latest['sampleRate']}Hz")
 
             # Persist project metadata and audio bytes, then verify that restored playback has a real signal.
             page.locator('nav.bottom-dock [data-editor-section="more"]').click()

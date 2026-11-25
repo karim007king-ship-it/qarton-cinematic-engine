@@ -5,6 +5,7 @@ on:
     branches:
       - feature/motion-studio-integrated-cinematic-preview-export-l11h4
       - fix/motion-studio-audio-import-l11h4-audio-fix
+      - fix/motion-studio-audio-recording-l11h4-fix2
     paths:
       - '.github/workflows/motion-studio-audio-import.yml'
       - 'examples/motion-studio-lab/studio.js'
