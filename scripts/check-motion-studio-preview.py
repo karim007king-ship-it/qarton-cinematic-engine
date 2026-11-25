@@ -1091,7 +1091,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
                   return {preview,drawer,dock,canvas,stage,transport,heading,ratio:preview.height/(preview.height+drawer.height),
                     canvasHeightFill:canvas.height/stage.height,
                     pageOverflow:document.documentElement.scrollWidth > innerWidth || document.documentElement.scrollHeight > innerHeight + 1,
-                    pageSize:{htmlWidth:document.documentElement.scrollWidth,htmlHeight:document.documentElement.scrollHeight,bodyWidth:document.body.scrollWidth,bodyHeight:document.body.scrollHeight,viewportWidth:innerWidth,viewportHeight:innerHeight},
+                    pageSize:{htmlWidth:document.documentElement.scrollWidth,htmlHeight:document.documentElement.scrollHeight,bodyWidth:document.body.scrollWidth,bodyHeight:document.body.scrollHeight,viewportWidth:innerWidth,viewportHeight:innerHeight,overflowElements:Array.from(document.querySelectorAll("body *")).map(el=>{const r=el.getBoundingClientRect();return {tag:el.tagName,id:el.id,classes:typeof el.className==="string"?el.className:"",top:r.top,bottom:r.bottom,left:r.left,right:r.right,overflowY:getComputedStyle(el).overflowY};}).filter(r=>r.bottom>innerHeight+1||r.right>innerWidth+1).slice(-12)},
                     picker:getComputedStyle(document.querySelector('#previewImagePicker')).display,
                     inputRect:(() => { const r=document.querySelector('#imageInput').getBoundingClientRect(); return {width:r.width,height:r.height}; })(),
                     canvasRatio:canvas.width/canvas.height, sourceRatio:(() => { const el=document.querySelector('#stage'); return el.width/el.height; })(), canvasTransportOverlap:overlaps(canvas,transport),
