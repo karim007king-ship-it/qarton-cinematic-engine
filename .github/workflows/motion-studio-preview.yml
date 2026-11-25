@@ -98,8 +98,8 @@ jobs:
             PREVIEW_SLUG='motion-studio-l11h4-audio-recording-fix-android-preview'
             PREVIEW_LABEL='L11-H4'
           elif [ "$BRANCH_NAME" = 'feature/audio-core-fix-a-final' ]; then
-            PREVIEW_SLUG='motion-studio-l12-a-android-preview'
-            PREVIEW_LABEL='L12-A'
+            PREVIEW_SLUG='motion-studio-l12-a2-android-preview'
+            PREVIEW_LABEL='L12-A2'
           else
             PREVIEW_SLUG='motion-studio-l5-android-preview'
             PREVIEW_LABEL='L5'
@@ -137,7 +137,8 @@ jobs:
       - name: Package Android preview ZIP
         run: |
           cd "dist/$MOTION_STUDIO_PREVIEW_SLUG"
-          zip -9 "../../$MOTION_STUDIO_PREVIEW_SLUG.zip" index.html README.txt
+          sha256sum index.html README.txt > SHA256SUMS.txt
+          zip -9 "../../$MOTION_STUDIO_PREVIEW_SLUG.zip" index.html README.txt SHA256SUMS.txt
       - name: Upload Android preview artifact
         uses: actions/upload-artifact@v4
         with:
@@ -161,3 +162,41 @@ jobs:
           path: artifacts/motion-studio-l11f2/*.png
           if-no-files-found: error
           retention-days: 30
+
+  publish-l12-a2-preview:
+    if: github.event_name == 'pull_request' && github.head_ref == 'feature/audio-core-fix-a-final'
+    needs: preview
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: qarton-pages-refs/heads/main
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: https://karim007king-ship-it.github.io/qarton-cinematic-engine/motion-studio-l12-a2/
+    steps:
+      - name: Checkout current published-site source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: pages-base
+      - name: Add the isolated Motion Studio preview route
+        run: |
+          mkdir -p _site
+          cp -R pages-base/index.html pages-base/docs pages-base/examples pages-base/packages pages-base/src pages-base/official-intro.mp4 _site/
+          mkdir -p _site/motion-studio-l12-a2
+          cp dist/motion-studio-l12-a2/index.html _site/motion-studio-l12-a2/index.html
+          cp dist/motion-studio-l12-a2/README.txt _site/motion-studio-l12-a2/README.txt
+          sha256sum _site/motion-studio-l12-a2/index.html _site/motion-studio-l12-a2/README.txt > _site/motion-studio-l12-a2/SHA256SUMS.txt
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Upload the preserved site plus isolated preview route
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - name: Publish L12-A2 preview route
+        id: deployment
+        uses: actions/deploy-pages@v4
