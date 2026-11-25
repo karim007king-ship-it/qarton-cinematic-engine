@@ -127,6 +127,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-audio-import-") as directory:
         print("Quick audio actions: dialogue import, music import, selection, and delete passed")
         if page.locator(".advanced-audio-drawer").get_attribute("open") is None:
             page.locator(".advanced-audio-drawer > summary").click()
+        page.locator("#audioTracks .audio-clip").first.click()
         start_field = page.locator("#audioClipStart")
         start_field.fill("200")
         start_field.press("Enter")
