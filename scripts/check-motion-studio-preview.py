@@ -246,6 +246,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         assert page.locator(".visual-effect-clip").count() == 1, "Replay preserves the latest edited scene timeline"
         page.locator(".visual-effect-clip").click()
         page.locator('nav.bottom-dock [data-editor-section="audio"]').click()
+        page.locator(".advanced-audio-drawer > summary").click()
         page.locator("#audioInput").set_input_files(str(audio_sample))
         page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('تم التحقق من الملف')")
         page.locator("#audioTrackType").select_option("dialogue")
@@ -552,6 +553,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             sync_page.locator("#audioInput").set_input_files(str(sync_audio_sample))
             sync_page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('تم التحقق من الملف')")
             sync_page.locator('nav.bottom-dock [data-editor-section="audio"]').click()
+            sync_page.locator(".advanced-audio-drawer > summary").click()
             sync_page.locator("#audioTrackType").select_option("dialogue")
             sync_page.locator("#seek").evaluate("""el => { el.value = '0'; el.dispatchEvent(new Event('input', {bubbles: true})); }""")
             sync_page.locator("#addAudioClip").click()
@@ -829,6 +831,8 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             assert sequence_page.locator("#sceneDuration").input_value() == str(seconds)
         def add_scene_audio(audio_file):
             sequence_page.locator('nav.bottom-dock [data-editor-section="audio"]').click()
+            if sequence_page.locator(".advanced-audio-drawer").get_attribute("open") is None:
+                sequence_page.locator(".advanced-audio-drawer > summary").click()
             sequence_page.locator("#audioInput").set_input_files(str(audio_file))
             sequence_page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('تم التحقق من الملف')")
             sequence_page.locator("#audioTrackType").select_option("music")

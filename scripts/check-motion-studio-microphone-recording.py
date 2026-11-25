@@ -220,6 +220,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-virtual-mic-") as directory:
             assert "تم التحقق فعليًا" in page.locator("#integratedStatus").inner_text(), page.locator("#integratedError").inner_text()
 
             page.locator('nav.bottom-dock [data-editor-section="audio"]').click()
+            page.locator(".advanced-audio-drawer > summary").click()
             page.locator("#audioTrackType").select_option("music")
             # Reproduce Android WebView's metadata quirk while retaining real Chromium decoding.
             page.evaluate("window.__qartonForcedAudioDuration = Infinity")
