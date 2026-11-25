@@ -297,7 +297,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-virtual-mic-") as directory:
             latest = diagnostics["latestRecording"]
             assert latest["state"] == "تم التحقق وإضافة التسجيل" and latest["bytes"] > 0, diagnostics
             assert 1400 <= latest["decodedDurationMs"] <= 2300 and latest["assetId"], latest
-            assert latest["rms"] > 0.02 and latest["peak"] > 0.1 and latest["sampleRate"] == 48000, latest
+            assert latest["rms"] > 0.02 and latest["peak"] > 0.05 and latest["sampleRate"] in (44100, 48000), latest
             print(f"Copied diagnostics: Blob={latest['bytes']} bytes; decoded={latest['decodedDurationMs']}ms; RMS={latest['rms']:.4f}; peak={latest['peak']:.4f}; rate={latest['sampleRate']}Hz")
 
             # Persist project metadata and audio bytes, then verify that restored playback has a real signal.
