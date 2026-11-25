@@ -128,7 +128,8 @@ with tempfile.TemporaryDirectory(prefix="qarton-audio-import-") as directory:
         page.reload()
         page.wait_for_function("document.querySelectorAll('#audioTracks .audio-clip').length === 1", timeout=20000)
         assert "استُعيد" in page.locator("#assetLibraryMessage").inner_text(), page.locator("#assetLibraryMessage").inner_text()
-        page.locator("#audioTracks .audio-clip").click()
+        page.locator('nav.bottom-dock [data-editor-section="audio"]').click()
+        touch_tap(page, page.locator("#audioTracks .audio-clip"))
         assert page.locator("#audioClipDuration").input_value() == "3000"
 
         touch_tap(page, page.locator("#playPauseButton"))
