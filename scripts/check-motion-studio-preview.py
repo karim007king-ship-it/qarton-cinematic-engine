@@ -194,11 +194,14 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         start_y = effect_box["y"] + effect_box["height"] / 2
         page.mouse.move(start_x, start_y)
         page.mouse.down()
-        page.wait_for_function("""() => {
+        page.wait_for_function("document.querySelector('#visualEffectsTracks').dataset.dragging === 'true'")
+        drag_state = page.evaluate("""() => {
           const root = document.querySelector('#visualEffectsTracks');
-          return root.dataset.dragging === 'true' && root.hasPointerCapture(window.lastEffectPointerId) &&
-            document.activeElement?.classList.contains('visual-effect-clip');
+          return {capture: root.hasPointerCapture(window.lastEffectPointerId), focused: document.activeElement?.classList.contains('visual-effect-clip'),
+            pointerId: window.lastEffectPointerId, activeClass: document.activeElement?.className || ''};
         }""")
+        assert drag_state["capture"], f"effect drag must retain pointer capture: {drag_state}"
+        assert drag_state["focused"], f"effect drag must preserve clip focus: {drag_state}"
         page.mouse.move(start_x + lane_box["width"] * 0.04, start_y, steps=3)
         page.keyboard.press("Escape")
         assert page.locator(".visual-effect-clip").get_attribute("aria-label") == original_effect_label, "Escape restores the committed start time"
