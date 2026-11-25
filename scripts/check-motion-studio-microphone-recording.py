@@ -178,7 +178,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-virtual-mic-") as directory:
             assert "تم التحقق وإضافة التسجيل" in page.locator("#audioTimelineMessage").inner_text()
             page.locator("#deleteSelectedAudio").click()
             page.wait_for_function("document.querySelectorAll('#audioTracks .audio-clip').length === 0")
-            page.evaluate("window.__qartonContextPrototype.resume = window.__qartonOriginalResume")
+            page.evaluate("() => { window.__qartonContextPrototype.resume = window.__qartonOriginalResume; return true; }")
             print("Meter AudioContext resume timeout: recording and Timeline commit continued successfully")
 
             # Exercise every genuinely supported audio recording container with the virtual microphone.
