@@ -199,13 +199,17 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
           const clip = document.querySelector('.visual-effect-clip');
           const rect = element => element?.getBoundingClientRect().toJSON() || null;
           const hit = document.elementFromPoint(x, y);
+          const panel = document.querySelector('[data-tool-panel="effects"]');
+          const card = document.querySelector('#effectsToolsSection');
           return {dragging: root.dataset.dragging === 'true', capture: root.hasPointerCapture(window.lastEffectPointerId),
             focused: document.activeElement?.classList.contains('visual-effect-clip'), pointerId: window.lastEffectPointerId,
             activeClass: document.activeElement?.className || '', hitClass: hit?.className || '', hitIsClip: hit === clip,
             disabled: clip?.disabled, pointerEvents: clip && getComputedStyle(clip).pointerEvents, point: {x, y},
             clip: rect(clip), stage: rect(document.querySelector('.stage-wrap')),
-            panel: rect(document.querySelector('[data-tool-panel="effects"]')), drawer: rect(document.querySelector('.tool-drawer')),
-            preview: rect(document.querySelector('.studio-preview')), studio: rect(document.querySelector('.studio'))};
+            panel: rect(panel), drawer: rect(document.querySelector('.tool-drawer')),
+            preview: rect(document.querySelector('.studio-preview')), studio: rect(document.querySelector('.studio')),
+            rootParent: root.parentElement?.id, card: rect(card), cardParent: card.parentElement?.dataset.toolPanel || card.parentElement?.className,
+            panelContainsRoot: panel.contains(root)};
         }""", {"x": start_x, "y": start_y})
         assert drag_state["dragging"], f"effect clip pointerdown must begin a drag: {drag_state}"
         assert drag_state["capture"], f"effect drag must retain pointer capture: {drag_state}"
