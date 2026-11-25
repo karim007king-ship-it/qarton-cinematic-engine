@@ -176,14 +176,21 @@ def exercise(context, url):
     })();""")
     page.goto(url + "examples/motion-studio-lab/")
     def reveal_editor_section(section):
+        if section == "motion":
+            page.locator('nav.bottom-dock [data-editor-section="project"]').click()
+            professional_mode = page.locator('[data-editor-mode-button="professional"]')
+            if professional_mode.get_attribute("aria-pressed") != "true":
+                professional_mode.click()
+            page.locator('nav.bottom-dock [data-editor-section="motion"]').click()
+            if not page.locator("#professionalMotionControls").evaluate("el => el.open"):
+                page.locator("#professionalMotionControls summary").click()
+            return
         page.locator(f'nav.bottom-dock [data-editor-section="{section}"]').click()
         if section == "project":
             for details_id in ("advancedProjectOptions", "legacyExportDetails"):
                 details = page.locator(f"#{details_id}")
                 if not details.evaluate("el => el.open"):
                     details.locator("summary").first.click()
-        if section == "motion" and not page.locator("#professionalMotionControls").evaluate("el => el.open"):
-            page.locator("#professionalMotionControls summary").click()
 
     def activate_studio_button(locator):
         """Navigate to the real editor panel, then verify centered touch hit testing."""

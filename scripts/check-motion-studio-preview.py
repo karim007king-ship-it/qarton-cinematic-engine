@@ -396,6 +396,8 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         page.locator("#audioInput").set_input_files(str(audio_sample))
         page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('تم التحقق من الملف')")
         assert not page.locator("#addAudioClip").is_disabled(), "relinked local audio keeps the saved asset id"
+        page.locator('nav.bottom-dock [data-editor-section="project"]').click()
+        page.locator('[data-editor-mode-button="professional"]').click()
         page.locator('nav.bottom-dock [data-editor-section="motion"]').click()
         page.locator("#professionalMotionControls summary").click()
         image_input.set_input_files(str(sample))
