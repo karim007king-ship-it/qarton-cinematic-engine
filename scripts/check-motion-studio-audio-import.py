@@ -158,13 +158,15 @@ with tempfile.TemporaryDirectory(prefix="qarton-audio-import-") as directory:
         streams = json.loads(subprocess.check_output(["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(output)], text=True, timeout=60))
         assert sum(stream["codec_type"] == "video" for stream in streams["streams"]) == 1, streams
         assert sum(stream["codec_type"] == "audio" for stream in streams["streams"]) == 1, streams
-        assert abs(float(streams["format"]["duration"]) - 3) < 0.15, streams["format"]
-        raw = subprocess.check_output(["ffmpeg", "-v", "error", "-i", str(output), "-ss", "0.5", "-t", "1.0", "-vn", "-ac", "1", "-ar", "48000", "-f", "f32le", "-"], timeout=60)
+        raw = subprocess.check_output(["ffmpeg", "-v", "error", "-i", str(output), "-vn", "-ac", "1", "-ar", "48000", "-f", "f32le", "-"], timeout=60)
         decoded = array.array("f"); decoded.frombytes(raw)
-        rms = math.sqrt(sum(value * value for value in decoded) / len(decoded))
-        tone = dominant_tone(decoded, 48000)
-        assert rms > 0.015 and tone == 660, {"rms": rms, "tone": tone, "samples": len(decoded)}
-        print(f"Long MP3 exported signal: 51.52s source in 3s scene, output={float(streams['format']['duration']):.3f}s, RMS={rms:.4f}, tone={tone}Hz")
+        decoded_duration = len(decoded) / 48000
+        assert abs(decoded_duration - 3) < 0.15, {"decodedAudioDuration": decoded_duration, "format": streams.get("format")}
+        signal = decoded[int(0.5 * 48000):int(1.5 * 48000)]
+        rms = math.sqrt(sum(value * value for value in signal) / len(signal))
+        tone = dominant_tone(signal, 48000)
+        assert rms > 0.015 and tone == 660, {"rms": rms, "tone": tone, "samples": len(signal)}
+        print(f"Long MP3 exported signal: 51.52s source in 3s scene, decoded audio={decoded_duration:.3f}s, RMS={rms:.4f}, tone={tone}Hz")
         assert not page_errors, page_errors
         page.screenshot(path=str(artifacts / "long-mp3-recovered-project.png"), full_page=True)
         browser.close()
