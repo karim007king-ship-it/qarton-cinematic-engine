@@ -247,7 +247,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-virtual-mic-") as directory:
             page.locator("#integratedExportButton").click()
             page.wait_for_function("document.querySelector('#integratedStatus').textContent.includes('اكتمل التصدير المتكامل') || !document.querySelector('#integratedError').hidden", timeout=90000)
             export_error = page.locator("#integratedError")
-            export_details = export_error.locator("code").inner_text() if export_error.locator("code").count() else "no technical details"
+            export_details = export_error.locator("code").evaluate("el => el.textContent") if export_error.locator("code").count() else "no technical details"
             assert "اكتمل التصدير المتكامل" in page.locator("#integratedStatus").inner_text(), f"{export_error.inner_text()} | {export_details}"
             with page.expect_download(timeout=15000) as export_download:
                 page.locator("#integratedDownload").click()
