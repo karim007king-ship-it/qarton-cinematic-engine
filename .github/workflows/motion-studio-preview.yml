@@ -101,6 +101,9 @@ jobs:
           elif [ "$BRANCH_NAME" = 'feature/audio-core-fix-a-final' ]; then
             PREVIEW_SLUG='motion-studio-l12-a2-android-preview'
             PREVIEW_LABEL='L12-A2'
+          elif [ "$BRANCH_NAME" = 'feature/motion-studio-easy-mobile-l13l1' ]; then
+            PREVIEW_SLUG='motion-studio-l13-l1-android-preview'
+            PREVIEW_LABEL='L13-L1'
           else
             PREVIEW_SLUG='motion-studio-l5-android-preview'
             PREVIEW_LABEL='L5'
@@ -156,10 +159,10 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Upload L11-F2 interface screenshots
-        if: github.head_ref == 'feature/motion-studio-compact-mobile-ui-l11f2'
+        if: github.head_ref == 'feature/motion-studio-compact-mobile-ui-l11f2' || github.head_ref == 'feature/motion-studio-easy-mobile-l13l1'
         uses: actions/upload-artifact@v4
         with:
-          name: motion-studio-l11f2-ui-screenshots
+          name: motion-studio-l13-l1-ui-screenshots
           path: artifacts/motion-studio-l11f2/*.png
           if-no-files-found: error
           retention-days: 30
