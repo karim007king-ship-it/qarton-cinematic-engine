@@ -90,7 +90,8 @@ export function makeAudioAssetMetadata(id, file) {
 }
 
 export async function readAudioDuration(file, { AudioClass = globalThis.Audio,
-  AudioContextClass = globalThis.AudioContext ?? globalThis.webkitAudioContext, timeoutMs = 10000 } = {}) {
+  AudioContextClass = globalThis.AudioContext ?? globalThis.webkitAudioContext, timeoutMs = 10000,
+  decodeTimeoutMs = 15000, closeTimeoutMs = 1000 } = {}) {
   const { mime } = validateAudioFile(file);
   const source = file.type === mime ? file : new Blob([file], { type: mime });
   let metadataDuration = null;
@@ -121,9 +122,15 @@ export async function readAudioDuration(file, { AudioClass = globalThis.Audio,
   // Decode only on that path and use the decoded PCM duration as the authority.
   if (typeof AudioContextClass !== "function") throw new Error("تعذر تحديد مدة الصوت: بيانات الوسائط غير صالحة ولا يتوفر فك الترميز.");
   const context = new AudioContextClass();
+  let decodeTimer;
+  let closeTimer;
   try {
     const bytes = await source.arrayBuffer();
-    const buffer = await context.decodeAudioData(bytes.slice(0));
+    const decoded = Promise.resolve().then(() => context.decodeAudioData(bytes.slice(0)));
+    const timeout = new Promise((_, reject) => {
+      decodeTimer = setTimeout(() => reject(new DOMException("انتهت مهلة فك ترميز الصوت.", "TimeoutError")), decodeTimeoutMs);
+    });
+    const buffer = await Promise.race([decoded, timeout]);
     if (!Number.isFinite(buffer?.duration) || buffer.duration <= 0 || buffer.duration > 3600) {
       throw new RangeError("مدة الصوت المفكوك غير صالحة أو أطول من ساعة.");
     }
@@ -131,7 +138,13 @@ export async function readAudioDuration(file, { AudioClass = globalThis.Audio,
   } catch (error) {
     throw new Error(`تعذر فك ترميز ملف الصوت للتحقق من مدته: ${error?.message || error}`);
   } finally {
-    try { await context.close?.(); } catch { /* Release best-effort on Android WebView. */ }
+    clearTimeout(decodeTimer);
+    // Closing must not itself hold an import forever on a stalled Android decoder.
+    try {
+      const closing = Promise.resolve(context.close?.()).catch(() => {});
+      await Promise.race([closing, new Promise(resolve => { closeTimer = setTimeout(resolve, closeTimeoutMs); })]);
+    } catch { /* Resource cleanup is best-effort when the platform decoder is wedged. */ }
+    finally { clearTimeout(closeTimer); }
   }
 }
 
