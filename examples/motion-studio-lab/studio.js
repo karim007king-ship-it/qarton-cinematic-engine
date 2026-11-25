@@ -22,7 +22,7 @@ import { createStudioSequenceEditor, parseStudioSequenceFile, serializeStudioSeq
 import { CAMERA_MOTION_PRESETS, createCameraMotionProject } from "./studio-motion-presets.js?v=l11f1-smart-editor-01";
 import { createPersistentAssetRegistry } from "../../packages/motion-studio/asset-persistence.js";
 import { openAssetStorage } from "../../packages/motion-studio/asset-storage.js";
-import { prepareStudioSequenceExport, sampleStudioSequenceExport } from "./studio-sequence-export.js?v=l11e-sequence-export-01";
+import { prepareStudioSequenceExport } from "./studio-sequence-export.js?v=l11e-sequence-export-01";
 import { createStudioSequenceRuntime, decodeStudioSequenceAudio } from "./studio-sequence-runtime.js?v=l11h4-integrated-01";
 
 const $ = (id) => document.getElementById(id);
@@ -2052,10 +2052,11 @@ $("audioInput").addEventListener("change", async () => {
     if (!audioRequest.isCurrent(requestToken)) return;
     const shared = await registerAssetFile(file);
     const id = shared.id;
-    const url = URL.createObjectURL(file);
+    const normalizedFile = file.type === metadata.mime ? file : new File([file], file.name, { type: metadata.mime });
+    const url = URL.createObjectURL(normalizedFile);
     const previous = audioFiles.get(id);
     if (previous?.url) URL.revokeObjectURL(previous.url);
-    audioFiles.set(id, { file, url, durationMs });
+    audioFiles.set(id, { file: normalizedFile, url, durationMs });
     audioAssets = sequenceEditor.sequence.assets.filter(asset => asset.kind === "audio").map(assetMetadataToAudio);
     activeAudioAssetId = id;
     rebuildAudioPlayer({ resume: isPlaying });
