@@ -125,11 +125,17 @@ with tempfile.TemporaryDirectory(prefix="qarton-audio-import-") as directory:
         page.locator("#deleteSelectedAudio").click()
         page.wait_for_function("document.querySelectorAll('#audioTracks .audio-clip').length === 1")
         print("Quick audio actions: dialogue import, music import, selection, and delete passed")
+        page.locator("#deleteSelectedAudio").click()
+        page.locator("#audioTrackType").select_option("music")
+        page.locator("#audioInput").set_input_files(str(mp3))
+        page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('تم التحقق من الملف')", timeout=30000)
+        page.locator("#addAudioClip").click()
+        page.wait_for_function("document.querySelectorAll('#audioTracks .audio-clip').length === 1")
         if page.locator(".advanced-audio-drawer").get_attribute("open") is None:
             page.locator(".advanced-audio-drawer > summary").click()
         page.locator("#audioTracks .audio-clip").first.click()
         start_field = page.locator("#audioClipStart")
-        start_field.fill("200")
+        start_field.fill("0")
         start_field.press("Enter")
         assert page.evaluate("document.activeElement?.id") == "audioClipStart", "editing should keep keyboard focus on the active timing field"
 
