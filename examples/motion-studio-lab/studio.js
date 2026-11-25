@@ -868,9 +868,16 @@ async function exportIntegratedProject() {
       resolveAudio: async assetId => audioFiles.get(assetId)?.file ?? null,
       createAudioMix: async ({ audioContext, signal, onProgress }) => {
         const destination = audioContext.createMediaStreamDestination();
+        // Keep the recorder's audio track fed even during empty or delayed clips.
+        // A zero-valued constant source produces silence, not an audible tone.
+        let silence;
         let decoded;
         let engine;
         try {
+          silence = audioContext.createConstantSource();
+          silence.offset.value = 0;
+          silence.connect(destination);
+          silence.start();
           decoded = await decodeStudioSequenceAudio(sequenceRuntime.compiled, { audioContext,
             resolveAudio: async assetId => audioFiles.get(assetId)?.file ?? null,
             audioInfo: snapshot.audioAssetInfo, signal, onProgress });
@@ -879,10 +886,14 @@ async function exportIntegratedProject() {
           return { stream: destination.stream,
             schedule: epoch => engine.schedule({ epoch, fromMs: range.startMs, toMs: range.endMs }),
             stop: () => {
+              try { silence?.stop(); } catch {}
+              try { silence?.disconnect(); } catch {}
               engine.dispose(); decoded.release();
               for (const track of destination.stream.getTracks()) { try { track.stop(); } catch {} }
             } };
         } catch (error) {
+          try { silence?.stop(); } catch {}
+          try { silence?.disconnect(); } catch {}
           engine?.dispose(); decoded?.release();
           for (const track of destination.stream.getTracks()) { try { track.stop(); } catch {} }
           throw error;
