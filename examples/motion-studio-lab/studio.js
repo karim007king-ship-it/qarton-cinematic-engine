@@ -314,7 +314,8 @@ async function registerAssetFile(file) {
     if (existing.kind !== candidate.kind || existing.name !== candidate.name ||
         existing.mimeType !== candidate.mimeType || existing.size !== candidate.size) continue;
     const previous = getAssetBlob(existing.id);
-    if (!previous) continue;
+    // Preserve explicit relinking of an imported asset whose bytes are missing.
+    if (!previous) { found = existing; break; }
     let identical = true;
     for (let offset = 0; offset < file.size; offset += 1024 * 1024) {
       const end = Math.min(file.size, offset + 1024 * 1024);
@@ -2078,6 +2079,7 @@ $("audioInput").addEventListener("change", async () => {
     const durationMs = await readAudioDuration(file);
     if (!audioRequest.isCurrent(requestToken)) return;
     const shared = await registerAssetFile(file);
+    if (!audioRequest.isCurrent(requestToken)) return;
     const id = shared.id;
     const normalizedFile = file.type === metadata.mime ? file : new File([file], file.name, { type: metadata.mime });
     const url = URL.createObjectURL(normalizedFile);
