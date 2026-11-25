@@ -530,6 +530,7 @@ function refreshMicrophoneBusyControls() {
   for (const id of ["imageInput", "projectInput", "audioInput", "audioTrackType", "addAudioClip", "deleteAudioClip", "audioClipStart", "audioClipDuration", "audioClipVolume", "sceneName", "sceneDuration", "addSceneButton", "duplicateSceneButton", "deleteSceneButton", "moveSceneLeftButton", "moveSceneRightButton", "playPauseButton", "replayButton", "seek", "sequenceSeek", "duration", "aspectPreset", "fitMode", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "saveProjectButton", "loadProjectButton"]) {
     const control = $(id); if (control) control.disabled = locked;
   }
+  for (const control of document.querySelectorAll(".scene-select, .sequence-block")) control.disabled = locked;
   timelineEditor?.setBusy(locked);
   characterTimeline?.setBusy(locked);
   audioTimeline?.setBusy(locked);
