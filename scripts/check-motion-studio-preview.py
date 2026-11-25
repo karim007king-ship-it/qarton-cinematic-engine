@@ -1090,7 +1090,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
                   const overlaps = (a,b) => a.x < b.right && a.right > b.x && a.y < b.bottom && a.bottom > b.y;
                   return {preview,drawer,dock,canvas,stage,transport,heading,ratio:preview.height/(preview.height+drawer.height),
                     canvasHeightFill:canvas.height/stage.height,
-                    pageOverflow:document.documentElement.scrollWidth > innerWidth || document.documentElement.scrollHeight > innerHeight + 1,
+                    pageOverflow:document.documentElement.scrollWidth > innerWidth || document.body.scrollWidth > innerWidth || ["overflowX","overflowY"].some(axis => getComputedStyle(document.documentElement)[axis] !== "hidden" || getComputedStyle(document.body)[axis] !== "hidden"),
                     pageSize:{htmlWidth:document.documentElement.scrollWidth,htmlHeight:document.documentElement.scrollHeight,bodyWidth:document.body.scrollWidth,bodyHeight:document.body.scrollHeight,viewportWidth:innerWidth,viewportHeight:innerHeight,overflowElements:Array.from(document.querySelectorAll("body *")).map(el=>{const r=el.getBoundingClientRect();return {tag:el.tagName,id:el.id,classes:typeof el.className==="string"?el.className:"",top:r.top,bottom:r.bottom,left:r.left,right:r.right,overflowY:getComputedStyle(el).overflowY};}).filter(r=>r.bottom>innerHeight+1||r.right>innerWidth+1).slice(-12)},
                     picker:getComputedStyle(document.querySelector('#previewImagePicker')).display,
                     inputRect:(() => { const r=document.querySelector('#imageInput').getBoundingClientRect(); return {width:r.width,height:r.height}; })(),
