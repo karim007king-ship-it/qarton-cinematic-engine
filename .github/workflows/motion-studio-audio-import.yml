@@ -50,5 +50,12 @@ jobs:
 
       - name: Verify virtual microphone recording, automatic Timeline insertion, restored preview signal, and exported signal
         env:
-          MOTION_STUDIO_PREVIEW_SLUG: motion-studio-l11h4-audio-recording-fix-android-preview
+          MOTION_STUDIO_PREVIEW_SLUG: motion-studio-l11h4-audio-fix-preview
         run: python scripts/check-motion-studio-microphone-recording.py
+      - name: Upload microphone recording signal screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: motion-studio-l11h4-audio-recording-signal-screenshot
+          path: artifacts/motion-studio-l11h4-audio-recording-fix/*.png
+          if-no-files-found: error
+          retention-days: 30
