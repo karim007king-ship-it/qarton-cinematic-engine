@@ -197,11 +197,15 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         drag_state = page.evaluate("""({x, y}) => {
           const root = document.querySelector('#visualEffectsTracks');
           const clip = document.querySelector('.visual-effect-clip');
+          const rect = element => element?.getBoundingClientRect().toJSON() || null;
           const hit = document.elementFromPoint(x, y);
           return {dragging: root.dataset.dragging === 'true', capture: root.hasPointerCapture(window.lastEffectPointerId),
             focused: document.activeElement?.classList.contains('visual-effect-clip'), pointerId: window.lastEffectPointerId,
             activeClass: document.activeElement?.className || '', hitClass: hit?.className || '', hitIsClip: hit === clip,
-            disabled: clip?.disabled, pointerEvents: clip && getComputedStyle(clip).pointerEvents};
+            disabled: clip?.disabled, pointerEvents: clip && getComputedStyle(clip).pointerEvents, point: {x, y},
+            clip: rect(clip), stage: rect(document.querySelector('.stage-wrap')),
+            panel: rect(document.querySelector('[data-tool-panel="effects"]')), drawer: rect(document.querySelector('.tool-drawer')),
+            preview: rect(document.querySelector('.studio-preview')), studio: rect(document.querySelector('.studio'))};
         }""", {"x": start_x, "y": start_y})
         assert drag_state["dragging"], f"effect clip pointerdown must begin a drag: {drag_state}"
         assert drag_state["capture"], f"effect drag must retain pointer capture: {drag_state}"
