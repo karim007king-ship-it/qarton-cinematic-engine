@@ -2068,8 +2068,8 @@ $("assetLibraryInput").addEventListener("change", async () => {
   finally { $("assetLibraryInput").value = ""; renderAssetLibrary(); }
 });
 
-$("audioInput").addEventListener("change", async () => {
-  const file = $("audioInput").files?.[0];
+$("audioInput").addEventListener("change", () => { void importStudioAudio($("audioInput").files?.[0]); });
+async function importStudioAudio(file) {
   if (!file) return;
   const requestToken = audioRequest.begin();
   pendingAudioRequest = requestToken;
@@ -2118,7 +2118,7 @@ $("audioInput").addEventListener("change", async () => {
       refreshExportControls();
     }
   }
-});
+}
 $("addAudioClip").addEventListener("click", () => {
   if (activeExport) return;
   if (pendingAudioRequest !== null) {
