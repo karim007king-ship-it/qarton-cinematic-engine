@@ -29,9 +29,12 @@ No important control was removed. Audio, Viseme, track-volume, asset-library, sc
 
 ## Validation
 
-- Node tests: 381 passed before L12-specific assertions; rerun on the final commit is required and will be recorded in the PR checks.
-- Chromium virtual-microphone test: covers real MediaRecorder output, 660 Hz signal decode, secure-origin behavior, permission rejection, request timeout, `Infinity` and `NaN` metadata, Timeline insertion, project reload, preview playback, and audio-bearing video export.
-- Android preview package is built from the single-file editor. Automated Chromium and virtual microphone coverage is not certification of HONOR 400 Pro/WebView. Retest actual capture on the phone via HTTPS and grant site/WebView microphone permission; a local `file://` ZIP cannot override the browser's secure-context policy.
+- Final local Node suite: 381 passed, 0 failed, 0 skipped.
+- GitHub Actions on code head `303d2f443ca7faaa98452ef4beaf8cafa38b3741` all succeeded: Engine foundation tests, Motion Studio Android Preview/Chromium/ZIP packaging, long MP3/audio signal, and QARTON Test Lab.
+- Chromium virtual microphone: WebM decoded 1.800s (RMS 0.2546, 660 Hz); MP4 decoded 1.720s (RMS 0.2077, 660 Hz); Timeline insertion 1860ms; `NaN` metadata fallback decoded to 1800ms; restored preview signal RMS 0.6206 at 662.1 Hz; exported WebM audio 6.000s (RMS 0.3200, 660 Hz).
+- Long MP3 Chromium flow: source duration 51.520s; exported audio 3.060s for a 3s scene, RMS 0.1182 at 660 Hz; save/reopen playback passed.
+- The Android preview ZIP was uploaded as artifact `motion-studio-l12-a-android-preview` from workflow run 263. Its SHA-256 is `c8e084511fb31b6b2f7be3e002fc79ef73467e1d0425ea543189936d105dc436`.
+- Chromium virtual microphone checks are not certification of HONOR 400 Pro/WebView. The supplied physical HONOR result establishes that the earlier Sol B2 path recorded a real signal, but this updated Motion Studio flow still needs a device retest. Test capture via HTTPS or an appropriately configured app WebView with microphone permission; offline `file://` capture depends on platform policy.
 
 ## Functions intentionally retained
 
