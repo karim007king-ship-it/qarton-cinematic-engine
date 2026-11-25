@@ -181,6 +181,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         effect_root = page.locator("#visualEffectsTracks")
         effect_lane = page.locator("#visualEffectsTracks .visual-effect-lane[data-effect-type='fade']")
         effect_clip = page.locator(".visual-effect-clip")
+        effect_clip.scroll_into_view_if_needed()
         original_effect_label = effect_clip.get_attribute("aria-label")
         page.evaluate("""() => {
           window.lastEffectPointerId = null;
