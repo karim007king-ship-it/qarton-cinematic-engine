@@ -395,13 +395,10 @@ export async function startExport(plan, host = {}, { signal, onProgress } = {}) 
     const startSceneMs = plan.range.startMs;
     const initial = host.renderFrame(context, startSceneMs, plan.viewport, Object.freeze({ frameIndex: 0, elapsedMs: 0, exporting: true }));
     if (initial?.then) throw error("CAPTURE_FAILED", "renderFrame must be synchronous to preserve frame timestamps");
-    try { videoStream = canvas.captureStream(0); } catch { videoStream = null; }
-    const videoTrack = videoStream?.getVideoTracks?.()[0];
-    const requestFrames = Boolean(videoStream && typeof videoTrack?.requestFrame === "function");
-    if (!requestFrames) {
-      for (const track of videoStream?.getTracks?.() ?? []) { try { track.stop(); } catch {} }
-      videoStream = canvas.captureStream(plan.fps);
-    }
+    // Match the verified probe's positive-rate capture. Android may expose
+    // requestFrame() yet fail to start an encoder on a zero-rate stream.
+    videoStream = canvas.captureStream(plan.fps);
+    const requestFrames = typeof videoStream.getVideoTracks?.()[0]?.requestFrame === "function";
     stream = composeStream(host, videoStream, mixer?.stream ?? null);
     if (!stream?.getTracks?.().length) throw error("CAPTURE_FAILED", "No capture tracks are available");
     try { recorder = new MediaRecorderClass(stream, { mimeType: plan.mimeType, videoBitsPerSecond: plan.videoBitsPerSecond,
@@ -443,12 +440,9 @@ export async function startExport(plan, host = {}, { signal, onProgress } = {}) 
         try { if (recorder?.state === "recording") recorder.stop(); } catch {}
       }
     };
-    if (requestFrames) {
-      // Chromium can wait for consecutive Canvas frames before it emits start.
-      // Keep the fixed initial scene frame live until that event.
-      primeStartFrame();
-      startFrameInterval = globalThis.setInterval(primeStartFrame, Math.max(16, 1000 / fps));
-    }
+    // Keep producing frames even on hosts without manual requestFrame().
+    primeStartFrame();
+    startFrameInterval = globalThis.setInterval(primeStartFrame, Math.max(16, 1000 / fps));
     // Android encoders may dispatch `start` several frames after recording has
     // begun. Anchor both clocks to the start() call so this event delay is not
     // added to the file duration or introduced as audio/video drift.
