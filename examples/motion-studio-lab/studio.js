@@ -884,7 +884,13 @@ async function exportIntegratedProject() {
           engine = sequenceRuntime.createAudio({ audioContext, audioBuffers: decoded.buffers,
             destination, masterVolume: audioMasterVolume, signal });
           return { stream: destination.stream,
-            schedule: epoch => engine.schedule({ epoch, fromMs: range.startMs, toMs: range.endMs }),
+            schedule: epoch => {
+              const session = engine.schedule({ epoch, fromMs: range.startMs, toMs: range.endMs });
+              $("audioTimelineMessage").textContent = session.scheduled.length
+                ? `تمت جدولة ${session.scheduled.length} مقاطع صوتية للتصدير.`
+                : "تنبيه: لا توجد مقاطع صوتية مسموعة مجدولة ضمن نطاق التصدير.";
+              return session;
+            },
             stop: () => {
               try { silence?.stop(); } catch {}
               try { silence?.disconnect(); } catch {}
