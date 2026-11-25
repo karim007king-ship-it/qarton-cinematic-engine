@@ -591,7 +591,7 @@ def exercise(context, url):
     # lock. The lock must release capture and discard the stale scrub before retry.
     reveal_editor_section("project")
     page.locator("#exportDuration").select_option("3000")
-    reveal_editor_section("motion")
+    reveal_editor_section("characters")
     character_box = character_lane.bounding_box()
     page.evaluate("""() => {
         window.characterPointerId = null;
