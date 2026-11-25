@@ -4,12 +4,14 @@ on:
   pull_request:
     branches:
       - feature/motion-studio-integrated-cinematic-preview-export-l11h4
+      - fix/motion-studio-audio-import-l11h4-audio-fix
     paths:
       - '.github/workflows/motion-studio-audio-import.yml'
       - 'examples/motion-studio-lab/studio.js'
       - 'examples/motion-studio-lab/studio-audio-model.js'
       - 'scripts/build-motion-studio-preview.mjs'
       - 'scripts/check-motion-studio-audio-import.py'
+      - 'scripts/check-motion-studio-microphone-recording.py'
       - 'packages/motion-studio/**'
       - 'src/audio/**'
       - 'tests/**audio*.test.js'
@@ -41,7 +43,12 @@ jobs:
           sudo apt-get install -y ffmpeg
           python -m pip install playwright==1.55.0
           python -m playwright install --with-deps chrome
-      - name: Verify long MP3 touch import, playback signal, export signal, and reload
+      - name: Verify long MP3 import compatibility, playback signal, export signal, and reload
         env:
           MOTION_STUDIO_PREVIEW_SLUG: motion-studio-l11h4-audio-fix-preview
         run: python scripts/check-motion-studio-audio-import.py
+
+      - name: Verify virtual microphone recording, automatic Timeline insertion, restored preview signal, and exported signal
+        env:
+          MOTION_STUDIO_PREVIEW_SLUG: motion-studio-l11h4-audio-recording-fix-android-preview
+        run: python scripts/check-motion-studio-microphone-recording.py
