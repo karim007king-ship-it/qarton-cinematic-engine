@@ -167,6 +167,8 @@ test("phone audio UI exposes three lanes, clip editing, manual visemes, and shar
   for (const id of ["audioInput", "audioTrackType", "addAudioClip", "deleteAudioClip", "audioClipStart", "audioClipDuration", "audioClipVolume", "audioMasterVolume", "dialogueLanguage", "visemeType", "addViseme", "audioTracks"]) assert.match(html, new RegExp(`id=["']${id}["']`));
   assert.match(js, /createCinematicAudioPlayer/);
   assert.match(js, /audioPlayer\.tick\(\)/);
+  assert.match(js, /const durationMs = await readAudioDuration\(file\)/);
+  assert.doesNotMatch(js, /durationHintMs|recorded: true/, "capture elapsed time must not substitute for a verified media duration");
   assert.match(js, /drawStudioScene/);
   assert.match(renderer, /audioSample\?\.dialogue/);
   assert.match(renderer, /characterAnimation\.sample\(timeMs\)/);
