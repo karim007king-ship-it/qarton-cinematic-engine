@@ -265,6 +265,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         audio_lane = page.locator("#audioTracks .audio-track-lane[data-track-id='audio-dialogue']")
         audio_box = audio_lane.bounding_box()
         audio_clip = page.locator(".audio-clip")
+        audio_clip.scroll_into_view_if_needed()
         page.evaluate("""() => {
           window.lastAudioPointerId = null;
           document.querySelector('#audioTracks').addEventListener('pointerdown', event => {
