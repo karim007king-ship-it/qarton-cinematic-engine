@@ -1225,14 +1225,14 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             assert "اقتراح" in touch_page.locator("#motionPresetMessage").inner_text(), preset
             touch_tap(touch_page.locator("#undoMotionAutomatic"))
         touch_tap(touch_page.locator('nav.bottom-dock [data-editor-section="audio"]'))
-        assert touch_page.locator(".studio").get_attribute("data-editor-mode") == "professional"
+        assert touch_page.locator(".studio").get_attribute("data-editor-mode") == "automatic", "section navigation preserves the selected editing mode"
         assert touch_page.locator("#audioToolsSection").is_visible()
         touch_page.screenshot(path=str(screenshot_dir / "motion-studio-mobile-audio.png"))
         touch_tap(touch_page.locator('nav.bottom-dock [data-editor-section="effects"]'))
         assert touch_page.locator("#effectsToolsSection").is_visible()
         touch_page.screenshot(path=str(screenshot_dir / "motion-studio-mobile-effects.png"))
         touch_tap(touch_page.locator('nav.bottom-dock [data-editor-section="motion"]'))
-        assert touch_page.locator(".studio").get_attribute("data-editor-mode") == "professional", "section navigation preserves the user's selected editing mode"
+        assert touch_page.locator(".studio").get_attribute("data-editor-mode") == "automatic", "section navigation preserves the user's selected editing mode"
         touch_choose_mode("simple")
         assert touch_page.locator("#motionStrength").input_value() == "72"
         assert touch_page.locator("#motionFocusX").input_value() == "30"
