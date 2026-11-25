@@ -2098,7 +2098,17 @@ $("audioInput").addEventListener("change", async () => {
     $("audioTimelineMessage").textContent = `تم التحقق من الملف. مدته ${(durationMs / 1000).toFixed(2)} ثانية؛ أضفه إلى مسار عند المؤشر.`;
     renderAudioInspector();
   } catch (error) { if (audioRequest.isCurrent(requestToken)) $("audioTimelineMessage").textContent = errorText(error); }
-  finally { if (pendingAudioRequest === requestToken) pendingAudioRequest = null; if (audioRequest.isCurrent(requestToken)) $("audioInput").value = ""; refreshExportControls(); }
+  finally {
+    const isCurrentRequest = audioRequest.isCurrent(requestToken);
+    if (pendingAudioRequest === requestToken) pendingAudioRequest = null;
+    if (isCurrentRequest) {
+      $("audioInput").value = "";
+      // The inspector was rendered while pendingAudioRequest was still set.
+      // Re-render only after clearing it so Add is enabled for the imported asset.
+      renderAudioInspector();
+      refreshExportControls();
+    }
+  }
 });
 $("addAudioClip").addEventListener("click", () => {
   if (activeExport) return;
