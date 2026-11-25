@@ -1,0 +1,38 @@
+name: L13 independent UI audit
+on:
+  pull_request:
+    branches: [feature/audio-core-fix-a-final]
+    paths:
+      - 'examples/motion-studio-l13-ux/**'
+      - 'docs/l13-s1/**'
+      - 'scripts/check-l13-ux.py'
+      - '.github/workflows/l13-ux-audit.yml'
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install playwright==1.55.0
+      - run: python -m playwright install --with-deps chrome
+      - run: python scripts/check-l13-ux.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: l13-ui-measurements
+          path: artifacts/l13-ux/
+      - run: |
+          cd examples/motion-studio-l13-ux
+          zip -9 /tmp/qarton-motion-studio-l13-ux.zip index.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qarton-motion-studio-l13-ux
+          path: /tmp/qarton-motion-studio-l13-ux.zip
