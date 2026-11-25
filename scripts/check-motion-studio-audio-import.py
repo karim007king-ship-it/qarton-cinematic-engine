@@ -165,9 +165,9 @@ with tempfile.TemporaryDirectory(prefix="qarton-audio-import-") as directory:
         assert page.locator("#playSelectedAudio").inner_text().startswith("▶"), "the selected clip button toggles playback off independently"
 
         touch_tap(page, page.locator("#playPauseButton"))
-        page.wait_for_function("window.__qartonPreviewVoices.some(voice => !voice.paused && voice.currentTime > 0.2)", timeout=10000)
+        page.wait_for_function("window.__qartonPreviewVoices.some(voice => !voice.paused && voice.readyState >= 2 && Number.isFinite(voice.duration) && voice.currentTime > 1.2)", timeout=10000)
         preview_signal = page.evaluate("""() => {
-          const voice = window.__qartonPreviewVoices.at(-1);
+          const voice = window.__qartonPreviewVoices.filter(item => !item.paused && item.readyState >= 2).at(-1);
           const signal = voice.__qartonMeasure?.();
           voice.pause();
           return { ...signal, time: voice.currentTime, duration: voice.duration };
