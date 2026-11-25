@@ -5,7 +5,7 @@ import { makeProject, makeProjectFile, parseProjectFile } from "../examples/moti
 import { createCinematicAudioPlayer } from "../src/audio/cinematic-audio-core.js";
 import {
   AUDIO_MAX_FILE_BYTES, addAudioClip, compileAudioTracks, deleteAudioClip, editAudioClip,
-  makeAudioAssetMetadata, makeAudioTracks, setAudioTrackVolume, setAudioViseme, validateAudioFile
+  makeAudioAssetMetadata, makeAudioTracks, readAudioDuration, setAudioTrackVolume, setAudioViseme, validateAudioFile
 } from "../examples/motion-studio-lab/studio-audio-model.js";
 
 const audioAsset = { id: "asset-voice-1", name: "dialogue.wav", type: "audio/wav", size: 2048 };
@@ -90,6 +90,53 @@ test("audio file import validates MIME, known extensions, nonzero size and Andro
   assert.throws(() => validateAudioFile({ name: "empty.wav", type: "audio/wav", size: 0 }), /20 MiB/);
   assert.deepEqual(makeAudioAssetMetadata("asset-1", { name: "voice.wav", type: "audio/wav", size: 100 }),
     { id: "asset-1", name: "voice.wav", type: "audio/wav", size: 100 });
+});
+
+test("Android HONOR 400 Pro metadata Infinity falls back to decoded AudioBuffer duration", async () => {
+  const observed = { permission: "granted", recorder: "successful", mime: "audio/webm;codecs=opus",
+    elapsedMs: 5002, decodedDurationMs: 4920, size: 78052, rms: 0.0494319, peak: 0.4921764, sampleRate: 48000,
+    mediaMetadataDuration: Infinity };
+  let decodedBytes = 0;
+  let closed = false;
+  class AndroidAudioMetadata {
+    duration = observed.mediaMetadataDuration;
+    listeners = new Map();
+    addEventListener(name, callback) { this.listeners.set(name, callback); }
+    removeEventListener(name) { this.listeners.delete(name); }
+    set src(value) { this.url = value; queueMicrotask(() => this.listeners.get("loadedmetadata")?.()); }
+    removeAttribute() {}
+    load() {}
+  }
+  class DecodingAudioContext {
+    async decodeAudioData(bytes) { decodedBytes = bytes.byteLength; return { duration: observed.decodedDurationMs / 1000 }; }
+    async close() { closed = true; }
+  }
+  const file = new Blob([new Uint8Array(observed.size)], { type: observed.mime });
+  file.name = "recording.webm";
+  assert.equal(await readAudioDuration(file, { AudioClass: AndroidAudioMetadata, AudioContextClass: DecodingAudioContext }), 4920);
+  assert.equal(decodedBytes, 78052, "the actual recorder Blob is decoded before its duration is accepted");
+  assert.equal(closed, true, "temporary decoder context is released");
+  assert.equal(observed.rms, 0.0494319);
+  assert.equal(observed.peak, 0.4921764);
+  assert.equal(observed.sampleRate, 48000);
+});
+
+test("invalid or non-finite media duration never becomes zero or the elapsed capture hint", async () => {
+  for (const metadataDuration of [Infinity, NaN]) {
+    class BadMetadataAudio extends Object {
+      duration = metadataDuration;
+      listeners = new Map();
+      addEventListener(name, callback) { this.listeners.set(name, callback); }
+      removeEventListener(name) { this.listeners.delete(name); }
+      set src(value) { queueMicrotask(() => this.listeners.get("loadedmetadata")?.()); }
+      removeAttribute() {}
+      load() {}
+    }
+    class InvalidDecoder { async decodeAudioData() { throw new Error("invalid audio bytes"); } async close() {} }
+    const file = new Blob(["audio"], { type: "audio/webm" });
+    file.name = "recording.webm";
+    await assert.rejects(readAudioDuration(file, { AudioClass: BadMetadataAudio, AudioContextClass: InvalidDecoder }), /تعذر فك ترميز/);
+  }
 });
 
 test("JSON stores only audio metadata and tracks and old L4/L5 envelopes default to empty audio", () => {
