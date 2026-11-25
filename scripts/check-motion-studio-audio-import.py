@@ -183,13 +183,13 @@ with tempfile.TemporaryDirectory(prefix="qarton-audio-import-") as directory:
         saved = json.loads(project_path.read_text())
         saved_tracks = saved.get("audioTracks", [])
         assert sum(len(track["clips"]) for track in saved_tracks) == 1, saved
-        assert saved_tracks[1]["clips"][0]["durationMs"] == 3000, saved_tracks
+        assert saved_tracks[1]["clips"][0]["durationMs"] == 2000, saved_tracks
         page.reload()
         page.wait_for_function("document.querySelectorAll('#audioTracks .audio-clip').length === 1", timeout=20000)
         assert "استُعيد" in page.locator("#assetLibraryMessage").inner_text(), page.locator("#assetLibraryMessage").inner_text()
         page.locator('nav.bottom-dock [data-editor-section="audio"]').click()
         touch_tap(page, page.locator("#audioTracks .audio-clip"))
-        assert page.locator("#audioClipDuration").input_value() == "3000"
+        assert page.locator("#audioClipDuration").input_value() == "2000", "the saved clip keeps its 2s remaining range after moving its start to 0"
 
         touch_tap(page, page.locator("#playPauseButton"))
         page.wait_for_function("window.__qartonPreviewVoices.some(voice => !voice.paused && voice.currentTime > 0.2)", timeout=10000)
