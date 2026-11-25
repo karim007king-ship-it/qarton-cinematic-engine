@@ -125,6 +125,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-audio-import-") as directory:
         page.locator("#deleteSelectedAudio").click()
         page.wait_for_function("document.querySelectorAll('#audioTracks .audio-clip').length === 1")
         print("Quick audio actions: dialogue import, music import, selection, and delete passed")
+        page.locator("#audioTracks .audio-clip").first.click()
         page.locator("#deleteSelectedAudio").click()
         page.locator("#audioTrackType").select_option("music")
         page.locator("#audioInput").set_input_files(str(mp3))
