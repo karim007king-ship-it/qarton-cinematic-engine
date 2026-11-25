@@ -2,7 +2,7 @@ name: Motion Studio Android preview
 
 on:
   pull_request:
-    branches: [main, integration/character-animation-timeline-l7, feature/audio-dialogue-timeline-l8b, feature/integrated-av-export-l10b, fix/integrated-av-export-l10c, docs/motion-studio-export-l10a, docs/motion-studio-multiscene-l11a, feature/motion-studio-multiscene-editor-l11d, feature/motion-studio-smart-easy-editor-l11f1, feature/motion-studio-compact-mobile-ui-l11f2, feature/shared-assets-l11c, feature/motion-studio-full-multiscene-export-l11e, feature/motion-studio-cinematic-audio-crossfade-l11h3]
+    branches: [main, integration/character-animation-timeline-l7, feature/audio-dialogue-timeline-l8b, feature/integrated-av-export-l10b, fix/integrated-av-export-l10c, docs/motion-studio-export-l10a, docs/motion-studio-multiscene-l11a, feature/motion-studio-multiscene-editor-l11d, feature/motion-studio-smart-easy-editor-l11f1, feature/motion-studio-compact-mobile-ui-l11f2, feature/shared-assets-l11c, feature/motion-studio-full-multiscene-export-l11e, feature/motion-studio-cinematic-audio-crossfade-l11h3, feature/motion-studio-integrated-cinematic-preview-export-l11h4]
     paths:
       - '.github/workflows/motion-studio-preview.yml'
       - 'examples/motion-studio-lab/**'
@@ -19,6 +19,7 @@ on:
       - 'scripts/build-motion-studio-preview.mjs'
       - 'scripts/motion-studio-preview-html.js'
       - 'scripts/check-motion-studio-preview.py'
+      - 'scripts/check-motion-studio-audio-import.py'
       - 'tests/motion-studio-preview-builder.test.js'
   push:
     branches:
@@ -36,7 +37,7 @@ permissions:
 
 jobs:
   preview:
-    if: github.event_name != 'pull_request' || contains(fromJSON('["feature/motion-studio-video-export-l5","feature/motion-studio-visual-timeline-l6b","feature/character-animation-timeline-l7b","feature/audio-dialogue-timeline-l8b","feature/visual-effects-timeline-l9b","feature/integrated-av-export-l10b","fix/l10c-export-safety-regressions","feature/shared-assets-l11c","feature/motion-studio-multiscene-editor-l11d","feature/motion-studio-smart-easy-editor-l11f1","feature/motion-studio-compact-mobile-ui-l11f2","feature/motion-studio-full-multiscene-export-l11e","refactor/motion-studio-l11g","feature/motion-studio-integrated-cinematic-preview-export-l11h4"]'), github.event.pull_request.head.ref)
+    if: github.event_name != 'pull_request' || contains(fromJSON('["feature/motion-studio-video-export-l5","feature/motion-studio-visual-timeline-l6b","feature/character-animation-timeline-l7b","feature/audio-dialogue-timeline-l8b","feature/visual-effects-timeline-l9b","feature/integrated-av-export-l10b","fix/l10c-export-safety-regressions","feature/shared-assets-l11c","feature/motion-studio-multiscene-editor-l11d","feature/motion-studio-smart-easy-editor-l11f1","feature/motion-studio-compact-mobile-ui-l11f2","feature/motion-studio-full-multiscene-export-l11e","refactor/motion-studio-l11g","feature/motion-studio-integrated-cinematic-preview-export-l11h4","fix/motion-studio-audio-import-l11h4-audio-fix"]'), github.event.pull_request.head.ref)
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout PR branch
@@ -89,6 +90,9 @@ jobs:
           elif [ "$BRANCH_NAME" = 'feature/motion-studio-integrated-cinematic-preview-export-l11h4' ]; then
             PREVIEW_SLUG='motion-studio-l11h4-android-preview'
             PREVIEW_LABEL='L11-H4'
+          elif [ "$BRANCH_NAME" = 'fix/motion-studio-audio-import-l11h4-audio-fix' ]; then
+            PREVIEW_SLUG='motion-studio-l11h4-audio-fix-android-preview'
+            PREVIEW_LABEL='L11-H4'
           else
             PREVIEW_SLUG='motion-studio-l5-android-preview'
             PREVIEW_LABEL='L5'
@@ -109,7 +113,7 @@ jobs:
           python -m pip install playwright==1.55.0
           python scripts/check-motion-studio-preview.py
       - name: Verify IndexedDB storage
-        if: github.head_ref == 'feature/shared-assets-l11c' || github.head_ref == 'feature/motion-studio-multiscene-editor-l11d' || github.head_ref == 'refactor/motion-studio-l11g' || github.ref_name == 'refactor/motion-studio-l11g' || github.head_ref == 'feature/motion-studio-integrated-cinematic-preview-export-l11h4'
+        if: github.head_ref == 'feature/shared-assets-l11c' || github.head_ref == 'feature/motion-studio-multiscene-editor-l11d' || github.head_ref == 'refactor/motion-studio-l11g' || github.ref_name == 'refactor/motion-studio-l11g' || github.head_ref == 'feature/motion-studio-integrated-cinematic-preview-export-l11h4' || github.head_ref == 'fix/motion-studio-audio-import-l11h4-audio-fix'
         run: |
           python -m playwright install --with-deps chromium
           python scripts/check-motion-studio-assets.py

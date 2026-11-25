@@ -1041,7 +1041,7 @@ function renderAudioInspector() {
     marker.setAttribute("aria-label", `Viseme ${cue.viseme} عند ${cue.atMs} ملي ثانية`);
     marker.addEventListener("click", () => { seekTo(selected.clip.startMs + cue.atMs); }); markerRoot.append(marker);
   }
-  $("addAudioClip").disabled = !activeAudioAssetId || Boolean(activeExport);
+  $("addAudioClip").disabled = !activeAudioAssetId || pendingAudioRequest !== null || Boolean(activeExport);
 }
 function selectedVisualEffect() {
   return visualEffectsTrack.clips.find(({ id }) => id === visualEffectSelection) ?? null;
@@ -2072,7 +2072,12 @@ $("audioInput").addEventListener("change", async () => {
   const file = $("audioInput").files?.[0];
   if (!file) return;
   const requestToken = audioRequest.begin();
-  pendingAudioRequest = requestToken; refreshExportControls();
+  pendingAudioRequest = requestToken;
+  // Do not let an Add tap during metadata/storage work attach the previous file.
+  activeAudioAssetId = null;
+  $("audioFileName").textContent = file.name || "جارٍ تجهيز الملف الصوتي…";
+  $("audioTimelineMessage").textContent = "جارٍ تجهيز الملف الصوتي؛ سيُفعّل زر الإضافة بعد اكتمال التحقق.";
+  renderAudioInspector(); refreshExportControls();
   try {
     const metadata = validateAudioFile(file);
     $("audioTimelineMessage").textContent = "جارٍ التحقق من فك ترميز الصوت وقراءة مدته…";
@@ -2093,10 +2098,24 @@ $("audioInput").addEventListener("change", async () => {
     $("audioTimelineMessage").textContent = `تم التحقق من الملف. مدته ${(durationMs / 1000).toFixed(2)} ثانية؛ أضفه إلى مسار عند المؤشر.`;
     renderAudioInspector();
   } catch (error) { if (audioRequest.isCurrent(requestToken)) $("audioTimelineMessage").textContent = errorText(error); }
-  finally { if (pendingAudioRequest === requestToken) pendingAudioRequest = null; if (audioRequest.isCurrent(requestToken)) $("audioInput").value = ""; refreshExportControls(); }
+  finally {
+    const isCurrentRequest = audioRequest.isCurrent(requestToken);
+    if (pendingAudioRequest === requestToken) pendingAudioRequest = null;
+    if (isCurrentRequest) {
+      $("audioInput").value = "";
+      // The inspector was rendered while pendingAudioRequest was still set.
+      // Re-render only after clearing it so Add is enabled for the imported asset.
+      renderAudioInspector();
+      refreshExportControls();
+    }
+  }
 });
 $("addAudioClip").addEventListener("click", () => {
   if (activeExport) return;
+  if (pendingAudioRequest !== null) {
+    $("audioTimelineMessage").textContent = "انتظر اكتمال تجهيز الملف الصوتي قبل إضافته.";
+    return;
+  }
   if (!activeAudioAssetId) {
     $("audioTimelineMessage").textContent = "اختر ملفًا صوتيًا من الهاتف أو مكتبة الأصول أولًا.";
     return;
@@ -2106,19 +2125,26 @@ $("addAudioClip").addEventListener("click", () => {
     const track = audioTracks.find((item) => item.type === trackType);
     if (!track) throw new Error("المسار الصوتي المحدد غير موجود.");
     const startMs = Math.max(0, Math.min(Math.round(currentMs), project.durationMs - 1));
-    const metadata = audioAssets.find(({ id }) => id === activeAudioAssetId);
-    const source = audioFiles.get(activeAudioAssetId);
+    const assetId = activeAudioAssetId;
+    const metadata = audioAssets.find(({ id }) => id === assetId);
+    const source = audioFiles.get(assetId);
     if (!source?.url || !Number.isFinite(source.durationMs) || source.durationMs <= 0) {
       throw new Error("ملف الصوت غير جاهز للتشغيل. أعد استيراده أو ربطه من المكتبة.");
     }
+    if (!metadata || !sequenceEditor.sequence.assets.some(asset => asset.id === assetId && asset.kind === "audio")) {
+      throw new Error("تعذر مطابقة ملف الصوت المحدد مع أصل المشروع. أعد استيراده من الهاتف.");
+    }
     const durationMs = Math.max(1, Math.min(Math.round(source.durationMs), project.durationMs - startMs));
-    const clip = { id: `audio-clip-${Date.now()}-${++audioAssetSerial}`, asset: activeAudioAssetId, name: metadata?.name, startMs, durationMs, volume: 1,
+    const clip = { id: `audio-clip-${Date.now()}-${++audioAssetSerial}`, asset: assetId, name: metadata.name, startMs, durationMs, volume: 1,
       ...(trackType === "dialogue" ? { language: $("dialogueLanguage").value, visemes: [] } : {}) };
     const next = addAudioClip(audioTracks, project.durationMs, track.id, clip);
-    audioClipSelection = { trackId: track.id, clipId: clip.id };
     commitAudioTracks(next);
+    const committed = audioTracks.find(item => item.id === track.id)?.clips.find(item => item.id === clip.id);
+    if (!committed) throw new Error("لم يُعتمد المقطع في المسار الصوتي؛ أعد المحاولة.");
+    audioClipSelection = { trackId: track.id, clipId: clip.id };
     audioTimeline.select(audioClipSelection);
-    $("audioTimelineMessage").textContent = `أُضيف المقطع عند ${formatTime(startMs)}.`;
+    renderAudioInspector();
+    $("audioTimelineMessage").textContent = `أُضيف ${metadata.name} إلى المسار عند ${formatTime(startMs)} لمدة ${formatTime(durationMs)}.`;
   } catch (error) { $("audioTimelineMessage").textContent = errorText(error); }
 });
 $("deleteAudioClip").addEventListener("click", () => {

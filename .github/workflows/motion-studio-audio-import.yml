@@ -1,0 +1,47 @@
+name: Motion Studio long MP3 import and signal
+
+on:
+  pull_request:
+    branches:
+      - feature/motion-studio-integrated-cinematic-preview-export-l11h4
+    paths:
+      - '.github/workflows/motion-studio-audio-import.yml'
+      - 'examples/motion-studio-lab/studio.js'
+      - 'examples/motion-studio-lab/studio-audio-model.js'
+      - 'scripts/build-motion-studio-preview.mjs'
+      - 'scripts/check-motion-studio-audio-import.py'
+      - 'packages/motion-studio/**'
+      - 'src/audio/**'
+      - 'tests/**audio*.test.js'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  long-mp3-import:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build single-file offline preview
+        run: |
+          npm install --no-save --no-package-lock esbuild@0.25.12
+          MOTION_STUDIO_PREVIEW_SLUG=motion-studio-l11h4-audio-fix-preview MOTION_STUDIO_PREVIEW_LABEL=L11-H4 node scripts/build-motion-studio-preview.mjs
+      - name: Run Node regressions
+        run: npm test
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install media and Chromium tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install playwright==1.55.0
+          python -m playwright install --with-deps chrome
+      - name: Verify long MP3 touch import, playback signal, export signal, and reload
+        env:
+          MOTION_STUDIO_PREVIEW_SLUG: motion-studio-l11h4-audio-fix-preview
+        run: python scripts/check-motion-studio-audio-import.py
