@@ -159,7 +159,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Upload L11-F2 interface screenshots
-        if: github.head_ref == 'feature/motion-studio-compact-mobile-ui-l11f2' || github.head_ref == 'feature/motion-studio-easy-mobile-l13l1'
+        if: steps.preview.outputs.slug == 'motion-studio-l13-l1-android-preview' && success()
         uses: actions/upload-artifact@v4
         with:
           name: motion-studio-l13-l1-ui-screenshots
