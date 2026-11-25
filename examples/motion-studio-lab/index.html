@@ -216,6 +216,13 @@
           <div id="audioTimelineRuler" class="timeline-ruler" aria-hidden="true"></div>
           <div id="audioTracks" class="audio-tracks" aria-label="مسارات الصوت والحوار"></div>
           <div class="audio-selected-actions"><button id="playSelectedAudio" type="button" class="secondary-button" disabled>▶ تشغيل المحدد</button><button id="deleteSelectedAudio" type="button" class="secondary-button" disabled>حذف المحدد</button></div>
+          <details id="audioDiagnosticsPanel" class="audio-diagnostics-panel">
+            <summary>تشخيص الصوت والميكروفون</summary>
+            <p class="hint">يجمع حالة الإذن والصيغة وآخر تسجيل وأصول Timeline. انسخ التقرير عند إرسال مشكلة.</p>
+            <button id="copyAudioDiagnostics" class="secondary-button" type="button">نسخ تقرير التشخيص</button>
+            <p id="audioDiagnosticStatus" class="timeline-message" role="status" aria-live="polite">لم يُنشأ تقرير بعد.</p>
+            <pre id="audioDiagnosticReport" aria-label="تقرير تشخيص الصوت">لم يُنشأ تقرير بعد.</pre>
+          </details>
           <p id="audioTimelineMessage" class="timeline-message" role="status" aria-live="polite">الصوت والحركة يستخدمان ساعة المشهد نفسها. دقة الجدولة تعتمد على المتصفح والجهاز.</p>
         </section>
         <section id="effectsToolsSection" class="timeline-card visual-effects-card" aria-labelledby="visualEffectsHeading">
