@@ -1059,6 +1059,10 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             box = locator.bounding_box()
             assert locator.evaluate("el => { const r=el.getBoundingClientRect(), hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2); return hit === el || hit?.closest('button') === el || (el.matches('summary') && hit?.closest('summary') === el); }"), "touch target must be the actual hit target after scrolling"
             touch_page.touchscreen.tap(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        def touch_choose_mode(mode):
+            touch_tap(touch_page.locator('nav.bottom-dock [data-editor-section="project"]'))
+            touch_tap(touch_page.locator(f'[data-editor-mode-button="{mode}"]'))
+            touch_tap(touch_page.locator('nav.bottom-dock [data-editor-section="motion"]'))
         touch_page.goto(preview.as_uri())
         touch_page.wait_for_function("document.querySelector('#stage')?.width === 720")
         touch_page.locator("#imageInput").set_input_files(str(sample))
@@ -1190,7 +1194,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         touch_tap(touch_page.locator("#replayButton"))
         touch_page.wait_for_function("document.querySelector('#sceneName').value === 'المشهد 1' && Number(document.querySelector('#sequenceSeek').value) > 0")
         touch_tap(touch_page.locator('nav.bottom-dock [data-editor-section="motion"]'))
-        touch_tap(touch_page.locator('[data-editor-mode-button="simple"]'))
+        touch_choose_mode("simple")
         assert touch_page.locator(".studio").get_attribute("data-editor-mode") == "simple", "Simple mode is the mobile default"
         simple_times = lambda: [int(value) for value in touch_page.locator(".keyframe-marker").evaluate_all("els => els.map(el => el.dataset.keyTime)")]
         camera_before_quick_motion = simple_times()
@@ -1209,13 +1213,13 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
             touch_tap(touch_page.locator(f'[data-motion-preset="{preset}"]:not([data-automatic-motion])'))
             assert "طُبّقت" in touch_page.locator("#motionPresetMessage").inner_text(), preset
         switched_times = simple_times()
-        touch_tap(touch_page.locator('[data-editor-mode-button="professional"]'))
+        touch_choose_mode("professional")
         assert touch_page.locator(".studio").get_attribute("data-editor-mode") == "professional"
-        touch_tap(touch_page.locator('[data-editor-mode-button="automatic"]'))
+        touch_choose_mode("automatic")
         assert touch_page.locator("#automaticMotionPanel").is_visible()
-        touch_tap(touch_page.locator('[data-editor-mode-button="simple"]'))
+        touch_choose_mode("simple")
         assert simple_times() == switched_times, "switching editing modes preserves camera keyframes"
-        touch_tap(touch_page.locator('[data-editor-mode-button="automatic"]'))
+        touch_choose_mode("automatic")
         for preset in ["zoom-in", "pan-horizontal", "cinematic"]:
             touch_tap(touch_page.locator(f'[data-motion-preset="{preset}"][data-automatic-motion="true"]'))
             assert "اقتراح" in touch_page.locator("#motionPresetMessage").inner_text(), preset
@@ -1229,7 +1233,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         touch_page.screenshot(path=str(screenshot_dir / "motion-studio-mobile-effects.png"))
         touch_tap(touch_page.locator('nav.bottom-dock [data-editor-section="motion"]'))
         assert touch_page.locator(".studio").get_attribute("data-editor-mode") == "professional", "section navigation preserves the user's selected editing mode"
-        touch_tap(touch_page.locator('[data-editor-mode-button="simple"]'))
+        touch_choose_mode("simple")
         assert touch_page.locator("#motionStrength").input_value() == "72"
         assert touch_page.locator("#motionFocusX").input_value() == "30"
         assert touch_page.locator("#motionFocusY").input_value() == "68"
