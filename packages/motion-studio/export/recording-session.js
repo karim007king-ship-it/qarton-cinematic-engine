@@ -27,9 +27,9 @@ function awaitWork(work, timeoutMs, message, { signal, code = "CAPTURE_FAILED" }
     const settle = callback => value => { cleanup(); callback(value); };
     const aborted = () => settle(reject)(abortError(signal));
     signal?.addEventListener("abort", aborted, { once: true });
-    if (signal?.aborted) { aborted(); return; }
     timer = globalThis.setTimeout(() => settle(reject)(error(code, message)), timeoutMs);
     Promise.resolve(work).then(settle(resolve), settle(reject));
+    if (signal?.aborted) aborted();
   });
 }
 function recorderCtor(host) { return host.MediaRecorderClass ?? globalThis.MediaRecorder; }
@@ -453,8 +453,11 @@ export async function startExport(plan, host = {}, { signal, onProgress } = {}) 
     if (mixer) mixer.schedule(clockAudioEpoch);
     const startedPromise = waitForEvent(recorder, "start", { signal, timeoutMs: host.startTimeoutMs ?? 5000, errorNames: ["error"] });
     const stoppedPromise = waitForEvent(recorder, "stop", { timeoutMs: plan.durationMs + (host.stopTimeoutMs ?? 10_000), errorNames: ["error"] });
+    // Observe both event promises even when startup fails before stop is awaited.
+    void startedPromise.catch(() => {});
+    void stoppedPromise.catch(() => {});
     recorder.start(250);
-    await startedPromise;
+    try { await startedPromise; } catch (cause) { throw stopReason ?? cause; }
     if (startFrameInterval !== null) { clearInterval(startFrameInterval); startFrameInterval = null; }
     checkAbort(signal);
     if (stopReason) throw stopReason;
