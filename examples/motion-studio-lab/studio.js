@@ -308,8 +308,25 @@ async function registerAssetFile(file) {
   await assetReady;
   const registry = persistentAssets;
   const candidate = sequenceAssetFromFile(file);
-  const found = sequenceEditor.sequence.assets.find(asset => asset.kind === candidate.kind && asset.name === candidate.name &&
-    asset.mimeType === candidate.mimeType && asset.size === candidate.size);
+  // Matching metadata alone does not establish identical asset contents.
+  let found;
+  for (const existing of sequenceEditor.sequence.assets) {
+    if (existing.kind !== candidate.kind || existing.name !== candidate.name ||
+        existing.mimeType !== candidate.mimeType || existing.size !== candidate.size) continue;
+    const previous = getAssetBlob(existing.id);
+    if (!previous) continue;
+    let identical = true;
+    for (let offset = 0; offset < file.size; offset += 1024 * 1024) {
+      const end = Math.min(file.size, offset + 1024 * 1024);
+      const left = new Uint8Array(await previous.slice(offset, end).arrayBuffer());
+      const right = new Uint8Array(await file.slice(offset, end).arrayBuffer());
+      if (left.length !== right.length || !left.every((value, index) => value === right[index])) {
+        identical = false;
+        break;
+      }
+    }
+    if (identical) { found = existing; break; }
+  }
   const asset = found ?? candidate;
   const linkedFile = (file.type || "").toLowerCase() === candidate.mimeType ? file : new File([file], file.name, { type: candidate.mimeType });
   if (!found) {
@@ -1647,14 +1664,17 @@ async function restoreSceneAssets(scene) {
     } catch (error) { $("assetLibraryMessage").textContent = `تعذر فك الصورة ${asset.name}: ${errorText(error)}`; }
   }
   for (const track of scene.audioTracks) for (const clip of track.clips) {
-    if (audioFiles.has(clip.asset)) continue;
+    const cached = audioFiles.get(clip.asset);
+    if (cached?.durationMs > 0) continue;
     const asset = sequenceEditor.sequence.assets.find(item => item.id === clip.asset && item.kind === "audio");
     const blob = getAssetBlob(clip.asset);
     if (!asset || !blob) continue;
     const file = new File([blob], asset.name, { type: asset.mimeType });
     const url = URL.createObjectURL(file);
     let durationMs = 0;
-    try { durationMs = await readAudioDuration(file); } catch { /* The clip remains visible; playback reports unsupported audio. */ }
+    try { durationMs = await readAudioDuration(file); }
+    catch (error) { $("audioTimelineMessage").textContent = `تعذر قراءة الصوت ${asset.name}: ${errorText(error)}`; }
+    if (cached?.url) URL.revokeObjectURL(cached.url);
     audioFiles.set(asset.id, { file, url, durationMs });
   }
   imageSource = firstImage?.surface ?? imageSource;
