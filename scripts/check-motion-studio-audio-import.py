@@ -95,6 +95,10 @@ with tempfile.TemporaryDirectory(prefix="qarton-audio-import-") as directory:
         page.wait_for_function("document.querySelector('#integratedTo').value === '3000'")
         page.locator('nav.bottom-dock [data-editor-section="audio"]').click()
         add_button = page.locator("#addAudioClip")
+        page.locator("#quickImportAudio").click()
+        page.locator("#audioInput").set_input_files({"name": "corrupt.wav", "mimeType": "audio/wav", "buffer": b"not a valid WAV"})
+        page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('تعذر فك ترميز')", timeout=15000)
+        assert page.locator("#audioTracks .audio-clip").count() == 0, "invalid bytes must not be added to the Timeline"
         page.locator("#audioInput").set_input_files(str(mp3))
         page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('تم التحقق من الملف')", timeout=30000)
         assert not add_button.is_disabled(), "Add must become enabled after the selected MP3 is fully imported"
@@ -104,6 +108,25 @@ with tempfile.TemporaryDirectory(prefix="qarton-audio-import-") as directory:
         page.wait_for_function("document.querySelectorAll('#audioTracks .audio-clip').length === 1")
         assert page.locator("#audioClipDuration").input_value() == "3000", "a 51.52 second file must be clipped to the 3 second scene"
         assert "مدة 00:03.00" in page.locator("#audioTimelineMessage").inner_text(), page.locator("#audioTimelineMessage").inner_text()
+
+        # The simplified actions import directly into their intended tracks.
+        page.locator("#deleteSelectedAudio").click()
+        page.locator("#quickImportAudio").click()
+        page.locator("#audioInput").set_input_files(str(mp3))
+        page.wait_for_function("document.querySelectorAll('#audioTracks .audio-clip').length === 1", timeout=30000)
+        assert page.locator("#audioSelection").inner_text().startswith("حوار"), page.locator("#audioSelection").inner_text()
+        page.locator("#quickAddMusic").click()
+        page.locator("#audioInput").set_input_files(str(mp3))
+        page.wait_for_function("document.querySelectorAll('#audioTracks .audio-clip').length === 2", timeout=30000)
+        assert page.locator("#audioSelection").inner_text().startswith("موسيقى"), page.locator("#audioSelection").inner_text()
+        page.locator("#deleteSelectedAudio").click()
+        page.wait_for_function("document.querySelectorAll('#audioTracks .audio-clip').length === 1")
+        print("Quick audio actions: dialogue import, music import, selection, and delete passed")
+        page.locator(".advanced-audio-drawer > summary").click()
+        start_field = page.locator("#audioClipStart")
+        start_field.fill("200")
+        start_field.press("Enter")
+        assert page.evaluate("document.activeElement?.id") == "audioClipStart", "editing should keep keyboard focus on the active timing field"
 
         touch_tap(page, page.locator("#playPauseButton"))
         page.wait_for_function("window.__qartonPreviewVoices.some(voice => !voice.paused && voice.currentTime > 0.2)", timeout=10000)
