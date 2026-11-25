@@ -22,8 +22,8 @@ function awaitAudioWork(work, { signal, timeoutMs = 30_000, onLateValue } = {}) 
     };
     const onAbort = () => finish(reject, signal.reason ?? new DOMException("Audio preparation cancelled", "AbortError"));
     signal?.addEventListener("abort", onAbort, { once: true });
-    if (signal?.aborted) { onAbort(); return; }
     Promise.resolve(work).then(value => finish(resolve, value), error => finish(reject, error));
+    if (signal?.aborted) onAbort();
   });
 }
 
@@ -76,9 +76,7 @@ export async function decodeStudioSequenceAudio(compiled, {
   const metadata = new Map(audioInfo.map(item => [item.id, item]));
   let pcmBytes = 0, compressedBytes = 0;
   const release = () => {
-    for (const buffer of buffers.values()) for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
-      try { buffer.getChannelData(channel).fill(0); } catch {}
-    }
+    for (const buffer of buffers.values()) releaseBuffer(buffer);
     buffers.clear();
   };
   try {
