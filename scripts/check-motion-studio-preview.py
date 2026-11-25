@@ -194,12 +194,16 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         start_y = effect_box["y"] + effect_box["height"] / 2
         page.mouse.move(start_x, start_y)
         page.mouse.down()
-        page.wait_for_function("document.querySelector('#visualEffectsTracks').dataset.dragging === 'true'")
-        drag_state = page.evaluate("""() => {
+        drag_state = page.evaluate("""({x, y}) => {
           const root = document.querySelector('#visualEffectsTracks');
-          return {capture: root.hasPointerCapture(window.lastEffectPointerId), focused: document.activeElement?.classList.contains('visual-effect-clip'),
-            pointerId: window.lastEffectPointerId, activeClass: document.activeElement?.className || ''};
-        }""")
+          const clip = document.querySelector('.visual-effect-clip');
+          const hit = document.elementFromPoint(x, y);
+          return {dragging: root.dataset.dragging === 'true', capture: root.hasPointerCapture(window.lastEffectPointerId),
+            focused: document.activeElement?.classList.contains('visual-effect-clip'), pointerId: window.lastEffectPointerId,
+            activeClass: document.activeElement?.className || '', hitClass: hit?.className || '', hitIsClip: hit === clip,
+            disabled: clip?.disabled, pointerEvents: clip && getComputedStyle(clip).pointerEvents};
+        }""", {"x": start_x, "y": start_y})
+        assert drag_state["dragging"], f"effect clip pointerdown must begin a drag: {drag_state}"
         assert drag_state["capture"], f"effect drag must retain pointer capture: {drag_state}"
         assert drag_state["focused"], f"effect drag must preserve clip focus: {drag_state}"
         page.mouse.move(start_x + lane_box["width"] * 0.04, start_y, steps=3)
