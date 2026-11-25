@@ -94,6 +94,13 @@ with tempfile.TemporaryDirectory(prefix="qarton-audio-import-") as directory:
         page.locator("#duration").press("Home")
         page.wait_for_function("document.querySelector('#integratedTo').value === '3000'")
         page.locator('nav.bottom-dock [data-editor-section="audio"]').click()
+        page.locator("#audioDiagnosticsPanel > summary").click()
+        page.evaluate("""() => Object.defineProperty(navigator, 'clipboard', {configurable:true, value:{writeText: async text => {window.__copiedAudioDiagnostics = text;}}})""")
+        page.locator("#copyAudioDiagnostics").click()
+        page.wait_for_function("document.querySelector('#audioDiagnosticStatus').textContent.includes('نُسخ')")
+        diagnostic = page.evaluate("window.__copiedAudioDiagnostics")
+        assert '"secureContext"' in diagnostic and '"supportedRecordingFormats"' in diagnostic and '"timelineClipCount"' in diagnostic, diagnostic
+        print("Motion Studio audio diagnostics: environment, permission/capability, asset, and Timeline report copied")
         page.locator(".advanced-audio-drawer > summary").click()
         add_button = page.locator("#addAudioClip")
         page.locator("#quickImportAudio").click()
@@ -112,11 +119,14 @@ with tempfile.TemporaryDirectory(prefix="qarton-audio-import-") as directory:
 
         # The simplified actions import directly into their intended tracks.
         page.locator("#deleteSelectedAudio").click()
+        page.locator("#seek").evaluate("el => { el.value = '1000'; el.dispatchEvent(new Event('input', {bubbles:true})); }")
         with page.expect_file_chooser() as dialogue_picker:
             page.locator("#quickImportAudio").click()
+        assert page.locator("#seek").is_disabled() and page.locator("#saveProjectButton").is_disabled(), "scene edits and project save must lock while the picker owns its insertion target"
         dialogue_picker.value.set_files(str(mp3))
         page.wait_for_function("document.querySelectorAll('#audioTracks .audio-clip').length === 1", timeout=30000)
         assert page.locator("#audioSelection").inner_text().startswith("حوار"), page.locator("#audioSelection").inner_text()
+        assert page.locator("#audioClipStart").input_value() == "1000", "the picker must use the scene time captured when import began"
         with page.expect_file_chooser() as music_picker:
             page.locator("#quickAddMusic").click()
         music_picker.value.set_files(str(mp3))
@@ -139,6 +149,20 @@ with tempfile.TemporaryDirectory(prefix="qarton-audio-import-") as directory:
         start_field.fill("0")
         start_field.press("Enter")
         assert page.evaluate("document.activeElement?.id") == "audioClipStart", "editing should keep keyboard focus on the active timing field"
+
+        selected_start = page.locator("#seek").input_value()
+        touch_tap(page, page.locator("#playSelectedAudio"))
+        page.wait_for_function("window.__qartonPreviewVoices.some(voice => !voice.paused && voice.currentTime > 0.2)", timeout=10000)
+        solo_state = page.evaluate("""() => {
+          const voice = window.__qartonPreviewVoices.at(-1);
+          return { signal: voice.__qartonMeasure?.(), currentTime: voice.currentTime,
+            sceneClock: document.querySelector('#seek').value, playLabel: document.querySelector('#playPauseButton').textContent,
+            soloLabel: document.querySelector('#playSelectedAudio').textContent };
+        }""")
+        assert solo_state["signal"]["rms"] > 0.02 and solo_state["sceneClock"] == selected_start and solo_state["playLabel"] == "تشغيل" and solo_state["soloLabel"].startswith("⏹"), solo_state
+        print(f"Selected clip isolated playback: RMS={solo_state['signal']['rms']:.4f}; scene clock remained {selected_start}ms")
+        touch_tap(page, page.locator("#playSelectedAudio"))
+        assert page.locator("#playSelectedAudio").inner_text().startswith("▶"), "the selected clip button toggles playback off independently"
 
         touch_tap(page, page.locator("#playPauseButton"))
         page.wait_for_function("window.__qartonPreviewVoices.some(voice => !voice.paused && voice.currentTime > 0.2)", timeout=10000)
