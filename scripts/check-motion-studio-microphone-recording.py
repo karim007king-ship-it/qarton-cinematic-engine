@@ -226,7 +226,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-virtual-mic-") as directory:
             image = root / "examples/motion-studio-lab/preview-test.png"
             page.locator("#imageInput").set_input_files(str(image))
             page.wait_for_function("document.querySelector('#imageName').textContent.includes('preview-test.png')")
-            page.locator('nav.bottom-dock [data-editor-section="more"]').click()
+            page.locator('nav.bottom-dock [data-editor-section="project"]').click()
             page.locator("#advancedProjectOptions > summary").click()
             page.locator("#duration").press("Home")
             page.wait_for_function("document.querySelector('#integratedTo').value === '3000'")
@@ -237,7 +237,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-virtual-mic-") as directory:
             page.wait_for_function("document.querySelector('#sceneDuration').value === '3'")
 
             # Verify export capability before recording so the busy-state assertion is meaningful.
-            page.locator('nav.bottom-dock [data-editor-section="more"]').click()
+            page.locator('nav.bottom-dock [data-editor-section="project"]').click()
             page.locator(".export-options > summary").click()
             video_format = page.evaluate("""() => {
               if (['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].some(type => MediaRecorder.isTypeSupported(type))) return 'webm';
@@ -301,7 +301,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-virtual-mic-") as directory:
             print(f"Copied diagnostics: Blob={latest['bytes']} bytes; decoded={latest['decodedDurationMs']}ms; RMS={latest['rms']:.4f}; peak={latest['peak']:.4f}; rate={latest['sampleRate']}Hz")
 
             # Persist project metadata and audio bytes, then verify that restored playback has a real signal.
-            page.locator('nav.bottom-dock [data-editor-section="more"]').click()
+            page.locator('nav.bottom-dock [data-editor-section="project"]').click()
             with page.expect_download(timeout=15000) as project_download:
                 page.locator("#saveProjectButton").evaluate("el => el.click()")
             project_path = temp / "qarton-recorded-audio-project.json"
@@ -324,7 +324,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-virtual-mic-") as directory:
             print(f"Restored preview signal: RMS={preview_signal['rms']:.4f} tone={preview_signal['frequency']:.1f}Hz")
 
             # Export both scenes, decode the file, and verify the recorded signal is present in its audio stream.
-            page.locator('nav.bottom-dock [data-editor-section="more"]').click()
+            page.locator('nav.bottom-dock [data-editor-section="project"]').click()
             page.locator(".export-options > summary").click()
             page.locator("#integratedFormat").select_option(video_format)
             page.locator("#integratedAudio").select_option("mix")

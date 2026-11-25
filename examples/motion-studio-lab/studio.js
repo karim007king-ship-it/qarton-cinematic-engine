@@ -1,2933 +1,7 @@
-import { errorText, setExportErrorMessage } from "./studio-errors.js";
-import { compileProject, sampleFrame, planExport, rasterForQuality, probeExport, startExport } from "@qarton/cinematic-engine/motion-studio";
-import { createStudioSequenceV1 } from "@qarton/cinematic-engine/motion-studio";
-import { createRequestToken, makeProject, makeProjectFile, parseProjectFile, prepareProjectUpdate, VIEWPORT } from "./studio-model.js?v=l7b-character-01";
-import { decodeImageBitmap } from "./studio-image.js?v=l4-flex-01";
-import { DEFAULT_OUTPUT_VIEWPORT, imageRect, inferAspectPreset, projectSizeForPreset, safePreviewSize } from "./studio-dimensions.js?v=l4-flex-01";
-import {
-  EXPORT_PROFILES, chooseDefaultFormat, createExportLock, createRecordingSession, estimateVideoBytes,
-  exportDurationMs, exportFrameCount, exportFrameTime, exportViewportFor, extensionForMime, projectForRaster, projectTimeAt,
-  scheduleTestPulses, supportedCandidates
-} from "./studio-export-core.js?v=l5-export-01";
-import { createStudioTimeline } from "./studio-timeline.js?v=l6b-cleanup-01";
-import { compileCharacterTrack, makeCharacterTrack } from "./studio-character-track.js?v=l7b-character-01";
-import { createCharacterTimeline } from "./studio-character-timeline.js?v=l7b-character-01";
-import { compileAudioTracks, makeAudioTracks, addAudioClip, editAudioClip, deleteAudioClip, setAudioTrackVolume, setAudioViseme, validateAudioFile, readAudioDuration } from "./studio-audio-model.js?v=l8b-audio-timeline-01";
-import { createStudioAudioTimeline } from "./studio-audio-timeline.js?v=l8b-audio-timeline-01";
-import { createCinematicAudioPlayer } from "../../src/audio/cinematic-audio-core.js";
-import { addVisualEffect, deleteVisualEffect, editVisualEffect, moveVisualEffect, makeVisualEffectsTrack, compileVisualEffectsTrack, VISUAL_EFFECT_CHANNELS, VISUAL_EFFECT_TYPES } from "./studio-visual-effects-model.js?v=l9b-effects-01";
-import { createStudioVisualEffectsTimeline } from "./studio-visual-effects-timeline.js?v=l9b-effects-01";
-import { drawStudioScene } from "./studio-scene-renderer.js?v=l10b-integrated-01";
-import { createStudioSequenceEditor, parseStudioSequenceFile, serializeStudioSequenceFile, STUDIO_SEQUENCE_FILE_FORMAT } from "./studio-sequence-editor.js?v=l11d-multiscene-01";
-import { CAMERA_MOTION_PRESETS, createCameraMotionProject } from "./studio-motion-presets.js?v=l11f1-smart-editor-01";
-import { createPersistentAssetRegistry } from "../../packages/motion-studio/asset-persistence.js";
-import { openAssetStorage } from "../../packages/motion-studio/asset-storage.js";
-import { prepareStudioSequenceExport } from "./studio-sequence-export.js?v=l11e-sequence-export-01";
-import { createStudioSequenceRuntime, decodeStudioSequenceAudio } from "./studio-sequence-runtime.js?v=l11h4-integrated-01";
-
-const $ = (id) => document.getElementById(id);
-const studioRoot = document.querySelector(".studio");
-let activeEditorSection = "motion";
-
-function mountCompactWorkspace() {
-  const workspace = studioRoot.querySelector(".workspace");
-  const preview = workspace?.querySelector(".preview-panel");
-  const controls = workspace?.querySelector(".controls-panel");
-  if (!workspace || !preview || !controls) return;
-  const panel = (name) => document.querySelector(`[data-tool-panel="${name}"]`);
-  const previewHeading = preview.querySelector(".preview-heading");
-  const stageWrap = preview.querySelector(".stage-wrap");
-  const transport = preview.querySelector(".transport");
-  const sceneSection = $("sceneSection");
-  const imagePicker = $("previewImagePicker");
-  const projectCard = controls.querySelector(".project-card");
-  const imageLabel = projectCard?.querySelector("label.file-picker[for='imageInput']");
-  if (imageLabel) imagePicker.append(imageLabel, $("imageInput"));
-  if (previewHeading) {
-    const fullscreen = document.createElement("button");
-    fullscreen.id = "fullscreenPreviewButton";
-    fullscreen.type = "button";
-    fullscreen.className = "fullscreen-button";
-    fullscreen.setAttribute("aria-label", "Ù…Ù„Ø¡ Ø§Ù„Ø´Ø§Ø´Ø©");
-    fullscreen.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></svg>';
-    previewHeading.append(fullscreen);
-  }
-  $("previewCanvasHost").append(previewHeading, stageWrap);
-  $("previewTransportHost").append(transport);
-  const camTimeline = preview.querySelector(".timeline-card:not(.character-timeline-card):not(.audio-timeline-card):not(.visual-effects-card)");
-  const characterTimeline = preview.querySelector(".character-timeline-card");
-  const audioTimelinePanel = $("audioToolsSection");
-  const effectsTimelinePanel = $("effectsToolsSection");
-  const motionPanel = panel("motion");
-  const morePanel = panel("more");
-  const advancedMotion = $("professionalMotionControls");
-  const advancedMotionContent = $("advancedMotionContent");
-  motionPanel.append($("automaticMotionPanel"), $("simpleMotionPanel"), advancedMotion);
-  if (camTimeline) advancedMotionContent.append(camTimeline);
-  if (characterTimeline) advancedMotionContent.append(characterTimeline);
-  const cards = [...controls.querySelectorAll(":scope > .control-card")];
-  const [dimensionsCard, durationCard, cameraCard, legacyExportCard, integratedExportCard] = cards.slice(1);
-  if (sceneSection) panel("scenes").append(sceneSection);
-  if (audioTimelinePanel) panel("audio").append(audioTimelinePanel);
-  if (effectsTimelinePanel) panel("effects").append(effectsTimelinePanel);
-  if (projectCard) morePanel.append(projectCard);
-  const advancedProject = document.createElement("details");
-  advancedProject.id = "advancedProjectOptions";
-  advancedProject.className = "advanced-options project-options";
-  advancedProject.innerHTML = '<summary>Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ø§Ù„Ù…Ø´Ø±ÙˆØ¹ Ø§Ù„Ù…ØªÙ‚Ø¯Ù…Ø©</summary>';
-  for (const card of [dimensionsCard, durationCard, cameraCard]) if (card) advancedProject.append(card);
-  if (legacyExportCard) {
-    const legacy = document.createElement("details");
-    legacy.id = "legacyExportDetails";
-    legacy.className = "advanced-options";
-    legacy.innerHTML = '<summary>Ø§Ù„ØªØµØ¯ÙŠØ± Ø§Ù„Ù‚Ø¯ÙŠÙ… L5</summary>';
-    legacy.append(legacyExportCard);
-    advancedProject.append(legacy);
-  }
-  if (integratedExportCard) {
-    integratedExportCard.querySelector("h2").textContent = "ØªØµØ¯ÙŠØ± Ø§Ù„ÙÙŠØ¯ÙŠÙˆ";
-    const hint = integratedExportCard.querySelector(":scope > .hint");
-    if (hint) hint.textContent = "Ø£Ù†Ø´Ø¦ ÙÙŠØ¯ÙŠÙˆ Ù…Ù† Ø§Ù„Ù…Ø´Ù‡Ø¯ Ø§Ù„Ø­Ø§Ù„ÙŠ Ù…Ø¹ Ø§Ù„Ø­Ø±ÙƒØ© ÙˆØ§Ù„ØµÙˆØª ÙˆØ§Ù„Ù…Ø¤Ø«Ø±Ø§Øª.";
-    const options = integratedExportCard.querySelector(":scope > .control-grid");
-    if (options) {
-      const details = document.createElement("details");
-      details.className = "advanced-options export-options";
-      details.innerHTML = '<summary>Ø®ÙŠØ§Ø±Ø§Øª Ø§Ù„Ø¬ÙˆØ¯Ø© ÙˆØ§Ù„ØµÙŠØºØ© Ø§Ù„Ù…ØªÙ‚Ø¯Ù…Ø©</summary>';
-      details.append(options);
-      integratedExportCard.insertBefore(details, integratedExportCard.querySelector(".export-actions"));
-    }
-    morePanel.append(integratedExportCard);
-  }
-  morePanel.append(advancedProject);
-  controls.remove();
-  workspace.remove();
-  sceneSection.querySelector(".asset-library")?.removeAttribute("open");
-  document.querySelector(".studio-footer")?.remove();
-  document.querySelector("#professionalMotionControls").open = false;
-}
-mountCompactWorkspace();
-const canvas = $("stage");
-const context = canvas.getContext("2d", { alpha: false });
-const imageInput = $("imageInput");
-const projectInput = $("projectInput");
-const seek = $("seek");
-const timelineLane = $("timelineLane");
-const timelineRuler = $("timelineRuler");
-const timelinePlayhead = $("timelinePlayhead");
-const timelineKeyframes = $("timelineKeyframes");
-const timelineSelection = $("timelineSelection");
-const timelineMessage = $("timelineMessage");
-const addKeyframeButton = $("addKeyframeButton");
-const deleteKeyframeButton = $("deleteKeyframeButton");
-const keyframeFields = { x: $("keyframeX"), y: $("keyframeY"), zoom: $("keyframeZoom"), rotation: $("keyframeRotation") };
-const status = $("status");
-const errorMessage = $("errorMessage");
-const imageName = $("imageName");
-const timeReadout = $("timeReadout");
-const playPauseButton = $("playPauseButton");
-const aspectSelect = $("aspectPreset");
-const fitSelect = $("fitMode");
-const imageRequest = createRequestToken();
-const audioRequest = createRequestToken();
-const exportLock = createExportLock();
-const exportFormat = $("exportFormat");
-const exportDuration = $("exportDuration");
-const exportQuality = $("exportQuality");
-const exportAudioEnabled = $("exportAudioEnabled");
-const exportButton = $("exportButton");
-const cancelExportButton = $("cancelExportButton");
-const exportStatus = $("exportStatus");
-const exportProgress = $("exportProgress");
-const exportVideo = $("exportVideo");
-const exportDownload = $("exportDownload");
-const exportMetadata = $("exportMetadata");
-const exportError = $("exportError");
-const tryWebmButton = $("tryWebmButton");
-const integratedQuality = $("integratedQuality");
-const integratedFormat = $("integratedFormat");
-const integratedAudio = $("integratedAudio");
-const integratedMissingAudio = $("integratedMissingAudio");
-const integratedFrom = $("integratedFrom");
-const integratedTo = $("integratedTo");
-const integratedProbeButton = $("integratedProbeButton");
-const integratedExportButton = $("integratedExportButton");
-const integratedProgress = $("integratedProgress");
-const integratedStatus = $("integratedStatus");
-const integratedError = $("integratedError");
-const integratedVideo = $("integratedVideo");
-const integratedDownload = $("integratedDownload");
-const integratedMetadata = $("integratedMetadata");
-let activeExport = null;
-let exportVideoUrl = null;
-let integratedVideoUrl = null;
-let exportCapability = { mp4: [], webm: [] };
-const integratedCapabilities = new Map();
-let exportFormatInitialized = false;
-let pendingImageRequest = null;
-let exportStatusHasResult = false;
-
-let aspectPreset = "original";
-let fitMode = "fit";
-let previewViewport = safePreviewSize(DEFAULT_OUTPUT_VIEWPORT.width, DEFAULT_OUTPUT_VIEWPORT.height);
-let placeholder = makePlaceholder(previewViewport);
-let imageSource = placeholder;
-let selectedImageFile = null;
-let selectedImageDimensions = null;
-let currentFileInfo = null;
-let project = makeProject({
-  durationMs: 12000, viewport: { ...DEFAULT_OUTPUT_VIEWPORT, fps: VIEWPORT.fps },
-  startZoom: 1, endZoom: 1.25, startX: 0, endX: 0, startY: 0, endY: 0
-});
-let visualEffectsTrack = makeVisualEffectsTrack();
-let currentMs = 0;
-let isPlaying = false;
-let pausedAt = null;
-let rafId = 0;
-let quickMotionUndo = null;
-let committingQuickMotion = false;
-
-canvas.width = previewViewport.width;
-canvas.height = previewViewport.height;
-canvas.style.aspectRatio = `${previewViewport.width} / ${previewViewport.height}`;
-
-const sceneImageSources = new Map();
-const imageProvider = { get: (assetId) => sceneImageSources.get(assetId) ?? (project.layers.some((layer) => layer.assetId === assetId) ? imageSource : null) };
-let compiled;
-let visualEffectsCompiled;
-let timelineEditor = null;
-let characterTrack = makeCharacterTrack();
-let characterAnimation = compileCharacterTrack(characterTrack, project.durationMs);
-let characterTimeline = null;
-let audioTracks = makeAudioTracks();
-let audioAssets = [];
-const audioFiles = new Map();
-let activeAudioAssetId = null;
-let audioAssetSerial = 0;
-let audioPlayer = null;
-let audioCompiled = compileAudioTracks(audioTracks, project.durationMs);
-let audioMasterVolume = 1;
-let audioClipSelection = null;
-let audioTimeline = null;
-let pendingAudioRequest = null;
-let microphoneButton = null;
-let microphoneSession = null;
-let microphoneStarting = false;
-let microphoneFinalizing = false;
-let microphoneMeterFrame = 0;
-let microphoneElapsedTimer = 0;
-let audioImportIntent = null;
-let audioPickerOpening = false;
-let microphoneStartupController = null;
-let microphonePageHiding = false;
-let soloAudioPreview = null;
-let lastMicrophoneDiagnostic = { state: "Ù„Ù… ÙŠØ¨Ø¯Ø£ Ø§Ù„ØªØ³Ø¬ÙŠÙ„" };
-let visualEffectsTimeline = null;
-let visualEffectSelection = null;
-const makeLocalId = (prefix) => `${prefix}-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
-const initialImageAsset = { id: project.layers[0].assetId, kind: "image", name: "image-placeholder.png", mimeType: "image/png", size: 0 };
-const CURRENT_PROJECT_KEY = "qarton-motion-studio-current-project";
-function readStoredProjectId() {
-  try {
-    const id = localStorage.getItem(CURRENT_PROJECT_KEY);
-    return typeof id === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u.test(id) ? id : null;
-  } catch { return null; }
-}
-let projectStorageId = readStoredProjectId() ?? makeLocalId("project");
-const AUDIO_DURATION_METADATA_PREFIX = "qarton-motion-studio-audio-durations:";
-function readAudioDurationHint(assetId) {
-  try {
-    const metadata = JSON.parse(localStorage.getItem(`${AUDIO_DURATION_METADATA_PREFIX}${projectStorageId}`) || "{}");
-    const durationMs = metadata?.[assetId];
-    if (Number.isSafeInteger(durationMs) && durationMs > 0 && durationMs <= 3_600_000) return durationMs;
-  } catch { /* Storage metadata is advisory; the browser decoder remains authoritative when available. */ }
-  let inferredMs = 0;
-  for (const scene of sequenceEditor?.sequence.scenes ?? []) for (const track of scene.audioTracks) {
-    for (const clip of track.clips) if (clip.asset === assetId && Number.isSafeInteger(clip.durationMs)) {
-      inferredMs = Math.max(inferredMs, clip.durationMs);
-    }
-  }
-  return inferredMs;
-}
-function rememberAudioDuration(assetId, durationMs) {
-  const value = Math.round(durationMs);
-  if (typeof assetId !== "string" || !Number.isSafeInteger(value) || value <= 0 || value > 3_600_000) return false;
-  try {
-    const key = `${AUDIO_DURATION_METADATA_PREFIX}${projectStorageId}`;
-    let metadata = {};
-    try { metadata = JSON.parse(localStorage.getItem(key) || "{}"); } catch { /* Replace corrupt advisory metadata. */ }
-    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) metadata = {};
-    metadata[assetId] = value;
-    const keys = Object.keys(metadata);
-    for (const staleId of keys.slice(0, Math.max(0, keys.length - 256))) delete metadata[staleId];
-    localStorage.setItem(key, JSON.stringify(metadata));
-    return true;
-  } catch { return false; }
-}
-let sequenceEditor = createStudioSequenceEditor(createStudioSequenceV1({
-  viewport: project.viewport,
-  scenes: [{ id: "scene-1", project, audioTracks, characterTracks: [characterTrack], visualEffectsTrack }],
-  assets: [initialImageAsset]
-}), { names: { "scene-1": "Ø§Ù„Ù…Ø´Ù‡Ø¯ 1" } });
-let activeSceneId = sequenceEditor.activeSceneId;
-let sequenceTimeMs = 0;
-let sequenceEpochMs = 0;
-let sequenceBaseMs = 0;
-let assetStorage = null;
-let persistentAssets = null;
-let assetStorageStatus = "Ø¬Ø§Ø±Ù ÙØªØ­ Ø§Ù„ØªØ®Ø²ÙŠÙ† Ø§Ù„Ù…Ø­Ù„ÙŠâ€¦";
-const localAssetFiles = new Map();
-const sceneSettings = new Map([[activeSceneId, { aspectPreset, fitMode, image: null }]]);
-const sceneThumbnails = new Map();
-let sceneLoadToken = 0;
-let pendingSceneActivation = null;
-let exportPreparing = false;
-let sequenceAutosaveTimer = 0;
-const assetReady = openAssetStorage().then(async storage => {
-  assetStorage = storage;
-  persistentAssets = createPersistentAssetRegistry(sequenceEditor.sequence, { storage, projectId: projectStorageId });
-  await persistentAssets.restore();
-  assetStorageStatus = "Ù…Ø­ÙÙˆØ¸Ø© Ù…Ø­Ù„ÙŠÙ‹Ø§ Ø¹Ù„Ù‰ Ù‡Ø°Ø§ Ø§Ù„Ø¬Ù‡Ø§Ø²";
-  renderAssetLibrary();
-}).catch(error => {
-  assetStorageStatus = `Ø§Ù„ØªØ®Ø²ÙŠÙ† Ø§Ù„Ù…Ø­Ù„ÙŠ ØºÙŠØ± Ù…ØªØ§Ø­: ${errorText(error)}`;
-  $("assetLibraryMessage").textContent = assetStorageStatus;
-  return null;
-});
-
-function compilePreviewEffects(track, sourceProject = project, viewport = previewViewport) {
-  return compileVisualEffectsTrack(track, projectForRaster(sourceProject, viewport));
-}
-function getCurrentScene() { return sequenceEditor.scenes.find(scene => scene.id === activeSceneId) ?? null; }
-function microphoneOperationActive() {
-  return microphoneStarting || microphoneSession !== null || microphoneFinalizing || audioImportIntent !== null || pendingAudioRequest !== null;
-}
-function currentScenePayload() {
-  return { id: activeSceneId, project, audioTracks, characterTracks: [characterTrack, ...(sceneExtraCharacterTracks.get(activeSceneId) ?? [])], visualEffectsTrack };
-}
-function sceneImageSettings(sceneId = activeSceneId) {
-  const stored = sceneSettings.get(sceneId);
-  if (stored?.aspectPreset && stored?.fitMode) return stored;
-  const scene = sequenceEditor.sequence.scenes.find(item => item.id === sceneId);
-  return { aspectPreset: scene ? inferAspectPreset(scene.project.viewport.width, scene.project.viewport.height) : aspectPreset, fitMode: "fit" };
-}
-const sceneExtraCharacterTracks = new Map();
-function captureCurrentScene({ refresh = false } = {}) {
-  if (!sequenceEditor) return null;
-  const next = sequenceEditor.updateScene(activeSceneId, () => currentScenePayload());
-  void persistentAssets?.replaceSequence(next.sequence).catch(error => {
-    $("assetLibraryMessage").textContent = `ØªØ¹Ø°Ø± ØªØ­Ø¯ÙŠØ« ÙÙ‡Ø±Ø³ Ø§Ù„Ø£ØµÙˆÙ„: ${errorText(error)}`;
-  });
-  persistSequenceMetadata();
-  if (refresh) renderSequenceOverview();
-  return next;
-}
-function scheduleSequenceAutosave() {
-  if (sequenceAutosaveTimer) clearTimeout(sequenceAutosaveTimer);
-  sequenceAutosaveTimer = setTimeout(() => {
-    sequenceAutosaveTimer = 0;
-    try { captureCurrentScene(); }
-    catch (error) { $("assetLibraryMessage").textContent = `ØªØ¹Ø°Ø± Ø­ÙØ¸ ØªØ¹Ø¯ÙŠÙ„Ø§Øª Ø§Ù„Ù…Ø´Ù‡Ø¯: ${errorText(error)}`; }
-  }, 250);
-}
-async function ensureAssetStorage() {
-  await assetReady;
-  if (!persistentAssets) throw new Error("Ø§Ù„ØªØ®Ø²ÙŠÙ† Ø§Ù„Ù…Ø­Ù„ÙŠ ØºÙŠØ± Ù…ØªØ§Ø­ ÙÙŠ Ù‡Ø°Ø§ Ø§Ù„Ù…ØªØµÙØ­.");
-  return persistentAssets;
-}
-function mimeForFile(file) {
-  if (file.type) return file.type.toLowerCase();
-  const ext = file.name.toLowerCase().split(".").at(-1);
-  return ({ jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", avif: "image/avif", gif: "image/gif",
-    mp3: "audio/mpeg", m4a: "audio/mp4", aac: "audio/aac", wav: "audio/wav", ogg: "audio/ogg", oga: "audio/ogg", webm: "audio/webm" })[ext] ?? "";
-}
-function sequenceAssetFromFile(file, id = makeLocalId("asset")) {
-  let mimeType = mimeForFile(file);
-  const kind = mimeType.startsWith("image/") ? "image" : mimeType.startsWith("audio/") ? "audio" : null;
-  if (!kind || !Number.isSafeInteger(file.size) || file.size < 1 || file.size > 64 * 1024 * 1024) {
-    throw new TypeError("Ø§Ø®ØªØ± ØµÙˆØ±Ø© Ø£Ùˆ Ù…Ù„Ù ØµÙˆØª ØµØ§Ù„Ø­Ù‹Ø§ Ø¨Ø­Ø¬Ù… Ù„Ø§ ÙŠØªØ¬Ø§ÙˆØ² 64 MiB.");
-  }
-  if (kind === "audio") mimeType = validateAudioFile(file).mime;
-  return { id, kind, name: file.name.slice(0, 255), mimeType, size: file.size };
-}
-async function registerAssetFile(file) {
-  await assetReady;
-  const registry = persistentAssets;
-  const candidate = sequenceAssetFromFile(file);
-  // Matching metadata alone does not establish identical asset contents.
-  let found;
-  for (const existing of sequenceEditor.sequence.assets) {
-    if (existing.kind !== candidate.kind || existing.name !== candidate.name ||
-        existing.mimeType !== candidate.mimeType || existing.size !== candidate.size) continue;
-    const previous = getAssetBlob(existing.id);
-    // Preserve explicit relinking of an imported asset whose bytes are missing.
-    if (!previous) { found = existing; break; }
-    let identical = true;
-    for (let offset = 0; offset < file.size; offset += 1024 * 1024) {
-      const end = Math.min(file.size, offset + 1024 * 1024);
-      const left = new Uint8Array(await previous.slice(offset, end).arrayBuffer());
-      const right = new Uint8Array(await file.slice(offset, end).arrayBuffer());
-      if (left.length !== right.length || !left.every((value, index) => value === right[index])) {
-        identical = false;
-        break;
-      }
-    }
-    if (identical) { found = existing; break; }
-  }
-  const asset = found ?? candidate;
-  const linkedFile = (file.type || "").toLowerCase() === candidate.mimeType ? file : new File([file], file.name, { type: candidate.mimeType });
-  if (!found) {
-    const oldSequence = sequenceEditor.sequence;
-    const next = createStudioSequenceV1({ viewport: oldSequence.viewport, scenes: oldSequence.scenes,
-      assets: [...oldSequence.assets, asset] });
-    sequenceEditor.replaceSequence(next);
-    await registry?.replaceSequence(next);
-  }
-  localAssetFiles.set(asset.id, linkedFile);
-  if (registry && !registry.get(asset.id)) await registry.relink(asset.id, linkedFile);
-  renderAssetLibrary();
-  persistSequenceMetadata();
-  return asset;
-}
-function getAssetBlob(id) { return persistentAssets?.get(id) ?? localAssetFiles.get(id) ?? null; }
-function assetMetadataToAudio(asset) {
-  return { id: asset.id, name: asset.name, type: asset.mimeType, size: asset.size };
-}
-function persistSequenceMetadata() {
-  try {
-    const settingsByScene = Object.fromEntries(sequenceEditor.scenes.map(scene => {
-      const settings = sceneImageSettings(scene.id);
-      return [scene.id, { aspectPreset: settings.aspectPreset, fitMode: settings.fitMode }];
-    }));
-    const text = serializeStudioSequenceFile(sequenceEditor, { projectId: projectStorageId, aspectPreset, fitMode, audioMasterVolume, sceneSettings: settingsByScene });
-    localStorage.setItem(`qarton-motion-studio-sequence:${projectStorageId}`, text);
-    // Publish the current-project pointer only after its metadata is saved.
-    localStorage.setItem(CURRENT_PROJECT_KEY, projectStorageId);
-  } catch (error) {
-    $("assetLibraryMessage").textContent = `ØªØ¹Ø°Ø± Ø­ÙØ¸ Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„ØªØ³Ù„Ø³Ù„ Ù…Ø­Ù„ÙŠÙ‹Ø§: ${errorText(error)}`;
-  }
-}
-async function restoreMostRecentSequence() {
-  try {
-    const id = readStoredProjectId();
-    if (!id) return;
-    const text = localStorage.getItem(`qarton-motion-studio-sequence:${id}`);
-    if (!text) return;
-    const loaded = parseStudioSequenceFile(text);
-    aspectPreset = loaded.settings.aspectPreset; fitMode = loaded.settings.fitMode; audioMasterVolume = loaded.audioMasterVolume;
-    aspectSelect.value = aspectPreset; fitSelect.value = fitMode; $("audioMasterVolume").value = String(audioMasterVolume);
-    await attachSequenceProject(loaded.editor, loaded.projectId, loaded.sceneSettings);
-    await activateStudioScene(sequenceEditor.scenes[0].id, { globalTimeMs: 0, localTimeMs: 0 });
-    $("assetLibraryMessage").textContent = "Ø§Ø³ØªÙØ¹ÙŠØ¯ ØªØ³Ù„Ø³Ù„ Ø§Ù„Ù…Ø´Ø±ÙˆØ¹ Ù…Ù† Ù‡Ø°Ø§ Ø§Ù„Ø¬Ù‡Ø§Ø². Ø§Ù„Ø£ØµÙˆÙ„ ØºÙŠØ± Ø§Ù„Ù…ØªØ§Ø­Ø© ØªØ­ØªØ§Ø¬ Ø¥Ù„Ù‰ Ø¥Ø¹Ø§Ø¯Ø© Ø±Ø¨Ø·.";
-  } catch (error) { $("assetLibraryMessage").textContent = `ØªØ¹Ø°Ø± Ø§Ø³ØªØ¹Ø§Ø¯Ø© Ø§Ù„ØªØ³Ù„Ø³Ù„ Ø§Ù„Ù…Ø­Ù„ÙŠ: ${errorText(error)}`; }
-}
-async function attachSequenceProject(nextEditor, nextProjectId, nextSceneSettings = null) {
-  await assetReady;
-  sequenceEditor = nextEditor;
-  projectStorageId = nextProjectId;
-  activeSceneId = sequenceEditor.activeSceneId;
-  sceneSettings.clear();
-  for (const scene of sequenceEditor.scenes) {
-    const stored = nextSceneSettings?.[scene.id];
-    sceneSettings.set(scene.id, stored
-      ? { ...stored, image: null }
-      : { aspectPreset: inferAspectPreset(scene.project.viewport.width, scene.project.viewport.height), fitMode: fitMode, image: null });
-  }
-  persistentAssets = assetStorage ? createPersistentAssetRegistry(sequenceEditor.sequence, { storage: assetStorage, projectId: projectStorageId }) : null;
-  if (persistentAssets) {
-    const missing = await persistentAssets.restore();
-    $("assetLibraryMessage").textContent = missing.length
-      ? `ØªÙ… ÙØªØ­ Ø§Ù„Ù…Ø´Ø±ÙˆØ¹. Ø£Ø¹Ø¯ Ø±Ø¨Ø· ${missing.length} Ø£ØµÙ„ Ù…Ù† Ù…ÙƒØªØ¨Ø© Ù‡Ø°Ø§ Ø§Ù„Ø¬Ù‡Ø§Ø².`
-      : "ØªÙ… ÙØªØ­ Ø§Ù„Ù…Ø´Ø±ÙˆØ¹ ÙˆØ§Ø³ØªØ¹Ø§Ø¯Ø© Ø§Ù„Ø£ØµÙˆÙ„ Ø§Ù„Ù…Ø­Ù„ÙŠØ©.";
-  }
-  renderSequenceOverview();
-  persistSequenceMetadata();
-}
-
-function makePlaceholder(size) {
-  const surface = document.createElement("canvas");
-  surface.width = size.width;
-  surface.height = size.height;
-  const ctx = surface.getContext("2d");
-  ctx.fillStyle = "#171820";
-  ctx.fillRect(0, 0, size.width, size.height);
-  ctx.fillStyle = "#e7bd69";
-  ctx.textAlign = "center";
-  ctx.font = `bold ${Math.max(16, Math.min(38, size.width / 18))}px system-ui, sans-serif`;
-  ctx.fillText("Ø§Ø®ØªØ± ØµÙˆØ±Ø© Ù„Ù„Ø¨Ø¯Ø¡", size.width / 2, size.height / 2);
-  return surface;
-}
-
-function fail(error) {
-  errorMessage.textContent = errorText(error);
-  errorMessage.hidden = false;
-  status.textContent = "ØªØ¹Ø°Ù‘Ø±Øª Ø§Ù„Ø¹Ù…Ù„ÙŠØ©";
-}
-function clearFailure() { errorMessage.hidden = true; errorMessage.textContent = ""; }
-function formatTime(ms) {
-  const seconds = Math.max(0, ms) / 1000;
-  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${(seconds % 60).toFixed(2).padStart(5, "0")}`;
-}
-// Both export paths own a video element and an object URL. Release them consistently.
-function resetExportMedia(video, download, objectUrl) {
-  video.pause();
-  video.removeAttribute("src");
-  video.load();
-  video.hidden = true;
-  download.hidden = true;
-  download.removeAttribute("href");
-  if (objectUrl) URL.revokeObjectURL(objectUrl);
-  return null;
-}
-function clearExportResult() {
-  exportStatusHasResult = false;
-  exportError.hidden = true;
-  exportError.textContent = "";
-  tryWebmButton.hidden = true;
-  exportVideoUrl = resetExportMedia(exportVideo, exportDownload, exportVideoUrl);
-  exportMetadata.textContent = "Ù„Ù… ÙŠÙÙ†Ø´Ø£ ÙÙŠØ¯ÙŠÙˆ Ø¨Ø¹Ø¯.";
-  exportProgress.value = 0;
-}
-function clearIntegratedResult() {
-  integratedError.hidden = true;
-  integratedError.textContent = "";
-  integratedProgress.value = 0;
-  integratedVideoUrl = resetExportMedia(integratedVideo, integratedDownload, integratedVideoUrl);
-  integratedMetadata.textContent = "Ù„Ù… ÙŠÙÙ†Ø´Ø£ ØªØµØ¯ÙŠØ± Ù…ØªÙƒØ§Ù…Ù„ Ø¨Ø¹Ø¯.";
-}
-function cancelActiveExport(reason = "ØªØºÙŠØ± Ø§Ù„Ù…Ø´Ø±ÙˆØ¹ Ø£Ø«Ù†Ø§Ø¡ Ø§Ù„ØªØµØ¯ÙŠØ±.") {
-  const running = activeExport;
-  if (!running) return;
-  const abortError = new DOMException(reason, "AbortError");
-  running.controller.abort(abortError);
-  running.session?.cancel(abortError);
-  if (running.rafId) cancelAnimationFrame(running.rafId);
-  if (running.stopTimer) clearTimeout(running.stopTimer);
-  if (running.kind === "integrated") integratedStatus.textContent = "Ø¬Ø§Ø±Ù Ø¥Ù„ØºØ§Ø¡ Ø§Ù„ØªØµØ¯ÙŠØ± ÙˆØªÙ†Ø¸ÙŠÙ Ù…ÙˆØ§Ø±Ø¯ Ø§Ù„ØµÙˆØª ÙˆØ§Ù„ØµÙˆØ±Ø©â€¦";
-  else exportStatus.textContent = "Ø¬Ø§Ø±Ù Ø¥ÙŠÙ‚Ø§Ù Ø§Ù„ØªØ³Ø¬ÙŠÙ„ ÙˆØªÙ†Ø¸ÙŠÙ Ø§Ù„Ù…ÙˆØ§Ø±Ø¯â€¦";
-}
-function invalidateExport(reason) {
-  cancelActiveExport(reason);
-  clearExportResult();
-  clearIntegratedResult();
-  refreshExportControls();
-}
-function refreshExportControls() {
-  studioRoot.dataset.imageReady = String(Boolean(currentFileInfo));
-  const RecorderClass = typeof MediaRecorder === "function" ? MediaRecorder : null;
-  const hasMediaRecorder = Boolean(RecorderClass && typeof canvas.captureStream === "function");
-  exportCapability = {
-    mp4: hasMediaRecorder ? supportedCandidates(RecorderClass, "mp4") : [],
-    webm: hasMediaRecorder ? supportedCandidates(RecorderClass, "webm") : []
-  };
-  for (const format of ["mp4", "webm"]) {
-    const option = exportFormat.querySelector(`option[value="${format}"]`);
-    option.disabled = exportCapability[format].length === 0;
-    option.textContent = `${format.toUpperCase()}${option.disabled ? " Â· ØºÙŠØ± Ù…Ø¯Ø¹ÙˆÙ…" : " Â· Ù…ØªØ§Ø­"}`;
-  }
-  const preferred = chooseDefaultFormat(RecorderClass);
-  if (preferred && (!exportFormatInitialized || exportCapability[exportFormat.value]?.length === 0)) exportFormat.value = preferred;
-  exportFormatInitialized = true;
-  const available = Boolean(preferred);
-  const recordingBlocked = microphoneOperationActive();
-  exportButton.disabled = !available || !currentFileInfo || Boolean(activeExport) || recordingBlocked || pendingImageRequest !== null || pendingAudioRequest !== null;
-  exportFormat.disabled = Boolean(activeExport || recordingBlocked);
-  if (!exportStatusHasResult && !activeExport) {
-    exportStatus.textContent = !hasMediaRecorder
-      ? "Ø§Ù„ØªØµØ¯ÙŠØ± ØºÙŠØ± Ù…ØªØ§Ø­: Ù‡Ø°Ø§ Ø§Ù„Ù…ØªØµÙØ­ Ù„Ø§ ÙŠÙˆÙØ± MediaRecorder ÙˆCanvas captureStream."
-      : available
-        ? `ÙØ­Øµ MediaRecorder: MP4 ${exportCapability.mp4.length ? "Ù…Ø¯Ø¹ÙˆÙ…" : "ØºÙŠØ± Ù…Ø¯Ø¹ÙˆÙ…"}ØŒ WebM ${exportCapability.webm.length ? "Ù…Ø¯Ø¹ÙˆÙ…" : "ØºÙŠØ± Ù…Ø¯Ø¹ÙˆÙ…"}. Ù‚Ø¯ ÙŠØ±ÙØ¶ Ø§Ù„Ø¬Ù‡Ø§Ø² Ø¨Ø¯Ø¡ Ø§Ù„ØªØ³Ø¬ÙŠÙ„ Ø±ØºÙ… Ø§Ù„ÙØ­Øµ.`
-        : "Ù„Ø§ ÙŠØ¯Ø¹Ù… Ù‡Ø°Ø§ Ø§Ù„Ù…ØªØµÙØ­ WebM ÙˆÙ„Ø§ MP4 Ø¹Ø¨Ø± MediaRecorder.";
-  }
-  refreshIntegratedControls();
-}
-function integratedRaster() {
-  return rasterForQuality(project.viewport, integratedQuality.value);
-}
-function integratedCapabilityKey() {
-  const raster = integratedRaster();
-  return `${raster.width}x${raster.height}:${project.viewport.fps}:${integratedAudio.value}:${integratedFormat.value}`;
-}
-function refreshIntegratedControls() {
-  let hasVerified = false;
-  try { hasVerified = getVerifiedIntegratedCapabilities().length > 0; }
-  catch { hasVerified = false; }
-  const blocked = Boolean(activeExport || microphoneOperationActive() || pendingImageRequest !== null || pendingAudioRequest !== null || !currentFileInfo);
-  integratedProbeButton.disabled = blocked;
-  integratedExportButton.disabled = blocked || !hasVerified;
-  integratedExportButton.textContent = blocked ? "Ø§Ù„ØªØµØ¯ÙŠØ± ØºÙŠØ± Ù…ØªØ§Ø­ Ø­Ø§Ù„ÙŠÙ‹Ø§" : hasVerified ? "ØªØµØ¯ÙŠØ± Ø§Ù„Ù…Ø´Ø±ÙˆØ¹ Ù…Ø¹ Ø§Ù„ØµÙˆØª" : "Ø§ÙØ­Øµ Ø§Ù„ØµÙŠØºØ© ÙˆØ§Ù„Ø¯Ù‚Ø© Ø£ÙˆÙ„Ù‹Ø§";
-  integratedExportButton.title = blocked ? "Ø§Ù†ØªØ¸Ø± Ø§ÙƒØªÙ…Ø§Ù„ ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ø£ØµÙˆÙ„ Ø£Ùˆ Ø§Ù†ØªÙ‡Ø§Ø¡ Ø§Ù„ØªØµØ¯ÙŠØ±" : hasVerified ? "Ø§Ø¨Ø¯Ø£ ØªØµØ¯ÙŠØ± Ø§Ù„Ù…Ø´Ø±ÙˆØ¹" : "Ø§Ø¶ØºØ· Ø²Ø± ÙØ­Øµ Ø§Ù„ØµÙŠØºØ© ÙˆØ§Ù„Ø¯Ù‚Ø©";
-  for (const control of [integratedQuality, integratedFormat, integratedAudio, integratedMissingAudio, integratedFrom, integratedTo]) control.disabled = Boolean(activeExport || microphoneOperationActive());
-}
-function refreshMicrophoneBusyControls() {
-  const recording = microphoneOperationActive();
-  if (microphoneButton) {
-    microphoneButton.textContent = microphoneStarting ? "Ø§Ù†ØªØ¸Ø± Ø¥Ø°Ù† Ø§Ù„Ù…ÙŠÙƒØ±ÙˆÙÙˆÙ†â€¦"
-      : microphoneFinalizing ? "Ø¬Ø§Ø±Ù Ø§Ø¹ØªÙ…Ø§Ø¯ Ø§Ù„ØªØ³Ø¬ÙŠÙ„â€¦"
-        : microphoneSession ? "Ø¥ÙŠÙ‚Ø§Ù Ø§Ù„ØªØ³Ø¬ÙŠÙ„" : "Ø³Ø¬Ù‘Ù„ ØµÙˆØªÙƒ";
-    microphoneButton.disabled = microphoneStarting || microphoneFinalizing || (!microphoneSession && (Boolean(activeExport) || microphoneOperationActive()));
-  }
-  const locked = recording || Boolean(activeExport);
-  for (const id of ["imageInput", "projectInput", "assetLibraryInput", "audioTrackType", "addAudioClip", "deleteAudioClip", "playSelectedAudio", "deleteSelectedAudio", "quickImportAudio", "quickAddMusic", "audioClipStart", "audioClipDuration", "audioClipVolume", "sceneName", "sceneDuration", "addSceneButton", "duplicateSceneButton", "deleteSceneButton", "moveSceneLeftButton", "moveSceneRightButton", "playPauseButton", "replayButton", "seek", "sequenceSeek", "duration", "aspectPreset", "fitMode", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "saveProjectButton", "loadProjectButton"]) {
-    const control = $(id); if (control) control.disabled = locked;
-  }
-  for (const control of document.querySelectorAll(".scene-select, .sequence-block")) control.disabled = locked;
-  timelineEditor?.setBusy(locked);
-  characterTimeline?.setBusy(locked);
-  audioTimeline?.setBusy(locked);
-  visualEffectsTimeline?.setBusy(locked);
-  if (!recording) {
-    renderAudioInspector();
-    renderVisualEffectInspector();
-    renderSequenceOverview({ rebuildCards: false, rebuildAssets: false });
-  }
-  refreshExportControls();
-}
-function setExportBusy(busy) {
-  const locked = busy || microphoneOperationActive();
-  for (const id of ["imageInput", "projectInput", "assetLibraryInput", "audioTrackType", "addAudioClip", "deleteAudioClip", "playSelectedAudio", "deleteSelectedAudio", "quickImportAudio", "quickAddMusic", "audioClipStart", "audioClipDuration", "audioClipVolume", "dialogueLanguage", "visemeType", "phonemeLabel", "addViseme", "audioMasterVolume", "visualEffectType", "addVisualEffect", "deleteVisualEffect", "visualEffectStart", "visualEffectDuration", "visualEffectEasing", "aspectPreset", "fitMode", "duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY", "saveProjectButton", "loadProjectButton", "motionSpeed", "motionStrength", "motionFocusX", "motionFocusY", "motionFromSeconds", "motionToSeconds", "integratedQuality", "integratedFormat", "integratedAudio", "integratedMissingAudio", "integratedFrom", "integratedTo"]) {
-    $(id).disabled = locked;
-  }
-  for (const button of document.querySelectorAll("[data-motion-preset]")) button.disabled = locked;
-  for (const id of ["sceneName", "sceneDuration", "addSceneButton", "duplicateSceneButton", "deleteSceneButton", "moveSceneLeftButton", "moveSceneRightButton", "playPauseButton", "replayButton", "seek", "sequenceSeek"]) {
-    const control = $(id); if (control) control.disabled = locked;
-  }
-  for (const button of document.querySelectorAll(".scene-select, .sequence-block")) button.disabled = locked;
-  timelineEditor?.setBusy(busy);
-  characterTimeline?.setBusy(busy);
-  audioTimeline?.setBusy(busy);
-  visualEffectsTimeline?.setBusy(busy);
-  if (microphoneOperationActive()) {
-    timelineEditor?.setBusy(true);
-    characterTimeline?.setBusy(true);
-    audioTimeline?.setBusy(true);
-    visualEffectsTimeline?.setBusy(true);
-  }
-  renderVisualEffectInspector();
-  renderAudioInspector();
-  exportButton.disabled = locked || !currentFileInfo || !exportCapability.mp4.length && !exportCapability.webm.length;
-  exportFormat.disabled = locked;
-  exportDuration.disabled = locked;
-  exportQuality.disabled = locked;
-  exportAudioEnabled.disabled = locked;
-  if (microphoneButton) microphoneButton.disabled = busy || microphoneStarting || microphoneFinalizing || (!microphoneSession && microphoneOperationActive());
-  cancelExportButton.hidden = !busy;
-  cancelExportButton.disabled = !busy;
-  integratedProbeButton.disabled = locked || !currentFileInfo || pendingImageRequest !== null || pendingAudioRequest !== null;
-  integratedExportButton.disabled = locked || !currentFileInfo || getVerifiedIntegratedCapabilities().length === 0;
-  refreshMotionUndoButtons();
-}
-function createTestAudioGraph() {
-  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextClass) throw new Error("Ø§Ù„Ù…Ø³Ø§Ø± Ø§Ù„ØµÙˆØªÙŠ Ø§Ù„Ø§Ø®ØªØ¨Ø§Ø±ÙŠ ØºÙŠØ± Ù…ØªØ§Ø­Ø› Ø£ÙˆÙ‚Ù Ø®ÙŠØ§Ø± Ø§Ù„ØµÙˆØª Ø£Ùˆ Ø§Ø³ØªØ®Ø¯Ù… Ù…ØªØµÙØ­Ù‹Ø§ ÙŠØ¯Ø¹Ù… Web Audio.");
-  const audio = new AudioContextClass();
-  const destination = audio.createMediaStreamDestination();
-  const gain = audio.createGain();
-  gain.gain.value = 0.18;
-  gain.connect(destination);
-  return { audio, stream: destination.stream, gain };
-}
-function renderExportFrame(ctx, exportCompiled, exportCharacter, exportAudio, exportEffects, elapsedMs, exportLengthMs) {
-  const projectMs = projectTimeAt(elapsedMs, exportLengthMs, exportCompiled.durationMs);
-  return drawStudioScene({ ctx, compiledProject: exportCompiled, timeMs: projectMs,
-    characterAnimation: exportCharacter, characterTrack, audioSample: exportAudio.sample(projectMs),
-    visualEffectsCompiled: exportEffects, viewport: exportCompiled.viewport });
-}
-async function exportVideoFile() {
-  if (microphoneOperationActive()) return;
-  const unlock = exportLock.acquire();
-  if (!unlock) return;
-  if (!currentFileInfo) {
-    unlock();
-    exportStatus.textContent = "Ø§Ø®ØªØ± ØµÙˆØ±Ø© Ù‚Ø¨Ù„ ØªØµØ¯ÙŠØ± Ø§Ù„ÙÙŠØ¯ÙŠÙˆ.";
-    return;
-  }
-  const candidates = exportCapability[exportFormat.value] || [];
-  if (!candidates.length) {
-    unlock();
-    exportStatus.textContent = `Ø§Ù„ØµÙŠØºØ© ${exportFormat.value.toUpperCase()} ØºÙŠØ± Ù…Ø¯Ø¹ÙˆÙ…Ø© ÙÙŠ Ù‡Ø°Ø§ Ø§Ù„Ù…ØªØµÙØ­.`;
-    return;
-  }
-
-  clearFailure();
-  clearExportResult();
-  const controller = new AbortController();
-  const running = { kind: "legacy", controller, session: null, rafId: 0, stopTimer: 0 };
-  activeExport = running;
-  setExportBusy(true);
-  exportError.hidden = true;
-  const quality = exportQuality.value;
-  const profile = EXPORT_PROFILES[quality];
-  const exportLengthMs = exportDurationMs(exportDuration.value, project.durationMs);
-  const expectedBytes = estimateVideoBytes(exportLengthMs, profile.videoBitsPerSecond + (exportAudioEnabled.checked ? 96_000 : 0));
-  const maxVideoBytes = 24 * 1024 * 1024;
-  let stream;
-  let audioGraph;
-  let exportCanvas;
-  let result = null;
-  try {
-    if (expectedBytes > maxVideoBytes) throw new RangeError("Ø§Ù„Ø­Ø¬Ù… Ø§Ù„Ù…ØªÙˆÙ‚Ø¹ ÙŠØªØ¬Ø§ÙˆØ² 24 Ù…ÙŠØºØ§Ø¨Ø§ÙŠØªØ› Ø§Ø®ØªØ± Ù…Ø¯Ø© Ø£Ùˆ Ø¬ÙˆØ¯Ø© Ø£Ù‚Ù„.");
-    const rasterViewport = exportViewportFor(project.viewport, quality);
-    exportCanvas = document.createElement("canvas");
-    exportCanvas.width = rasterViewport.width;
-    exportCanvas.height = rasterViewport.height;
-    const exportContext = exportCanvas.getContext("2d", { alpha: false });
-    if (!exportContext) throw new Error("Ù„Ù… ØªØªÙˆÙØ± Ø°Ø§ÙƒØ±Ø© ÙƒØ§ÙÙŠØ© Ù„Ø¥Ù†Ø´Ø§Ø¡ Canvas Ø§Ù„ØªØµØ¯ÙŠØ±.");
-    const exportCompiled = compileProject(projectForRaster(project, rasterViewport), imageProvider);
-    const exportCharacter = compileCharacterTrack(characterTrack, exportCompiled.durationMs);
-    const exportAudio = compileAudioTracks(audioTracks, exportCompiled.durationMs);
-    const exportEffects = compilePreviewEffects(visualEffectsTrack, project, rasterViewport);
-    renderExportFrame(exportContext, exportCompiled, exportCharacter, exportAudio, exportEffects, 0, exportLengthMs);
-    stream = exportCanvas.captureStream(rasterViewport.fps);
-    if (exportAudioEnabled.checked) {
-      audioGraph = createTestAudioGraph();
-      const audioTrack = audioGraph.stream.getAudioTracks()[0];
-      if (!audioTrack) throw new Error("Ù„Ù… ÙŠÙ†Ø´Ø¦ Web Audio Ù…Ø³Ø§Ø±Ù‹Ø§ ØµÙˆØªÙŠÙ‹Ø§ Ù„Ù„ØªØ³Ø¬ÙŠÙ„.");
-      stream.addTrack(audioTrack);
-      await audioGraph.audio.resume();
-      if (controller.signal.aborted) throw controller.signal.reason;
-    }
-
-    const mimeType = candidates[0];
-    running.session = createRecordingSession({
-      stream, mimeType, durationMs: exportLengthMs, videoBitsPerSecond: profile.videoBitsPerSecond,
-      maxBytes: maxVideoBytes, signal: controller.signal, autoStop: false
-    });
-    if (audioGraph) scheduleTestPulses(audioGraph.audio, audioGraph.gain, exportLengthMs);
-    const videoTrack = stream.getVideoTracks()[0];
-    const nominalIntervalMs = 1000 / rasterViewport.fps;
-    const totalFrames = exportFrameCount(exportLengthMs, rasterViewport.fps);
-    let lastFrameIndex = -1;
-    const presentFrame = (frameIndex) => {
-      if (frameIndex <= lastFrameIndex) return;
-      const frameMs = exportFrameTime(frameIndex, rasterViewport.fps, exportLengthMs);
-      renderExportFrame(exportContext, exportCompiled, exportCharacter, exportAudio, exportEffects, frameMs, exportLengthMs);
-      try { videoTrack?.requestFrame?.(); } catch { /* timed captureStream(fps) remains the fallback */ }
-      lastFrameIndex = frameIndex;
-    };
-    presentFrame(0);
-    exportStatus.textContent = `Ø¬Ø§Ø±Ù ØªØ³Ø¬ÙŠÙ„ ${exportLengthMs / 1000} Ø«ÙˆØ§Ù†Ù Ø¨Ø¯Ù‚Ø© ${rasterViewport.width}Ã—${rasterViewport.height} ÙˆØ¨Ù…Ø¹Ø¯Ù„ Ù…Ø³ØªÙ‡Ø¯Ù ${rasterViewport.fps} Ø¥Ø·Ø§Ø±Ù‹Ø§/Ø«â€¦ Ø§ØªØ±Ùƒ Ø§Ù„ØµÙØ­Ø© ÙÙŠ Ø§Ù„ÙˆØ§Ø¬Ù‡Ø©.`;
-    const paint = (now) => {
-      if (activeExport !== running || controller.signal.aborted) return;
-      const elapsed = Math.min(exportLengthMs, now - running.session.startedAt);
-      const frameIndex = elapsed >= exportLengthMs
-        ? totalFrames - 1
-        : Math.min(totalFrames - 1, Math.floor(elapsed / nominalIntervalMs));
-      presentFrame(frameIndex);
-      exportProgress.value = elapsed / exportLengthMs;
-      if (elapsed < exportLengthMs) {
-        running.rafId = requestAnimationFrame(paint);
-      } else {
-        exportProgress.value = 1;
-        // Give the capture track a short window to mux the exact endpoint frame before stopping.
-        running.stopTimer = setTimeout(() => running.session.stop(), 100);
-      }
-    };
-    running.rafId = requestAnimationFrame(paint);
-    result = await running.session.promise;
-    if (controller.signal.aborted || activeExport !== running) return;
-    const safeMime = result.mimeType || candidates[0];
-    exportVideoUrl = URL.createObjectURL(result.blob);
-    exportVideo.src = exportVideoUrl;
-    exportVideo.hidden = false;
-    exportDownload.href = exportVideoUrl;
-    exportDownload.download = `qarton-motion-${Date.now()}.${extensionForMime(safeMime)}`;
-    exportDownload.textContent = `Ø­ÙØ¸ ${extensionForMime(safeMime).toUpperCase()} Ø¹Ù„Ù‰ Ø§Ù„Ù‡Ø§ØªÙ`;
-    exportDownload.hidden = false;
-    exportProgress.value = 1;
-    exportMetadata.textContent = `Ø§Ù„ØµÙŠØºØ© Ø§Ù„ÙØ¹Ù„ÙŠØ©: ${safeMime} Â· ${rasterViewport.width}Ã—${rasterViewport.height} Â· ${(result.blob.size / 1024 / 1024).toFixed(2)} MiB Â· ${(result.durationMs / 1000).toFixed(2)} Ø«`;
-    exportStatusHasResult = true;
-    tryWebmButton.hidden = true;
-    exportStatus.textContent = "Ø§ÙƒØªÙ…Ù„ Ø§Ù„ØªØ³Ø¬ÙŠÙ„. Ø´ØºÙ‘Ù„ Ø§Ù„Ù…Ø¹Ø§ÙŠÙ†Ø© Ø«Ù… Ø§Ø­ÙØ¸ Ø§Ù„Ù…Ù„Ù Ø¥Ø°Ø§ ÙƒØ§Ù†Øª Ø§Ù„Ù†ØªÙŠØ¬Ø© Ù…Ù†Ø§Ø³Ø¨Ø©.";
-  } catch (error) {
-    if (controller.signal.aborted || error?.name === "AbortError") {
-      exportStatusHasResult = true;
-      exportStatus.textContent = "Ø£ÙÙ„ØºÙŠ Ø§Ù„ØªØ³Ø¬ÙŠÙ„ ÙˆÙ†ÙØ¸Ù‘ÙØª Ù…ÙˆØ§Ø±Ø¯Ù‡.";
-    } else {
-      const canTryWebm = exportFormat.value === "mp4" && exportCapability.webm.length > 0;
-      setExportErrorMessage(exportError, error,
-        canTryWebm ? "Ø¬Ø±Ù‘Ø¨ WebM Ù…Ù† Ø§Ù„Ø²Ø± Ø£Ø¯Ù†Ø§Ù‡ Ø¥Ø°Ø§ Ø±ÙØ¶ Ø§Ù„Ø¬Ù‡Ø§Ø² MP4." : "");
-      exportError.hidden = false;
-      tryWebmButton.hidden = !canTryWebm;
-      exportStatusHasResult = true;
-      exportStatus.textContent = "ÙØ´Ù„ Ø§Ù„ØªØµØ¯ÙŠØ±Ø› ØªØ­Ù‚Ù‚ Ù…Ù† Ø§Ù„ØµÙŠØºØ© ÙˆØ§Ù„Ù…Ø¯Ø© ÙˆØ§Ù„Ø°Ø§ÙƒØ±Ø© Ø§Ù„Ù…ØªØ§Ø­Ø©.";
-    }
-  } finally {
-    if (running.rafId) cancelAnimationFrame(running.rafId);
-    if (running.stopTimer) clearTimeout(running.stopTimer);
-    if (running.session && !result && running.session.recorder.state !== "inactive") running.session.cancel("Ø§Ù†ØªÙ‡Ù‰ Ø§Ù„ØªØµØ¯ÙŠØ± Ù‚Ø¨Ù„ Ø§ÙƒØªÙ…Ø§Ù„ Ø§Ù„ØªØ³Ø¬ÙŠÙ„.");
-    stream?.getTracks().forEach((track) => track.stop());
-    if (audioGraph) await audioGraph.audio.close().catch(() => {});
-    exportCanvas = null;
-    if (activeExport === running) activeExport = null;
-    unlock();
-    setExportBusy(false);
-    refreshExportControls();
-  }
-}
-function readRequiredMilliseconds(input, label) {
-  const text = input.value.trim();
-  if (!text || input.validity?.badInput) throw new TypeError(`${label}: Ø£Ø¯Ø®Ù„ ÙˆÙ‚ØªÙ‹Ø§ ØµØ­ÙŠØ­Ù‹Ø§ Ø¨Ø§Ù„Ù…ÙŠÙ„ÙŠ Ø«Ø§Ù†ÙŠØ©.`);
-  const value = Number(text);
-  if (!Number.isSafeInteger(value)) throw new TypeError(`${label}: Ø£Ø¯Ø®Ù„ ÙˆÙ‚ØªÙ‹Ø§ ØµØ­ÙŠØ­Ù‹Ø§ Ø¨Ø§Ù„Ù…ÙŠÙ„ÙŠ Ø«Ø§Ù†ÙŠØ©.`);
-  return value;
-}
-function syncIntegratedRange() {
-  const durationMs = sequenceEditor?.durationMs ?? project.durationMs;
-  integratedFrom.max = String(Math.max(0, durationMs - 1));
-  integratedTo.max = String(durationMs);
-  integratedFrom.value = String(Math.max(0, Math.min(durationMs - 1, Number(integratedFrom.value) || 0)));
-  integratedTo.value = String(durationMs);
-}
-async function prepareSequenceExportImages(sequence, viewport, signal) {
-  const surfaces = new Map();
-  const sceneRenderers = [];
-  const bytesPerSurface = viewport.width * viewport.height * 4;
-  const maxSequenceImageBytes = 64 * 1024 * 1024;
-  const surfaceCount = new Set(sequence.scenes.flatMap(scene => scene.project.layers.map(layer => `${scene.id}:${layer.assetId}`))).size;
-  const plannedSurfaceBytes = surfaceCount * bytesPerSurface;
-  if (!Number.isSafeInteger(plannedSurfaceBytes) || plannedSurfaceBytes > maxSequenceImageBytes) {
-    throw new RangeError("ØªØ¬Ø§ÙˆØ²Øª ØµÙˆØ± Ø§Ù„Ù…Ø´Ø§Ù‡Ø¯ Ø­Ø¯ Ø°Ø§ÙƒØ±Ø© Ø§Ù„ØªØµØ¯ÙŠØ± Ø§Ù„Ø¢Ù…Ù† 64 MiBØ› Ù‚Ù„Ù„ Ø§Ù„Ø¬ÙˆØ¯Ø© Ø£Ùˆ Ø¹Ø¯Ø¯ Ø§Ù„Ù…Ø´Ø§Ù‡Ø¯.");
-  }
-  try {
-    for (const scene of sequence.scenes) {
-      const fit = sceneSettings.get(scene.id)?.fitMode ?? "fit";
-      const required = new Set(scene.project.layers.map(layer => layer.assetId));
-      const sceneSources = new Map();
-      for (const assetId of required) {
-        const asset = sequence.assets.find(item => item.id === assetId && item.kind === "image");
-        const blob = getAssetBlob(assetId);
-        if (!asset || !blob) throw new Error(`Ø§Ù„Ø£ØµÙ„ Ø§Ù„ØµÙˆØ±ÙŠ Ù„Ù„Ù…Ø´Ù‡Ø¯ ${scene.id} ØºÙŠØ± Ù…ØªØ§Ø­: ${assetId}`);
-        const key = `${scene.id}:${assetId}`;
-        if (!surfaces.has(key)) {
-          const file = new File([blob], asset.name, { type: asset.mimeType });
-          const bitmap = await decodeImageBitmap(file, { isCurrent: () => !signal?.aborted });
-          try {
-            if (signal?.aborted) throw signal.reason ?? new DOMException("Export cancelled", "AbortError");
-            const surface = typeof OffscreenCanvas === "function"
-              ? new OffscreenCanvas(viewport.width, viewport.height)
-              : Object.assign(document.createElement("canvas"), { width: viewport.width, height: viewport.height });
-            const context = surface.getContext("2d", { alpha: false });
-            if (!context) throw new Error("Ù„Ù… ØªØªÙˆÙØ± Ø°Ø§ÙƒØ±Ø© ÙƒØ§ÙÙŠØ© Ù„ØªØ­Ø¶ÙŠØ± ØµÙˆØ± Ø§Ù„Ù…Ø´Ø§Ù‡Ø¯.");
-            context.fillStyle = "#101118"; context.fillRect(0, 0, viewport.width, viewport.height);
-            const rect = imageRect(bitmap.width, bitmap.height, viewport.width, viewport.height, fit);
-            context.drawImage(bitmap, rect.x, rect.y, rect.width, rect.height);
-            surfaces.set(key, surface);
-          } finally { bitmap.close?.(); }
-        }
-        sceneSources.set(assetId, surfaces.get(key));
-      }
-      const sceneProject = projectForRaster(scene.project, viewport);
-      const compiledProject = compileProject(sceneProject, { get: id => sceneSources.get(id) ?? null });
-      const characters = scene.characterTracks.map(track => ({ track,
-        animation: compileCharacterTrack(track, scene.project.durationMs) }));
-      const effects = compilePreviewEffects(scene.visualEffectsTrack, scene.project, viewport);
-      sceneRenderers.push(Object.freeze({ sceneId: scene.id, compiledProject, characters, effects }));
-    }
-    // Raster surfaces now own the pixels; decoded source bitmaps are no longer needed.
-    return { sceneRenderers, release() {
-      surfaces.clear();
-      sceneRenderers.length = 0;
-    } };
-  } catch (error) {
-    surfaces.clear();
-    sceneRenderers.length = 0;
-    throw error;
-  }
-}
-async function prepareSequenceAudioInfo(sequence, signal) {
-  await assetReady;
-  const referencedIds = new Set(sequence.scenes.flatMap(scene => scene.audioTracks.flatMap(track => track.clips.map(clip => clip.asset))));
-  const info = [];
-  for (const id of referencedIds) {
-    if (signal?.aborted) throw signal.reason ?? new DOMException("ØªÙ… Ø¥Ù„ØºØ§Ø¡ Ø§Ù„ØªØµØ¯ÙŠØ±.", "AbortError");
-    const asset = sequence.assets.find(item => item.id === id && item.kind === "audio");
-    const blob = getAssetBlob(id);
-    if (!asset || !blob) throw new Error(`Ù…Ù„Ù Ø§Ù„ØµÙˆØª Ø§Ù„Ù…Ø±ØªØ¨Ø· Ø¨Ø§Ù„Ù…Ø´Ø§Ù‡Ø¯ ØºÙŠØ± Ù…ØªØ§Ø­: ${id}`);
-    let source = audioFiles.get(id);
-    if (!source) {
-      const file = new File([blob], asset.name, { type: asset.mimeType });
-      const url = URL.createObjectURL(file);
-      let durationMs;
-      try { durationMs = await readAudioDuration(file); }
-      catch (cause) { URL.revokeObjectURL(url); throw new Error(`ØªØ¹Ø°Ø± Ù‚Ø±Ø§Ø¡Ø© Ù…Ø¯Ø© Ù…Ù„Ù Ø§Ù„ØµÙˆØª ${asset.name}: ${errorText(cause)}`); }
-      source = { file, url, durationMs };
-      audioFiles.set(id, source);
-    }
-    if (!source.durationMs) source.durationMs = readAudioDurationHint(id);
-    if (!source.durationMs) throw new Error(`Ù…Ø¯Ø© Ù…Ù„Ù Ø§Ù„ØµÙˆØª ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙØ©: ${asset.name}`);
-    info.push({ id, durationMs: Math.max(1, Math.round(source.durationMs)), channels: 2, sampleRate: 48_000 });
-  }
-  return info;
-}
-function getVerifiedIntegratedCapabilities() {
-  const capabilities = integratedCapabilities.get(integratedCapabilityKey()) ?? [];
-  return capabilities.filter(({ verification, mimeType }) => verification === "verified" &&
-    (integratedFormat.value === "auto" || mimeType.startsWith(`video/${integratedFormat.value}`)));
-}
-function setIntegratedProgress(progress) {
-  if (!Number.isFinite(progress.targetMs) || progress.targetMs <= 0) return;
-  integratedProgress.value = Math.max(0, Math.min(1, progress.elapsedMs / progress.targetMs));
-  const labels = { "preparing-audio": "Ø¬Ø§Ø±Ù ÙÙƒ Ø§Ù„Ù…Ù„ÙØ§Øª Ø§Ù„ØµÙˆØªÙŠØ©â€¦", recording: "Ø¬Ø§Ø±Ù ØªØ³Ø¬ÙŠÙ„ Ø§Ù„ØµÙˆØ±Ø© ÙˆØ§Ù„ØµÙˆØªâ€¦",
-    finalizing: "Ø¬Ø§Ø±Ù Ø¥Ù†Ù‡Ø§Ø¡ Ù…Ù„Ù Ø§Ù„ØªØ³Ø¬ÙŠÙ„â€¦", validating: "Ø¬Ø§Ø±Ù ÙØ­Øµ Ø§Ù„Ù…Ù„Ù Ø§Ù„Ù†Ø§ØªØ¬â€¦" };
-  integratedStatus.textContent = `${labels[progress.phase] ?? progress.phase} ${Math.round(integratedProgress.value * 100)}%`;
-}
-async function probeIntegratedExport() {
-  if (activeExport || microphoneOperationActive() || !currentFileInfo) return;
-  const raster = integratedRaster();
-  const audioMode = integratedAudio.value;
-  const capabilityKey = integratedCapabilityKey();
-  const formats = integratedFormat.value === "auto" ? ["mp4", "webm"] : [integratedFormat.value];
-  integratedProbeButton.disabled = true;
-  integratedExportButton.disabled = true;
-  for (const control of [integratedQuality, integratedFormat, integratedAudio, integratedMissingAudio, integratedFrom, integratedTo]) control.disabled = true;
-  integratedStatus.textContent = `Ø¬Ø§Ø±Ù ÙØ­Øµ ${raster.width}Ã—${raster.height} Ø¹Ù†Ø¯ ${project.viewport.fps} Ø¥Ø·Ø§Ø±Ù‹Ø§/Ø«â€¦`;
-  integratedError.hidden = true;
-  try {
-    const capabilities = await probeExport({ width: raster.width, height: raster.height,
-      fps: project.viewport.fps, audioMode, formats, durationMs: 800 });
-    integratedCapabilities.set(capabilityKey, capabilities);
-    if (capabilityKey !== integratedCapabilityKey()) {
-      integratedStatus.textContent = "ØªØºÙŠÙ‘Ø±Øª Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ø§Ù„ØªØµØ¯ÙŠØ± Ø£Ø«Ù†Ø§Ø¡ Ø§Ù„ÙØ­ØµØ› Ø£Ø¹Ø¯ ÙØ­Øµ Ø§Ù„Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ø§Ù„Ø­Ø§Ù„ÙŠØ©.";
-      return;
-    }
-    const verified = capabilities.filter(({ verification }) => verification === "verified");
-    integratedStatus.textContent = verified.length
-      ? `ØªÙ… Ø§Ù„ØªØ­Ù‚Ù‚ ÙØ¹Ù„ÙŠÙ‹Ø§ Ù…Ù† ${verified.map(({ mimeType }) => mimeType).join(" Ùˆ")} Ø¹Ù„Ù‰ Ù‡Ø°Ù‡ Ø§Ù„Ø¯Ù‚Ø©. Ø§Ù„ÙØ­Øµ ÙŠØ«Ø¨Øª Ø§Ù„ØªØ´ØºÙŠÙ„ ÙˆÙÙƒ Ø§Ù„ÙˆØ³Ø§Ø¦Ø· Ù„Ù„Ù…Ù‚Ø·Ø¹ Ø§Ù„Ù‚ØµÙŠØ± ÙÙ‚Ø·.${verified.some(({ durationMetadata }) => durationMetadata === "unavailable") ? " Ù…Ø¯Ø© Ø§Ù„Ø­Ø§ÙˆÙŠØ© ÙˆØ§Ù„Ø¨Ø­Ø« Ù‚Ø±Ø¨ Ø§Ù„Ù†Ù‡Ø§ÙŠØ© ØºÙŠØ± Ù…ØªØ§Ø­ÙŠÙ† Ù„Ù‡Ø°Ø§ Ø§Ù„Ù…ØªØµÙØ­." : ""}`
-      : "Ù„Ù… ÙŠÙ†Ø¬Ø­ ØªØ³Ø¬ÙŠÙ„ ÙˆÙÙƒ Ø§Ù„Ù…Ù„Ù Ø§Ù„ØªØ¬Ø±ÙŠØ¨ÙŠ Ø¹Ù„Ù‰ Ù‡Ø°Ù‡ Ø§Ù„Ø¯Ù‚Ø© ÙˆØ§Ù„ØµÙŠØºØ©Ø› Ø¬Ø±Ù‘Ø¨ Ø¯Ù‚Ø© Ø£Ù‚Ù„ Ø£Ùˆ ÙÙŠØ¯ÙŠÙˆ ÙÙ‚Ø·.";
-    if (!verified.length) {
-      integratedError.textContent = capabilities.map(({ mimeType, reason }) => `${mimeType}: ${reason}`).join(" Â· ") || "Ù„Ø§ ØªÙˆØ¬Ø¯ ØµÙŠØºØ© Ù…Ø¹Ù„Ù†Ø© Ù„Ù‡Ø°Ø§ Ø§Ù„Ø¬Ù‡Ø§Ø².";
-      integratedError.hidden = false;
-    }
-  } catch (error) {
-    integratedError.textContent = errorText(error);
-    integratedError.hidden = false;
-    integratedStatus.textContent = "ØªØ¹Ø°Ø± ÙØ­Øµ Ø¥Ù…ÙƒØ§Ù†ÙŠØ§Øª Ø§Ù„ØªØµØ¯ÙŠØ±.";
-  } finally { refreshIntegratedControls(); }
-}
-async function exportIntegratedProject() {
-  if (activeExport || exportPreparing || microphoneOperationActive()) return;
-  exportPreparing = true;
-  setExportBusy(true);
-  try {
-    const sceneActivation = pendingSceneActivation;
-    if (sceneActivation) await sceneActivation;
-  } catch (error) {
-    exportPreparing = false;
-    setExportBusy(false);
-    refreshExportControls();
-    setExportErrorMessage(integratedError, error);
-    integratedError.hidden = false;
-    integratedStatus.textContent = "ØªØ¹Ø°Ø± ØªØ«Ø¨ÙŠØª Ø§Ù„Ù…Ø´Ù‡Ø¯ Ø§Ù„Ø­Ø§Ù„ÙŠ Ù‚Ø¨Ù„ Ø§Ù„ØªØµØ¯ÙŠØ±.";
-    return;
-  }
-  if (activeExport) {
-    exportPreparing = false;
-    setExportBusy(false);
-    refreshExportControls();
-    return;
-  }
-  exportPreparing = false;
-  const controller = new AbortController();
-  const running = { kind: "integrated", controller, session: null, rafId: 0, stopTimer: 0 };
-  activeExport = running;
-  let result = null;
-  let sequenceImages = null;
-  let sequenceRuntime = null;
-  try {
-    const verified = getVerifiedIntegratedCapabilities();
-    if (!verified.length) throw new Error("Ø§ÙØ­Øµ Ø¯Ø¹Ù… Ø§Ù„ØµÙŠØºØ© ÙˆØ§Ù„Ø¯Ù‚Ø© Ø§Ù„Ù…Ø­Ø¯Ø¯ØªÙŠÙ† Ø£ÙˆÙ„Ù‹Ø§.");
-    clearIntegratedResult();
-    stopPlayback();
-    captureCurrentScene();
-    await persistentAssets?.replaceSequence(sequenceEditor.sequence);
-    const prepared = prepareStudioSequenceExport(sequenceEditor.sequence, {
-      audioAssetInfo: integratedAudio.value === "mix"
-        ? await prepareSequenceAudioInfo(sequenceEditor.sequence, controller.signal) : [], audioMasterVolume
-    });
-    const snapshot = prepared.snapshot;
-    // Older V1 projects migrate to V2 with zero-duration Cut transitions.
-    // Transition editing remains a later UI stage; playback/export share this runtime.
-    sequenceRuntime = createStudioSequenceRuntime(sequenceEditor.sequence, {
-      createSurface: (width, height) => Object.assign(document.createElement("canvas"), { width, height })
-    });
-    const range = { startMs: readRequiredMilliseconds(integratedFrom, "Ø§Ù„Ø¨Ø¯Ø§ÙŠØ©"),
-      endMs: readRequiredMilliseconds(integratedTo, "Ø§Ù„Ù†Ù‡Ø§ÙŠØ©") };
-    if (range.endMs <= range.startMs || range.endMs > sequenceRuntime.durationMs) throw new RangeError("Ù†Ø·Ø§Ù‚ Ø§Ù„ØªØµØ¯ÙŠØ± ÙŠØ¬Ø¨ Ø£Ù† ÙŠÙ‚Ø¹ Ø¯Ø§Ø®Ù„ Ù…Ø¯Ø© Ø§Ù„Ù…Ø´Ø±ÙˆØ¹ Ø§Ù„ÙƒØ§Ù…Ù„Ø©.");
-    const plan = planExport(snapshot, { range, quality: integratedQuality.value, fps: project.viewport.fps,
-      format: integratedFormat.value, audio: integratedAudio.value, missingAudio: integratedMissingAudio.value }, verified);
-    sequenceImages = await prepareSequenceExportImages(prepared.compiledSequence.sequence, plan.viewport, controller.signal);
-    const sceneAudio = new Map(sequenceRuntime.compiled.scenes.map(scene => [scene.id,
-      compileAudioTracks(scene.audioTracks, scene.project.durationMs)]));
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    const host = {
-      document, window, MediaRecorderClass: typeof MediaRecorder === "function" ? MediaRecorder : null,
-      MediaStreamClass: window.MediaStream ?? globalThis.MediaStream,
-      createCanvas: (width, height) => Object.assign(document.createElement("canvas"), { width, height }),
-      createAudioContext: () => {
-        if (!AudioContextClass) throw new Error("Web Audio ØºÙŠØ± Ù…ØªØ§Ø­ Ø¹Ù„Ù‰ Ù‡Ø°Ø§ Ø§Ù„Ø¬Ù‡Ø§Ø².");
-        return new AudioContextClass();
-      },
-      resolveAudio: async assetId => audioFiles.get(assetId)?.file ?? null,
-      createAudioMix: async ({ audioContext, signal, onProgress }) => {
-        const destination = audioContext.createMediaStreamDestination();
-        // Keep the recorder's audio track fed even during empty or delayed clips.
-        // A zero-valued constant source produces silence, not an audible tone.
-        let silence;
-        let decoded;
-        let engine;
-        try {
-          silence = audioContext.createConstantSource();
-          silence.offset.value = 0;
-          silence.connect(destination);
-          silence.start();
-          decoded = await decodeStudioSequenceAudio(sequenceRuntime.compiled, { audioContext,
-            resolveAudio: async assetId => audioFiles.get(assetId)?.file ?? null,
-            audioInfo: snapshot.audioAssetInfo, signal, onProgress });
-          engine = sequenceRuntime.createAudio({ audioContext, audioBuffers: decoded.buffers,
-            destination, masterVolume: audioMasterVolume, signal });
-          return { stream: destination.stream,
-            schedule: epoch => {
-              const session = engine.schedule({ epoch, fromMs: range.startMs, toMs: range.endMs });
-              $("audioTimelineMessage").textContent = session.scheduled.length
-                ? `ØªÙ…Øª Ø¬Ø¯ÙˆÙ„Ø© ${session.scheduled.length} Ù…Ù‚Ø§Ø·Ø¹ ØµÙˆØªÙŠØ© Ù„Ù„ØªØµØ¯ÙŠØ±.`
-                : "ØªÙ†Ø¨ÙŠÙ‡: Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…Ù‚Ø§Ø·Ø¹ ØµÙˆØªÙŠØ© Ù…Ø³Ù…ÙˆØ¹Ø© Ù…Ø¬Ø¯ÙˆÙ„Ø© Ø¶Ù…Ù† Ù†Ø·Ø§Ù‚ Ø§Ù„ØªØµØ¯ÙŠØ±.";
-              return session;
-            },
-            stop: () => {
-              try { silence?.stop(); } catch {}
-              try { silence?.disconnect(); } catch {}
-              engine.dispose(); decoded.release();
-              for (const track of destination.stream.getTracks()) { try { track.stop(); } catch {} }
-            } };
-        } catch (error) {
-          try { silence?.stop(); } catch {}
-          try { silence?.disconnect(); } catch {}
-          engine?.dispose(); decoded?.release();
-          for (const track of destination.stream.getTracks()) { try { track.stop(); } catch {} }
-          throw error;
-        }
-      },
-      renderFrame: (ctx, timeMs, viewport, frameContext) => {
-        return sequenceRuntime.draw(ctx, timeMs, (sceneContext, scene, sceneTimeMs) => {
-          const sceneRenderer = sequenceImages.sceneRenderers.find(item => item.sceneId === scene.id);
-          return drawStudioScene({ ctx: sceneContext, compiledProject: sceneRenderer.compiledProject, timeMs: sceneTimeMs,
-            characterTracks: sceneRenderer.characters, audioSample: sceneAudio.get(scene.id)?.sample(sceneTimeMs),
-            visualEffectsCompiled: sceneRenderer.effects, viewport, frameContext });
-        }, { signal: controller.signal });
-      }
-    };
-    integratedStatus.textContent = `Ø¬Ø§Ø±Ù ØªØ­Ø¶ÙŠØ± ${plan.format.toUpperCase()} ${plan.viewport.width}Ã—${plan.viewport.height} Â· ${sequenceEditor.scenes.length} Ù…Ø´Ø§Ù‡Ø¯ Â· ${(plan.durationMs / 1000).toFixed(2)} Ø«â€¦`;
-    result = await startExport(plan, host, { signal: controller.signal, onProgress: setIntegratedProgress });
-    if (activeExport !== running || controller.signal.aborted) return;
-    integratedVideoUrl = URL.createObjectURL(result.blob);
-    integratedVideo.src = integratedVideoUrl;
-    integratedVideo.hidden = false;
-    integratedDownload.href = integratedVideoUrl;
-    integratedDownload.download = `qarton-cinematic-${Date.now()}.${result.extension}`;
-    integratedDownload.textContent = `Ø­ÙØ¸ ${result.extension.toUpperCase()} Ø¹Ù„Ù‰ Ø§Ù„Ù‡Ø§ØªÙ`;
-    integratedDownload.hidden = false;
-    integratedProgress.value = 1;
-    integratedMetadata.textContent = `${result.mimeType} Â· ${result.width}Ã—${result.height} Â· ${(result.bytes / 1024 / 1024).toFixed(2)} MiB Â· ${result.measuredDurationMs === null ? "Ù…Ø¯Ø© Ø§Ù„Ù…Ù„Ù ØºÙŠØ± Ù…Ù‚Ø§Ø³Ø©" : `${(result.measuredDurationMs / 1000).toFixed(2)} Ø«`} Â· ${result.renderedFrames} Ø¥Ø·Ø§Ø±Ù‹Ø§ Â· ${result.droppedFrames} Ø¥Ø·Ø§Ø±Ù‹Ø§ ÙØ§Ø¦ØªÙ‹Ø§${result.warnings.some(value => /file duration could not be measured/u.test(value)) ? " Â· ØªØ¹Ø°Ø± Ù‚ÙŠØ§Ø³ Ù…Ø¯Ø© Ø§Ù„Ø­Ø§ÙˆÙŠØ© Ø£Ùˆ Ø§Ù„Ø¨Ø­Ø« Ù‚Ø±Ø¨ Ø§Ù„Ù†Ù‡Ø§ÙŠØ© ÙÙŠ Ù‡Ø°Ø§ Ø§Ù„Ù…ØªØµÙØ­." : ""}`;
-    integratedStatus.textContent = "Ø§ÙƒØªÙ…Ù„ Ø§Ù„ØªØµØ¯ÙŠØ± Ø§Ù„Ù…ØªÙƒØ§Ù…Ù„Ø› Ø¹Ø§ÙŠÙ† Ø§Ù„Ù…Ù„Ù Ø«Ù… Ø§Ø­ÙØ¸Ù‡ Ø¹Ù„Ù‰ Ø§Ù„Ù‡Ø§ØªÙ.";
-  } catch (error) {
-    if (controller.signal.aborted || error?.name === "AbortError") integratedStatus.textContent = "Ø£ÙÙ„ØºÙŠ Ø§Ù„ØªØµØ¯ÙŠØ± ÙˆÙ†ÙØ¸Ù‘ÙØª Ù…ÙˆØ§Ø±Ø¯Ù‡.";
-    else {
-      setExportErrorMessage(integratedError, error);
-      integratedError.hidden = false;
-      integratedStatus.textContent = "ÙØ´Ù„ Ø§Ù„ØªØµØ¯ÙŠØ±Ø› Ø±Ø§Ø¬Ø¹ Ø§Ù„Ù…Ù„ÙØ§Øª ÙˆØ§Ù„ØµÙŠØºØ© ÙˆØ­Ø¯ÙˆØ¯ Ø§Ù„Ø°Ø§ÙƒØ±Ø©.";
-    }
-  } finally {
-    sequenceImages?.release();
-    sequenceRuntime?.release();
-    const restorePreview = activeExport === running;
-    const completedStatus = integratedStatus.textContent;
-    if (activeExport === running) activeExport = null;
-    if (restorePreview) {
-      exportPreparing = true;
-      try {
-        await loadStudioScene(activeSceneId, { globalTimeMs: sequenceTimeMs, localTimeMs: currentMs });
-        integratedStatus.textContent = completedStatus;
-      } catch (error) {
-        try { renderAt(currentMs); } catch {}
-        status.textContent = `ØªØ¹Ø°Ø±Øª Ø§Ø³ØªØ¹Ø§Ø¯Ø© Ù…Ø¹Ø§ÙŠÙ†Ø© Ø§Ù„Ù…Ø´Ù‡Ø¯: ${errorText(error)}`;
-      } finally { exportPreparing = false; }
-    }
-    setExportBusy(false);
-    refreshExportControls();
-    if (integratedVideoUrl && !integratedDownload.hidden) {
-      integratedDownload.scrollIntoView({ block: "nearest", inline: "nearest" });
-    }
-    try { renderAt(currentMs); } catch (error) { status.textContent = `ØªØ¹Ø°Ø±Øª Ø§Ø³ØªØ¹Ø§Ø¯Ø© Ø§Ù„Ù…Ø¹Ø§ÙŠÙ†Ø©: ${errorText(error)}`; }
-  }
-}
-function audioAdapterPlay(assetId, options) {
-  const asset = audioFiles.get(assetId);
-  if (!asset?.url) throw new Error("Ù…Ù„Ù ØµÙˆØª Ù…Ø­Ù„ÙŠ ØºÙŠØ± Ù…Ø±ØªØ¨Ø·. Ø£Ø¹Ø¯ Ø§Ø®ØªÙŠØ§Ø±Ù‡ Ù…Ù† Ø§Ù„Ù‡Ø§ØªÙ Ù‚Ø¨Ù„ Ø§Ù„ØªØ´ØºÙŠÙ„.");
-  const voice = new Audio(asset.url);
-  voice.preload = "auto";
-  voice.loop = options.loop;
-  voice.volume = Math.max(0, Math.min(1, options.volume));
-  if (options.offsetMs > 0) voice.currentTime = options.offsetMs / 1000;
-  const owner = audioPlayer;
-  const started = voice.play();
-  started?.catch((error) => {
-    if (voice.hasAttribute("src") && audioPlayer === owner && owner?.state === "playing") {
-      try { audioPlayer.pause(); } catch { try { audioPlayer.recover(); } catch { /* Failure is surfaced in the editor status below. */ } }
-      isPlaying = false; cancelAnimationFrame(rafId); playPauseButton.textContent = "Ù…ØªØ§Ø¨Ø¹Ø©";
-      $("audioTimelineMessage").textContent = `ØªØ¹Ø°Ø± ØªØ´ØºÙŠÙ„ Ø§Ù„ØµÙˆØª Ø¹Ù„Ù‰ Ù‡Ø°Ø§ Ø§Ù„Ø¬Ù‡Ø§Ø²: ${errorText(error)}`;
-    }
-  });
-  return voice;
-}
-function audioAdapterStop(voice) { voice.pause(); voice.removeAttribute("src"); voice.load(); }
-function audioAdapterSetVolume(voice, value) { voice.volume = Math.max(0, Math.min(1, value)); }
-function rebuildAudioPlayer({ resume = false } = {}) {
-  const wasPlaying = resume && isPlaying;
-  if (audioPlayer) { try { audioPlayer.destroy(); } catch (error) { $("audioTimelineMessage").textContent = `ØªÙ†Ø¸ÙŠÙ Ù…ÙˆØ±Ø¯ ØµÙˆØª: ${errorText(error)}`; } }
-  audioCompiled = compileAudioTracks(audioTracks, project.durationMs);
-  audioPlayer = createCinematicAudioPlayer(audioCompiled, {
-    play: audioAdapterPlay, stop: audioAdapterStop, setVolume: audioAdapterSetVolume,
-    masterVolume: audioMasterVolume, now: () => performance.now()
-  });
-  if (currentMs > 0) audioPlayer.seek(currentMs);
-  if (wasPlaying) audioPlayer.play();
-}
-function commitAudioTracks(nextTracks, { resume = true } = {}) {
-  if (activeExport) throw new Error("Ø£ÙˆÙ‚Ù ØªØµØ¯ÙŠØ± Ø§Ù„ÙÙŠØ¯ÙŠÙˆ Ù‚Ø¨Ù„ ØªØ¹Ø¯ÙŠÙ„ Ù…Ø³Ø§Ø±Ø§Øª Ø§Ù„ØµÙˆØª.");
-  stopSelectedAudioPreview();
-  const nextCompiled = compileAudioTracks(nextTracks, project.durationMs);
-  audioTracks = nextTracks;
-  audioCompiled = nextCompiled;
-  rebuildAudioPlayer({ resume });
-  audioTimeline?.render();
-  renderAudioInspector();
-  renderAt(currentMs);
-  scheduleSequenceAutosave();
-}
-function selectedAudioClip() {
-  if (!audioClipSelection) return null;
-  const track = audioTracks.find(({ id }) => id === audioClipSelection.trackId);
-  const clip = track?.clips.find(({ id }) => id === audioClipSelection.clipId);
-  return track && clip ? { track, clip } : null;
-}
-function stopSelectedAudioPreview() {
-  if (!soloAudioPreview) return;
-  clearTimeout(soloAudioPreview.timer);
-  soloAudioPreview.audio.pause();
-  soloAudioPreview.audio.removeAttribute("src");
-  soloAudioPreview.audio.load();
-  soloAudioPreview = null;
-  const button = $("playSelectedAudio"); if (button) button.textContent = "â–¶ ØªØ´ØºÙŠÙ„ Ø§Ù„Ù…Ø­Ø¯Ø¯";
-}
-async function playSelectedAudioIndependently() {
-  const selected = selectedAudioClip();
-  if (!selected || activeExport || microphoneOperationActive()) return;
-  if (soloAudioPreview?.clipId === selected.clip.id) {
-    stopSelectedAudioPreview();
-    $("audioTimelineMessage").textContent = "ØªÙˆÙ‚Ù ØªØ´ØºÙŠÙ„ Ø§Ù„Ù…Ù‚Ø·Ø¹ Ø§Ù„Ù…Ø­Ø¯Ø¯.";
-    return;
-  }
-  const source = audioFiles.get(selected.clip.asset);
-  if (!source?.url) { $("audioTimelineMessage").textContent = "ØªØ¹Ø°Ø± ØªØ´ØºÙŠÙ„ Ø§Ù„Ù…Ù‚Ø·Ø¹ Ø§Ù„Ù…Ø­Ø¯Ø¯Ø› Ø£Ø¹Ø¯ Ø±Ø¨Ø· Ø§Ù„Ø£ØµÙ„ Ø§Ù„ØµÙˆØªÙŠ Ù…Ù† Ø§Ù„Ù…ÙƒØªØ¨Ø©."; return; }
-  stopPlayback();
-  stopSelectedAudioPreview();
-  const audio = new Audio(source.url);
-  const preview = { audio, timer: 0, clipId: selected.clip.id };
-  soloAudioPreview = preview;
-  $("playSelectedAudio").textContent = "â¹ Ø¥ÙŠÙ‚Ø§Ù Ø§Ù„Ù…Ø­Ø¯Ø¯";
-  audio.preload = "auto";
-  audio.volume = Math.max(0, Math.min(1, selected.clip.volume * selected.track.volume * audioMasterVolume));
-  audio.addEventListener("ended", () => { if (soloAudioPreview === preview) stopSelectedAudioPreview(); }, { once: true });
-  try {
-    await audio.play();
-    if (soloAudioPreview !== preview) return;
-    preview.timer = setTimeout(() => { if (soloAudioPreview === preview) stopSelectedAudioPreview(); }, selected.clip.durationMs);
-    $("audioTimelineMessage").textContent = `ØªØ´ØºÙŠÙ„ Ù…Ø³ØªÙ‚Ù„: ${selected.clip.name || selected.clip.id} Ù„Ù…Ø¯Ø© ${formatTime(selected.clip.durationMs)}.`;
-  } catch (error) {
-    if (soloAudioPreview === preview) stopSelectedAudioPreview();
-    $("audioTimelineMessage").textContent = `ØªØ¹Ø°Ø± ØªØ´ØºÙŠÙ„ Ø§Ù„Ù…Ù‚Ø·Ø¹ Ø§Ù„Ù…Ø­Ø¯Ø¯: ${errorText(error)}`;
-  }
-}
-function renderAudioInspector() {
-  const selected = selectedAudioClip();
-  $("audioSelection").textContent = selected ? `${selected.track.type === "dialogue" ? "Ø­ÙˆØ§Ø±" : selected.track.type === "music" ? "Ù…ÙˆØ³ÙŠÙ‚Ù‰" : "Ù…Ø¤Ø«Ø±"} Â· ${selected.clip.name || selected.clip.id}` : "Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ù…Ù‚Ø·Ø¹ Ù…Ø­Ø¯Ø¯";
-  for (const [id, value] of [["audioClipStart", selected?.clip.startMs], ["audioClipDuration", selected?.clip.durationMs], ["audioClipVolume", selected?.clip.volume ?? 1]]) {
-    $(id).disabled = !selected || Boolean(activeExport);
-    $(id).value = selected ? String(value) : "";
-  }
-  $("deleteAudioClip").disabled = !selected || Boolean(activeExport);
-  $("playSelectedAudio").disabled = !selected || !audioFiles.get(selected.clip.asset)?.url || Boolean(activeExport) || microphoneOperationActive();
-  $("deleteSelectedAudio").disabled = !selected || Boolean(activeExport) || microphoneOperationActive();
-  $("addViseme").disabled = !selected || selected.track.type !== "dialogue" || Boolean(activeExport);
-  const markerRoot = $("visemeMarkers"); markerRoot.replaceChildren();
-  for (const cue of selected?.clip.visemes ?? []) {
-    const marker = document.createElement("button"); marker.type = "button"; marker.className = "viseme-marker";
-    marker.textContent = `${formatTime(selected.clip.startMs + cue.atMs)} Â· ${cue.viseme}${cue.phoneme ? ` Â· ${cue.phoneme}` : ""}`;
-    marker.setAttribute("aria-label", `Viseme ${cue.viseme} Ø¹Ù†Ø¯ ${cue.atMs} Ù…Ù„ÙŠ Ø«Ø§Ù†ÙŠØ©`);
-    marker.addEventListener("click", () => { seekTo(selected.clip.startMs + cue.atMs); }); markerRoot.append(marker);
-  }
-  $("addAudioClip").disabled = !activeAudioAssetId || pendingAudioRequest !== null || Boolean(activeExport) || microphoneOperationActive();
-}
-function selectedVisualEffect() {
-  return visualEffectsTrack.clips.find(({ id }) => id === visualEffectSelection) ?? null;
-}
-function commitVisualEffectsTrack(nextTrack, message = "ØªÙ… ØªØ­Ø¯ÙŠØ« Ø§Ù„Ù…Ø¤Ø«Ø± Ø§Ù„Ù…Ø±Ø¦ÙŠ.", { refreshTimeline = true, refreshInspector = true } = {}) {
-  if (activeExport) throw new Error("Ø£ÙˆÙ‚Ù ØªØµØ¯ÙŠØ± Ø§Ù„ÙÙŠØ¯ÙŠÙˆ Ù‚Ø¨Ù„ ØªØ¹Ø¯ÙŠÙ„ Ø§Ù„Ù…Ø¤Ø«Ø±Ø§Øª Ø§Ù„Ù…Ø±Ø¦ÙŠØ©.");
-  const nextCompiled = compilePreviewEffects(nextTrack, project, previewViewport);
-  visualEffectsTrack = nextTrack;
-  visualEffectsCompiled = nextCompiled;
-  if (refreshTimeline) visualEffectsTimeline?.render();
-  if (refreshInspector) renderVisualEffectInspector();
-  renderAt(currentMs);
-  scheduleSequenceAutosave();
-  $("visualEffectsMessage").textContent = message;
-}
-function commitVisualEffectPatch(patch, options) {
-  const selected = selectedVisualEffect();
-  if (!selected) return;
-  commitVisualEffectsTrack(editVisualEffect(visualEffectsTrack, project, selected.id, patch), undefined, options);
-  if (options?.refreshTimeline !== false) visualEffectsTimeline?.select(selected.id);
-}
-
-function readEffectNumber(input) {
-  const valueText = input.value.trim();
-  if (!valueText) throw new TypeError("Ø£Ø¯Ø®Ù„ Ù‚ÙŠÙ…Ø© Ø±Ù‚Ù…ÙŠØ© Ù‚Ø¨Ù„ Ø­ÙØ¸ Ø§Ù„ØªØ¹Ø¯ÙŠÙ„.");
-  if (input.validity?.badInput) throw new TypeError("Ø§Ù„Ù‚ÙŠÙ…Ø© Ø§Ù„Ø±Ù‚Ù…ÙŠØ© ØºÙŠØ± ØµØ§Ù„Ø­Ø©.");
-  const value = Number(valueText);
-  if (!Number.isFinite(value)) throw new TypeError("Ø§Ù„Ù‚ÙŠÙ…Ø© Ø§Ù„Ø±Ù‚Ù…ÙŠØ© ØºÙŠØ± ØµØ§Ù„Ø­Ø©.");
-  return value;
-}
-function renderVisualEffectInspector() {
-  const selected = selectedVisualEffect();
-  $("visualEffectSelection").textContent = selected ? `${selected.type} Â· ${selected.id}` : "Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ù…Ø¤Ø«Ø± Ù…Ø­Ø¯Ø¯";
-  for (const [id, value] of [["visualEffectStart", selected?.atMs], ["visualEffectDuration", selected?.durationMs]]) {
-    $(id).disabled = !selected || Boolean(activeExport);
-    $(id).value = selected ? String(value) : "";
-  }
-  $("visualEffectEasing").disabled = !selected || Boolean(activeExport);
-  $("visualEffectEasing").value = selected?.easing ?? "easeInOutCubic";
-  $("deleteVisualEffect").disabled = !selected || Boolean(activeExport);
-  const buildFields = (containerId, fieldName, values) => {
-    const container = $(containerId);
-    container.replaceChildren();
-    if (!selected) return;
-    for (const channel of VISUAL_EFFECT_CHANNELS[selected.type]) {
-      const label = document.createElement("label");
-      label.textContent = channel.label;
-      const input = document.createElement("input");
-      input.type = channel.kind === "color" ? "color" : "number";
-      input.dataset.effectSource = fieldName;
-      input.dataset.effectField = channel.key;
-      if (channel.kind !== "color") {
-        input.min = String(channel.min); input.max = String(channel.max); input.step = String(channel.step);
-        input.inputMode = channel.integer ? "numeric" : "decimal";
-      }
-      input.value = String(values[channel.key]);
-      input.disabled = Boolean(activeExport);
-      label.append(input); container.append(label);
-    }
-  };
-  buildFields("visualEffectFrom", "from", selected?.from);
-  buildFields("visualEffectTo", "to", selected?.to);
-  $("visualEffectType").disabled = Boolean(activeExport);
-  $("addVisualEffect").disabled = Boolean(activeExport);
-}
-function renderAt(timeMs, preparedAudioSample = null) {
-  currentMs = Math.max(0, Math.min(project.durationMs, timeMs));
-  const audioSample = preparedAudioSample ?? audioPlayer?.sample(currentMs);
-  drawStudioScene({ ctx: context, compiledProject: compiled, timeMs: currentMs,
-    characterAnimation, characterTrack, audioSample, visualEffectsCompiled, viewport: previewViewport });
-  seek.value = String(currentMs);
-  timeReadout.textContent = formatTime(currentMs);
-  timelineEditor?.renderPlayhead();
-  characterTimeline?.render();
-  audioTimeline?.renderPlayhead();
-  visualEffectsTimeline?.renderPlayhead();
-  if (sequenceEditor) {
-    if (!isPlaying) sequenceTimeMs = sequenceEditor.timeFor(activeSceneId, currentMs);
-    renderSequencePlayhead();
-  }
-}
-function renderSequencePlayhead() {
-  const total = sequenceEditor?.durationMs ?? 1;
-  const time = Math.max(0, Math.min(total, sequenceTimeMs));
-  $("sequenceSeek").max = String(total);
-  $("sequenceSeek").value = String(time);
-  $("sequenceDuration").textContent = `${formatTime(time)} / ${formatTime(total)}`;
-  for (const button of $("sequenceBlocks").querySelectorAll(".sequence-block")) {
-    const current = button.dataset.sceneId === activeSceneId;
-    button.setAttribute("aria-current", String(current));
-  }
-  for (const button of $("sceneThumbnails").querySelectorAll("[data-scene-id] .scene-select")) {
-    button.setAttribute("aria-current", String(button.closest("[data-scene-id]").dataset.sceneId === activeSceneId));
-  }
-}
-function renderSequenceOverview({ rebuildCards = true, rebuildAssets = true } = {}) {
-  if (!sequenceEditor) return;
-  const cards = $("sceneThumbnails");
-  const scenes = sequenceEditor.scenes;
-  if (rebuildCards) cards.replaceChildren();
-  for (const scene of rebuildCards ? scenes : []) {
-    const card = document.createElement("article");
-    card.className = "scene-card";
-    card.dataset.sceneId = scene.id;
-    const select = document.createElement("button");
-    select.type = "button"; select.className = "scene-select"; select.dataset.sceneSelect = scene.id;
-    select.disabled = microphoneOperationActive() || Boolean(activeExport);
-    select.setAttribute("aria-current", String(scene.id === activeSceneId));
-    const thumb = document.createElement("span"); thumb.className = "scene-thumb";
-    const image = sceneThumbnails.get(scene.id);
-    if (image) { const preview = document.createElement("img"); preview.src = image; preview.alt = ""; thumb.append(preview); }
-    else { thumb.textContent = `${scene.index + 1}`; }
-    const title = document.createElement("span"); title.className = "scene-card-title"; title.textContent = `${scene.index + 1}. ${scene.name}`;
-    select.append(thumb, title);
-    select.addEventListener("click", () => { void activateStudioScene(scene.id); });
-    card.append(select); cards.append(card);
-  }
-  const blocks = $("sequenceBlocks"); blocks.replaceChildren();
-  const total = Math.max(1, sequenceEditor.durationMs);
-  for (const scene of scenes) {
-    const block = document.createElement("button"); block.type = "button"; block.className = "sequence-block";
-    block.disabled = microphoneOperationActive() || Boolean(activeExport);
-    block.dataset.sceneId = scene.id; block.style.flexGrow = String(scene.project.durationMs);
-    block.style.flexBasis = "0"; block.style.flexShrink = "1";
-    block.title = `${scene.name} Â· ${formatTime(scene.project.durationMs)}`;
-    block.setAttribute("aria-label", `${scene.name}, ${formatTime(scene.startMs)} Ø¥Ù„Ù‰ ${formatTime(scene.endMs)}`);
-    const label = document.createElement("span"); label.textContent = scene.name; block.append(label);
-    block.addEventListener("click", event => {
-      const rect = block.getBoundingClientRect();
-      const fraction = rect.width ? Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) : 0;
-      seekSequenceTo(scene.startMs + fraction * scene.project.durationMs);
-    });
-    blocks.append(block);
-  }
-  const current = getCurrentScene();
-  $("sceneName").value = current?.name ?? "";
-  $("sceneDuration").value = current ? String(current.project.durationMs / 1000) : "";
-  $("deleteSceneButton").disabled = scenes.length <= 1 || Boolean(activeExport) || microphoneOperationActive();
-  $("duplicateSceneButton").disabled = Boolean(activeExport) || scenes.length >= 32;
-  $("addSceneButton").disabled = Boolean(activeExport) || scenes.length >= 32;
-  $("moveSceneLeftButton").disabled = Boolean(activeExport) || (current?.index ?? 0) <= 0;
-  $("moveSceneRightButton").disabled = Boolean(activeExport) || (current?.index ?? 0) >= scenes.length - 1;
-  renderSequencePlayhead();
-  if (rebuildAssets) renderAssetLibrary();
-}
-function currentAssetReferences(assetId) {
-  return sequenceEditor.sequence.scenes.filter(scene => scene.project.layers.some(layer => layer.assetId === assetId) ||
-    scene.audioTracks.some(track => track.clips.some(clip => clip.asset === assetId)) ||
-    scene.characterTracks.some(track => Object.values(track.character.animation?.clips ?? {}).some(clip =>
-      clip.spriteSheet ? clip.spriteSheet.asset.trim() === assetId : [...clip.frames, ...(clip.blinkFrames ?? [])].includes(assetId))))
-    .map(scene => scene.id);
-}
-function renderAssetLibrary() {
-  const root = $("assetLibraryList");
-  if (!root) return;
-  $("assetBudgetLabel").textContent = assetStorageStatus;
-  root.replaceChildren();
-  for (const asset of sequenceEditor.sequence.assets) {
-    const uses = [...new Set([...(persistentAssets?.references(asset.id) ?? []), ...currentAssetReferences(asset.id)])];
-    const row = document.createElement("div"); row.className = "asset-entry"; row.dataset.assetId = asset.id;
-    const name = document.createElement("span"); name.className = "asset-entry-name"; name.textContent = asset.name;
-    const meta = document.createElement("span"); meta.className = "asset-entry-meta";
-    meta.textContent = `${asset.kind === "image" ? "ØµÙˆØ±Ø©" : asset.kind === "audio" ? "ØµÙˆØª" : asset.kind} Â· ${(asset.size / 1024 / 1024).toFixed(2)} MiB Â· ${uses.length ? `Ù…Ø³ØªØ®Ø¯Ù… ÙÙŠ ${uses.length} Ù…Ø´Ù‡Ø¯` : "ØºÙŠØ± Ù…Ø³ØªØ®Ø¯Ù…"}`;
-    const use = document.createElement("button"); use.type = "button"; use.textContent = "Ø§Ø³ØªØ®Ø¯Ù…"; use.setAttribute("aria-label", `Ø§Ø³ØªØ®Ø¯Ù… Ø§Ù„Ø£ØµÙ„ ${asset.name}`);
-    use.disabled = !getAssetBlob(asset.id) || Boolean(activeExport);
-    use.addEventListener("click", () => { void useLibraryAsset(asset.id); });
-    const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "Ø­Ø°Ù"; remove.setAttribute("aria-label", `Ø­Ø°Ù Ø§Ù„Ø£ØµÙ„ ${asset.name}`);
-    remove.disabled = uses.length > 0 || Boolean(activeExport) || !persistentAssets;
-    remove.addEventListener("click", () => { void removeLibraryAsset(asset.id); });
-    row.append(name, meta, use, remove); root.append(row);
-  }
-}
-function makeThumbnail() {
-  try {
-    const thumb = document.createElement("canvas"); thumb.width = 120; thumb.height = 68;
-    thumb.getContext("2d").drawImage(canvas, 0, 0, thumb.width, thumb.height);
-    sceneThumbnails.set(activeSceneId, thumb.toDataURL("image/jpeg", 0.55));
-  } catch { /* A missing or tainted preview leaves the accessible scene label visible. */ }
-}
-function createSequenceSceneFromCurrent(id, { freshTracks = false } = {}) {
-  return { id,
-    project: structuredClone(project),
-    audioTracks: freshTracks ? makeAudioTracks() : structuredClone(audioTracks),
-    characterTracks: freshTracks ? [makeCharacterTrack()] : structuredClone([characterTrack, ...(sceneExtraCharacterTracks.get(activeSceneId) ?? [])]),
-    visualEffectsTrack: freshTracks ? makeVisualEffectsTrack() : structuredClone(visualEffectsTrack) };
-}
-function replaceCurrentSceneAndAssets(nextAssets = sequenceEditor.sequence.assets) {
-  const old = sequenceEditor.sequence;
-  const current = currentScenePayload();
-  const scenes = old.scenes.map(scene => scene.id === activeSceneId ? current : scene);
-  const next = createStudioSequenceV1({ viewport: project.viewport, scenes, assets: nextAssets });
-  sequenceEditor.replaceSequence(next);
-  persistSequenceMetadata();
-  void persistentAssets?.replaceSequence(next).catch(error => {
-    $("assetLibraryMessage").textContent = `ØªØ¹Ø°Ø± Ø­ÙØ¸ Ù…Ø±Ø§Ø¬Ø¹ Ø§Ù„Ø£ØµÙˆÙ„: ${errorText(error)}`;
-  });
-  audioAssets = next.assets.filter(asset => asset.kind === "audio").map(assetMetadataToAudio);
-  renderAssetLibrary();
-  return next;
-}
-async function useLibraryAsset(id) {
-  try {
-    await assetReady;
-    const asset = sequenceEditor.sequence.assets.find(item => item.id === id);
-    const blob = getAssetBlob(id);
-    if (!asset || !blob) throw new Error("Ø§Ù„Ø£ØµÙ„ ØºÙŠØ± Ù…Ø±ØªØ¨Ø·Ø› Ø£Ø¹Ø¯ Ø§Ø®ØªÙŠØ§Ø±Ù‡ Ù…Ù† Ø§Ù„Ù‡Ø§ØªÙ.");
-    if (asset.kind === "audio") {
-      let audio = audioFiles.get(id);
-      if (!audio) {
-        const file = new File([blob], asset.name, { type: asset.mimeType });
-        const url = URL.createObjectURL(file);
-        let durationMs = 0; try { durationMs = await readAudioDuration(file); } catch { /* Use the validated duration captured when this asset was recorded/imported. */ }
-        durationMs ||= readAudioDurationHint(id);
-        audio = { file, url, durationMs }; audioFiles.set(id, audio);
-      }
-      activeAudioAssetId = id;
-      $("audioFileName").textContent = `${asset.name} Â· ${(asset.size / 1024 / 1024).toFixed(2)} MiB`;
-      $("audioTimelineMessage").textContent = `Ø§Ù„Ø£ØµÙ„ ${asset.name} Ø¬Ø§Ù‡Ø² Ù„Ù„Ù…Ø³Ø§Ø± Ø§Ù„Ø­Ø§Ù„ÙŠ.`;
-      renderAudioInspector();
-      return;
-    }
-    if (asset.kind !== "image") throw new TypeError("Ù‡Ø°Ø§ Ø§Ù„Ù†ÙˆØ¹ Ù…Ù† Ø§Ù„Ø£ØµÙˆÙ„ Ù„Ø§ ÙŠÙ…ÙƒÙ† ÙˆØ¶Ø¹Ù‡ ÙÙŠ Ø§Ù„Ù…Ø´Ù‡Ø¯ Ø¨Ø¹Ø¯.");
-    const file = new File([blob], asset.name, { type: asset.mimeType });
-    const imageRequestToken = imageRequest.begin();
-    pendingImageRequest = imageRequestToken; refreshExportControls();
-    const bitmap = await decodeImageBitmap(file, { isCurrent: () => imageRequest.isCurrent(imageRequestToken) });
-    try {
-      selectedImageDimensions = { width: bitmap.width, height: bitmap.height };
-      const surface = drawBitmap(bitmap);
-      const nextProject = structuredClone(project);
-      nextProject.layers[0].assetId = id;
-      project = nextProject; selectedImageFile = file; currentFileInfo = { name: asset.name, type: asset.mimeType, size: asset.size };
-      imageSource = surface; sceneImageSources.set(id, surface);
-      compiled = compileProject(projectForRaster(project, previewViewport), imageProvider);
-      replaceCurrentSceneAndAssets();
-      sceneSettings.set(activeSceneId, { aspectPreset, fitMode, image: currentFileInfo });
-      imageName.textContent = `${asset.name} Â· ${bitmap.width}Ã—${bitmap.height}`;
-      renderAt(currentMs); status.textContent = "ØªÙ… Ø±Ø¨Ø· Ø§Ù„ØµÙˆØ±Ø© Ø¨Ø§Ù„Ù…Ø´Ù‡Ø¯";
-    } finally { bitmap.close?.(); }
-  } catch (error) { $("assetLibraryMessage").textContent = errorText(error); }
-  finally { if (pendingImageRequest !== null) pendingImageRequest = null; refreshExportControls(); }
-}
-async function removeLibraryAsset(id) {
-  try {
-    captureCurrentScene();
-    await assetReady;
-    await persistentAssets?.replaceSequence(sequenceEditor.sequence);
-    if (persistentAssets) {
-      await persistentAssets.remove(id);
-      sequenceEditor.replaceSequence(persistentAssets.sequence);
-    } else {
-      if (currentAssetReferences(id).length) throw new Error("Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø­Ø°Ù Ø£ØµÙ„ ØªØ³ØªØ®Ø¯Ù…Ù‡ Ø§Ù„Ù…Ø´Ø§Ù‡Ø¯.");
-      const sequence = sequenceEditor.sequence;
-      const next = createStudioSequenceV1({ viewport: sequence.viewport, scenes: sequence.scenes,
-        assets: sequence.assets.filter(asset => asset.id !== id) });
-      sequenceEditor.replaceSequence(next); localAssetFiles.delete(id);
-    }
-    persistSequenceMetadata();
-    audioAssets = sequenceEditor.sequence.assets.filter(asset => asset.kind === "audio").map(assetMetadataToAudio);
-    const audio = audioFiles.get(id); if (audio?.url) URL.revokeObjectURL(audio.url); audioFiles.delete(id);
-    renderAssetLibrary();
-    $("assetLibraryMessage").textContent = "Ø­ÙØ°Ù Ø§Ù„Ø£ØµÙ„ ØºÙŠØ± Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… Ù…Ù† Ù‡Ø°Ø§ Ø§Ù„Ø¬Ù‡Ø§Ø².";
-  } catch (error) { $("assetLibraryMessage").textContent = errorText(error); }
-}
-function inputNumber(id) { return Number($(id).value); }
-function syncMotionTimeBounds() {
-  const durationSeconds = project.durationMs / 1000;
-  const from = $("motionFromSeconds"); const to = $("motionToSeconds");
-  from.max = String(durationSeconds); to.max = String(durationSeconds);
-  const fromValue = from.value.trim() ? Number(from.value) : NaN;
-  const toValue = to.value.trim() ? Number(to.value) : NaN;
-  if (Number.isFinite(fromValue) && fromValue > durationSeconds) from.value = String(Math.max(0, durationSeconds - 0.1));
-  if (Number.isFinite(toValue) && toValue > durationSeconds) to.value = String(durationSeconds);
-}
-function setEditorSection(section) {
-  if (!["scenes", "motion", "audio", "effects", "more"].includes(section)) return;
-  activeEditorSection = section;
-  for (const panel of document.querySelectorAll("[data-tool-panel]")) panel.hidden = panel.dataset.toolPanel !== section;
-  for (const button of document.querySelectorAll("[data-editor-section]")) {
-    button.setAttribute("aria-pressed", String(button.dataset.editorSection === section));
-  }
-  studioRoot.dataset.editorSection = section;
-}
-function setEditorMode(mode) {
-  if (!["automatic", "simple", "professional"].includes(mode)) return;
-  studioRoot.dataset.editorMode = mode;
-  for (const button of document.querySelectorAll("[data-editor-mode-button]")) {
-    button.setAttribute("aria-pressed", String(button.dataset.editorModeButton === mode));
-  }
-  for (const panel of document.querySelectorAll("[data-mode-panel]")) panel.hidden = panel.dataset.modePanel !== mode;
-}
-function readMotionSeconds(id, label) {
-  const input = $(id); const text = input.value.trim();
-  if (!text || input.validity.badInput) throw new TypeError(`${label}: Ø£Ø¯Ø®Ù„ ÙˆÙ‚ØªÙ‹Ø§ Ø¨Ø§Ù„Ø«ÙˆØ§Ù†ÙŠ.`);
-  const value = Number(text);
-  if (!Number.isFinite(value) || value < 0 || value > project.durationMs / 1000) throw new RangeError(`${label}: Ø§Ù„ÙˆÙ‚Øª Ø®Ø§Ø±Ø¬ Ù…Ø¯Ø© Ø§Ù„Ù…Ø´Ù‡Ø¯.`);
-  return value;
-}
-function refreshMotionUndoButtons() {
-  const disabled = !quickMotionUndo || Boolean(activeExport);
-  for (const button of [$("undoMotionButton"), $("undoMotionAutomatic")]) button.disabled = disabled;
-  const headerUndo = $("headerUndoButton");
-  if (headerUndo) headerUndo.disabled = disabled;
-}
-function applyQuickMotion(preset, automatic = false) {
-  const fromField = $("motionFromSeconds"); const toField = $("motionToSeconds");
-  fromField.removeAttribute("aria-invalid"); toField.removeAttribute("aria-invalid");
-  try {
-    const fromSeconds = automatic ? 0 : readMotionSeconds("motionFromSeconds", "Ø¨Ø¯Ø§ÙŠØ© Ø§Ù„Ø­Ø±ÙƒØ©");
-    const toSeconds = automatic ? project.durationMs / 1000 : readMotionSeconds("motionToSeconds", "Ù†Ù‡Ø§ÙŠØ© Ø§Ù„Ø­Ø±ÙƒØ©");
-    if (fromSeconds >= toSeconds) throw new RangeError("ÙŠØ¬Ø¨ Ø£Ù† ØªÙƒÙˆÙ† Ù†Ù‡Ø§ÙŠØ© Ø§Ù„Ø­Ø±ÙƒØ© Ø¨Ø¹Ø¯ Ø¨Ø¯Ø§ÙŠØªÙ‡Ø§.");
-    const settings = automatic ? { speed: 0.75, strength: 36, focusX: 50, focusY: 50 }
-      : { speed: Number($("motionSpeed").value), strength: Number($("motionStrength").value),
-        focusX: Number($("motionFocusX").value), focusY: Number($("motionFocusY").value) };
-    const nextProject = createCameraMotionProject(project, { preset, fromSeconds, toSeconds, ...settings });
-    const previousProject = structuredClone(project);
-    committingQuickMotion = true;
-    try {
-      commitKeyframeProject(nextProject);
-      timelineEditor?.render();
-      timelineEditor?.selectTime(Math.round(fromSeconds * 1000));
-    } finally { committingQuickMotion = false; }
-    quickMotionUndo = previousProject;
-    refreshMotionUndoButtons();
-    const label = CAMERA_MOTION_PRESETS.find((item) => item.id === preset)?.label ?? "Ø§Ù„Ø­Ø±ÙƒØ©";
-    $("motionPresetMessage").textContent = automatic
-      ? `Ø·ÙØ¨Ù‘Ù‚ Ø§Ù‚ØªØ±Ø§Ø­ Â«${label}Â» Ø¹Ù„Ù‰ ÙƒØ§Ù…Ù„ Ø§Ù„Ù…Ø´Ù‡Ø¯. ÙŠÙ…ÙƒÙ†Ùƒ Ù…ØªØ§Ø¨Ø¹Ø© Ø§Ù„ØªØ¹Ø¯ÙŠÙ„ ÙÙŠ Ø§Ù„ÙˆØ¶Ø¹ Ø§Ù„Ø§Ø­ØªØ±Ø§ÙÙŠ.`
-      : `Ø·ÙØ¨Ù‘Ù‚Øª Â«${label}Â» Ù…Ù† ${fromSeconds} Ø¥Ù„Ù‰ ${toSeconds} Ø«Ø§Ù†ÙŠØ©.`;
-  } catch (error) {
-    if (!fromField.value.trim() || fromField.validity.badInput) fromField.setAttribute("aria-invalid", "true");
-    if (!toField.value.trim() || toField.validity.badInput) toField.setAttribute("aria-invalid", "true");
-    $("motionPresetMessage").textContent = errorText(error);
-  }
-}
-function undoQuickMotion() {
-  if (!quickMotionUndo || activeExport) return;
-  const previous = quickMotionUndo;
-  committingQuickMotion = true;
-  try {
-    commitKeyframeProject(previous);
-    timelineEditor?.render();
-    quickMotionUndo = null;
-    $("motionPresetMessage").textContent = "ØªÙ… Ø§Ù„ØªØ±Ø§Ø¬Ø¹ Ø¹Ù† Ø¢Ø®Ø± Ø­Ø±ÙƒØ© Ø¬Ø§Ù‡Ø²Ø©.";
-  } catch (error) { $("motionPresetMessage").textContent = errorText(error); }
-  finally { committingQuickMotion = false; refreshMotionUndoButtons(); }
-}
-for (const button of document.querySelectorAll("[data-editor-mode-button]")) {
-  button.addEventListener("click", () => setEditorMode(button.dataset.editorModeButton));
-}
-for (const button of document.querySelectorAll("[data-editor-section]")) {
-  button.addEventListener("click", () => {
-    const section = button.dataset.editorSection;
-    if (["audio", "effects", "more"].includes(section)) setEditorMode("professional");
-    setEditorSection(section);
-  });
-}
-$("headerSaveButton").addEventListener("click", () => $("saveProjectButton").click());
-$("headerUndoButton").addEventListener("click", undoQuickMotion);
-$("headerExportButton").addEventListener("click", () => {
-  setEditorMode("professional");
-  setEditorSection("more");
-  $("integratedExportButton").focus({ preventScroll: true });
-});
-$("fullscreenPreviewButton").addEventListener("click", async () => {
-  const target = $("studioPreview");
-  try {
-    if (document.fullscreenElement === target) await document.exitFullscreen();
-    else if (target.requestFullscreen) await target.requestFullscreen();
-    else target.classList.toggle("preview-fullscreen");
-  } catch { target.classList.toggle("preview-fullscreen"); }
-});
-for (const button of document.querySelectorAll("[data-motion-preset]")) {
-  button.addEventListener("click", () => applyQuickMotion(button.dataset.motionPreset, button.dataset.automaticMotion === "true"));
-}
-for (const button of [$("undoMotionButton"), $("undoMotionAutomatic")]) button.addEventListener("click", undoQuickMotion);
-$("motionStrength").addEventListener("input", () => { $("motionStrengthValue").textContent = `${$("motionStrength").value}%`; });
-$("motionFocusX").addEventListener("input", () => { $("motionFocusXValue").textContent = `${$("motionFocusX").value}%`; });
-$("motionFocusY").addEventListener("input", () => { $("motionFocusYValue").textContent = `${$("motionFocusY").value}%`; });
-for (const id of ["motionFromSeconds", "motionToSeconds"]) $(id).addEventListener("input", () => $(id).removeAttribute("aria-invalid"));
-
-function syncOutputs() {
-  for (const [id, suffix, digits] of [
-    ["startZoom", "Ã—", 2], ["endZoom", "Ã—", 2], ["startX", " px", 0],
-    ["endX", " px", 0], ["startY", " px", 0], ["endY", " px", 0]
-  ]) $(`${id}Value`).textContent = `${inputNumber(id).toFixed(digits)}${suffix}`;
-  $("durationValue").textContent = `${inputNumber("duration")} Ø«Ø§Ù†ÙŠØ©`;
-  $("viewportValue").textContent = `${project.viewport.width} Ã— ${project.viewport.height} Â· Ù…Ø¹Ø§ÙŠÙ†Ø© ${previewViewport.width} Ã— ${previewViewport.height}`;
-}
-function syncLegacyCameraInputs() {
-  const start = project.camera?.[0]?.value;
-  const end = project.camera?.at(-1)?.value;
-  if (start && end) {
-    for (const [id, value] of [["startZoom", start.zoom], ["endZoom", end.zoom], ["startX", start.x], ["endX", end.x], ["startY", start.y], ["endY", end.y]]) {
-      $(id).value = String(value);
-    }
-    syncOutputs();
-  }
-}
-function commitKeyframeProject(nextProject) {
-  if (activeExport) throw new Error("Ø£ÙˆÙ‚Ù ØªØµØ¯ÙŠØ± Ø§Ù„ÙÙŠØ¯ÙŠÙˆ Ù‚Ø¨Ù„ ØªØ¹Ø¯ÙŠÙ„ Keyframes.");
-  const nextCompiled = compileProject(projectForRaster(nextProject, previewViewport), {
-    get: (assetId) => nextProject.layers.some((layer) => layer.assetId === assetId) ? imageSource : null
-  });
-  const nextEffectsCompiled = compilePreviewEffects(visualEffectsTrack, nextProject, previewViewport);
-  project = nextProject;
-  if (!committingQuickMotion) { quickMotionUndo = null; refreshMotionUndoButtons(); }
-  compiled = nextCompiled;
-  visualEffectsCompiled = nextEffectsCompiled;
-  syncLegacyCameraInputs();
-  renderAt(currentMs);
-  scheduleSequenceAutosave();
-  status.textContent = currentFileInfo ? "ØªÙ… ØªØ­Ø¯ÙŠØ« Ø­Ø±ÙƒØ© Ø§Ù„ÙƒØ§Ù…ÙŠØ±Ø§" : "Ø§Ù„Ø­Ø±ÙƒØ© Ø¬Ø§Ù‡Ø²Ø©Ø› Ø§Ø®ØªØ± ØµÙˆØ±Ø© Ù„Ù„Ù…Ø¹Ø§ÙŠÙ†Ø©";
-}
-function commitCharacterTrack(nextTrack) {
-  if (activeExport) throw new Error("Ø£ÙˆÙ‚Ù ØªØµØ¯ÙŠØ± Ø§Ù„ÙÙŠØ¯ÙŠÙˆ Ù‚Ø¨Ù„ ØªØ¹Ø¯ÙŠÙ„ Ù…Ø³Ø§Ø± Ø§Ù„Ø´Ø®ØµÙŠØ©.");
-  const nextAnimation = compileCharacterTrack(nextTrack, project.durationMs);
-  characterTrack = nextTrack;
-  characterAnimation = nextAnimation;
-  renderAt(currentMs);
-  scheduleSequenceAutosave();
-  status.textContent = "ØªÙ… ØªØ­Ø¯ÙŠØ« Ø­Ø±ÙƒØ© Ø§Ù„Ø´Ø®ØµÙŠØ©";
-}
-function applyCanvasDimensions(size) {
-  previewViewport = size;
-  if (canvas.width !== previewViewport.width) canvas.width = previewViewport.width;
-  if (canvas.height !== previewViewport.height) canvas.height = previewViewport.height;
-  canvas.style.aspectRatio = `${previewViewport.width} / ${previewViewport.height}`;
-  canvas.setAttribute("aria-label", `Ù…Ø¹Ø§ÙŠÙ†Ø© Ø§Ù„ØµÙˆØ±Ø© Ø§Ù„Ù…ØªØ­Ø±ÙƒØ© ${project.viewport.width} ÙÙŠ ${project.viewport.height}`);
-}
-function setCanvasDimensions() {
-  applyCanvasDimensions(safePreviewSize(project.viewport.width, project.viewport.height));
-  if (!currentFileInfo) {
-    placeholder = makePlaceholder(previewViewport);
-    imageSource = placeholder;
-  }
-}
-function updateProject({ resetPlayback = false, viewport = project.viewport, editedControl = null } = {}) {
-  quickMotionUndo = null;
-  refreshMotionUndoButtons();
-  invalidateExport("ØªØºÙŠÙ‘Ø± Ø§Ù„Ù…Ø´Ø±ÙˆØ¹Ø› Ø£ÙÙ„ØºÙŠ Ø§Ù„ØªØµØ¯ÙŠØ± Ø§Ù„Ø³Ø§Ø¨Ù‚ Ø£Ùˆ Ø§Ù„Ø¬Ø§Ø±ÙŠ.");
-  clearFailure();
-  try {
-    const previousDurationMs = project.durationMs;
-    const durationMs = inputNumber("duration") * 1000;
-    compileAudioTracks(audioTracks, durationMs);
-    const nextViewport = { width: viewport.width, height: viewport.height, fps: VIEWPORT.fps };
-    const nextPreview = safePreviewSize(nextViewport.width, nextViewport.height);
-    const nextImageSource = currentFileInfo ? imageSource : makePlaceholder(nextPreview);
-    const fallbackPose = { x: 0, y: 0, zoom: 1, rotation: 0 };
-    const startPose = { ...(project.camera?.[0]?.value ?? fallbackPose) };
-    const endPose = { ...(project.camera?.at(-1)?.value ?? fallbackPose) };
-    const controlEdit = {
-      startZoom: [startPose, "zoom"], endZoom: [endPose, "zoom"],
-      startX: [startPose, "x"], endX: [endPose, "x"],
-      startY: [startPose, "y"], endY: [endPose, "y"]
-    }[editedControl];
-    if (controlEdit) controlEdit[0][controlEdit[1]] = inputNumber(editedControl);
-    const selectedWasLast = timelineEditor?.getSelectedTime() !== null &&
-      timelineEditor?.getSelectedTime() === project.camera?.at(-1)?.atMs;
-    const { project: nextProject, prepared: nextCompiled } = prepareProjectUpdate(project, {
-      durationMs,
-      viewport: nextViewport,
-      start: startPose,
-      end: endPose,
-      editedControl,
-      prepare: (candidate) => compileProject(projectForRaster(candidate, nextPreview), {
-        get: (assetId) => candidate.layers.some((layer) => layer.assetId === assetId) ? nextImageSource : null
-      })
-    });
-    const nextCharacterAnimation = compileCharacterTrack(characterTrack, durationMs);
-    const nextVisualEffectsCompiled = compilePreviewEffects(visualEffectsTrack,nextProject,nextPreview);
-    const viewportChanged = nextViewport.width !== project.viewport.width || nextViewport.height !== project.viewport.height;
-    if (durationMs !== previousDurationMs || viewportChanged) {
-      const sequence = sequenceEditor.sequence;
-      const scenes = sequence.scenes.map(scene => {
-        if (scene.id === activeSceneId) return { ...currentScenePayload(), project: nextProject };
-        return viewportChanged ? { ...scene, project: { ...scene.project, viewport: { ...nextViewport } } } : scene;
-      });
-      const nextSequence = createStudioSequenceV1({ viewport: nextViewport, scenes, assets: sequence.assets });
-      sequenceEditor.replaceSequence(nextSequence);
-      persistSequenceMetadata();
-      void persistentAssets?.replaceSequence(nextSequence).catch(error => {
-        $("assetLibraryMessage").textContent = `ØªØ¹Ø°Ø± ØªØ­Ø¯ÙŠØ« Ø£Ø¨Ø¹Ø§Ø¯ Ø§Ù„ØªØ³Ù„Ø³Ù„: ${errorText(error)}`;
-      });
-    }
-    project = nextProject;
-    compiled = nextCompiled;
-    visualEffectsCompiled = nextVisualEffectsCompiled;
-    characterAnimation = nextCharacterAnimation;
-    if (resetPlayback) stopPlayback();
-    rebuildAudioPlayer({ resume: !resetPlayback });
-    if (selectedWasLast && project.camera?.length) timelineEditor.selectTime(project.camera.at(-1).atMs);
-    if (!currentFileInfo) placeholder = imageSource = nextImageSource;
-    applyCanvasDimensions(nextPreview);
-    seek.max = String(durationMs);
-    syncMotionTimeBounds();
-    syncIntegratedRange();
-    syncLegacyCameraInputs();
-    timelineEditor?.render();
-    refreshCharacterTimeline();
-    audioTimeline?.render(); renderAudioInspector();
-    visualEffectsTimeline?.render(); renderVisualEffectInspector();
-    renderAt(Math.min(currentMs, durationMs));
-    status.textContent = currentFileInfo ? "Ø§Ù„Ù…Ø¹Ø§ÙŠÙ†Ø© Ø¬Ø§Ù‡Ø²Ø©" : "Ø§Ø®ØªØ± ØµÙˆØ±Ø© Ù„Ù„Ø¨Ø¯Ø¡";
-    syncOutputs();
-    refreshIntegratedControls();
-    scheduleSequenceAutosave();
-    if (durationMs !== previousDurationMs || viewportChanged) renderSequenceOverview({ rebuildCards: false, rebuildAssets: false });
-  } catch (error) { fail(error); }
-}
-function stopPlayback() {
-  stopSelectedAudioPreview();
-  if (isPlaying) sequenceTimeMs = currentSequenceTime();
-  if (audioPlayer?.state === "playing") {
-    try { const sampled = audioPlayer.pause(); currentMs = sampled.timeMs; }
-    catch (error) { try { audioPlayer.recover(); } catch { /* Keep the last stable preview time after adapter failure. */ } $("audioTimelineMessage").textContent = `ØªÙˆÙ‚ÙØª Ø§Ù„Ù…Ø¹Ø§ÙŠÙ†Ø© Ø¨Ø¹Ø¯ Ø®Ø·Ø£ ØµÙˆØªÙŠ: ${errorText(error)}`; }
-  }
-  isPlaying = false;
-  pausedAt = null;
-  cancelAnimationFrame(rafId);
-  sequenceEpochMs = 0;
-  playPauseButton.textContent = "ØªØ´ØºÙŠÙ„";
-}
-async function playbackTick(now = performance.now()) {
-  if (!isPlaying) return;
-  const globalMs = Math.min(sequenceEditor.durationMs, sequenceBaseMs + Math.max(0, now - sequenceEpochMs));
-  const sequenceSample = sequenceEditor.sample(globalMs);
-  sequenceTimeMs = globalMs;
-  if (sequenceSample.sceneId !== activeSceneId) {
-    await activateStudioScene(sequenceSample.sceneId, { globalTimeMs: globalMs, localTimeMs: sequenceSample.sceneTimeMs, keepPlaying: true });
-    if (isPlaying) rafId = requestAnimationFrame(playbackTick);
-    return;
-  }
-  let audioSample;
-  try { audioSample = audioPlayer.tick(); }
-  catch (error) {
-    try { audioPlayer.recover(); } catch { /* Adapter cleanup failure is reported to the user below. */ }
-    isPlaying = false; pausedAt = currentMs; playPauseButton.textContent = "Ù…ØªØ§Ø¨Ø¹Ø©"; cancelAnimationFrame(rafId);
-    $("audioTimelineMessage").textContent = `ØªØ¹Ø°Ø± ØªØ­Ø¯ÙŠØ« Ù…Ø³Ø§Ø± Ø§Ù„ØµÙˆØª: ${errorText(error)}`; return;
-  }
-  renderAt(sequenceSample.sceneTimeMs, audioSample);
-  if (globalMs >= sequenceEditor.durationMs) {
-    stopPlayback();
-    sequenceTimeMs = sequenceEditor.durationMs;
-    renderSequencePlayhead();
-    return;
-  }
-  rafId = requestAnimationFrame(playbackTick);
-}
-async function play() {
-  if (microphoneOperationActive() || activeExport) return;
-  stopSelectedAudioPreview();
-  if (sequenceTimeMs >= sequenceEditor.durationMs) {
-    const first = sequenceEditor.scenes[0];
-    await activateStudioScene(first.id, { globalTimeMs: 0, localTimeMs: 0 });
-  }
-  try {
-    const sample = audioPlayer.play();
-    pausedAt = null; currentMs = sample.timeMs; isPlaying = true;
-    sequenceBaseMs = sequenceTimeMs; sequenceEpochMs = performance.now();
-    playPauseButton.textContent = "Ø¥ÙŠÙ‚Ø§Ù Ù…Ø¤Ù‚Øª";
-    renderAt(currentMs, sample); rafId = requestAnimationFrame(playbackTick);
-  } catch (error) {
-    try { audioPlayer.recover(); } catch { /* Keep player in the recoverable paused state. */ }
-    isPlaying = false; pausedAt = currentMs; playPauseButton.textContent = "Ù…ØªØ§Ø¨Ø¹Ø©";
-    $("audioTimelineMessage").textContent = `ØªØ¹Ø°Ø± ØªØ´ØºÙŠÙ„ Ø§Ù„ØµÙˆØª: ${errorText(error)}`;
-  }
-}
-async function replay() {
-  if (microphoneOperationActive() || activeExport) return;
-  stopPlayback();
-  try {
-    captureCurrentScene();
-    const first = sequenceEditor.scenes[0];
-    await activateStudioScene(first.id, { globalTimeMs: 0, localTimeMs: 0 });
-    sequenceTimeMs = 0;
-    await play();
-  } catch (error) { try { audioPlayer?.recover(); } catch { /* Retry remains possible after resource cleanup. */ } $("audioTimelineMessage").textContent = `ØªØ¹Ø°Ø±Øª Ø¥Ø¹Ø§Ø¯Ø© Ø§Ù„ØªØ´ØºÙŠÙ„: ${errorText(error)}`; }
-}
-function seekTo(timeMs) {
-  if (microphoneOperationActive() || activeExport) return;
-  if (sequenceEditor) { seekSequenceTo(sequenceEditor.timeFor(activeSceneId, timeMs)); return; }
-  const wasPlaying = isPlaying;
-  try {
-    const sampled = audioPlayer.seek(timeMs);
-    if (!wasPlaying && sampled.timeMs < project.durationMs) playPauseButton.textContent = pausedAt === null ? "ØªØ´ØºÙŠÙ„" : "Ù…ØªØ§Ø¨Ø¹Ø©";
-    renderAt(sampled.timeMs, sampled);
-  } catch (error) {
-    try { audioPlayer.recover(); } catch { /* Preserve the last committed preview and expose the adapter failure. */ }
-    isPlaying = false; pausedAt = currentMs; playPauseButton.textContent = "Ù…ØªØ§Ø¨Ø¹Ø©";
-    $("audioTimelineMessage").textContent = `ØªØ¹Ø°Ø± Ø§Ù„Ø§Ù†ØªÙ‚Ø§Ù„ Ø¥Ù„Ù‰ Ø§Ù„Ø²Ù…Ù† Ø§Ù„Ù…Ø·Ù„ÙˆØ¨: ${errorText(error)}`;
-  }
-}
-function pauseSequencePlayback() {
-  if (!isPlaying) return;
-  const target = currentSequenceTime();
-  isPlaying = false; sequenceTimeMs = target; sequenceEpochMs = 0;
-  cancelAnimationFrame(rafId);
-  try { audioPlayer?.pause(); } catch { try { audioPlayer?.recover(); } catch { /* Continue with deterministic visual time. */ } }
-  const sample = sequenceEditor.sample(target);
-  if (sample.sceneId !== activeSceneId) {
-    void activateStudioScene(sample.sceneId, { globalTimeMs: target, localTimeMs: sample.sceneTimeMs });
-  } else {
-    renderAt(sample.sceneTimeMs, audioPlayer?.sample(sample.sceneTimeMs));
-  }
-  pausedAt = sample.sceneTimeMs;
-  playPauseButton.textContent = "Ù…ØªØ§Ø¨Ø¹Ø©";
-}
-function dimensionsForCurrentPreset() {
-  const size = projectSizeForPreset(aspectPreset, selectedImageDimensions?.width, selectedImageDimensions?.height);
-  return { ...size, fps: VIEWPORT.fps };
-}
-async function restoreSceneAssets(scene) {
-  sceneImageSources.clear();
-  imageSource = makePlaceholder(previewViewport);
-  let firstImage = null;
-  for (const layer of scene.project.layers) {
-    const asset = sequenceEditor.sequence.assets.find(item => item.id === layer.assetId && item.kind === "image");
-    const blob = getAssetBlob(layer.assetId);
-    if (!asset || !blob) continue;
-    try {
-      const file = new File([blob], asset.name, { type: asset.mimeType });
-      const bitmap = await decodeImageBitmap(file);
-      try {
-        const surface = drawBitmap(bitmap);
-        sceneImageSources.set(asset.id, surface);
-        if (!firstImage) firstImage = { file, surface, asset, width: bitmap.width, height: bitmap.height };
-      } finally { bitmap.close?.(); }
-    } catch (error) { $("assetLibraryMessage").textContent = `ØªØ¹Ø°Ø± ÙÙƒ Ø§Ù„ØµÙˆØ±Ø© ${asset.name}: ${errorText(error)}`; }
-  }
-  for (const track of scene.audioTracks) for (const clip of track.clips) {
-    const cached = audioFiles.get(clip.asset);
-    if (cached?.durationMs > 0) continue;
-    const asset = sequenceEditor.sequence.assets.find(item => item.id === clip.asset && item.kind === "audio");
-    const blob = getAssetBlob(clip.asset);
-    if (!asset || !blob) continue;
-    const file = new File([blob], asset.name, { type: asset.mimeType });
-    const url = URL.createObjectURL(file);
-    let durationMs = 0;
-    try { durationMs = await readAudioDuration(file); }
-    catch (error) {
-      durationMs = readAudioDurationHint(asset.id);
-      if (!durationMs) $("audioTimelineMessage").textContent = `ØªØ¹Ø°Ø± Ù‚Ø±Ø§Ø¡Ø© Ø§Ù„ØµÙˆØª ${asset.name}: ${errorText(error)}`;
-    }
-    if (cached?.url) URL.revokeObjectURL(cached.url);
-    audioFiles.set(asset.id, { file, url, durationMs });
-  }
-  imageSource = firstImage?.surface ?? imageSource;
-  currentFileInfo = firstImage ? { name: firstImage.asset.name, type: firstImage.asset.mimeType, size: firstImage.asset.size } : null;
-  selectedImageFile = firstImage?.file ?? null;
-  selectedImageDimensions = firstImage ? { width: firstImage.width, height: firstImage.height } : null;
-  if (currentFileInfo) sceneSettings.set(scene.id, { aspectPreset, fitMode, image: currentFileInfo });
-  return firstImage;
-}
-function activateStudioScene(sceneId, options = {}) {
-  if (activeExport || exportPreparing || microphoneOperationActive()) return;
-  const loading = loadStudioScene(sceneId, options);
-  pendingSceneActivation = loading;
-  void loading.finally(() => {
-    if (pendingSceneActivation === loading) pendingSceneActivation = null;
-  }).catch(() => {});
-  return loading;
-}
-async function loadStudioScene(sceneId, { globalTimeMs = null, localTimeMs = 0, keepPlaying = false } = {}) {
-  if (activeExport || microphoneOperationActive()) return;
-  if (!keepPlaying && isPlaying) stopPlayback();
-  const wasPlaying = keepPlaying && isPlaying;
-  const target = sequenceEditor.sequence.scenes.find(scene => scene.id === sceneId);
-  if (!target) return;
-  if (sceneId !== activeSceneId) {
-    sceneSettings.set(activeSceneId, { aspectPreset, fitMode, image: currentFileInfo });
-    makeThumbnail();
-    captureCurrentScene();
-    try { await persistentAssets?.replaceSequence(sequenceEditor.sequence); }
-    catch (error) { $("assetLibraryMessage").textContent = `ØªØ¹Ø°Ø± Ø­ÙØ¸ Ø§Ù„Ù…Ø´Ù‡Ø¯ Ø§Ù„Ø­Ø§Ù„ÙŠ: ${errorText(error)}`; return; }
-    sequenceEditor.activate(sceneId);
-  }
-  const token = ++sceneLoadToken;
-  activeSceneId = sceneId;
-  quickMotionUndo = null;
-  const imageSettings = sceneImageSettings(sceneId);
-  aspectPreset = imageSettings.aspectPreset;
-  fitMode = imageSettings.fitMode;
-  project = structuredClone(target.project);
-  audioTracks = structuredClone(target.audioTracks);
-  characterTrack = structuredClone(target.characterTracks[0] ?? makeCharacterTrack());
-  sceneExtraCharacterTracks.set(sceneId, structuredClone(target.characterTracks.slice(1)));
-  visualEffectsTrack = structuredClone(target.visualEffectsTrack);
-  visualEffectSelection = null; audioClipSelection = null;
-  aspectSelect.value = aspectPreset; fitSelect.value = fitMode;
-  previewViewport = safePreviewSize(project.viewport.width, project.viewport.height);
-  applyCanvasDimensions(previewViewport);
-  status.textContent = "Ø¬Ø§Ø±Ù ØªØ­Ù…ÙŠÙ„ Ø£ØµÙˆÙ„ Ø§Ù„Ù…Ø´Ù‡Ø¯â€¦";
-  const loadingSurface = makePlaceholder(previewViewport);
-  context.save();
-  try {
-    context.setTransform(1, 0, 0, 1, 0, 0);
-    context.globalAlpha = 1;
-    context.globalCompositeOperation = "source-over";
-    context.drawImage(loadingSurface, 0, 0);
-  } finally { context.restore(); }
-  await restoreSceneAssets(target);
-  if (token !== sceneLoadToken || activeExport) return;
-  audioAssets = sequenceEditor.sequence.assets.filter(asset => asset.kind === "audio").map(assetMetadataToAudio);
-  if (activeAudioAssetId && !audioAssets.some(asset => asset.id === activeAudioAssetId)) activeAudioAssetId = null;
-  const audioAsset = audioAssets.find(item => audioFiles.has(item.id));
-  if (!activeAudioAssetId) activeAudioAssetId = audioAsset?.id ?? null;
-  characterAnimation = compileCharacterTrack(characterTrack, project.durationMs);
-  compiled = compileProject(projectForRaster(project, previewViewport), imageProvider);
-  visualEffectsCompiled = compilePreviewEffects(visualEffectsTrack, project, previewViewport);
-  if (audioPlayer) { try { audioPlayer.destroy(); } catch { /* Rebuilt immediately below. */ } }
-  audioPlayer = null;
-  audioCompiled = compileAudioTracks(audioTracks, project.durationMs);
-  audioPlayer = createCinematicAudioPlayer(audioCompiled, { play: audioAdapterPlay, stop: audioAdapterStop,
-    setVolume: audioAdapterSetVolume, masterVolume: audioMasterVolume, now: () => performance.now() });
-  currentMs = Math.max(0, Math.min(project.durationMs, localTimeMs));
-  if (currentMs > 0) audioPlayer.seek(currentMs);
-  if (wasPlaying) audioPlayer.play();
-  seek.max = String(project.durationMs);
-  syncMotionTimeBounds();
-  $("duration").value = String(project.durationMs / 1000);
-  syncIntegratedRange();
-  if (currentFileInfo) imageName.textContent = `${currentFileInfo.name} Â· ${selectedImageDimensions?.width ?? "?"}Ã—${selectedImageDimensions?.height ?? "?"}`;
-  else imageName.textContent = "Ø£Ø¹Ø¯ Ø±Ø¨Ø· ØµÙˆØ±Ø© Ø§Ù„Ù…Ø´Ù‡Ø¯ Ù…Ù† Ù…ÙƒØªØ¨Ø© Ø§Ù„Ø£ØµÙˆÙ„";
-  timelineEditor?.clearSelection(); timelineEditor?.render();
-  refreshCharacterTimeline(); audioTimeline?.clearSelection(); audioTimeline?.render();
-  visualEffectsTimeline?.clearSelection(); visualEffectsTimeline?.render();
-  renderAudioInspector(); renderVisualEffectInspector(); syncLegacyCameraInputs(); syncOutputs();
-  sequenceTimeMs = globalTimeMs ?? sequenceEditor.timeFor(sceneId, currentMs);
-  renderAt(currentMs);
-  if (wasPlaying) { sequenceBaseMs = sequenceTimeMs; sequenceEpochMs = performance.now(); }
-  makeThumbnail();
-  renderSequenceOverview(); refreshExportControls();
-  status.textContent = currentFileInfo ? `Ø§Ù„Ù…Ø´Ù‡Ø¯ Ø¬Ø§Ù‡Ø²: ${sequenceEditor.nameOf(sceneId)}` : `ØµÙˆØ±Ø© Ø§Ù„Ù…Ø´Ù‡Ø¯ ØºÙŠØ± Ù…ØªØ§Ø­Ø©Ø› Ø£Ø¹Ø¯ Ø±Ø¨Ø·Ù‡Ø§: ${sequenceEditor.nameOf(sceneId)}`;
-}
-async function addScene() {
-  if (activeExport || microphoneOperationActive() || sequenceEditor.scenes.length >= 32) return;
-  try {
-    stopPlayback(); captureCurrentScene(); makeThumbnail();
-    const id = makeLocalId("scene");
-    const scene = createSequenceSceneFromCurrent(id, { freshTracks: true });
-    const result = sequenceEditor.add(scene, sequenceEditor.scenes.length, `Ø§Ù„Ù…Ø´Ù‡Ø¯ ${sequenceEditor.scenes.length + 1}`);
-    sceneSettings.set(id, { aspectPreset, fitMode, image: currentFileInfo });
-    persistSequenceMetadata();
-    await persistentAssets?.replaceSequence(result.sequence);
-    activeSceneId = id;
-    await activateStudioScene(id, { localTimeMs: 0 });
-    $("assetLibraryMessage").textContent = "Ø£ÙØ¶ÙŠÙ Ø§Ù„Ù…Ø´Ù‡Ø¯. Ø§Ù„Ø£ØµÙˆÙ„ Ø§Ù„Ù…Ø´ØªØ±ÙƒØ© ØªØ¨Ù‚Ù‰ Ù…Ø±ØªØ¨Ø·Ø© Ø¨Ù…Ø¹Ø±Ù‘ÙØ§ØªÙ‡Ø§.";
-  } catch (error) { fail(error); }
-}
-async function duplicateActiveScene(sceneId = activeSceneId) {
-  if (activeExport || microphoneOperationActive() || sequenceEditor.scenes.length >= 32) return;
-  try {
-    stopPlayback(); captureCurrentScene(); makeThumbnail();
-    const id = makeLocalId("scene-copy");
-    const sourceThumb = sceneThumbnails.get(sceneId);
-    const sourceSettings = sceneImageSettings(sceneId);
-    sequenceEditor.duplicate(sceneId, id);
-    sceneSettings.set(id, { aspectPreset: sourceSettings.aspectPreset, fitMode: sourceSettings.fitMode, image: currentFileInfo });
-    persistSequenceMetadata();
-    if (sourceThumb) sceneThumbnails.set(id, sourceThumb);
-    await persistentAssets?.replaceSequence(sequenceEditor.sequence);
-    activeSceneId = id;
-    await activateStudioScene(id, { localTimeMs: 0 });
-  } catch (error) { fail(error); }
-}
-async function deleteActiveScene() {
-  if (activeExport || microphoneOperationActive() || sequenceEditor.scenes.length <= 1) return;
-  try {
-    stopPlayback(); captureCurrentScene(); makeThumbnail();
-    const removed = activeSceneId;
-    const result = sequenceEditor.remove(removed);
-    persistSequenceMetadata();
-    sceneThumbnails.delete(removed); sceneSettings.delete(removed); sceneExtraCharacterTracks.delete(removed);
-    activeSceneId = result.activeSceneId;
-    await persistentAssets?.replaceSequence(result.sequence);
-    await activateStudioScene(activeSceneId, { localTimeMs: 0 });
-  } catch (error) { fail(error); }
-}
-async function reorderScene(sceneId, toIndex) {
-  if (activeExport || microphoneOperationActive() || toIndex < 0 || toIndex >= sequenceEditor.scenes.length) return;
-  try {
-    captureCurrentScene();
-    sequenceEditor.reorder(sceneId, toIndex);
-    persistSequenceMetadata();
-    await persistentAssets?.replaceSequence(sequenceEditor.sequence);
-    renderSequenceOverview();
-  } catch (error) { fail(error); }
-}
-function seekSequenceTo(timeMs) {
-  if (!Number.isFinite(timeMs) || microphoneOperationActive() || activeExport) return;
-  const wasPlaying = isPlaying;
-  const target = Math.max(0, Math.min(sequenceEditor.durationMs, timeMs));
-  sequenceTimeMs = target;
-  if (wasPlaying) { sequenceBaseMs = target; sequenceEpochMs = performance.now(); }
-  const sample = sequenceEditor.sample(target);
-  if (sample.sceneId !== activeSceneId) {
-    void activateStudioScene(sample.sceneId, { globalTimeMs: target, localTimeMs: sample.sceneTimeMs, keepPlaying: wasPlaying });
-    return;
-  }
-  let audioSample;
-  try { audioSample = audioPlayer?.seek(sample.sceneTimeMs); } catch { audioSample = null; }
-  if (wasPlaying && audioPlayer?.state !== "playing") { try { audioPlayer?.play(); } catch { /* The timeline continues silently if an audio adapter rejects playback. */ } }
-  renderAt(sample.sceneTimeMs, audioSample);
-  if (!wasPlaying && target >= sequenceEditor.durationMs) {
-    isPlaying = false; pausedAt = currentMs; playPauseButton.textContent = "Ø¥Ø¹Ø§Ø¯Ø© Ø§Ù„ØªØ´ØºÙŠÙ„";
-  } else if (!wasPlaying) playPauseButton.textContent = pausedAt === null ? "ØªØ´ØºÙŠÙ„" : "Ù…ØªØ§Ø¨Ø¹Ø©";
-}
-function currentSequenceTime(now = performance.now()) {
-  return isPlaying ? Math.min(sequenceEditor.durationMs, sequenceBaseMs + Math.max(0, now - sequenceEpochMs)) : sequenceTimeMs;
-}
-function drawBitmap(bitmap) {
-  const surface = typeof OffscreenCanvas === "function"
-    ? new OffscreenCanvas(previewViewport.width, previewViewport.height)
-    : Object.assign(document.createElement("canvas"), { width: previewViewport.width, height: previewViewport.height });
-  const surfaceContext = surface.getContext("2d", { alpha: false });
-  if (!surfaceContext) throw new Error("Ù„Ù… ØªØªÙˆÙØ± Ø°Ø§ÙƒØ±Ø© ÙƒØ§ÙÙŠØ© Ù„Ø¥Ù†Ø´Ø§Ø¡ Ù…Ø¹Ø§ÙŠÙ†Ø© Ø§Ù„ØµÙˆØ±Ø©.");
-  surfaceContext.fillStyle = "#101118";
-  surfaceContext.fillRect(0, 0, previewViewport.width, previewViewport.height);
-  const rect = imageRect(bitmap.width, bitmap.height, previewViewport.width, previewViewport.height, fitMode);
-  surfaceContext.drawImage(bitmap, rect.x, rect.y, rect.width, rect.height);
-  return surface;
-}
-async function loadImageSurface(file, requestToken) {
-  const bitmap = await decodeImageBitmap(file, { isCurrent: () => imageRequest.isCurrent(requestToken) });
-  try {
-    if (!imageRequest.isCurrent(requestToken)) return null;
-    selectedImageDimensions = { width: bitmap.width, height: bitmap.height };
-    if (aspectPreset === "original") updateProject({ viewport: dimensionsForCurrentPreset() });
-    const surface = drawBitmap(bitmap);
-    return { surface, dimensions: selectedImageDimensions };
-  } finally { bitmap.close?.(); }
-}
-async function refreshSelectedImage() {
-  if (!selectedImageFile) return;
-  const requestToken = imageRequest.begin();
-  pendingImageRequest = requestToken;
-  refreshExportControls();
-  clearFailure();
-  status.textContent = "Ø¬Ø§Ø±Ù ØªØ¬Ù‡ÙŠØ² Ø§Ù„ØµÙˆØ±Ø© Ù„Ù„Ø£Ø¨Ø¹Ø§Ø¯ Ø§Ù„Ø¬Ø¯ÙŠØ¯Ø©â€¦";
-  try {
-    const prepared = await loadImageSurface(selectedImageFile, requestToken);
-    if (!prepared || !imageRequest.isCurrent(requestToken)) return;
-    imageSource = prepared.surface;
-    for (const layer of project.layers) sceneImageSources.set(layer.assetId, prepared.surface);
-    sceneSettings.set(activeSceneId, { aspectPreset, fitMode, image: currentFileInfo });
-    compiled = compileProject(projectForRaster(project, previewViewport), imageProvider);
-    renderAt(currentMs);
-    status.textContent = "Ø§Ù„Ù…Ø¹Ø§ÙŠÙ†Ø© Ø¬Ø§Ù‡Ø²Ø©";
-  } catch (error) {
-    if (imageRequest.isCurrent(requestToken)) fail(error);
-  } finally {
-    if (pendingImageRequest === requestToken) pendingImageRequest = null;
-    refreshExportControls();
-  }
-}
-
-playPauseButton.addEventListener("click", () => {
-  if (isPlaying) pauseSequencePlayback(); else void play();
-});
-$("replayButton").addEventListener("click", () => { void replay(); });
-seek.addEventListener("input", () => {
-  seekTo(Number(seek.value));
-});
-$("sequenceSeek").addEventListener("input", () => seekSequenceTo(Number($("sequenceSeek").value)));
-$("addSceneButton").addEventListener("click", () => { void addScene(); });
-$("duplicateSceneButton").addEventListener("click", () => { void duplicateActiveScene(); });
-$("deleteSceneButton").addEventListener("click", () => { void deleteActiveScene(); });
-$("moveSceneLeftButton").addEventListener("click", () => {
-  const scene = getCurrentScene(); if (scene) void reorderScene(scene.id, scene.index - 1);
-});
-$("moveSceneRightButton").addEventListener("click", () => {
-  const scene = getCurrentScene(); if (scene) void reorderScene(scene.id, scene.index + 1);
-});
-$("sceneName").addEventListener("change", () => {
-  try {
-    sequenceEditor.rename(activeSceneId, $("sceneName").value);
-    persistSequenceMetadata();
-    renderSequenceOverview();
-    $("sceneName").removeAttribute("aria-invalid");
-  } catch (error) {
-    $("sceneName").setAttribute("aria-invalid", "true");
-    $("sceneName").value = sequenceEditor.nameOf(activeSceneId);
-    $("assetLibraryMessage").textContent = errorText(error);
-  }
-});
-$("sceneDuration").addEventListener("change", () => {
-  try {
-    const text = $("sceneDuration").value.trim();
-    if (!text || $("sceneDuration").validity.badInput) throw new TypeError("Ø£Ø¯Ø®Ù„ Ù…Ø¯Ø© ØµØ§Ù„Ø­Ø© Ù„Ù„Ù…Ø´Ù‡Ø¯ Ø¨ÙŠÙ† 3 Ùˆ60 Ø«Ø§Ù†ÙŠØ©.");
-    const seconds = Number(text);
-    if (!Number.isSafeInteger(seconds)) throw new TypeError("Ù…Ø¯Ø© Ø§Ù„Ù…Ø´Ù‡Ø¯ ÙŠØ¬Ø¨ Ø£Ù† ØªÙƒÙˆÙ† Ø¹Ø¯Ø¯Ù‹Ø§ ØµØ­ÙŠØ­Ù‹Ø§ Ø¨Ø§Ù„Ø«ÙˆØ§Ù†ÙŠ.");
-    captureCurrentScene();
-    sequenceEditor.setDuration(activeSceneId, seconds * 1000);
-    persistSequenceMetadata();
-    project = structuredClone(sequenceEditor.sequence.scenes.find(scene => scene.id === activeSceneId).project);
-    $("duration").value = String(seconds);
-    updateProject({ resetPlayback: true });
-    renderSequenceOverview();
-    $("sceneDuration").removeAttribute("aria-invalid");
-  } catch (error) {
-    $("sceneDuration").setAttribute("aria-invalid", "true");
-    $("sceneDuration").value = String(project.durationMs / 1000);
-    $("assetLibraryMessage").textContent = errorText(error);
-  }
-});
-timelineEditor = createStudioTimeline({
-  lane: timelineLane,
-  ruler: timelineRuler,
-  playhead: timelinePlayhead,
-  markers: timelineKeyframes,
-  selectionLabel: timelineSelection,
-  message: timelineMessage,
-  addButton: addKeyframeButton,
-  deleteButton: deleteKeyframeButton,
-  fields: keyframeFields,
-  getProject: () => project,
-  getCompiled: () => compiled,
-  getCurrentTime: () => currentMs,
-  isBusy: () => Boolean(activeExport),
-  formatTime,
-  samplePose: (compiledProject, atMs) => sampleFrame(compiledProject, atMs).camera,
-  seek: (atMs) => seekTo(atMs),
-  syncPlaybackSeek: () => {
-    if (currentMs < project.durationMs && !isPlaying) {
-      playPauseButton.textContent = pausedAt === null ? "ØªØ´ØºÙŠÙ„" : "Ù…ØªØ§Ø¨Ø¹Ø©";
-    }
-  },
-  commitProject: commitKeyframeProject
-});
-const characterFields = Object.fromEntries([...document.querySelectorAll("[data-character-channel]")]
-  .map(input => { input.dataset.channel = input.dataset.characterChannel; return [input.dataset.characterChannel, input]; }));
-characterTimeline = createCharacterTimeline({
-  lane: $("characterTimelineLane"), markers: $("characterTimelineMarkers"),
-  playhead: $("characterTimelinePlayhead"), selection: $("characterTimelineSelection"),
-  message: $("characterTimelineMessage"), addButton: $("addCharacterKeyframe"),
-  deleteButton: $("deleteCharacterKeyframe"), fields: characterFields,
-  getTrack: () => characterTrack, getDuration: () => project.durationMs, getTime: () => currentMs,
-  getAnimation: () => characterAnimation, isBusy: () => Boolean(activeExport),
-  seek: atMs => {
-    seekTo(atMs);
-  },
-  commit: commitCharacterTrack, formatTime
-});
-audioTimeline = createStudioAudioTimeline({
-  root: $("audioTracks"), ruler: $("audioTimelineRuler"), getTracks: () => audioTracks,
-  getDuration: () => project.durationMs, getCurrentTime: () => currentMs,
-  isBusy: () => Boolean(activeExport), formatTime,
-  onSelect: (selection) => { audioClipSelection = selection; const selected = selectedAudioClip(); if (selected) $("audioTrackType").value = selected.track.type; renderAudioInspector(); },
-  onMove: (trackId, clipId, startMs) => commitAudioTracks(editAudioClip(audioTracks, project.durationMs, trackId, clipId, { startMs })),
-  onVolume: (trackId, volume) => {
-    try { audioTracks = setAudioTrackVolume(audioTracks, project.durationMs, trackId, volume); audioPlayer.setTrackVolume(trackId, volume); }
-    catch (error) { $("audioTimelineMessage").textContent = errorText(error); }
-  },
-  onDragEnd: ({ cancelled }) => { if (cancelled) $("audioTimelineMessage").textContent = "Ø£ÙÙ„ØºÙŠ Ø§Ù„Ø³Ø­Ø¨Ø› Ø­ÙÙØ¸ Ø¢Ø®Ø± ØªÙˆÙ‚ÙŠØª ØµØ§Ù„Ø­ Ù„Ù„Ù…Ù‚Ø·Ø¹."; }
-});
-audioTimeline.render();
-$("audioMasterVolume").value = String(audioMasterVolume);
-renderAudioInspector();
-visualEffectsTimeline = createStudioVisualEffectsTimeline({
-  root: $("visualEffectsTracks"), ruler: $("visualEffectsRuler"), getTrack: () => visualEffectsTrack,
-  getDuration: () => project.durationMs, getCurrentTime: () => currentMs,
-  isBusy: () => Boolean(activeExport), formatTime,
-  onSelect: (id) => { visualEffectSelection = id; renderVisualEffectInspector(); },
-  onMove: (id, atMs) => commitVisualEffectsTrack(moveVisualEffect(visualEffectsTrack, project, id, atMs), "ØªÙ… Ù†Ù‚Ù„ Ø§Ù„Ù…Ø¤Ø«Ø± Ø¹Ù„Ù‰ Ø§Ù„Ù…Ø³Ø§Ø±.", { refreshTimeline: false, refreshInspector: false }),
-  onSeek: (atMs) => seekTo(atMs),
-  onDragEnd: ({ cancelled, error }) => {
-    if (error) $("visualEffectsMessage").textContent = `ØªØ¹Ø°Ø± Ù†Ù‚Ù„ Ø§Ù„Ù…Ø¤Ø«Ø±: ${errorText(error)}`;
-    else if (cancelled) $("visualEffectsMessage").textContent = "Ø£ÙÙ„ØºÙŠ Ø§Ù„Ø³Ø­Ø¨Ø› Ø£ÙØ¹ÙŠØ¯ Ø§Ù„Ù…Ø¤Ø«Ø± Ø¥Ù„Ù‰ ØªÙˆÙ‚ÙŠØªÙ‡ Ø§Ù„Ø£ØµÙ„ÙŠ.";
-  }
-});
-visualEffectsTimeline.render();
-renderVisualEffectInspector();
-$("addVisualEffect").addEventListener("click", () => {
-  if (activeExport) return;
-  try {
-    const next = addVisualEffect(visualEffectsTrack, project, $("visualEffectType").value, Math.min(currentMs, project.durationMs));
-    const added = next.clips.at(-1);
-    visualEffectSelection = added.id;
-    commitVisualEffectsTrack(next, `Ø£ÙØ¶ÙŠÙ ${added.type} Ø¹Ù†Ø¯ ${formatTime(added.atMs)}.`);
-    visualEffectsTimeline.select(added.id);
-  } catch (error) { $("visualEffectsMessage").textContent = errorText(error); }
-});
-$("deleteVisualEffect").addEventListener("click", () => {
-  if (activeExport || !visualEffectSelection) return;
-  try {
-    visualEffectsTrack = deleteVisualEffect(visualEffectsTrack, project, visualEffectSelection);
-    visualEffectSelection = null;
-    visualEffectsCompiled = compilePreviewEffects(visualEffectsTrack, project, previewViewport);
-    visualEffectsTimeline.clearSelection(); renderVisualEffectInspector(); renderAt(currentMs);
-    $("visualEffectsMessage").textContent = "Ø­ÙØ°Ù Ø§Ù„Ù…Ø¤Ø«Ø± Ø§Ù„Ù…Ø­Ø¯Ø¯.";
-  } catch (error) { $("visualEffectsMessage").textContent = errorText(error); }
-});
-for (const [id, field] of [["visualEffectStart", "atMs"], ["visualEffectDuration", "durationMs"], ["visualEffectEasing", "easing"]]) {
-  $(id).addEventListener("change", () => {
-    if (!selectedVisualEffect() || activeExport) return;
-    try { commitVisualEffectPatch({ [field]: field === "easing" ? $(id).value : readEffectNumber($(id)) }); }
-    catch (error) { $("visualEffectsMessage").textContent = errorText(error); }
-  });
-}
-for (const source of ["visualEffectFrom", "visualEffectTo"]) {
-  $(source).addEventListener("change", event => {
-    const input = event.target.closest?.("[data-effect-field]");
-    if (!input || !selectedVisualEffect() || activeExport) return;
-    try {
-      const channel = VISUAL_EFFECT_CHANNELS[selectedVisualEffect().type].find(({ key }) => key === input.dataset.effectField);
-      if (!channel) throw new TypeError("Ù‚Ù†Ø§Ø© Ø§Ù„Ù…Ø¤Ø«Ø± ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙØ©.");
-      commitVisualEffectPatch({ [input.dataset.effectSource]: { [channel.key]: channel.kind === "color" ? input.value : readEffectNumber(input) } }, { refreshTimeline: false, refreshInspector: false });
-      input.removeAttribute("aria-invalid");
-    } catch (error) { input.setAttribute("aria-invalid", "true"); $("visualEffectsMessage").textContent = errorText(error); }
-  });
-}
-function renderCharacterRuler() {
-  const ruler = $("characterTimelineRuler"); ruler.replaceChildren();
-  for (let i = 0; i <= 4; i++) { const label = document.createElement("span"); label.textContent = formatTime(Math.round(project.durationMs * i / 4)); ruler.append(label); }
-}
-const renderCharacterTimeline = characterTimeline.render.bind(characterTimeline);
-function refreshCharacterTimeline() { renderCharacterRuler(); renderCharacterTimeline(); }
-$("assetLibraryInput").addEventListener("change", async () => {
-  const files = Array.from($("assetLibraryInput").files ?? []);
-  if (!files.length) return;
-  $("assetLibraryMessage").textContent = "Ø¬Ø§Ø±Ù Ø¥Ø¶Ø§ÙØ© Ø§Ù„Ø£ØµÙˆÙ„ ÙˆØªØ®Ø²ÙŠÙ†Ù‡Ø§ Ù…Ø­Ù„ÙŠÙ‹Ø§â€¦";
-  try {
-    for (const file of files) {
-      const asset = await registerAssetFile(file);
-      if (asset.kind === "audio" && !audioFiles.has(asset.id)) {
-        let durationMs = 0; try { durationMs = await readAudioDuration(file); } catch { /* Keep the asset available for relinking. */ }
-        audioFiles.set(asset.id, { file, url: URL.createObjectURL(file), durationMs });
-      }
-    }
-    audioAssets = sequenceEditor.sequence.assets.filter(asset => asset.kind === "audio").map(assetMetadataToAudio);
-    renderAssetLibrary();
-    $("assetLibraryMessage").textContent = `Ø£ÙØ¶ÙŠÙ ${files.length} Ø£ØµÙ„ Ø¥Ù„Ù‰ Ø§Ù„Ù…ÙƒØªØ¨Ø© Ø§Ù„Ù…Ø´ØªØ±ÙƒØ© Ø¹Ù„Ù‰ Ù‡Ø°Ø§ Ø§Ù„Ø¬Ù‡Ø§Ø².`;
-  } catch (error) { $("assetLibraryMessage").textContent = errorText(error); }
-  finally { $("assetLibraryInput").value = ""; renderAssetLibrary(); }
-});
-
-function makeAudioImportIntent({ autoInsert = false, trackType = $("audioTrackType").value } = {}) {
-  const track = audioTracks.find(item => item.type === trackType);
-  return { autoInsert, trackType, sceneId: activeSceneId,
-    startMs: Math.max(0, Math.min(Math.round(currentMs), project.durationMs - 1)), trackId: track?.id ?? null };
-}
-function openAudioPicker(trackType, autoInsert) {
-  if (activeExport || microphoneOperationActive()) return;
-  $("audioTrackType").value = trackType;
-  audioImportIntent = makeAudioImportIntent({ trackType, autoInsert });
-  refreshMicrophoneBusyControls();
-  audioPickerOpening = true;
-  try { $("audioInput").click(); }
-  finally { audioPickerOpening = false; }
-}
-$("audioInput").addEventListener("click", event => {
-  if (audioPickerOpening) return;
-  if (activeExport || microphoneStarting || microphoneSession || microphoneFinalizing || pendingAudioRequest !== null || audioImportIntent !== null) {
-    event.preventDefault(); return;
-  }
-  audioImportIntent = makeAudioImportIntent();
-  refreshMicrophoneBusyControls();
-});
-$("audioInput").addEventListener("change", () => {
-  const file = $("audioInput").files?.[0];
-  if (!file) { audioImportIntent = null; refreshMicrophoneBusyControls(); return; }
-  const intent = audioImportIntent ?? makeAudioImportIntent();
-  audioImportIntent = intent;
-  void (async () => {
-    try {
-      const imported = await importStudioAudio(file);
-      if (!imported || !intent.autoInsert) return;
-      addRecordedAudioToTimeline(imported, intent);
-    } catch (error) {
-      $("audioTimelineMessage").textContent = `ØªØ¹Ø°Ø± Ø¥Ø¶Ø§ÙØ© Ø§Ù„ØµÙˆØª Ø¥Ù„Ù‰ Timeline: ${errorText(error)}`;
-    } finally {
-      if (audioImportIntent === intent) audioImportIntent = null;
-      refreshMicrophoneBusyControls();
-    }
-  })();
-});
-$("audioInput").addEventListener("cancel", () => { audioImportIntent = null; refreshMicrophoneBusyControls(); });
-window.addEventListener("focus", () => {
-  if (!audioImportIntent || pendingAudioRequest !== null || audioPickerOpening) return;
-  setTimeout(() => {
-    if (audioImportIntent && pendingAudioRequest === null) {
-      audioImportIntent = null;
-      refreshMicrophoneBusyControls();
-    }
-  }, 120);
-});
-microphoneButton = document.createElement("button");
-microphoneButton.type = "button";
-microphoneButton.id = "quickRecordAudio";
-microphoneButton.className = "secondary-button microphone-record-button";
-microphoneButton.textContent = "Ø³Ø¬Ù‘Ù„ ØµÙˆØªÙƒ";
-microphoneButton.setAttribute("aria-label", "Ø¨Ø¯Ø¡ Ø§Ù„ØªØ³Ø¬ÙŠÙ„ Ø¨Ø§Ù„Ù…ÙŠÙƒØ±ÙˆÙÙˆÙ†");
-const microphoneHelp = document.createElement("p");
-microphoneHelp.className = "hint microphone-record-help";
-microphoneHelp.textContent = "Ø§Ù„ØªØ³Ø¬ÙŠÙ„ ÙŠØ­ØªØ§Ø¬ Ø¥Ø°Ù† Ø§Ù„Ù…ÙŠÙƒØ±ÙˆÙÙˆÙ† ÙˆØ§ØªØµØ§Ù„Ù‹Ø§ Ø¢Ù…Ù†Ù‹Ø§ Ù…Ø«Ù„ HTTPS. Ø§Ø®ØªÙŠØ§Ø± Ù…Ù„Ù Ù…Ù† Ø§Ù„Ù‡Ø§ØªÙØŒ Ø¨Ù…Ø§ ÙÙŠÙ‡ content://ØŒ ÙŠØ¨Ù‚Ù‰ Ø¹Ø¨Ø± Ù…Ù†ØªÙ‚ÙŠ Android. Ø§Ù„ØµÙŠØº Ø§Ù„Ù…Ø¯Ø¹ÙˆÙ…Ø© ÙŠØ­Ø¯Ø¯Ù‡Ø§ Ø§Ù„Ù…ØªØµÙØ­Ø› AMR ØºÙŠØ± Ù…ØªØ§Ø­ Ù‚ÙŠØ§Ø³ÙŠÙ‹Ø§ ÙÙŠ Chromium.";
-$("microphoneButtonHost").append(microphoneButton);
-$("microphoneButtonHost").parentElement.after(microphoneHelp);
-$("quickImportAudio").addEventListener("click", () => openAudioPicker("dialogue", true));
-$("quickAddMusic").addEventListener("click", () => openAudioPicker("music", true));
-$("playSelectedAudio").addEventListener("click", () => { void playSelectedAudioIndependently(); });
-$("deleteSelectedAudio").addEventListener("click", () => $("deleteAudioClip").click());
-const MICROPHONE_MIME_TYPES = Object.freeze([
-  { mime: "audio/webm;codecs=opus", base: "audio/webm", extension: "webm" },
-  { mime: "audio/mp4", base: "audio/mp4", extension: "m4a" },
-  { mime: "audio/webm", base: "audio/webm", extension: "webm" },
-  { mime: "audio/ogg;codecs=opus", base: "audio/ogg", extension: "ogg" }
-]);
-function microphoneRecordingMime(RecorderClass) {
-  return MICROPHONE_MIME_TYPES.find(({ mime }) => RecorderClass.isTypeSupported(mime)) ?? null;
-}
-function addRecordedAudioToTimeline(imported, capture) {
-  if (activeSceneId !== capture.sceneId) throw new Error("ØªØºÙŠØ± Ø§Ù„Ù…Ø´Ù‡Ø¯ Ø£Ø«Ù†Ø§Ø¡ Ø§Ø¹ØªÙ…Ø§Ø¯ Ø§Ù„ØªØ³Ø¬ÙŠÙ„Ø› Ø£ÙØ¨Ù‚ÙŠ Ø§Ù„Ù…Ù„Ù ÙÙŠ Ù…ÙƒØªØ¨Ø© Ø§Ù„Ø£ØµÙˆÙ„ ÙˆÙ„Ù… Ø£Ø¶Ø¹Ù‡ ÙÙŠ Ù…Ø´Ù‡Ø¯ Ø¢Ø®Ø±.");
-  const track = audioTracks.find(item => item.id === capture.trackId);
-  if (!track) throw new Error("Ù…Ø³Ø§Ø± Ø§Ù„ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ù…Ø­Ø¯Ø¯ Ù„Ù… ÙŠØ¹Ø¯ Ù…ØªØ§Ø­Ù‹Ø§.");
-  const startMs = Math.max(0, Math.min(capture.startMs, project.durationMs - 1));
-  const durationMs = Math.max(1, Math.min(Math.round(imported.durationMs), project.durationMs - startMs));
-  const clip = { id: `audio-clip-${Date.now()}-${++audioAssetSerial}`, asset: imported.id, name: imported.metadata.name,
-    startMs, durationMs, volume: 1,
-    ...(track.type === "dialogue" ? { language: $("dialogueLanguage").value, visemes: [] } : {}) };
-  const next = addAudioClip(audioTracks, project.durationMs, track.id, clip);
-  commitAudioTracks(next, { resume: false });
-  const committed = audioTracks.find(item => item.id === track.id)?.clips.find(item => item.id === clip.id);
-  if (!committed) throw new Error("Ù„Ù… ÙŠÙØ¹ØªÙ…Ø¯ Ø§Ù„ØªØ³Ø¬ÙŠÙ„ ÙÙŠ Timeline.");
-  audioClipSelection = { trackId: track.id, clipId: clip.id };
-  audioTimeline.select(audioClipSelection);
-  renderAudioInspector();
-  $("audioTimelineMessage").textContent = `ØªÙ… Ø§Ù„ØªØ­Ù‚Ù‚ ÙˆØ¥Ø¶Ø§ÙØ© Ø§Ù„ØªØ³Ø¬ÙŠÙ„ Ø¥Ù„Ù‰ Ù…Ø³Ø§Ø± ${track.type === "music" ? "Ø§Ù„Ù…ÙˆØ³ÙŠÙ‚Ù‰" : track.type === "sfx" ? "Ø§Ù„Ù…Ø¤Ø«Ø±Ø§Øª" : "Ø§Ù„Ø­ÙˆØ§Ø±"} Ø¹Ù†Ø¯ ${formatTime(startMs)} Ù„Ù…Ø¯Ø© ${formatTime(durationMs)}.`;
-}
-async function audioDiagnosticReport() {
-  let permission = "ØºÙŠØ± Ù…ØªØ§Ø­";
-  try {
-    const result = await Promise.race([
-      navigator.permissions?.query({ name: "microphone" }) ?? Promise.reject(new Error("Permissions API unavailable")),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("permission query timeout")), 1200))
-    ]);
-    permission = result.state;
-  } catch { /* Android WebView may not expose the microphone Permissions descriptor. */ }
-  const supported = typeof MediaRecorder === "function"
-    ? MICROPHONE_MIME_TYPES.filter(({ mime }) => { try { return MediaRecorder.isTypeSupported(mime); } catch { return false; } }).map(({ mime }) => mime)
-    : [];
-  const liveSession = microphoneSession;
-  const clips = audioTracks.flatMap(track => track.clips.map(clip => ({ track: track.type, id: clip.id, asset: clip.asset })));
-  const report = {
-    capturedAt: new Date().toISOString(), origin: location.origin, secureContext: isSecureContext,
-    microphonePermission: permission, getUserMedia: Boolean(navigator.mediaDevices?.getUserMedia),
-    mediaRecorder: typeof MediaRecorder === "function", supportedRecordingFormats: supported,
-    audioContextState: liveSession?.meterContext?.state ?? lastMicrophoneDiagnostic.audioContextState ?? "not active",
-    latestRecording: { ...lastMicrophoneDiagnostic, liveSignal: liveSession?.signal ?? null, meterError: liveSession?.meterError ?? lastMicrophoneDiagnostic.meterError ?? null },
-    persistentAssetStore: Boolean(persistentAssets), indexedDB: Boolean(globalThis.indexedDB),
-    audioAssetCount: audioAssets.length, activeSceneId, timelineClipCount: clips.length, clips
-  };
-  return JSON.stringify(report, null, 2);
-}
-$("copyAudioDiagnostics").addEventListener("click", async () => {
-  try {
-    const report = await audioDiagnosticReport();
-    $("audioDiagnosticReport").textContent = report;
-    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(report);
-    else {
-      const copy = document.createElement("textarea"); copy.value = report; copy.setAttribute("readonly", "");
-      copy.style.position = "fixed"; copy.style.opacity = "0"; document.body.append(copy); copy.select();
-      const copied = document.execCommand("copy"); copy.remove();
-      if (!copied) throw new Error("Ø§Ù„Ù…ØªØµÙØ­ Ù„Ø§ ÙŠØªÙŠØ­ Ù†Ø³Ø® Ø§Ù„ØªÙ‚Ø±ÙŠØ± ØªÙ„Ù‚Ø§Ø¦ÙŠÙ‹Ø§.");
-    }
-    $("audioDiagnosticStatus").textContent = "Ù†ÙØ³Ø® ØªÙ‚Ø±ÙŠØ± Ø§Ù„ØµÙˆØª. Ø£Ø±Ø³Ù„Ù‡ Ù„Ù„Ù…Ø±Ø§Ø¬Ø¹Ø© Ø¹Ù†Ø¯ Ø§Ù„Ø­Ø§Ø¬Ø©.";
-  } catch (error) { $("audioDiagnosticStatus").textContent = `ØªØ¹Ø°Ø± Ù†Ø³Ø® Ø§Ù„ØªÙ‚Ø±ÙŠØ±: ${errorText(error)}`; }
-});
-function requestMicrophoneWithTimeout(timeoutMs = 30000, signal = undefined) {
-  let expired = false;
-  let timer;
-  const request = navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-    if (expired || signal?.aborted || microphonePageHiding) {
-      stream.getTracks().forEach(track => track.stop());
-      throw new DOMException("Ø£ÙÙ„ØºÙŠ Ø·Ù„Ø¨ Ø§Ù„Ù…ÙŠÙƒØ±ÙˆÙÙˆÙ† Ù‚Ø¨Ù„ Ø¨Ø¯Ø¡ Ø§Ù„ØªØ³Ø¬ÙŠÙ„.", "AbortError");
-    }
-    return stream;
-  });
-  const timeout = new Promise((_, reject) => {
-    timer = setTimeout(() => { expired = true; reject(new DOMException("Ù„Ù… ÙŠØ±Ø¯ Android Ø¹Ù„Ù‰ Ø·Ù„Ø¨ Ø§Ù„Ù…ÙŠÙƒØ±ÙˆÙÙˆÙ† Ø®Ù„Ø§Ù„ 30 Ø«Ø§Ù†ÙŠØ©.", "TimeoutError")); }, timeoutMs);
-  });
-  const abortRequest = () => rejectAbort(new DOMException("Ø£ÙÙ„ØºÙŠØª Ø¹Ù…Ù„ÙŠØ© Ø§Ù„ØªØ³Ø¬ÙŠÙ„ Ø¹Ù†Ø¯ Ù…ØºØ§Ø¯Ø±Ø© Ø§Ù„ØµÙØ­Ø©.", "AbortError"));
-  let rejectAbort;
-  const aborted = new Promise((_, reject) => {
-    rejectAbort = reject;
-    if (signal?.aborted || microphonePageHiding) abortRequest();
-    else signal?.addEventListener("abort", abortRequest, { once: true });
-  });
-  return Promise.race([request, timeout, aborted]).finally(() => {
-    clearTimeout(timer);
-    signal?.removeEventListener("abort", abortRequest);
-  });
-}
-function stopMicrophoneMeter(session) {
-  cancelAnimationFrame(microphoneMeterFrame); microphoneMeterFrame = 0;
-  clearInterval(microphoneElapsedTimer); microphoneElapsedTimer = 0;
-  $("microphoneRecordingStatus").hidden = true; $("microphoneLevel").value = "0";
-  try { session?.meterSource?.disconnect(); session?.meterAnalyser?.disconnect(); } catch { /* Context shutdown below releases any remaining graph nodes. */ }
-  if (session?.meterContext && session.meterContext.state !== "closed") void session.meterContext.close().catch(() => {});
-}
-async function startMicrophoneMeter(session) {
-  $("microphoneRecordingStatus").hidden = false;
-  const updateElapsed = () => {
-    const elapsed = Math.max(0, Math.floor((performance.now() - session.startedAt) / 1000));
-    $("microphoneElapsed").textContent = `${String(Math.floor(elapsed / 60)).padStart(2,"0")}:${String(elapsed % 60).padStart(2,"0")}`;
-  };
-  updateElapsed(); microphoneElapsedTimer = setInterval(updateElapsed, 250);
-  try {
-    const Context = window.AudioContext || window.webkitAudioContext;
-    if (!Context) throw new Error("AudioContext ØºÙŠØ± Ù…ØªØ§Ø­Ø› ÙŠØ³ØªÙ…Ø± Ø§Ù„ØªØ³Ø¬ÙŠÙ„ Ø¯ÙˆÙ† Ù…Ø¤Ø´Ø± Ø§Ù„Ù…Ø³ØªÙˆÙ‰.");
-    session.meterContext = new Context();
-    let resumeTimer;
-    try {
-      await Promise.race([
-        Promise.resolve().then(() => session.meterContext.resume()),
-        new Promise((_, reject) => { resumeTimer = setTimeout(() => reject(new DOMException("ØªØ¬Ø§ÙˆØ² AudioContext Ù…Ù‡Ù„Ø© Ø§Ù„ØªØ´ØºÙŠÙ„.", "TimeoutError")), 2500); })
-      ]);
-    } finally { clearTimeout(resumeTimer); }
-    if (microphonePageHiding || microphoneSession !== session || session.recorder.state !== "recording") return;
-    session.meterSource = session.meterContext.createMediaStreamSource(session.stream);
-    session.meterAnalyser = session.meterContext.createAnalyser(); session.meterAnalyser.fftSize = 1024;
-    session.meterSource.connect(session.meterAnalyser);
-    const samples = new Float32Array(session.meterAnalyser.fftSize);
-    session.meterError = null;
-  const draw = () => {
-    if (microphoneSession !== session || session.recorder.state !== "recording") return;
-    session.meterAnalyser.getFloatTimeDomainData(samples);
-      let sum = 0; let peak = 0;
-      for (const sample of samples) { sum += sample * sample; peak = Math.max(peak, Math.abs(sample)); }
-      const rms = Math.sqrt(sum / samples.length);
-      session.signal = { rms, peak, sampleRate: session.meterContext.sampleRate };
-      $("microphoneLevel").value = String(Math.min(1, rms * 4));
-    microphoneMeterFrame = requestAnimationFrame(draw);
-  };
-  draw();
-  } catch (error) {
-    session.meterError = errorText(error);
-    if (microphonePageHiding || microphoneSession !== session) {
-      const lateContext = session.meterContext;
-      if (lateContext && lateContext.state !== "closed") void lateContext.close().catch(() => {});
-      session.meterContext = null; session.meterSource = null; session.meterAnalyser = null;
-      return;
-    }
-    $("microphoneLevel").value = "0";
-    $("audioDiagnosticStatus").textContent = `Ø§Ù„ØªØ³Ø¬ÙŠÙ„ Ù…Ø³ØªÙ…Ø±Ø› ØªØ¹Ø°Ø± ØªØ´ØºÙŠÙ„ Ù…Ø¤Ø´Ø± Ø§Ù„Ù…Ø³ØªÙˆÙ‰: ${session.meterError}`;
-    const context = session.meterContext;
-    if (context && context.state !== "closed") void context.close().catch(() => {});
-    session.meterContext = null; session.meterSource = null; session.meterAnalyser = null;
-  }
-}
-microphoneButton.addEventListener("click", async () => {
-  if (microphoneSession) {
-    if (microphoneSession.recorder.state === "recording") {
-      microphoneSession.stopRequestedAt = performance.now();
-      try { microphoneSession.recorder.stop(); }
-      catch (error) { $("audioTimelineMessage").textContent = `ØªØ¹Ø°Ø± Ø¥ÙŠÙ‚Ø§Ù Ø§Ù„ØªØ³Ø¬ÙŠÙ„: ${errorText(error)}`; }
-    }
-    return;
-  }
-  if (microphoneStarting || microphoneFinalizing || activeExport || pendingAudioRequest !== null) return;
-  const track = audioTracks.find(item => item.type === $("audioTrackType").value);
-  if (!track) { $("audioTimelineMessage").textContent = "Ø§Ø®ØªØ± Ù…Ø³Ø§Ø±Ù‹Ø§ ØµÙˆØªÙŠÙ‹Ø§ Ù‚Ø¨Ù„ Ø§Ù„ØªØ³Ø¬ÙŠÙ„."; return; }
-  if (currentMs >= project.durationMs) { $("audioTimelineMessage").textContent = "Ø­Ø±Ù‘Ùƒ Ø§Ù„Ù…Ø¤Ø´Ø± Ø¥Ù„Ù‰ Ø¯Ø§Ø®Ù„ Ù…Ø¯Ø© Ø§Ù„Ù…Ø´Ù‡Ø¯ Ù‚Ø¨Ù„ Ø§Ù„ØªØ³Ø¬ÙŠÙ„."; return; }
-  microphoneStarting = true;
-  microphonePageHiding = false;
-  const startupController = new AbortController();
-  microphoneStartupController = startupController;
-  lastMicrophoneDiagnostic = { state: "Ø·Ù„Ø¨ Ø¥Ø°Ù† Ø§Ù„Ù…ÙŠÙƒØ±ÙˆÙÙˆÙ†", startedAt: new Date().toISOString() };
-  stopPlayback();
-  refreshMicrophoneBusyControls();
-  let stream;
-  let recorder;
-  let session = null;
-  try {
-    if (!isSecureContext || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder !== "function") {
-      throw new Error("Ø§Ù„Ù…ÙŠÙƒØ±ÙˆÙÙˆÙ† ÙŠØªØ·Ù„Ø¨ HTTPS Ø£Ùˆ WebView ÙŠØªÙŠØ­ getUserMedia Ø¨ØµÙ„Ø§Ø­ÙŠØ© Ø¢Ù…Ù†Ø©. Ø§ÙØªØ­ Ø±Ø§Ø¨Ø· HTTPS Ø£Ùˆ Ø§Ø³ØªÙˆØ±Ø¯ Ù…Ù„ÙÙ‹Ø§ ØµÙˆØªÙŠÙ‹Ø§.");
-    }
-    // Request capture immediately inside the user gesture. AudioContext is optional
-    // metering and must never gate microphone capture or asset insertion.
-    stream = await requestMicrophoneWithTimeout(30000, startupController.signal);
-    microphoneStartupController = null;
-    if (microphonePageHiding) throw new DOMException("Ø£ÙØºÙ„Ù‚Øª Ø§Ù„ØµÙØ­Ø© Ø£Ø«Ù†Ø§Ø¡ Ø·Ù„Ø¨ Ø§Ù„Ù…ÙŠÙƒØ±ÙˆÙÙˆÙ†.", "AbortError");
-    if (activeExport || pendingAudioRequest !== null) throw new Error("Ø§Ù†ØªØ¸Ø± Ø§Ù†ØªÙ‡Ø§Ø¡ Ø§Ù„Ø¹Ù…Ù„ÙŠØ© Ø§Ù„Ø­Ø§Ù„ÙŠØ© Ù‚Ø¨Ù„ Ø§Ù„ØªØ³Ø¬ÙŠÙ„.");
-    const supported = microphoneRecordingMime(MediaRecorder);
-    if (!supported) throw new Error("Ù„Ø§ ÙŠØ¯Ø¹Ù… Ù‡Ø°Ø§ Ø§Ù„Ù…ØªØµÙØ­ ØªØ³Ø¬ÙŠÙ„ WebM Ø£Ùˆ MP4 Ø£Ùˆ OGG. AMR ØºÙŠØ± Ù…ØªØ§Ø­ ÙÙŠ MediaRecorder Ø§Ù„Ù‚ÙŠØ§Ø³ÙŠ.");
-    recorder = new MediaRecorder(stream, { mimeType: supported.mime });
-    const capture = { sceneId: activeSceneId, startMs: Math.round(currentMs), trackId: track.id };
-    session = { recorder, stream, meterContext: null, chunks: [], bytes: 0, failed: false,
-      startedAt: 0, stopRequestedAt: null, timer: 0, capture, mime: supported };
-    microphoneSession = session;
-    recorder.ondataavailable = event => {
-      if (!event.data?.size) return;
-      session.bytes += event.data.size;
-      if (session.bytes > 20 * 1024 * 1024) {
-        session.failed = true;
-        if (recorder.state === "recording") {
-          session.stopRequestedAt = performance.now();
-          try { recorder.stop(); } catch { /* onstop still owns cleanup */ }
-        }
-        return;
-      }
-      session.chunks.push(event.data);
-    };
-    recorder.onerror = event => {
-      session.failed = true;
-      session.error = event.error;
-      if (recorder.state === "recording") {
-        session.stopRequestedAt = performance.now();
-        try { recorder.stop(); } catch { /* onstop still owns cleanup */ }
-      }
-    };
-    recorder.onstop = async () => {
-      clearTimeout(session.timer);
-      session.stopRequestedAt ??= performance.now();
-      stopMicrophoneMeter(session);
-      stream.getTracks().forEach(mediaTrack => mediaTrack.stop());
-      microphoneSession = null;
-      if (microphonePageHiding) { microphoneFinalizing = false; return; }
-      microphoneFinalizing = true;
-      refreshMicrophoneBusyControls();
-      try {
-        if (session.failed || !session.bytes) throw session.error ?? new Error("Ù„Ù… ÙŠÙ†ØªØ¬ Ø§Ù„ØªØ³Ø¬ÙŠÙ„ Ø£ÙŠ Ø¨ÙŠØ§Ù†Ø§Øª ØµÙˆØªÙŠØ©.");
-        const baseMime = (recorder.mimeType || supported.base).split(";")[0].toLowerCase();
-        const elapsedMs = Math.round(session.stopRequestedAt - session.startedAt);
-        if (!Number.isFinite(elapsedMs) || elapsedMs < 250) throw new Error("Ø§Ù„ØªØ³Ø¬ÙŠÙ„ Ù‚ØµÙŠØ± Ø¬Ø¯Ù‹Ø§Ø› Ø³Ø¬Ù‘Ù„ Ù„Ù…Ø¯Ø© Ø±Ø¨Ø¹ Ø«Ø§Ù†ÙŠØ© Ø¹Ù„Ù‰ Ø§Ù„Ø£Ù‚Ù„.");
-        const file = new File(session.chunks, `recording-${Date.now()}.${supported.extension}`, { type: baseMime });
-        const imported = await importStudioAudio(file);
-        if (!imported) throw new Error("ØªØ¹Ø°Ø± Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† Ø§Ù„ØªØ³Ø¬ÙŠÙ„Ø› Ù„Ù… ØªØªÙ… Ø¥Ø¶Ø§ÙØªÙ‡ Ø¥Ù„Ù‰ Timeline.");
-        addRecordedAudioToTimeline(imported, session.capture);
-        lastMicrophoneDiagnostic = {
-          state: "ØªÙ… Ø§Ù„ØªØ­Ù‚Ù‚ ÙˆØ¥Ø¶Ø§ÙØ© Ø§Ù„ØªØ³Ø¬ÙŠÙ„",
-          mime: file.type, bytes: file.size, decodedDurationMs: imported.durationMs,
-          elapsedMs, assetId: imported.id, rms: session.signal?.rms ?? null,
-          peak: session.signal?.peak ?? null, sampleRate: session.signal?.sampleRate ?? null,
-          meterError: session.meterError ?? null, timelineClipCount: audioTracks.reduce((count, item) => count + item.clips.length, 0)
-        };
-        $("audioDiagnosticStatus").textContent = "ØªÙ… Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† Ø¢Ø®Ø± ØªØ³Ø¬ÙŠÙ„ ÙˆØ¥Ø¶Ø§ÙØªÙ‡ Ø¥Ù„Ù‰ Timeline.";
-      } catch (error) {
-        lastMicrophoneDiagnostic = { state: "ÙØ´Ù„ Ø§Ø¹ØªÙ…Ø§Ø¯ Ø§Ù„ØªØ³Ø¬ÙŠÙ„", error: errorText(error), bytes: session.bytes,
-          mime: recorder.mimeType || supported.mime, meterError: session.meterError ?? null };
-        $("audioTimelineMessage").textContent = `ØªØ¹Ø°Ø± Ø§Ø¹ØªÙ…Ø§Ø¯ Ø§Ù„ØªØ³Ø¬ÙŠÙ„: ${errorText(error)}`;
-        $("audioDiagnosticStatus").textContent = `ÙØ´Ù„ Ø¢Ø®Ø± ØªØ³Ø¬ÙŠÙ„: ${errorText(error)}`;
-      } finally {
-        microphoneFinalizing = false;
-        refreshMicrophoneBusyControls();
-      }
-    };
-    recorder.start(250);
-    session.startedAt = performance.now();
-    $("microphoneRecordingStatus").hidden = false;
-    $("microphoneElapsed").textContent = "00:00";
-    void startMicrophoneMeter(session);
-    session.timer = setTimeout(() => {
-      if (microphoneSession === session && recorder.state === "recording") {
-        session.stopRequestedAt = performance.now();
-        try { recorder.stop(); } catch { /* onstop still owns cleanup */ }
-      }
-    }, 60000);
-    $("audioTimelineMessage").textContent = `Ø¬Ø§Ø±Ù Ø§Ù„ØªØ³Ø¬ÙŠÙ„ Ø¨ØµÙŠØºØ© ${supported.base} (Ø§Ù„Ø­Ø¯ 60 Ø«Ø§Ù†ÙŠØ©). Ø£ÙˆÙ‚ÙÙ‡ Ù„Ø¥Ø¶Ø§ÙØªÙ‡ ØªÙ„Ù‚Ø§Ø¦ÙŠÙ‹Ø§ Ø¥Ù„Ù‰ Timeline.`;
-  } catch (error) {
-    microphoneStartupController = null;
-    startupController.abort();
-    if (session) {
-      clearTimeout(session.timer);
-      stopMicrophoneMeter(session);
-      session.recorder.ondataavailable = null; session.recorder.onerror = null; session.recorder.onstop = null;
-      if (session.recorder.state === "recording") { try { session.recorder.stop(); } catch { /* Stream cleanup below is authoritative. */ } }
-    }
-    stream?.getTracks().forEach(mediaTrack => mediaTrack.stop());
-    if (microphoneSession?.recorder === recorder) microphoneSession = null;
-    $("microphoneRecordingStatus").hidden = true;
-    let message = errorText(error);
-    if (error?.name === "NotAllowedError" || error?.name === "SecurityError") message = "Ù„Ù… ÙŠÙØ³Ù…Ø­ Ø¨Ø§Ù„Ù…ÙŠÙƒØ±ÙˆÙÙˆÙ†. Ø§Ø³Ù…Ø­ Ù„Ù„Ù…ÙˆÙ‚Ø¹ Ø¨Ø§Ø³ØªØ®Ø¯Ø§Ù…Ù‡ ÙˆØ§ÙØªØ­ Motion Studio Ø¹Ø¨Ø± HTTPS Ø£Ùˆ WebView Ø¢Ù…Ù†.";
-    else if (error?.name === "TimeoutError") message = "Ù„Ù… ÙŠØµÙ„ Ø±Ø¯ Ù…Ù† Android Ø¹Ù„Ù‰ Ø·Ù„Ø¨ Ø§Ù„Ù…ÙŠÙƒØ±ÙˆÙÙˆÙ† Ø®Ù„Ø§Ù„ 30 Ø«Ø§Ù†ÙŠØ©. ØªØ­Ù‚Ù‚ Ù…Ù† Ø¥Ø°Ù† Ø§Ù„Ù…ÙŠÙƒØ±ÙˆÙÙˆÙ† Ù„Ù„Ù†Ø¸Ø§Ù… ÙˆØ§Ù„ØªØ·Ø¨ÙŠÙ‚ Ø«Ù… Ø£Ø¹Ø¯ Ø§Ù„Ù…Ø­Ø§ÙˆÙ„Ø©.";
-    else if (error?.name === "NotFoundError" || error?.name === "DevicesNotFoundError") message = "Ù„Ù… ÙŠØ¹Ø«Ø± Android Ø¹Ù„Ù‰ Ù…ÙŠÙƒØ±ÙˆÙÙˆÙ† Ù…ØªØ§Ø­.";
-    else if (error?.name === "NotReadableError" || error?.name === "TrackStartError") message = "Ø§Ù„Ù…ÙŠÙƒØ±ÙˆÙÙˆÙ† Ù…Ø´ØºÙˆÙ„ Ø£Ùˆ Ø±ÙØ¶ Android Ø¨Ø¯Ø¡ Ø§Ù„Ø§Ù„ØªÙ‚Ø§Ø·.";
-    if (!microphonePageHiding) {
-      $("audioTimelineMessage").textContent = message;
-      lastMicrophoneDiagnostic = { state: "ÙØ´Ù„ Ø¨Ø¯Ø¡ Ø§Ù„ØªØ³Ø¬ÙŠÙ„", error: message };
-      $("audioDiagnosticStatus").textContent = message;
-    }
-  } finally {
-    if (microphoneStartupController === startupController) microphoneStartupController = null;
-    microphoneStarting = false;
-    refreshMicrophoneBusyControls();
-  }
-});
-window.addEventListener("pagehide", () => {
-  microphonePageHiding = true;
-  microphoneStartupController?.abort();
-  microphoneStartupController = null;
-  audioImportIntent = null;
-  stopSelectedAudioPreview();
-  const session = microphoneSession;
-  if (!session) {
-    if (microphoneStarting) lastMicrophoneDiagnostic = { state: "Ø£ÙÙ„ØºÙŠ Ø·Ù„Ø¨ Ø§Ù„Ø¥Ø°Ù† Ø¨Ø³Ø¨Ø¨ Ù…ØºØ§Ø¯Ø±Ø© Ø§Ù„ØµÙØ­Ø©" };
-    return;
-  }
-  clearTimeout(session.timer);
-  stopMicrophoneMeter(session);
-  session.recorder.onstop = null;
-  try { if (session.recorder.state === "recording") session.recorder.stop(); } catch { /* Closing the page releases the encoder. */ }
-  session.stream.getTracks().forEach(track => track.stop());
-  microphoneSession = null;
-  microphoneFinalizing = false;
-  lastMicrophoneDiagnostic = { state: "Ø£ÙÙ„ØºÙŠ Ø§Ù„ØªØ³Ø¬ÙŠÙ„ Ø¨Ø³Ø¨Ø¨ Ù…ØºØ§Ø¯Ø±Ø© Ø§Ù„ØµÙØ­Ø©", bytes: session.bytes,
-    mime: session.recorder.mimeType || session.mime?.mime, rms: session.signal?.rms ?? null, peak: session.signal?.peak ?? null };
-});
-window.addEventListener("pageshow", () => { microphonePageHiding = false; });
-async function importStudioAudio(file) {
-  if (!file) return null;
-  const requestToken = audioRequest.begin();
-  pendingAudioRequest = requestToken;
-  let imported = null;
-  // Do not let an Add tap during metadata/storage work attach the previous file.
-  activeAudioAssetId = null;
-  $("audioFileName").textContent = file.name || "Ø¬Ø§Ø±Ù ØªØ¬Ù‡ÙŠØ² Ø§Ù„Ù…Ù„Ù Ø§Ù„ØµÙˆØªÙŠâ€¦";
-  $("audioTimelineMessage").textContent = "Ø¬Ø§Ø±Ù ØªØ¬Ù‡ÙŠØ² Ø§Ù„Ù…Ù„Ù Ø§Ù„ØµÙˆØªÙŠØ› Ø³ÙŠÙÙØ¹Ù‘Ù„ Ø²Ø± Ø§Ù„Ø¥Ø¶Ø§ÙØ© Ø¨Ø¹Ø¯ Ø§ÙƒØªÙ…Ø§Ù„ Ø§Ù„ØªØ­Ù‚Ù‚.";
-  renderAudioInspector(); refreshMicrophoneBusyControls();
-  try {
-    const metadata = validateAudioFile(file);
-    $("audioTimelineMessage").textContent = "Ø¬Ø§Ø±Ù Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† ÙÙƒ ØªØ±Ù…ÙŠØ² Ø§Ù„ØµÙˆØª ÙˆÙ‚Ø±Ø§Ø¡Ø© Ù…Ø¯ØªÙ‡â€¦";
-    const durationMs = await readAudioDuration(file);
-    if (!audioRequest.isCurrent(requestToken)) return;
-    const shared = await registerAssetFile(file);
-    if (!audioRequest.isCurrent(requestToken)) return;
-    const id = shared.id;
-    const normalizedFile = file.type === metadata.mime ? file : new File([file], file.name, { type: metadata.mime });
-    const url = URL.createObjectURL(normalizedFile);
-    const previous = audioFiles.get(id);
-    if (previous?.url) URL.revokeObjectURL(previous.url);
-    audioFiles.set(id, { file: normalizedFile, url, durationMs });
-    rememberAudioDuration(id, durationMs);
-    audioAssets = sequenceEditor.sequence.assets.filter(asset => asset.kind === "audio").map(assetMetadataToAudio);
-    activeAudioAssetId = id;
-    rebuildAudioPlayer({ resume: isPlaying });
-    $("audioFileName").textContent = `${metadata.name} Â· ${(metadata.size / 1024 / 1024).toFixed(2)} MiB Â· ${(durationMs / 1000).toFixed(2)} Ø«`;
-    $("audioTimelineMessage").textContent = `ØªÙ… Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† Ø§Ù„Ù…Ù„Ù. Ù…Ø¯ØªÙ‡ ${(durationMs / 1000).toFixed(2)} Ø«Ø§Ù†ÙŠØ©Ø› Ø£Ø¶ÙÙ‡ Ø¥Ù„Ù‰ Ù…Ø³Ø§Ø± Ø¹Ù†Ø¯ Ø§Ù„Ù…Ø¤Ø´Ø±.`;
-    renderAudioInspector();
-    imported = { id, durationMs, metadata };
-  } catch (error) {
-    if (audioRequest.isCurrent(requestToken)) {
-      activeAudioAssetId = null;
-      const reason = /\.amr$/i.test(file.name) || /^audio\/amr(?:-wb)?$/i.test(file.type)
-        ? "ØªØ³Ø¬ÙŠÙ„ AMR ØºÙŠØ± Ù…Ø¯Ø¹ÙˆÙ… ÙÙŠ Chromium. Ø§Ø®ØªØ± M4A Ø£Ùˆ WAV Ø£Ùˆ WebM Ø£Ùˆ MP3."
-        : errorText(error);
-      $("audioFileName").textContent = `Ù„Ù… ÙŠÙØ¹ØªÙ…Ø¯ Ø§Ù„Ù…Ù„Ù: ${reason}`;
-      $("audioTimelineMessage").textContent = reason;
-    }
-  }
-  finally {
-    const isCurrentRequest = audioRequest.isCurrent(requestToken);
-    if (pendingAudioRequest === requestToken) pendingAudioRequest = null;
-    if (isCurrentRequest) {
-      $("audioInput").value = "";
-      // The inspector was rendered while pendingAudioRequest was still set.
-      // Re-render only after clearing it so Add is enabled for the imported asset.
-      renderAudioInspector();
-      refreshMicrophoneBusyControls();
-    }
-  }
-  return imported;
-}
-$("addAudioClip").addEventListener("click", () => {
-  if (activeExport || microphoneOperationActive()) return;
-  if (pendingAudioRequest !== null) {
-    $("audioTimelineMessage").textContent = "Ø§Ù†ØªØ¸Ø± Ø§ÙƒØªÙ…Ø§Ù„ ØªØ¬Ù‡ÙŠØ² Ø§Ù„Ù…Ù„Ù Ø§Ù„ØµÙˆØªÙŠ Ù‚Ø¨Ù„ Ø¥Ø¶Ø§ÙØªÙ‡.";
-    return;
-  }
-  if (!activeAudioAssetId) {
-    $("audioTimelineMessage").textContent = "Ø§Ø®ØªØ± Ù…Ù„ÙÙ‹Ø§ ØµÙˆØªÙŠÙ‹Ø§ Ù…Ù† Ø§Ù„Ù‡Ø§ØªÙ Ø£Ùˆ Ù…ÙƒØªØ¨Ø© Ø§Ù„Ø£ØµÙˆÙ„ Ø£ÙˆÙ„Ù‹Ø§.";
-    return;
-  }
-  try {
-    const trackType = $("audioTrackType").value;
-    const track = audioTracks.find((item) => item.type === trackType);
-    if (!track) throw new Error("Ø§Ù„Ù…Ø³Ø§Ø± Ø§Ù„ØµÙˆØªÙŠ Ø§Ù„Ù…Ø­Ø¯Ø¯ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯.");
-    const startMs = Math.max(0, Math.min(Math.round(currentMs), project.durationMs - 1));
-    const assetId = activeAudioAssetId;
-    const metadata = audioAssets.find(({ id }) => id === assetId);
-    const source = audioFiles.get(assetId);
-    if (!source?.url || !Number.isFinite(source.durationMs) || source.durationMs <= 0) {
-      throw new Error("Ù…Ù„Ù Ø§Ù„ØµÙˆØª ØºÙŠØ± Ø¬Ø§Ù‡Ø² Ù„Ù„ØªØ´ØºÙŠÙ„. Ø£Ø¹Ø¯ Ø§Ø³ØªÙŠØ±Ø§Ø¯Ù‡ Ø£Ùˆ Ø±Ø¨Ø·Ù‡ Ù…Ù† Ø§Ù„Ù…ÙƒØªØ¨Ø©.");
-    }
-    if (!metadata || !sequenceEditor.sequence.assets.some(asset => asset.id === assetId && asset.kind === "audio")) {
-      throw new Error("ØªØ¹Ø°Ø± Ù…Ø·Ø§Ø¨Ù‚Ø© Ù…Ù„Ù Ø§Ù„ØµÙˆØª Ø§Ù„Ù…Ø­Ø¯Ø¯ Ù…Ø¹ Ø£ØµÙ„ Ø§Ù„Ù…Ø´Ø±ÙˆØ¹. Ø£Ø¹Ø¯ Ø§Ø³ØªÙŠØ±Ø§Ø¯Ù‡ Ù…Ù† Ø§Ù„Ù‡Ø§ØªÙ.");
-    }
-    const durationMs = Math.max(1, Math.min(Math.round(source.durationMs), project.durationMs - startMs));
-    const clip = { id: `audio-clip-${Date.now()}-${++audioAssetSerial}`, asset: assetId, name: metadata.name, startMs, durationMs, volume: 1,
-      ...(trackType === "dialogue" ? { language: $("dialogueLanguage").value, visemes: [] } : {}) };
-    const next = addAudioClip(audioTracks, project.durationMs, track.id, clip);
-    commitAudioTracks(next);
-    const committed = audioTracks.find(item => item.id === track.id)?.clips.find(item => item.id === clip.id);
-    if (!committed) throw new Error("Ù„Ù… ÙŠÙØ¹ØªÙ…Ø¯ Ø§Ù„Ù…Ù‚Ø·Ø¹ ÙÙŠ Ø§Ù„Ù…Ø³Ø§Ø± Ø§Ù„ØµÙˆØªÙŠØ› Ø£Ø¹Ø¯ Ø§Ù„Ù…Ø­Ø§ÙˆÙ„Ø©.");
-    audioClipSelection = { trackId: track.id, clipId: clip.id };
-    audioTimeline.select(audioClipSelection);
-    renderAudioInspector();
-    $("audioTimelineMessage").textContent = `Ø£ÙØ¶ÙŠÙ ${metadata.name} Ø¥Ù„Ù‰ Ø§Ù„Ù…Ø³Ø§Ø± Ø¹Ù†Ø¯ ${formatTime(startMs)} Ù„Ù…Ø¯Ø© ${formatTime(durationMs)}.`;
-  } catch (error) { $("audioTimelineMessage").textContent = errorText(error); }
-});
-$("deleteAudioClip").addEventListener("click", () => {
-  if (activeExport || microphoneOperationActive() || !audioClipSelection) return;
-  try {
-    stopSelectedAudioPreview();
-    audioTracks = deleteAudioClip(audioTracks, project.durationMs, audioClipSelection.trackId, audioClipSelection.clipId);
-    audioClipSelection = null; rebuildAudioPlayer({ resume: true }); audioTimeline.clearSelection(); renderAudioInspector(); renderAt(currentMs);
-  } catch (error) { $("audioTimelineMessage").textContent = errorText(error); }
-});
-for (const [id, field] of [["audioClipStart", "startMs"], ["audioClipDuration", "durationMs"], ["audioClipVolume", "volume"]]) {
-  $(id).addEventListener("change", () => {
-    const selected = selectedAudioClip(); if (!selected || activeExport || microphoneOperationActive()) return;
-    try {
-      const value = Number($(id).value);
-      const next = editAudioClip(audioTracks, project.durationMs, selected.track.id, selected.clip.id, { [field]: value });
-      commitAudioTracks(next); audioTimeline.select(audioClipSelection);
-      $("audioTimelineMessage").textContent = "ØªÙ… ØªØ­Ø¯ÙŠØ« Ø§Ù„Ù…Ù‚Ø·Ø¹ Ø§Ù„ØµÙˆØªÙŠ.";
-    } catch (error) { $("audioTimelineMessage").textContent = errorText(error); renderAudioInspector(); }
-  });
-}
-$("dialogueLanguage").addEventListener("change", () => {
-  const selected = selectedAudioClip(); if (!selected || selected.track.type !== "dialogue" || activeExport || microphoneOperationActive()) return;
-  try { commitAudioTracks(editAudioClip(audioTracks, project.durationMs, selected.track.id, selected.clip.id, { language: $("dialogueLanguage").value })); }
-  catch (error) { $("audioTimelineMessage").textContent = errorText(error); }
-});
-$("addViseme").addEventListener("click", () => {
-  const selected = selectedAudioClip(); if (!selected || selected.track.type !== "dialogue" || activeExport) return;
-  try {
-    const atMs = currentMs - selected.clip.startMs;
-    const next = setAudioViseme(audioTracks, project.durationMs, selected.track.id, selected.clip.id, atMs, $("visemeType").value, $("phonemeLabel").value);
-    commitAudioTracks(next); audioTimeline.select(audioClipSelection);
-    $("audioTimelineMessage").textContent = `Ø£ÙØ¶ÙŠÙ Ù…ÙØªØ§Ø­ ${$("visemeType").selectedOptions[0].textContent} Ø¹Ù†Ø¯ ${formatTime(currentMs)}.`;
-  } catch (error) { $("audioTimelineMessage").textContent = errorText(error); }
-});
-$("audioMasterVolume").addEventListener("input", () => {
-  audioMasterVolume = Number($("audioMasterVolume").value);
-  try { audioPlayer.setMasterVolume(audioMasterVolume); }
-  catch (error) { $("audioTimelineMessage").textContent = errorText(error); }
-});
-for (const id of ["duration", "startZoom", "endZoom", "startX", "endX", "startY", "endY"]) {
-  $(id).addEventListener("input", () => updateProject({ resetPlayback: id === "duration", editedControl: id }));
-}
-
-aspectSelect.addEventListener("change", () => {
-  aspectPreset = aspectSelect.value;
-  sceneSettings.set(activeSceneId, { aspectPreset, fitMode, image: currentFileInfo });
-  persistSequenceMetadata();
-  updateProject({ viewport: dimensionsForCurrentPreset() });
-  refreshSelectedImage();
-});
-fitSelect.addEventListener("change", () => {
-  invalidateExport("ØªØºÙŠÙ‘Ø±Øª Ø·Ø±ÙŠÙ‚Ø© Ø¹Ø±Ø¶ Ø§Ù„ØµÙˆØ±Ø©.");
-  fitMode = fitSelect.value;
-  sceneSettings.set(activeSceneId, { aspectPreset, fitMode, image: currentFileInfo });
-  persistSequenceMetadata();
-  refreshSelectedImage();
-});
-
-imageInput.addEventListener("change", async () => {
-  invalidateExport("Ø§Ø®ØªÙŠØ±Øª ØµÙˆØ±Ø© Ø¬Ø¯ÙŠØ¯Ø©.");
-  const requestToken = imageRequest.begin();
-  pendingImageRequest = requestToken;
-  clearFailure();
-  const file = imageInput.files?.[0];
-  if (!file) return;
-  selectedImageFile = file;
-  selectedImageDimensions = null;
-  currentFileInfo = null;
-  imageSource = placeholder;
-  refreshExportControls();
-  renderAt(currentMs);
-  status.textContent = "Ø¬Ø§Ø±Ù ØªØ­Ù…ÙŠÙ„ Ø§Ù„ØµÙˆØ±Ø©â€¦";
-  try {
-    const asset = await registerAssetFile(file);
-    if (!imageRequest.isCurrent(requestToken)) return;
-    const prepared = await loadImageSurface(file, requestToken);
-    if (!prepared || !imageRequest.isCurrent(requestToken)) return;
-    imageSource = prepared.surface;
-    sceneImageSources.set(asset.id, imageSource);
-    project = { ...project, layers: project.layers.map((layer, index) => index === 0 ? { ...layer, assetId: asset.id } : layer) };
-    currentFileInfo = { name: asset.name, type: asset.mimeType, size: asset.size };
-    compiled = compileProject(projectForRaster(project, previewViewport), imageProvider);
-    sceneSettings.set(activeSceneId, { aspectPreset, fitMode, image: currentFileInfo });
-    captureCurrentScene({ refresh: true });
-    await persistentAssets?.replaceSequence(sequenceEditor.sequence);
-    imageName.textContent = `${currentFileInfo.name} Â· ${prepared.dimensions.width}Ã—${prepared.dimensions.height}`;
-    renderAt(currentMs);
-    makeThumbnail();
-    renderSequenceOverview({ rebuildAssets: false });
-    status.textContent = "Ø§Ù„Ù…Ø¹Ø§ÙŠÙ†Ø© Ø¬Ø§Ù‡Ø²Ø©";
-    refreshExportControls();
-  } catch (error) {
-    if (imageRequest.isCurrent(requestToken)) fail(error);
-  }
-  finally {
-    if (pendingImageRequest === requestToken) pendingImageRequest = null;
-    imageInput.value = "";
-    refreshExportControls();
-  }
-});
-
-$("saveProjectButton").addEventListener("click", async () => {
-  if (microphoneOperationActive() || activeExport) {
-    status.textContent = "Ø£ÙˆÙ‚Ù Ø§Ù„ØªØ³Ø¬ÙŠÙ„ Ø£Ùˆ Ø§Ù†ØªØ¸Ø± Ø§Ù†ØªÙ‡Ø§Ø¡ Ø§Ø³ØªÙŠØ±Ø§Ø¯ Ø§Ù„ØµÙˆØª Ø£Ùˆ Ø§Ù„ØªØµØ¯ÙŠØ± Ù‚Ø¨Ù„ Ø­ÙØ¸ Ø§Ù„Ù…Ø´Ø±ÙˆØ¹.";
-    return;
-  }
-  clearFailure();
-  try {
-    captureCurrentScene();
-    await persistentAssets?.replaceSequence(sequenceEditor.sequence);
-    const data = sequenceEditor.scenes.length > 1
-      ? serializeStudioSequenceFile(sequenceEditor, { projectId: projectStorageId, aspectPreset, fitMode, audioMasterVolume })
-      : JSON.stringify(makeProjectFile(project, currentFileInfo, { aspectPreset, fitMode }, characterTrack, audioTracks, audioAssets, audioMasterVolume, visualEffectsTrack), null, 2);
-    const url = URL.createObjectURL(new Blob([data], { type: "application/json" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = sequenceEditor.scenes.length > 1 ? "qarton-motion-sequence.json" : "qarton-motion-project.json";
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    status.textContent = "ØªÙ… ØªØ¬Ù‡ÙŠØ² Ù…Ù„Ù Ø§Ù„Ù…Ø´Ø±ÙˆØ¹ JSONØ› Ø§Ù„Ø£ØµÙˆÙ„ Ù…Ø­ÙÙˆØ¸Ø© Ù…Ø­Ù„ÙŠÙ‹Ø§ Ø¨Ø´ÙƒÙ„ Ù…Ù†ÙØµÙ„";
-  } catch (error) { fail(error); }
-});
-$("loadProjectButton").addEventListener("click", () => projectInput.click());
-projectInput.addEventListener("change", async () => {
-  invalidateExport("ÙÙØªØ­ Ù…Ù„Ù Ù…Ø´Ø±ÙˆØ¹ Ø¬Ø¯ÙŠØ¯.");
-  imageRequest.begin();
-  audioRequest.begin(); pendingAudioRequest = null;
-  clearFailure();
-  const file = projectInput.files?.[0];
-  if (!file) return;
-  try {
-    if (file.size > 2 * 1024 * 1024) throw new RangeError("Ù…Ù„Ù Ø§Ù„Ù…Ø´Ø±ÙˆØ¹ Ø£ÙƒØ¨Ø± Ù…Ù† Ø§Ù„Ø­Ø¯ Ø§Ù„Ù…Ø³Ù…ÙˆØ­ (2 MiB).");
-    const fileText = await file.text();
-    let header;
-    try { header = JSON.parse(fileText); } catch { throw new TypeError("Ù…Ù„Ù JSON ØºÙŠØ± ØµØ§Ù„Ø­."); }
-    if (header.format === STUDIO_SEQUENCE_FILE_FORMAT) {
-      const loaded = parseStudioSequenceFile(fileText);
-      stopPlayback();
-      for (const { url } of audioFiles.values()) if (url) URL.revokeObjectURL(url);
-      audioFiles.clear(); localAssetFiles.clear(); sceneThumbnails.clear(); sceneSettings.clear(); sceneExtraCharacterTracks.clear();
-      aspectPreset = loaded.settings.aspectPreset; fitMode = loaded.settings.fitMode; audioMasterVolume = loaded.audioMasterVolume;
-      aspectSelect.value = aspectPreset; fitSelect.value = fitMode; $("audioMasterVolume").value = String(audioMasterVolume);
-      await attachSequenceProject(loaded.editor, loaded.projectId, loaded.sceneSettings);
-      await activateStudioScene(sequenceEditor.scenes[0].id, { globalTimeMs: 0, localTimeMs: 0 });
-      stopPlayback(); sequenceTimeMs = 0;
-      status.textContent = "ÙÙØªØ­ ØªØ³Ù„Ø³Ù„ Ø§Ù„Ù…Ø´Ø§Ù‡Ø¯Ø› Ø£Ø¹Ø¯ Ø±Ø¨Ø· Ø§Ù„Ø£ØµÙˆÙ„ ØºÙŠØ± Ø§Ù„Ù…ØªØ§Ø­Ø© Ø¹Ù„Ù‰ Ù‡Ø°Ø§ Ø§Ù„Ø¬Ù‡Ø§Ø²";
-      refreshExportControls();
-      return;
-    }
-    if (file.size > 128 * 1024) throw new RangeError("Ù…Ù„Ù Ø§Ù„Ù…Ø´Ø±ÙˆØ¹ Ø§Ù„Ù‚Ø¯ÙŠÙ… Ø£ÙƒØ¨Ø± Ù…Ù† Ø§Ù„Ø­Ø¯ Ø§Ù„Ù…Ø³Ù…ÙˆØ­ (128 ÙƒÙŠÙ„ÙˆØ¨Ø§ÙŠØª).");
-    const parsed = parseProjectFile(fileText);
-    const importedImageProvider = { get: (assetId) => parsed.project.layers.some((layer) => layer.assetId === assetId) ? placeholder : null };
-    compileProject(parsed.project, importedImageProvider);
-    const parsedCharacterAnimation = compileCharacterTrack(parsed.characterTrack, parsed.project.durationMs);
-    aspectPreset = parsed.settings?.aspectPreset ?? inferAspectPreset(parsed.project.viewport.width, parsed.project.viewport.height);
-    fitMode = parsed.settings?.fitMode ?? "fit";
-    aspectSelect.value = aspectPreset;
-    fitSelect.value = fitMode;
-    timelineEditor.clearSelection();
-    stopPlayback();
-    if (audioPlayer) { try { audioPlayer.destroy(); } catch (error) { $("audioTimelineMessage").textContent = `ØªØ¹Ø°Ø± ØªÙ†Ø¸ÙŠÙ Ø§Ù„ØµÙˆØª Ø§Ù„Ù‚Ø¯ÙŠÙ…: ${errorText(error)}`; } }
-    for (const { url } of audioFiles.values()) if (url) URL.revokeObjectURL(url);
-    audioFiles.clear(); activeAudioAssetId = null;
-    // Legacy imports also start a new project; never reuse another project's cached assets.
-    localAssetFiles.clear(); sceneThumbnails.clear(); sceneExtraCharacterTracks.clear();
-    audioTracks = parsed.audioTracks; audioAssets = parsed.audioAssets; audioMasterVolume = parsed.audioMasterVolume;
-    visualEffectsTrack = parsed.visualEffectsTrack; visualEffectSelection = null;
-    audioClipSelection = null;
-    $("audioMasterVolume").value = String(audioMasterVolume);
-    $("audioFileName").textContent = audioAssets.length ? "Ø£Ø¹Ø¯ Ø§Ø®ØªÙŠØ§Ø± Ù…Ù„ÙØ§Øª Ø§Ù„ØµÙˆØª Ø§Ù„Ù…Ø±ØªØ¨Ø·Ø© Ø¨Ø§Ù„Ù…Ø´Ø±ÙˆØ¹ Ù…Ù† Ø§Ù„Ù‡Ø§ØªÙ" : "MP3 Â· M4A Â· AAC Â· WAV Â· OGG Â· WebM Â· Ø­ØªÙ‰ 20 MiB";
-    audioTimeline.clearSelection(); renderAudioInspector();
-    visualEffectsTimeline.clearSelection(); renderVisualEffectInspector();
-    project = parsed.project;
-    characterTrack = parsed.characterTrack;
-    characterAnimation = parsedCharacterAnimation;
-    selectedImageFile = null;
-    selectedImageDimensions = null;
-    currentFileInfo = null;
-    imageSource = placeholder;
-    sceneImageSources.clear();
-    const legacyAssetMap = new Map(parsed.project.layers.map((layer, index) => [layer.assetId, {
-      id: layer.assetId, kind: "image", name: parsed.image?.name ?? `legacy-image-${index + 1}.png`,
-      mimeType: parsed.image?.type || "image/png", size: parsed.image?.size ?? 0
-    }]));
-    for (const asset of parsed.audioAssets) legacyAssetMap.set(asset.id, { id: asset.id, kind: "audio", name: asset.name,
-      mimeType: asset.type, size: asset.size });
-    for (const id of parsedCharacterAnimation.frameAssets ?? []) if (!legacyAssetMap.has(id)) legacyAssetMap.set(id, {
-      id, kind: "image", name: `${id}.png`, mimeType: "image/png", size: 0
-    });
-    const legacySequence = createStudioSequenceV1({ viewport: parsed.project.viewport, assets: [...legacyAssetMap.values()], scenes: [{
-      id: "legacy-scene", project: parsed.project, audioTracks: parsed.audioTracks,
-      characterTracks: [parsed.characterTrack], visualEffectsTrack: parsed.visualEffectsTrack
-    }] });
-    await attachSequenceProject(createStudioSequenceEditor(legacySequence, { names: { "legacy-scene": "Ø§Ù„Ù…Ø´Ù‡Ø¯ 1" } }), makeLocalId("project"), {
-      "legacy-scene": { aspectPreset, fitMode }
-    });
-    const start = project.camera?.[0]?.value;
-    const end = project.camera?.at(-1)?.value;
-    $("duration").value = String(project.durationMs / 1000);
-    if (start && end) {
-      for (const [id, value] of [["startZoom", start.zoom], ["endZoom", end.zoom], ["startX", start.x], ["endX", end.x], ["startY", start.y], ["endY", end.y]]) $(id).value = String(value);
-    }
-    updateProject({ viewport: project.viewport });
-    imageName.textContent = parsed.image?.name ? `Ø£Ø¹Ø¯ Ø§Ø®ØªÙŠØ§Ø± Ø§Ù„ØµÙˆØ±Ø©: ${parsed.image.name}` : "Ø§Ø®ØªØ± Ø§Ù„ØµÙˆØ±Ø© Ù…Ù† Ø¬Ø¯ÙŠØ¯ Ù„Ø¹Ø±Ø¶ Ø§Ù„Ù…Ø¹Ø§ÙŠÙ†Ø©";
-    stopPlayback();
-    renderAt(0);
-    syncOutputs();
-    status.textContent = "ÙÙØªØ­ Ø§Ù„Ù…Ø´Ø±ÙˆØ¹Ø› Ø§Ø®ØªØ± Ø§Ù„ØµÙˆØ±Ø© Ø§Ù„Ù…Ø±ØªØ¨Ø·Ø© Ø¨Ù‡";
-    sequenceTimeMs = 0; renderSequenceOverview(); persistSequenceMetadata();
-    refreshExportControls();
-  } catch (error) { fail(error); }
-  finally { projectInput.value = ""; }
-});
-
-setEditorMode("simple");
-setEditorSection("motion");
-syncMotionTimeBounds();
-refreshMotionUndoButtons();
-updateProject({ viewport: project.viewport });
-timelineEditor.render();
-refreshCharacterTimeline();
-renderAt(0);
-refreshExportControls();
-renderSequenceOverview();
-syncIntegratedRange();
-void restoreMostRecentSequence();
-exportButton.addEventListener("click", () => { void exportVideoFile(); });
-cancelExportButton.addEventListener("click", () => cancelActiveExport("Ø£Ù„ØºÙ‰ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… Ø§Ù„ØªØ³Ø¬ÙŠÙ„."));
-tryWebmButton.addEventListener("click", () => {
-  exportFormat.value = "webm";
-  exportFormat.dispatchEvent(new Event("change", { bubbles: true }));
-});
-integratedProbeButton.addEventListener("click", () => { void probeIntegratedExport(); });
-integratedExportButton.addEventListener("click", () => { void exportIntegratedProject(); });
-for (const control of [integratedQuality, integratedFormat, integratedAudio, integratedMissingAudio, integratedFrom, integratedTo]) {
-  control.addEventListener("change", () => {
-    clearIntegratedResult();
-    integratedError.hidden = true;
-    integratedError.textContent = "";
-    integratedStatus.textContent = "ØªØºÙŠØ±Øª Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ø§Ù„ØªØµØ¯ÙŠØ±. Ø£Ø¹Ø¯ ÙØ­Øµ Ø§Ù„ØµÙŠØºØ© ÙˆØ§Ù„Ø¯Ù‚Ø© Ù‚Ø¨Ù„ Ø§Ù„Ø¨Ø¯Ø¡.";
-    refreshIntegratedControls();
-  });
-}
-for (const control of [exportFormat, exportDuration, exportQuality, exportAudioEnabled]) {
-  control.addEventListener("change", () => {
-    clearExportResult();
-    refreshExportControls();
-  });
-}
-window.addEventListener("pagehide", () => {
-  if (sequenceAutosaveTimer) clearTimeout(sequenceAutosaveTimer);
-  try { captureCurrentScene(); } catch { /* The current JSON remains available from the last valid edit. */ }
-  cancelActiveExport("ØºØ§Ø¯Ø±Øª Ø§Ù„ØµÙØ­Ø© Ø£Ø«Ù†Ø§Ø¡ Ø§Ù„ØªØµØ¯ÙŠØ±.");
-  audioRequest.begin();
-  pendingAudioRequest = null;
-  audioImportIntent = null;
-  stopSelectedAudioPreview();
-  try { audioPlayer?.destroy(); } catch { /* Browser is unloading; all local playback handles are being discarded. */ }
-  for (const { url } of audioFiles.values()) if (url) URL.revokeObjectURL(url);
-  audioFiles.clear();
-  if (exportVideoUrl) URL.revokeObjectURL(exportVideoUrl);
-  exportVideoUrl = null;
-  if (integratedVideoUrl) URL.revokeObjectURL(integratedVideoUrl);
-  integratedVideoUrl = null;
-});
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíç­úé:-jZ.¶›­–)Þ³V–×÷'B²W'&÷%FW‡BÂ6WDW‡÷'DW'&÷$ÖW76vRÒg&öÒ"â÷7GVF–òÖW'&÷'2æ§2#°¦–×÷'B²6ö×–ÆU&ö¦V7BÂ6×ÆTg&ÖRÂÆäW‡÷'BÂ&7FW$f÷%VÆ—G’Â&ö&TW‡÷'BÂ7F'DW‡÷'BÒg&öÒ$'Föâö6–æVÖF–2ÖVæv–æRöÖ÷F–öâ×7GVF–ò#°¦–×÷'B²7&VFU7GVF–õ6WVVæ6UcÒg&öÒ$'Föâö6–æVÖF–2ÖVæv–æRöÖ÷F–öâ×7GVF–ò#°¦–×÷'B²7&VFU&WVW7EFö¶VâÂÖ¶U&ö¦V7BÂÖ¶U&ö¦V7Df–ÆRÂ'6U&ö¦V7Df–ÆRÂ&W&U&ö¦V7EWFFRÂd”Uuõ%BÒg&öÒ"â÷7GVF–òÖÖöFVÂæ§3÷cÖÃv"Ö6†&7FW"Ó#°¦–×÷'B²FV6öFT–ÖvT&—FÖÒg&öÒ"â÷7GVF–òÖ–ÖvRæ§3÷cÖÃBÖfÆW‚Ó#°¦–×÷'B²DTdTÅEôõUEUEõd”Uuõ%BÂ–ÖvU&V7BÂ–æfW$7V7E&W6WBÂ&ö¦V7E6—¦Tf÷%&W6WBÂ6fU&Wf–Wu6—¦RÒg&öÒ"â÷7GVF–òÖF–ÖVç6–öç2æ§3÷cÖÃBÖfÆW‚Ó#°¦–×÷'B°¢U…õ%Eõ$ôd”ÄU2Â6†ö÷6TFVfVÇDf÷&ÖBÂ7&VFTW‡÷'DÆö6²Â7&VFU&V6÷&F–æu6W76–öâÂW7F–ÖFUf–FVô'—FW2À¢W‡÷'DGW&F–öä×2ÂW‡÷'Dg&ÖT6÷VçBÂW‡÷'Dg&ÖUF–ÖRÂW‡÷'Ef–Ww÷'Df÷"ÂW‡FVç6–öäf÷$Ö–ÖRÂ&ö¦V7Df÷%&7FW"Â&ö¦V7EF–ÖTBÀ¢66†VGVÆUFW7EVÇ6W2Â7W÷'FVD6æF–FFW0§Òg&öÒ"â÷7GVF–òÖW‡÷'BÖ6÷&Ræ§3÷cÖÃRÖW‡÷'BÓ#°¦–×÷'B²7&VFU7GVF–õF–ÖVÆ–æRÒg&öÒ"â÷7GVF–ò×F–ÖVÆ–æRæ§3÷cÖÃf"Ö6ÆVçWÓ#°¦–×÷'B²6ö×–ÆT6†&7FW%G&6²ÂÖ¶T6†&7FW%G&6²Òg&öÒ"â÷7GVF–òÖ6†&7FW"×G&6²æ§3÷cÖÃv"Ö6†&7FW"Ó#°¦–×÷'B²7&VFT6†&7FW%F–ÖVÆ–æRÒg&öÒ"â÷7GVF–òÖ6†&7FW"×F–ÖVÆ–æRæ§3÷cÖÃv"Ö6†&7FW"Ó#°¦–×÷'B²6ö×–ÆTVF–õG&6·2ÂÖ¶TVF–õG&6·2ÂFDVF–ô6Æ—ÂVF—DVF–ô6Æ—ÂFVÆWFTVF–ô6Æ—Â6WDVF–õG&6µföÇVÖRÂ6WDVF–õf—6VÖRÂfÆ–FFTVF–ôf–ÆRÂ&VDVF–ôGW&F–öâÒg&öÒ"â÷7GVF–òÖVF–òÖÖöFVÂæ§3÷cÖÃ†"ÖVF–ò×F–ÖVÆ–æRÓ#°¦–×÷'B²7&VFU7GVF–ôVF–õF–ÖVÆ–æRÒg&öÒ"â÷7GVF–òÖVF–ò×F–ÖVÆ–æRæ§3÷cÖÃ†"ÖVF–ò×F–ÖVÆ–æRÓ#°¦–×÷'B²7&VFT6–æVÖF–4VF–õÆ–W"Òg&öÒ"ââòââ÷7&2öVF–òö6–æVÖF–2ÖVF–òÖ6÷&Ræ§2#°¦–×÷'B²FEf—7VÄVffV7BÂFVÆWFUf—7VÄVffV7BÂVF—Ef—7VÄVffV7BÂÖ÷fUf—7VÄVffV7BÂÖ¶Uf—7VÄVffV7G5G&6²Â6ö×–ÆUf—7VÄVffV7G5G&6²Âd•5TÅôTddT5Eô4„ääTÅ2Âd•5TÅôTddT5EõE•U2Òg&öÒ"â÷7GVF–ò×f—7VÂÖVffV7G2ÖÖöFVÂæ§3÷cÖÃ–"ÖVffV7G2Ó#°¦–×÷'B²7&VFU7GVF–õf—7VÄVffV7G5F–ÖVÆ–æRÒg&öÒ"â÷7GVF–ò×f—7VÂÖVffV7G2×F–ÖVÆ–æRæ§3÷cÖÃ–"ÖVffV7G2Ó#°¦–×÷'B²G&u7GVF–õ66VæRÒg&öÒ"â÷7GVF–ò×66VæR×&VæFW&W"æ§3÷cÖÃ"Ö–çFVw&FVBÓ#°¦–×÷'B²7&VFU7GVF–õ6WVVæ6TVF—F÷"Â'6U7GVF–õ6WVVæ6Tf–ÆRÂ6W&–Æ—¦U7GVF–õ6WVVæ6Tf–ÆRÂ5ETD”õõ4UTTä4Uôd”ÄUôdõ$ÔBÒg&öÒ"â÷7GVF–ò×6WVVæ6RÖVF—F÷"æ§3÷cÖÃBÖ×VÇF—66VæRÓ#°¦–×÷'B²4ÔU$ôÔõD”ôåõ$U4UE2Â7&VFT6ÖW&Ö÷F–öå&ö¦V7BÒg&öÒ"â÷7GVF–òÖÖ÷F–öâ×&W6WG2æ§3÷cÖÃc×6Ö'BÖVF—F÷"Ó#°¦–×÷'B²7&VFUW'6—7FVçD76WE&Vv—7G'’Òg&öÒ"ââòââ÷6¶vW2öÖ÷F–öâ×7GVF–òö76WB×W'6—7FVæ6Ræ§2#°¦–×÷'B²÷Vä76WE7F÷&vRÒg&öÒ"ââòââ÷6¶vW2öÖ÷F–öâ×7GVF–òö76WB×7F÷&vRæ§2#°¦–×÷'B²&W&U7GVF–õ6WVVæ6TW‡÷'BÒg&öÒ"â÷7GVF–ò×6WVVæ6RÖW‡÷'Bæ§3÷cÖÃR×6WVVæ6RÖW‡÷'BÓ#°¦–×÷'B²7&VFU7GVF–õ6WVVæ6U'VçF–ÖRÂFV6öFU7GVF–õ6WVVæ6TVF–òÒg&öÒ"â÷7GVF–ò×6WVVæ6R×'VçF–ÖRæ§3÷cÖÃƒBÖ–çFVw&FVBÓ#° ¦6öç7BBÒ†–B’ÓâFö7VÖVçBævWDVÆVÖVçD'”–B†–B“°¦6öç7B7GVF–õ&ö÷BÒFö7VÖVçBçVW'•6VÆV7F÷"‚"ç7GVF–ò"“°¦ÆWB7F—fTVF—F÷%6V7F–öâÒ'66VæW2#° ¦gVæ7F–öâÖ÷VçD6ö×7Ev÷&·76R‚’°¢6öç7Bv÷&·76RÒ7GVF–õ&ö÷BçVW'•6VÆV7F÷"‚"çv÷&·76R"“°¢6öç7B&Wf–WrÒv÷&·76SòçVW'•6VÆV7F÷"‚"ç&Wf–Wr×æVÂ"“°¢6öç7B6öçG&öÇ2Òv÷&·76SòçVW'•6VÆV7F÷"‚"æ6öçG&öÇ2×æVÂ"“°¢–b‚v÷&·76RÇÂ&Wf–WrÇÂ6öçG&öÇ2’&WGW&ã°¢6öç7BæVÂÒ†æÖR’ÓâFö7VÖVçBçVW'•6VÆV7F÷"†¶FF×FööÂ×æVÃÒ"G¶æÖWÒ%Ö“°¢6öç7B&Wf–Wt†VF–ærÒ&Wf–WrçVW'•6VÆV7F÷"‚"ç&Wf–WrÖ†VF–ær"“°¢6öç7B7FvUw&Ò&Wf–WrçVW'•6VÆV7F÷"‚"ç7FvR×w&"“°¢6öç7BG&ç7÷'BÒ&Wf–WrçVW'•6VÆV7F÷"‚"çG&ç7÷'B"“°¢6öç7B66VæU6V7F–öâÒB‚'66VæU6V7F–öâ"“°¢6öç7B–ÖvU–6¶W"ÒB‚'&Wf–Wt–ÖvU–6¶W""“°¢6öç7B&ö¦V7D6&BÒ6öçG&öÇ2çVW'•6VÆV7F÷"‚"ç&ö¦V7BÖ6&B"“°¢6öç7B–ÖvTÆ&VÂÒ&ö¦V7D6&CòçVW'•6VÆV7F÷"‚&Æ&VÂæf–ÆR×–6¶W%¶f÷#Òv–ÖvT–çWBuÒ"“°¢–b†–ÖvTÆ&VÂ’–ÖvU–6¶W"æVæB†–ÖvTÆ&VÂÂB‚&–ÖvT–çWB"’“°¢–b‡&Wf–Wt†VF–ær’°¢6öç7BgVÆÇ67&VVâÒFö7VÖVçBæ7&VFTVÆVÖVçB‚&'WGFöâ"“°¢gVÆÇ67&VVâæ–BÒ&gVÆÇ67&VVå&Wf–Wt'WGFöâ#°¢gVÆÇ67&VVâçG—RÒ&'WGFöâ#°¢gVÆÇ67&VVâæ6Æ74æÖRÒ&gVÆÇ67&VVâÖ'WGFöâ#°¢gVÆÇ67&VVâç6WDGG&–'WFR‚&&–ÖÆ&VÂ"Â-˜]˜MŠŠ}˜M‹MŠ}‹MŠ’"“°¢gVÆÇ67&VVâæ–ææW$…DÔÂÒsÇ7frf–Wt&÷ƒÒ##B#B"&–Ö†–FFVãÒ'G'VR#ãÇF‚CÒ$Ó‚4ƒ7cVÓ2ÓVƒWcTÓ2gcVƒVÓ2ÓWcV‚ÓR"óãÂ÷7fsâs°¢&Wf–Wt†VF–æræVæB†gVÆÇ67&VVâ“°¢Ð¢B‚'&Wf–Wt6çf4†÷7B"’æVæB‡&Wf–Wt†VF–ærÂ7FvUw&“°¢B‚'&Wf–WuG&ç7÷'D†÷7B"’æVæB‡G&ç7÷'B“°¢6öç7B6ÕF–ÖVÆ–æRÒ&Wf–WrçVW'•6VÆV7F÷"‚"çF–ÖVÆ–æRÖ6&C¦æ÷B‚æ6†&7FW"×F–ÖVÆ–æRÖ6&B“¦æ÷B‚æVF–ò×F–ÖVÆ–æRÖ6&B“¦æ÷B‚çf—7VÂÖVffV7G2Ö6&B’"“°¢6öç7B6†&7FW%F–ÖVÆ–æRÒ&Wf–WrçVW'•6VÆV7F÷"‚"æ6†&7FW"×F–ÖVÆ–æRÖ6&B"“°¢6öç7BVF–õF–ÖVÆ–æUæVÂÒB‚&VF–õFööÇ56V7F–öâ"“°¢6öç7BVffV7G5F–ÖVÆ–æUæVÂÒB‚&VffV7G5FööÇ56V7F–öâ"“°¢6öç7BÖ÷F–öåæVÂÒæVÂ‚&Ö÷F–öâ"“°¢6öç7B6†&7FW%æVÂÒæVÂ‚&6†&7FW'2"“°¢6öç7B&ö¦V7EæVÂÒæVÂ‚'&ö¦V7B"“°¢6öç7BÖöFTæbÒFö7VÖVçBçVW'•6VÆV7F÷"‚"æVF—F÷"ÖÖöFRÖæb"“°¢6öç7BGfæ6VDÖ÷F–öâÒB‚'&öfW76–öæÄÖ÷F–öä6öçG&öÇ2"“°¢6öç7BGfæ6VDÖ÷F–öä6öçFVçBÒB‚&Gfæ6VDÖ÷F–öä6öçFVçB"“°¢Ö÷F–öåæVÂæVæB‚B‚&WFöÖF–4Ö÷F–öåæVÂ"’ÂB‚'6–×ÆTÖ÷F–öåæVÂ"’ÂGfæ6VDÖ÷F–öâ“°¢–b†6ÕF–ÖVÆ–æR’Gfæ6VDÖ÷F–öä6öçFVçBæVæB†6ÕF–ÖVÆ–æR“°¢–b†6†&7FW%F–ÖVÆ–æR’6†&7FW%æVÂæVæB†6†&7FW%F–ÖVÆ–æR“°¢6öç7B6&G2Ò²ââæ6öçG&öÇ2çVW'•6VÆV7F÷$ÆÂ‚#§66÷Râæ6öçG&öÂÖ6&B"•Ó°¢6öç7B¶F–ÖVç6–öç46&BÂGW&F–öä6&BÂ6ÖW&6&BÂÆVv7”W‡÷'D6&BÂ–çFVw&FVDW‡÷'D6&EÒÒ6&G2ç6Æ–6Rƒ“°¢–b‡66VæU6V7F–öâ’æVÂ‚'66VæW2"’æVæB‡66VæU6V7F–öâ“°¢6öç7B66VæU7G&—ÒB‚'&Wf–Wu66VæU7G&—"“°¢6öç7B66VæT6&G2ÒB‚'66VæUF‡VÖ&æ–Ç2"“°¢–b‡66VæU7G&—bb66VæT6&G2’°¢6öç7BFE66VæRÒFö7VÖVçBæ7&VFTVÆVÖVçB‚&'WGFöâ"“°¢FE66VæRæ–BÒ'&Wf–WtFE66VæT'WGFöâ#°¢FE66VæRçG—RÒ&'WGFöâ#°¢FE66VæRæ6Æ74æÖRÒ'&Wf–WrÖFB×66VæR#°¢FE66VæRç6WDGG&–'WFR‚&&–ÖÆ&VÂ"Â-Š]‹mŠ}˜Š’˜]‹M˜}Šò"“°¢FE66VæRæ–ææW$…DÔÂÒsÇ7frf–Wt&÷ƒÒ##B#B"&–Ö†–FFVãÒ'G'VR#ãÇF‚CÒ$Ó"WcDÓR&ƒB"óãÂ÷7fsãÇ7ãîûÈ²˜]‹M˜}ŠóÂ÷7ãâs°¢FE66VæRæFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â‚’ÓâB‚&FE66VæT'WGFöâ"’æ6Æ–6²‚’“°¢66VæU7G&—æVæB‡66VæT6&G2ÂFE66VæR“°¢Ð¢–b†VF–õF–ÖVÆ–æUæVÂ’æVÂ‚&VF–ò"’æVæB†VF–õF–ÖVÆ–æUæVÂ“°¢–b†VffV7G5F–ÖVÆ–æUæVÂ’æVÂ‚&VffV7G2"’æVæB†VffV7G5F–ÖVÆ–æUæVÂ“°¢–b†ÖöFTæb’&ö¦V7EæVÂç&WVæB†ÖöFTæb“°¢–b‡&ö¦V7D6&B’&ö¦V7EæVÂæVæB‡&ö¦V7D6&B“°¢6öç7BGfæ6VE&ö¦V7BÒFö7VÖVçBæ7&VFTVÆVÖVçB‚&FWF–Ç2"“°¢Gfæ6VE&ö¦V7Bæ–BÒ&Gfæ6VE&ö¦V7D÷F–öç2#°¢Gfæ6VE&ö¦V7Bæ6Æ74æÖRÒ&Gfæ6VBÖ÷F–öç2&ö¦V7BÖ÷F–öç2#°¢Gfæ6VE&ö¦V7Bæ–ææW$…DÔÂÒsÇ7VÖÖ'“íŠ]‹ŠýŠ}ŠýŠ}Š¢Š}˜M˜]‹M‹˜‹’Š}˜M˜]Š­˜-Šý˜]Š“Â÷7VÖÖ'“âs°¢f÷"†6öç7B6&Böb¶F–ÖVç6–öç46&BÂGW&F–öä6&BÂ6ÖW&6&EÒ’–b†6&B’Gfæ6VE&ö¦V7BæVæB†6&B“°¢–b†ÆVv7”W‡÷'D6&B’°¢6öç7BÆVv7’ÒFö7VÖVçBæ7&VFTVÆVÖVçB‚&FWF–Ç2"“°¢ÆVv7’æ–BÒ&ÆVv7”W‡÷'DFWF–Ç2#°¢ÆVv7’æ6Æ74æÖRÒ&Gfæ6VBÖ÷F–öç2#°¢ÆVv7’æ–ææW$…DÔÂÒsÇ7VÖÖ'“íŠ}˜MŠ­‹]Šý˜­‹Š}˜M˜-Šý˜­˜RÃSÂ÷7VÖÖ'“âs°¢ÆVv7’æVæB†ÆVv7”W‡÷'D6&B“°¢Gfæ6VE&ö¦V7BæVæB†ÆVv7’“°¢Ð¢–b†–çFVw&FVDW‡÷'D6&B’°¢–çFVw&FVDW‡÷'D6&BçVW'•6VÆV7F÷"‚&ƒ""’çFW‡D6öçFVçBÒ-Š­‹]Šý˜­‹Š}˜M˜˜­Šý˜­˜‚#°¢6öç7B†–çBÒ–çFVw&FVDW‡÷'D6&BçVW'•6VÆV7F÷"‚#§66÷Râæ†–çB"“°¢–b††–çB’†–çBçFW‡D6öçFVçBÒ-Š=˜m‹MŠb˜˜­Šý˜­˜‚˜]˜bŠ}˜M˜]‹M˜}ŠòŠ}˜MŠÝŠ}˜M˜¢˜]‹’Š}˜MŠÝ‹˜=Š’˜Š}˜M‹]˜Š¢˜Š}˜M˜]ŠMŠ½‹Š}Š¢â#°¢6öç7B÷F–öç2Ò–çFVw&FVDW‡÷'D6&BçVW'•6VÆV7F÷"‚#§66÷Râæ6öçG&öÂÖw&–B"“°¢–b†÷F–öç2’°¢6öç7BFWF–Ç2ÒFö7VÖVçBæ7&VFTVÆVÖVçB‚&FWF–Ç2"“°¢FWF–Ç2æ6Æ74æÖRÒ&Gfæ6VBÖ÷F–öç2W‡÷'BÖ÷F–öç2#°¢FWF–Ç2æ–ææW$…DÔÂÒsÇ7VÖÖ'“íŠí˜­Š}‹Š}Š¢Š}˜MŠÍ˜ŠýŠ’˜Š}˜M‹]˜­‹­Š’Š}˜M˜]Š­˜-Šý˜]Š“Â÷7VÖÖ'“âs°¢FWF–Ç2æVæB†÷F–öç2“°¢–çFVw&FVDW‡÷'D6&Bæ–ç6W'D&Vf÷&R†FWF–Ç2Â–çFVw&FVDW‡÷'D6&BçVW'•6VÆV7F÷"‚"æW‡÷'BÖ7F–öç2"’“°¢Ð¢&ö¦V7EæVÂæVæB†–çFVw&FVDW‡÷'D6&B“°¢Ð¢&ö¦V7EæVÂæVæB†Gfæ6VE&ö¦V7B“°¢6öçG&öÇ2ç&VÖ÷fR‚“°¢v÷&·76Rç&VÖ÷fR‚“°¢66VæU6V7F–öâçVW'•6VÆV7F÷"‚"æ76WBÖÆ–'&'’"“òç&VÖ÷fTGG&–'WFR‚&÷Vâ"“°¢Fö7VÖVçBçVW'•6VÆV7F÷"‚"ç7GVF–òÖfö÷FW""“òç&VÖ÷fR‚“°¢Fö7VÖVçBçVW'•6VÆV7F÷"‚"7&öfW76–öæÄÖ÷F–öä6öçG&öÇ2"’æ÷VâÒfÇ6S°§Ð¦Ö÷VçD6ö×7Ev÷&·76R‚“°¦6öç7B6çf2ÒB‚'7FvR"“°¦6öç7B6öçFW‡BÒ6çf2ævWD6öçFW‡B‚#&B"Â²Ç†¢fÇ6RÒ“°¦6öç7B–ÖvT–çWBÒB‚&–ÖvT–çWB"“°¦6öç7B&ö¦V7D–çWBÒB‚'&ö¦V7D–çWB"“°¦6öç7B6VV²ÒB‚'6VV²"“°¦6öç7BF–ÖVÆ–æTÆæRÒB‚'F–ÖVÆ–æTÆæR"“°¦6öç7BF–ÖVÆ–æU'VÆW"ÒB‚'F–ÖVÆ–æU'VÆW""“°¦6öç7BF–ÖVÆ–æUÆ–†VBÒB‚'F–ÖVÆ–æUÆ–†VB"“°¦6öç7BF–ÖVÆ–æT¶W–g&ÖW2ÒB‚'F–ÖVÆ–æT¶W–g&ÖW2"“°¦6öç7BF–ÖVÆ–æU6VÆV7F–öâÒB‚'F–ÖVÆ–æU6VÆV7F–öâ"“°¦6öç7BF–ÖVÆ–æTÖW76vRÒB‚'F–ÖVÆ–æTÖW76vR"“°¦6öç7BFD¶W–g&ÖT'WGFöâÒB‚&FD¶W–g&ÖT'WGFöâ"“°¦6öç7BFVÆWFT¶W–g&ÖT'WGFöâÒB‚&FVÆWFT¶W–g&ÖT'WGFöâ"“°¦6öç7B¶W–g&ÖTf–VÆG2Ò²ƒ¢B‚&¶W–g&ÖU‚"’Â“¢B‚&¶W–g&ÖU’"’Â¦ööÓ¢B‚&¶W–g&ÖU¦ööÒ"’Â&÷FF–öã¢B‚&¶W–g&ÖU&÷FF–öâ"’Ó°¦6öç7B7FGW2ÒB‚'7FGW2"“°¦6öç7BW'&÷$ÖW76vRÒB‚&W'&÷$ÖW76vR"“°¦6öç7B–ÖvTæÖRÒB‚&–ÖvTæÖR"“°¦6öç7BF–ÖU&VF÷WBÒB‚'F–ÖU&VF÷WB"“°¦6öç7BÆ•W6T'WGFöâÒB‚'Æ•W6T'WGFöâ"“°¦6öç7B7V7E6VÆV7BÒB‚&7V7E&W6WB"“°¦6öç7Bf—E6VÆV7BÒB‚&f—DÖöFR"“°¦6öç7B–ÖvU&WVW7BÒ7&VFU&WVW7EFö¶Vâ‚“°¦6öç7BVF–õ&WVW7BÒ7&VFU&WVW7EFö¶Vâ‚“°¦6öç7BW‡÷'DÆö6²Ò7&VFTW‡÷'DÆö6²‚“°¦6öç7BW‡÷'Df÷&ÖBÒB‚&W‡÷'Df÷&ÖB"“°¦6öç7BW‡÷'DGW&F–öâÒB‚&W‡÷'DGW&F–öâ"“°¦6öç7BW‡÷'EVÆ—G’ÒB‚&W‡÷'EVÆ—G’"“°¦6öç7BW‡÷'DVF–ôVæ&ÆVBÒB‚&W‡÷'DVF–ôVæ&ÆVB"“°¦6öç7BW‡÷'D'WGFöâÒB‚&W‡÷'D'WGFöâ"“°¦6öç7B6æ6VÄW‡÷'D'WGFöâÒB‚&6æ6VÄW‡÷'D'WGFöâ"“°¦6öç7BW‡÷'E7FGW2ÒB‚&W‡÷'E7FGW2"“°¦6öç7BW‡÷'E&öw&W72ÒB‚&W‡÷'E&öw&W72"“°¦6öç7BW‡÷'Ef–FVòÒB‚&W‡÷'Ef–FVò"“°¦6öç7BW‡÷'DF÷væÆöBÒB‚&W‡÷'DF÷væÆöB"“°¦6öç7BW‡÷'DÖWFFFÒB‚&W‡÷'DÖWFFF"“°¦6öç7BW‡÷'DW'&÷"ÒB‚&W‡÷'DW'&÷""“°¦6öç7BG'•vV&Ô'WGFöâÒB‚'G'•vV&Ô'WGFöâ"“°¦6öç7B–çFVw&FVEVÆ—G’ÒB‚&–çFVw&FVEVÆ—G’"“°¦6öç7B–çFVw&FVDf÷&ÖBÒB‚&–çFVw&FVDf÷&ÖB"“°¦6öç7B–çFVw&FVDVF–òÒB‚&–çFVw&FVDVF–ò"“°¦6öç7B–çFVw&FVDÖ—76–ætVF–òÒB‚&–çFVw&FVDÖ—76–ætVF–ò"“°¦6öç7B–çFVw&FVDg&öÒÒB‚&–çFVw&FVDg&öÒ"“°¦6öç7B–çFVw&FVEFòÒB‚&–çFVw&FVEFò"“°¦6öç7B–çFVw&FVE&ö&T'WGFöâÒB‚&–çFVw&FVE&ö&T'WGFöâ"“°¦6öç7B–çFVw&FVDW‡÷'D'WGFöâÒB‚&–çFVw&FVDW‡÷'D'WGFöâ"“°¦6öç7B–çFVw&FVE&öw&W72ÒB‚&–çFVw&FVE&öw&W72"“°¦6öç7B–çFVw&FVE7FGW2ÒB‚&–çFVw&FVE7FGW2"“°¦6öç7B–çFVw&FVDW'&÷"ÒB‚&–çFVw&FVDW'&÷""“°¦6öç7B–çFVw&FVEf–FVòÒB‚&–çFVw&FVEf–FVò"“°¦6öç7B–çFVw&FVDF÷væÆöBÒB‚&–çFVw&FVDF÷væÆöB"“°¦6öç7B–çFVw&FVDÖWFFFÒB‚&–çFVw&FVDÖWFFF"“°¦ÆWB7F—fTW‡÷'BÒçVÆÃ°¦ÆWBW‡÷'Ef–FVõW&ÂÒçVÆÃ°¦ÆWB–çFVw&FVEf–FVõW&ÂÒçVÆÃ°¦ÆWBW‡÷'D6&–Æ—G’Ò²×C¢µÒÂvV&Ó¢µÒÓ°¦6öç7B–çFVw&FVD6&–Æ—F–W2ÒæWrÖ‚“°¦ÆWBW‡÷'Df÷&ÖD–æ—F–Æ—¦VBÒfÇ6S°¦ÆWBVæF–æt–ÖvU&WVW7BÒçVÆÃ°¦ÆWBW‡÷'E7FGW4†5&W7VÇBÒfÇ6S° ¦ÆWB7V7E&W6WBÒ&÷&–v–æÂ#°¦ÆWBf—DÖöFRÒ&f—B#°¦ÆWB&Wf–Wuf–Ww÷'BÒ6fU&Wf–Wu6—¦R„DTdTÅEôõUEUEõd”Uuõ%Bçv–GF‚ÂDTdTÅEôõUEUEõd”Uuõ%Bæ†V–v‡B“°¦ÆWBÆ6V†öÆFW"ÒÖ¶UÆ6V†öÆFW"‡&Wf–Wuf–Ww÷'B“°¦ÆWB–ÖvU6÷W&6RÒÆ6V†öÆFW#°¦ÆWB6VÆV7FVD–ÖvTf–ÆRÒçVÆÃ°¦ÆWB6VÆV7FVD–ÖvTF–ÖVç6–öç2ÒçVÆÃ°¦ÆWB7W'&VçDf–ÆT–æfòÒçVÆÃ°¦ÆWB&ö¦V7BÒÖ¶U&ö¦V7B‡°¢GW&F–öä×3¢#Âf–Ww÷'C¢²ââäDTdTÅEôõUEUEõd”Uuõ%BÂg3¢d”Uuõ%Bæg2ÒÀ¢7F'E¦ööÓ¢ÂVæE¦ööÓ¢ã#RÂ7F'Eƒ¢ÂVæEƒ¢Â7F'E“¢ÂVæE“¢ §Ò“°¦ÆWBf—7VÄVffV7G5G&6²ÒÖ¶Uf—7VÄVffV7G5G&6²‚“°¦ÆWB7W'&VçD×2Ò°¦ÆWB—5Æ––ærÒfÇ6S°¦ÆWBW6VDBÒçVÆÃ°¦ÆWB&d–BÒ°¦ÆWBV–6´Ö÷F–öåVæFòÒçVÆÃ°¦ÆWB6öÖÖ—GF–æuV–6´Ö÷F–öâÒfÇ6S° ¦6çf2çv–GF‚Ò&Wf–Wuf–Ww÷'Bçv–GFƒ°¦6çf2æ†V–v‡BÒ&Wf–Wuf–Ww÷'Bæ†V–v‡C°¦6çf2ç7G–ÆRæ7V7E&F–òÒG·&Wf–Wuf–Ww÷'Bçv–GF‡ÒòG·&Wf–Wuf–Ww÷'Bæ†V–v‡GÖ° ¦6öç7B66VæT–ÖvU6÷W&6W2ÒæWrÖ‚“°¦6öç7B–ÖvU&÷f–FW"Ò²vWC¢†76WD–B’Óâ66VæT–ÖvU6÷W&6W2ævWB†76WD–B’óò‡&ö¦V7BæÆ–W'2ç6öÖR‚†Æ–W"’ÓâÆ–W"æ76WD–BÓÓÒ76WD–B’ò–ÖvU6÷W&6R¢çVÆÂ’Ó°¦ÆWB6ö×–ÆVC°¦ÆWBf—7VÄVffV7G46ö×–ÆVC°¦ÆWBF–ÖVÆ–æTVF—F÷"ÒçVÆÃ°¦ÆWB6†&7FW%G&6²ÒÖ¶T6†&7FW%G&6²‚“°¦ÆWB6†&7FW$æ–ÖF–öâÒ6ö×–ÆT6†&7FW%G&6²†6†&7FW%G&6²Â&ö¦V7BæGW&F–öä×2“°¦ÆWB6†&7FW%F–ÖVÆ–æRÒçVÆÃ°¦ÆWBVF–õG&6·2ÒÖ¶TVF–õG&6·2‚“°¦ÆWBVF–ô76WG2ÒµÓ°¦6öç7BVF–ôf–ÆW2ÒæWrÖ‚“°¦ÆWB7F—fTVF–ô76WD–BÒçVÆÃ°¦ÆWBVF–ô76WE6W&–ÂÒ°¦ÆWBVF–õÆ–W"ÒçVÆÃ°¦ÆWBVF–ô6ö×–ÆVBÒ6ö×–ÆTVF–õG&6·2†VF–õG&6·2Â&ö¦V7BæGW&F–öä×2“°¦ÆWBVF–ôÖ7FW%föÇVÖRÒ°¦ÆWBVF–ô6Æ—6VÆV7F–öâÒçVÆÃ°¦ÆWBVF–õF–ÖVÆ–æRÒçVÆÃ°¦ÆWBVæF–ætVF–õ&WVW7BÒçVÆÃ°¦ÆWBÖ–7&÷†öæT'WGFöâÒçVÆÃ°¦ÆWBÖ–7&÷†öæU6W76–öâÒçVÆÃ°¦ÆWBÖ–7&÷†öæU7F'F–ærÒfÇ6S°¦ÆWBÖ–7&÷†öæTf–æÆ—¦–ærÒfÇ6S°¦ÆWBÖ–7&÷†öæTÖWFW$g&ÖRÒ°¦ÆWBÖ–7&÷†öæTVÆ6VEF–ÖW"Ò°¦ÆWBVF–ô–×÷'D–çFVçBÒçVÆÃ°¦ÆWBVF–õ–6¶W$÷Væ–ærÒfÇ6S°¦ÆWBÖ–7&÷†öæU7F'GW6öçG&öÆÆW"ÒçVÆÃ°¦ÆWBÖ–7&÷†öæUvT†–F–ærÒfÇ6S°¦ÆWB6öÆôVF–õ&Wf–WrÒçVÆÃ°¦ÆWBÆ7DÖ–7&÷†öæTF–væ÷7F–2Ò²7FFS¢-˜M˜R˜­ŠŠýŠ2Š}˜MŠ­‹=ŠÍ˜­˜B"Ó°¦ÆWBf—7VÄVffV7G5F–ÖVÆ–æRÒçVÆÃ°¦ÆWBf—7VÄVffV7E6VÆV7F–öâÒçVÆÃ°¦6öç7BÖ¶TÆö6Ä–BÒ‡&Vf—‚’ÓâG·&Vf—‡ÒÒG¶vÆö&ÅF†—2æ7'—Fóòç&æFöÕUT”Còâ‚’óòG´FFRææ÷r‚—ÒÒG´ÖF‚ç&æFöÒ‚’çFõ7G&–ærƒ3b’ç6Æ–6Rƒ"—ÖÖ°¦6öç7B–æ—F–Ä–ÖvT76WBÒ²–C¢&ö¦V7BæÆ–W'5³Òæ76WD–BÂ¶–æC¢&–ÖvR"ÂæÖS¢&–ÖvR×Æ6V†öÆFW"çær"ÂÖ–ÖUG—S¢&–ÖvR÷ær"Â6—¦S¢Ó°¦6öç7B5U%$TåEõ$ô¤T5Eô´U’Ò''FöâÖÖ÷F–öâ×7GVF–òÖ7W'&VçB×&ö¦V7B#°¦gVæ7F–öâ&VE7F÷&VE&ö¦V7D–B‚’°¢G'’°¢6öç7B–BÒÆö6Å7F÷&vRævWD—FVÒ„5U%$TåEõ$ô¤T5Eô´U’“°¢&WGW&âG—Vöb–BÓÓÒ'7G&–ær"bbõå´Õ¦×£Ó•Õ´Õ¦×£Ó•òÕ×³Ãc7ÒB÷RçFW7B†–B’ò–B¢çVÆÃ°¢Ò6F6‚²&WGW&âçVÆÃ²Ð§Ð¦ÆWB&ö¦V7E7F÷&vT–BÒ&VE7F÷&VE&ö¦V7D–B‚’óòÖ¶TÆö6Ä–B‚'&ö¦V7B"“°¦6öç7BTD”õôEU$D”ôåôÔUDDDõ$Td•‚Ò''FöâÖÖ÷F–öâ×7GVF–òÖVF–òÖGW&F–öç3¢#°¦gVæ7F–öâ&VDVF–ôGW&F–öä†–çB†76WD–B’°¢G'’°¢6öç7BÖWFFFÒ¥4ôâç'6R†Æö6Å7F÷&vRævWD—FVÒ†G´TD”õôEU$D”ôåôÔUDDDõ$Td•‡ÒG·&ö¦V7E7F÷&vT–GÖ’ÇÂ'·Ò"“°¢6öç7BGW&F–öä×2ÒÖWFFFòå¶76WD–EÓ°¢–b„çVÖ&W"æ—56fT–çFVvW"†GW&F–öä×2’bbGW&F–öä×2âbbGW&F–öä×2ÃÒ5ócó’&WGW&âGW&F–öä×3°¢Ò6F6‚²ò¢7F÷&vRÖWFFF—2Gf—6÷'“²F†R'&÷w6W"FV6öFW"&VÖ–ç2WF†÷&—FF—fRv†Vâf–Æ&ÆRâ¢òÐ¢ÆWB–æfW'&VD×2Ò°¢f÷"†6öç7B66VæRöb6WVVæ6TVF—F÷#òç6WVVæ6Rç66VæW2óòµÒ’f÷"†6öç7BG&6²öb66VæRæVF–õG&6·2’°¢f÷"†6öç7B6Æ—öbG&6²æ6Æ—2’–b†6Æ—æ76WBÓÓÒ76WD–BbbçVÖ&W"æ—56fT–çFVvW"†6Æ—æGW&F–öä×2’’°¢–æfW'&VD×2ÒÖF‚æÖ‚†–æfW'&VD×2Â6Æ—æGW&F–öä×2“°¢Ð¢Ð¢&WGW&â–æfW'&VD×3°§Ð¦gVæ7F–öâ&VÖVÖ&W$VF–ôGW&F–öâ†76WD–BÂGW&F–öä×2’°¢6öç7BfÇVRÒÖF‚ç&÷VæB†GW&F–öä×2“°¢–b‡G—Vöb76WD–BÓÒ'7G&–ær"ÇÂçVÖ&W"æ—56fT–çFVvW"‡fÇVR’ÇÂfÇVRÃÒÇÂfÇVRâ5ócó’&WGW&âfÇ6S°¢G'’°¢6öç7B¶W’ÒG´TD”õôEU$D”ôåôÔUDDDõ$Td•‡ÒG·&ö¦V7E7F÷&vT–GÖ°¢ÆWBÖWFFFÒ·Ó°¢G'’²ÖWFFFÒ¥4ôâç'6R†Æö6Å7F÷&vRævWD—FVÒ†¶W’’ÇÂ'·Ò"“²Ò6F6‚²ò¢&WÆ6R6÷''WBGf—6÷'’ÖWFFFâ¢òÐ¢–b‚ÖWFFFÇÂG—VöbÖWFFFÓÒ&ö&¦V7B"ÇÂ'&’æ—4'&’†ÖWFFF’’ÖWFFFÒ·Ó°¢ÖWFFF¶76WD–EÒÒfÇVS°¢6öç7B¶W—2Òö&¦V7Bæ¶W—2†ÖWFFF“°¢f÷"†6öç7B7FÆT–Böb¶W—2ç6Æ–6RƒÂÖF‚æÖ‚ƒÂ¶W—2æÆVæwF‚Ò#Sb’’’FVÆWFRÖWFFF·7FÆT–EÓ°¢Æö6Å7F÷&vRç6WD—FVÒ†¶W’Â¥4ôâç7G&–æv–g’†ÖWFFF’“°¢&WGW&âG'VS°¢Ò6F6‚²&WGW&âfÇ6S²Ð§Ð¦ÆWB6WVVæ6TVF—F÷"Ò7&VFU7GVF–õ6WVVæ6TVF—F÷"†7&VFU7GVF–õ6WVVæ6Uc‡°¢f–Ww÷'C¢&ö¦V7Bçf–Ww÷'BÀ¢66VæW3¢·²–C¢'66VæRÓ"Â&ö¦V7BÂVF–õG&6·2Â6†&7FW%G&6·3¢¶6†&7FW%G&6µÒÂf—7VÄVffV7G5G&6²ÕÒÀ¢76WG3¢¶–æ—F–Ä–ÖvT76WEÐ§Ò’Â²æÖW3¢²'66VæRÓ#¢-Š}˜M˜]‹M˜}Šò"ÒÒ“°¦ÆWB7F—fU66VæT–BÒ6WVVæ6TVF—F÷"æ7F—fU66VæT–C°¦ÆWB6WVVæ6UF–ÖT×2Ò°¦ÆWB6WVVæ6TWö6„×2Ò°¦ÆWB6WVVæ6T&6T×2Ò°¦ÆWB76WE7F÷&vRÒçVÆÃ°¦ÆWBW'6—7FVçD76WG2ÒçVÆÃ°¦ÆWB76WE7F÷&vU7FGW2Ò-ŠÍŠ}‹˜Ò˜Š­ŠÒŠ}˜MŠ­Ší‹-˜­˜bŠ}˜M˜]ŠÝ˜M˜®(
+b#°¦6öç7BÆö6Ä76WDf–ÆW2ÒæWrÖ‚“°¦6öç7B66VæU6WGF–æw2ÒæWrÖ…µ¶7F—fU66VæT–BÂ²7V7E&W6WBÂf—DÖöFRÂ–ÖvS¢çVÆÂÕÕÒ“°¦6öç7B66VæUF‡VÖ&æ–Ç2ÒæWrÖ‚“°¦ÆWB66VæTÆöEFö¶VâÒ°¦ÆWBVæF–æu66VæT7F—fF–öâÒçVÆÃ°¦ÆWBW‡÷'E&W&–ærÒfÇ6S°¦ÆWB6WVVæ6TWF÷6fUF–ÖW"Ò°¦6öç7B76WE&VG’Ò÷Vä76WE7F÷&vR‚’çF†Vâ†7–æ27F÷&vRÓâ°¢76WE7F÷&vRÒ7F÷&vS°¢W'6—7FVçD76WG2Ò7&VFUW'6—7FVçD76WE&Vv—7G'’‡6WVVæ6TVF—F÷"ç6WVVæ6RÂ²7F÷&vRÂ&ö¦V7D–C¢&ö¦V7E7F÷&vT–BÒ“°¢v—BW'6—7FVçD76WG2ç&W7F÷&R‚“°¢76WE7F÷&vU7FGW2Ò-˜]ŠÝ˜˜‹Š’˜]ŠÝ˜M˜­˜½Šr‹˜M˜’˜}‹ŠrŠ}˜MŠÍ˜}Š}‹"#°¢&VæFW$76WDÆ–'&'’‚“°§Ò’æ6F6‚†W'&÷"Óâ°¢76WE7F÷&vU7FGW2ÒŠ}˜MŠ­Ší‹-˜­˜bŠ}˜M˜]ŠÝ˜M˜¢‹­˜­‹˜]Š­Š}ŠÓ¢G¶W'&÷%FW‡B†W'&÷"—Ö°¢B‚&76WDÆ–'&'”ÖW76vR"’çFW‡D6öçFVçBÒ76WE7F÷&vU7FGW3°¢&WGW&âçVÆÃ°§Ò“° ¦gVæ7F–öâ6ö×–ÆU&Wf–WtVffV7G2‡G&6²Â6÷W&6U&ö¦V7BÒ&ö¦V7BÂf–Ww÷'BÒ&Wf–Wuf–Ww÷'B’°¢&WGW&â6ö×–ÆUf—7VÄVffV7G5G&6²‡G&6²Â&ö¦V7Df÷%&7FW"‡6÷W&6U&ö¦V7BÂf–Ww÷'B’“°§Ð¦gVæ7F–öâvWD7W'&VçE66VæR‚’²&WGW&â6WVVæ6TVF—F÷"ç66VæW2æf–æB‡66VæRÓâ66VæRæ–BÓÓÒ7F—fU66VæT–B’óòçVÆÃ²Ð¦gVæ7F–öâÖ–7&÷†öæT÷W&F–öä7F—fR‚’°¢&WGW&âÖ–7&÷†öæU7F'F–ærÇÂÖ–7&÷†öæU6W76–öâÓÒçVÆÂÇÂÖ–7&÷†öæTf–æÆ—¦–ærÇÂVF–ô–×÷'D–çFVçBÓÒçVÆÂÇÂVæF–ætVF–õ&WVW7BÓÒçVÆÃ°§Ð¦gVæ7F–öâ7W'&VçE66VæU–ÆöB‚’°¢&WGW&â²–C¢7F—fU66VæT–BÂ&ö¦V7BÂVF–õG&6·2Â6†&7FW%G&6·3¢¶6†&7FW%G&6²Ââââ‡66VæTW‡G&6†&7FW%G&6·2ævWB†7F—fU66VæT–B’óòµÒ•ÒÂf—7VÄVffV7G5G&6²Ó°§Ð¦gVæ7F–öâ66VæT–ÖvU6WGF–æw2‡66VæT–BÒ7F—fU66VæT–B’°¢6öç7B7F÷&VBÒ66VæU6WGF–æw2ævWB‡66VæT–B“°¢–b‡7F÷&VCòæ7V7E&W6WBbb7F÷&VCòæf—DÖöFR’&WGW&â7F÷&VC°¢6öç7B66VæRÒ6WVVæ6TVF—F÷"ç6WVVæ6Rç66VæW2æf–æB†—FVÒÓâ—FVÒæ–BÓÓÒ66VæT–B“°¢&WGW&â²7V7E&W6WC¢66VæRò–æfW$7V7E&W6WB‡66VæRç&ö¦V7Bçf–Ww÷'Bçv–GF‚Â66VæRç&ö¦V7Bçf–Ww÷'Bæ†V–v‡B’¢7V7E&W6WBÂf—DÖöFS¢&f—B"Ó°§Ð¦6öç7B66VæTW‡G&6†&7FW%G&6·2ÒæWrÖ‚“°¦gVæ7F–öâ6GW&T7W'&VçE66VæR‡²&Vg&W6‚ÒfÇ6RÒÒ·Ò’°¢–b‚6WVVæ6TVF—F÷"’&WGW&âçVÆÃ°¢6öç7BæW‡BÒ6WVVæ6TVF—F÷"çWFFU66VæR†7F—fU66VæT–BÂ‚’Óâ7W'&VçE66VæU–ÆöB‚’“°¢fö–BW'6—7FVçD76WG3òç&WÆ6U6WVVæ6R†æW‡Bç6WVVæ6R’æ6F6‚†W'&÷"Óâ°¢B‚&76WDÆ–'&'”ÖW76vR"’çFW‡D6öçFVçBÒŠ­‹‹‹Š­ŠÝŠý˜­Š²˜˜}‹‹2Š}˜MŠ=‹]˜˜C¢G¶W'&÷%FW‡B†W'&÷"—Ö°¢Ò“°¢W'6—7E6WVVæ6TÖWFFF‚“°¢–b‡&Vg&W6‚’&VæFW%6WVVæ6T÷fW'f–Wr‚“°¢&WGW&âæW‡C°§Ð¦gVæ7F–öâ66†VGVÆU6WVVæ6TWF÷6fR‚’°¢–b‡6WVVæ6TWF÷6fUF–ÖW"’6ÆV%F–ÖV÷WB‡6WVVæ6TWF÷6fUF–ÖW"“°¢6WVVæ6TWF÷6fUF–ÖW"Ò6WEF–ÖV÷WB‚‚’Óâ°¢6WVVæ6TWF÷6fUF–ÖW"Ò°¢G'’²6GW&T7W'&VçE66VæR‚“²Ð¢6F6‚†W'&÷"’²B‚&76WDÆ–'&'”ÖW76vR"’çFW‡D6öçFVçBÒŠ­‹‹‹ŠÝ˜‹‚Š­‹Šý˜­˜MŠ}Š¢Š}˜M˜]‹M˜}Šó¢G¶W'&÷%FW‡B†W'&÷"—Ö²Ð¢ÒÂ#S“°§Ð¦7–æ2gVæ7F–öâVç7W&T76WE7F÷&vR‚’°¢v—B76WE&VG“°¢–b‚W'6—7FVçD76WG2’F‡&÷ræWrW'&÷"‚-Š}˜MŠ­Ší‹-˜­˜bŠ}˜M˜]ŠÝ˜M˜¢‹­˜­‹˜]Š­Š}ŠÒ˜˜¢˜}‹ŠrŠ}˜M˜]Š­‹]˜ŠÒâ"“°¢&WGW&âW'6—7FVçD76WG3°§Ð¦gVæ7F–öâÖ–ÖTf÷$f–ÆR†f–ÆR’°¢–b†f–ÆRçG—R’&WGW&âf–ÆRçG—RçFôÆ÷vW$66R‚“°¢6öç7BW‡BÒf–ÆRææÖRçFôÆ÷vW$66R‚’ç7Æ—B‚"â"’æB‚Ó“°¢&WGW&â‡²§s¢&–ÖvRö§Vr"Â§Vs¢&–ÖvRö§Vr"Âæs¢&–ÖvR÷ær"ÂvV'¢&–ÖvR÷vV'"Âf–c¢&–ÖvRöf–b"Âv–c¢&–ÖvRöv–b"À¢×3¢&VF–òö×Vr"ÂÓF¢&VF–òö×B"Â3¢&VF–òö2"Âvc¢&VF–ò÷vb"Âövs¢&VF–òöövr"Âöv¢&VF–òöövr"ÂvV&Ó¢&VF–ò÷vV&Ò"Ò•¶W‡EÒóò"#°§Ð¦gVæ7F–öâ6WVVæ6T76WDg&öÔf–ÆR†f–ÆRÂ–BÒÖ¶TÆö6Ä–B‚&76WB"’’°¢ÆWBÖ–ÖUG—RÒÖ–ÖTf÷$f–ÆR†f–ÆR“°¢6öç7B¶–æBÒÖ–ÖUG—Rç7F'G5v—F‚‚&–ÖvRò"’ò&–ÖvR"¢Ö–ÖUG—Rç7F'G5v—F‚‚&VF–òò"’ò&VF–ò"¢çVÆÃ°¢–b‚¶–æBÇÂçVÖ&W"æ—56fT–çFVvW"†f–ÆRç6—¦R’ÇÂf–ÆRç6—¦RÂÇÂf–ÆRç6—¦RâcB¢#B¢#B’°¢F‡&÷ræWrG—TW'&÷"‚-Š}ŠíŠ­‹‹]˜‹Š’Š=˜‚˜]˜M˜‹]˜Š¢‹]Š}˜MŠÝ˜½ŠrŠŠÝŠÍ˜R˜MŠr˜­Š­ŠÍŠ}˜‹"cBÖ”"â"“°¢Ð¢–b†¶–æBÓÓÒ&VF–ò"’Ö–ÖUG—RÒfÆ–FFTVF–ôf–ÆR†f–ÆR’æÖ–ÖS°¢&WGW&â²–BÂ¶–æBÂæÖS¢f–ÆRææÖRç6Æ–6RƒÂ#SR’ÂÖ–ÖUG—RÂ6—¦S¢f–ÆRç6—¦RÓ°§Ð¦7–æ2gVæ7F–öâ&Vv—7FW$76WDf–ÆR†f–ÆR’°¢v—B76WE&VG“°¢6öç7B&Vv—7G'’ÒW'6—7FVçD76WG3°¢6öç7B6æF–FFRÒ6WVVæ6T76WDg&öÔf–ÆR†f–ÆR“°¢òòÖF6†–ærÖWFFFÆöæRFöW2æ÷BW7F&Æ—6‚–FVçF–6Â76WB6öçFVçG2à¢ÆWBf÷VæC°¢f÷"†6öç7BW†—7F–æröb6WVVæ6TVF—F÷"ç6WVVæ6Ræ76WG2’°¢–b†W†—7F–æræ¶–æBÓÒ6æF–FFRæ¶–æBÇÂW†—7F–ærææÖRÓÒ6æF–FFRææÖRÇÀ¢W†—7F–æræÖ–ÖUG—RÓÒ6æF–FFRæÖ–ÖUG—RÇÂW†—7F–ærç6—¦RÓÒ6æF–FFRç6—¦R’6öçF–çVS°¢6öç7B&Wf–÷W2ÒvWD76WD&Æö"†W†—7F–æræ–B“°¢òò&W6W'fRW‡Æ–6—B&VÆ–æ¶–æröbâ–×÷'FVB76WBv†÷6R'—FW2&RÖ—76–ærà¢–b‚&Wf–÷W2’²f÷VæBÒW†—7F–æs²'&V³²Ð¢ÆWB–FVçF–6ÂÒG'VS°¢f÷"†ÆWBöfg6WBÒ²öfg6WBÂf–ÆRç6—¦S²öfg6WB³Ò#B¢#B’°¢6öç7BVæBÒÖF‚æÖ–â†f–ÆRç6—¦RÂöfg6WB²#B¢#B“°¢6öç7BÆVgBÒæWrV–çC„'&’†v—B&Wf–÷W2ç6Æ–6R†öfg6WBÂVæB’æ'&”'VffW"‚’“°¢6öç7B&–v‡BÒæWrV–çC„'&’†v—Bf–ÆRç6Æ–6R†öfg6WBÂVæB’æ'&”'VffW"‚’“°¢–b†ÆVgBæÆVæwF‚ÓÒ&–v‡BæÆVæwF‚ÇÂÆVgBæWfW'’‚‡fÇVRÂ–æFW‚’ÓâfÇVRÓÓÒ&–v‡E¶–æFW…Ò’’°¢–FVçF–6ÂÒfÇ6S°¢'&V³°¢Ð¢Ð¢–b†–FVçF–6Â’²f÷VæBÒW†—7F–æs²'&V³²Ð¢Ð¢6öç7B76WBÒf÷VæBóò6æF–FFS°¢6öç7BÆ–æ¶VDf–ÆRÒ†f–ÆRçG—RÇÂ""’çFôÆ÷vW$66R‚’ÓÓÒ6æF–FFRæÖ–ÖUG—Ròf–ÆR¢æWrf–ÆR…¶f–ÆUÒÂf–ÆRææÖRÂ²G—S¢6æF–FFRæÖ–ÖUG—RÒ“°¢–b‚f÷VæB’°¢6öç7BöÆE6WVVæ6RÒ6WVVæ6TVF—F÷"ç6WVVæ6S°¢6öç7BæW‡BÒ7&VFU7GVF–õ6WVVæ6Uc‡²f–Ww÷'C¢öÆE6WVVæ6Rçf–Ww÷'BÂ66VæW3¢öÆE6WVVæ6Rç66VæW2À¢76WG3¢²ââæöÆE6WVVæ6Ræ76WG2Â76WEÒÒ“°¢6WVVæ6TVF—F÷"ç&WÆ6U6WVVæ6R†æW‡B“°¢v—B&Vv—7G'“òç&WÆ6U6WVVæ6R†æW‡B“°¢Ð¢Æö6Ä76WDf–ÆW2ç6WB†76WBæ–BÂÆ–æ¶VDf–ÆR“°¢–b‡&Vv—7G'’bb&Vv—7G'’ævWB†76WBæ–B’’v—B&Vv—7G'’ç&VÆ–æ²†76WBæ–BÂÆ–æ¶VDf–ÆR“°¢&VæFW$76WDÆ–'&'’‚“°¢W'6—7E6WVVæ6TÖWFFF‚“°¢&WGW&â76WC°§Ð¦gVæ7F–öâvWD76WD&Æö"†–B’²&WGW&âW'6—7FVçD76WG3òævWB†–B’óòÆö6Ä76WDf–ÆW2ævWB†–B’óòçVÆÃ²Ð¦gVæ7F–öâ76WDÖWFFFFôVF–ò†76WB’°¢&WGW&â²–C¢76WBæ–BÂæÖS¢76WBææÖRÂG—S¢76WBæÖ–ÖUG—RÂ6—¦S¢76WBç6—¦RÓ°§Ð¦gVæ7F–öâW'6—7E6WVVæ6TÖWFFF‚’°¢G'’°¢6öç7B6WGF–æw4'•66VæRÒö&¦V7Bæg&öÔVçG&–W2‡6WVVæ6TVF—F÷"ç66VæW2æÖ‡66VæRÓâ°¢6öç7B6WGF–æw2Ò66VæT–ÖvU6WGF–æw2‡66VæRæ–B“°¢&WGW&â·66VæRæ–BÂ²7V7E&W6WC¢6WGF–æw2æ7V7E&W6WBÂf—DÖöFS¢6WGF–æw2æf—DÖöFRÕÓ°¢Ò’“°¢6öç7BFW‡BÒ6W&–Æ—¦U7GVF–õ6WVVæ6Tf–ÆR‡6WVVæ6TVF—F÷"Â²&ö¦V7D–C¢&ö¦V7E7F÷&vT–BÂ7V7E&W6WBÂf—DÖöFRÂVF–ôÖ7FW%föÇVÖRÂ66VæU6WGF–æw3¢6WGF–æw4'•66VæRÒ“°¢Æö6Å7F÷&vRç6WD—FVÒ†'FöâÖÖ÷F–öâ×7GVF–ò×6WVVæ6S¢G·&ö¦V7E7F÷&vT–GÖÂFW‡B“°¢òòV&Æ—6‚F†R7W'&VçB×&ö¦V7Bö–çFW"öæÇ’gFW"—G2ÖWFFF—26fVBà¢Æö6Å7F÷&vRç6WD—FVÒ„5U%$TåEõ$ô¤T5Eô´U’Â&ö¦V7E7F÷&vT–B“°¢Ò6F6‚†W'&÷"’°¢B‚&76WDÆ–'&'”ÖW76vR"’çFW‡D6öçFVçBÒŠ­‹‹‹ŠÝ˜‹‚Š˜­Š}˜mŠ}Š¢Š}˜MŠ­‹=˜M‹=˜B˜]ŠÝ˜M˜­˜½Šs¢G¶W'&÷%FW‡B†W'&÷"—Ö°¢Ð§Ð¦7–æ2gVæ7F–öâ&W7F÷&TÖ÷7E&V6VçE6WVVæ6R‚’°¢G'’°¢6öç7B–BÒ&VE7F÷&VE&ö¦V7D–B‚“°¢–b‚–B’&WGW&ã°¢6öç7BFW‡BÒÆö6Å7F÷&vRævWD—FVÒ†'FöâÖÖ÷F–öâ×7GVF–ò×6WVVæ6S¢G¶–GÖ“°¢–b‚FW‡B’&WGW&ã°¢6öç7BÆöFVBÒ'6U7GVF–õ6WVVæ6Tf–ÆR‡FW‡B“°¢7V7E&W6WBÒÆöFVBç6WGF–æw2æ7V7E&W6WC²f—DÖöFRÒÆöFVBç6WGF–æw2æf—DÖöFS²VF–ôÖ7FW%föÇVÖRÒÆöFVBæVF–ôÖ7FW%föÇVÖS°¢7V7E6VÆV7BçfÇVRÒ7V7E&W6WC²f—E6VÆV7BçfÇVRÒf—DÖöFS²B‚&VF–ôÖ7FW%föÇVÖR"’çfÇVRÒ7G&–ær†VF–ôÖ7FW%föÇVÖR“°¢v—BGF6…6WVVæ6U&ö¦V7B†ÆöFVBæVF—F÷"ÂÆöFVBç&ö¦V7D–BÂÆöFVBç66VæU6WGF–æw2“°¢v—B7F—fFU7GVF–õ66VæR‡6WVVæ6TVF—F÷"ç66VæW5³Òæ–BÂ²vÆö&ÅF–ÖT×3¢ÂÆö6ÅF–ÖT×3¢Ò“°¢B‚&76WDÆ–'&'”ÖW76vR"’çFW‡D6öçFVçBÒ-Š}‹=Š­˜ý‹˜­ŠòŠ­‹=˜M‹=˜BŠ}˜M˜]‹M‹˜‹’˜]˜b˜}‹ŠrŠ}˜MŠÍ˜}Š}‹"âŠ}˜MŠ=‹]˜˜B‹­˜­‹Š}˜M˜]Š­Š}ŠÝŠ’Š­ŠÝŠ­Š}ŠÂŠ]˜M˜’Š]‹Š}ŠýŠ’‹Š‹râ#°¢Ò6F6‚†W'&÷"’²B‚&76WDÆ–'&'”ÖW76vR"’çFW‡D6öçFVçBÒŠ­‹‹‹Š}‹=Š­‹Š}ŠýŠ’Š}˜MŠ­‹=˜M‹=˜BŠ}˜M˜]ŠÝ˜M˜£¢G¶W'&÷%FW‡B†W'&÷"—Ö²Ð§Ð¦7–æ2gVæ7F–öâGF6…6WVVæ6U&ö¦V7B†æW‡DVF—F÷"ÂæW‡E&ö¦V7D–BÂæW‡E66VæU6WGF–æw2ÒçVÆÂ’°¢v—B76WE&VG“°¢6WVVæ6TVF—F÷"ÒæW‡DVF—F÷#°¢&ö¦V7E7F÷&vT–BÒæW‡E&ö¦V7D–C°¢7F—fU66VæT–BÒ6WVVæ6TVF—F÷"æ7F—fU66VæT–C°¢66VæU6WGF–æw2æ6ÆV"‚“°¢f÷"†6öç7B66VæRöb6WVVæ6TVF—F÷"ç66VæW2’°¢6öç7B7F÷&VBÒæW‡E66VæU6WGF–æw3òå·66VæRæ–EÓ°¢66VæU6WGF–æw2ç6WB‡66VæRæ–BÂ7F÷&V@¢ò²ââç7F÷&VBÂ–ÖvS¢çVÆÂÐ¢¢²7V7E&W6WC¢–æfW$7V7E&W6WB‡66VæRç&ö¦V7Bçf–Ww÷'Bçv–GF‚Â66VæRç&ö¦V7Bçf–Ww÷'Bæ†V–v‡B’Âf—DÖöFS¢f—DÖöFRÂ–ÖvS¢çVÆÂÒ“°¢Ð¢W'6—7FVçD76WG2Ò76WE7F÷&vRò7&VFUW'6—7FVçD76WE&Vv—7G'’‡6WVVæ6TVF—F÷"ç6WVVæ6RÂ²7F÷&vS¢76WE7F÷&vRÂ&ö¦V7D–C¢&ö¦V7E7F÷&vT–BÒ’¢çVÆÃ°¢–b‡W'6—7FVçD76WG2’°¢6öç7BÖ—76–ærÒv—BW'6—7FVçD76WG2ç&W7F÷&R‚“°¢B‚&76WDÆ–'&'”ÖW76vR"’çFW‡D6öçFVçBÒÖ—76–æræÆVæwF€¢òŠ­˜R˜Š­ŠÒŠ}˜M˜]‹M‹˜‹’âŠ=‹Šò‹Š‹rG¶Ö—76–æræÆVæwF‡ÒŠ=‹]˜B˜]˜b˜]˜=Š­ŠŠ’˜}‹ŠrŠ}˜MŠÍ˜}Š}‹"æ ¢¢-Š­˜R˜Š­ŠÒŠ}˜M˜]‹M‹˜‹’˜Š}‹=Š­‹Š}ŠýŠ’Š}˜MŠ=‹]˜˜BŠ}˜M˜]ŠÝ˜M˜­Š’â#°¢Ð¢&VæFW%6WVVæ6T÷fW'f–Wr‚“°¢W'6—7E6WVVæ6TÖWFFF‚“°§Ð ¦gVæ7F–öâÖ¶UÆ6V†öÆFW"‡6—¦R’°¢6öç7B7W&f6RÒFö7VÖVçBæ7&VFTVÆVÖVçB‚&6çf2"“°¢7W&f6Rçv–GF‚Ò6—¦Rçv–GFƒ°¢7W&f6Ræ†V–v‡BÒ6—¦Ræ†V–v‡C°¢6öç7B7G‚Ò7W&f6RævWD6öçFW‡B‚#&B"“°¢7G‚æf–ÆÅ7G–ÆRÒ"3sƒ##°¢7G‚æf–ÆÅ&V7BƒÂÂ6—¦Rçv–GF‚Â6—¦Ræ†V–v‡B“°¢7G‚æf–ÆÅ7G–ÆRÒ"6Sv&Cc’#°¢7G‚çFW‡DÆ–vâÒ&6VçFW"#°¢7G‚æföçBÒ&öÆBG´ÖF‚æÖ‚ƒbÂÖF‚æÖ–âƒ3‚Â6—¦Rçv–GF‚ò‚’—×‚7—7FVÒ×V’Â6ç2×6W&–f°¢7G‚æf–ÆÅFW‡B‚-Š}ŠíŠ­‹‹]˜‹Š’˜M˜MŠŠýŠ"Â6—¦Rçv–GF‚ò"Â6—¦Ræ†V–v‡Bò"“°¢&WGW&â7W&f6S°§Ð ¦gVæ7F–öâf–Â†W'&÷"’°¢W'&÷$ÖW76vRçFW‡D6öçFVçBÒW'&÷%FW‡B†W'&÷"“°¢W'&÷$ÖW76vRæ†–FFVâÒfÇ6S°¢7FGW2çFW‡D6öçFVçBÒ-Š­‹‹™‹Š¢Š}˜M‹˜]˜M˜­Š’#°§Ð¦gVæ7F–öâ6ÆV$f–ÇW&R‚’²W'&÷$ÖW76vRæ†–FFVâÒG'VS²W'&÷$ÖW76vRçFW‡D6öçFVçBÒ"#²Ð¦gVæ7F–öâf÷&ÖEF–ÖR†×2’°¢6öç7B6V6öæG2ÒÖF‚æÖ‚ƒÂ×2’ò°¢&WGW&âGµ7G&–ær„ÖF‚æfÆö÷"‡6V6öæG2òc’’çE7F'Bƒ"Â#"—Ó¢G²‡6V6öæG2Rc’çFôf—†VBƒ"’çE7F'BƒRÂ#"—Ö°§Ð¢òò&÷F‚W‡÷'BF‡2÷vâf–FVòVÆVÖVçBæBâö&¦V7BU$Ââ&VÆV6RF†VÒ6öç6—7FVçFÇ’à¦gVæ7F–öâ&W6WDW‡÷'DÖVF–‡f–FVòÂF÷væÆöBÂö&¦V7EW&Â’°¢f–FVòçW6R‚“°¢f–FVòç&VÖ÷fTGG&–'WFR‚'7&2"“°¢f–FVòæÆöB‚“°¢f–FVòæ†–FFVâÒG'VS°¢F÷væÆöBæ†–FFVâÒG'VS°¢F÷væÆöBç&VÖ÷fTGG&–'WFR‚&‡&Vb"“°¢–b†ö&¦V7EW&Â’U$Âç&Wfö¶Tö&¦V7EU$Â†ö&¦V7EW&Â“°¢&WGW&âçVÆÃ°§Ð¦gVæ7F–öâ6ÆV$W‡÷'E&W7VÇB‚’°¢W‡÷'E7FGW4†5&W7VÇBÒfÇ6S°¢W‡÷'DW'&÷"æ†–FFVâÒG'VS°¢W‡÷'DW'&÷"çFW‡D6öçFVçBÒ"#°¢G'•vV&Ô'WGFöâæ†–FFVâÒG'VS°¢W‡÷'Ef–FVõW&ÂÒ&W6WDW‡÷'DÖVF–†W‡÷'Ef–FVòÂW‡÷'DF÷væÆöBÂW‡÷'Ef–FVõW&Â“°¢W‡÷'DÖWFFFçFW‡D6öçFVçBÒ-˜M˜R˜­˜ý˜m‹MŠ2˜˜­Šý˜­˜‚Š‹Šòâ#°¢W‡÷'E&öw&W72çfÇVRÒ°§Ð¦gVæ7F–öâ6ÆV$–çFVw&FVE&W7VÇB‚’°¢–çFVw&FVDW'&÷"æ†–FFVâÒG'VS°¢–çFVw&FVDW'&÷"çFW‡D6öçFVçBÒ"#°¢–çFVw&FVE&öw&W72çfÇVRÒ°¢–çFVw&FVEf–FVõW&ÂÒ&W6WDW‡÷'DÖVF–†–çFVw&FVEf–FVòÂ–çFVw&FVDF÷væÆöBÂ–çFVw&FVEf–FVõW&Â“°¢–çFVw&FVDÖWFFFçFW‡D6öçFVçBÒ-˜M˜R˜­˜ý˜m‹MŠ2Š­‹]Šý˜­‹˜]Š­˜=Š}˜]˜BŠ‹Šòâ#°§Ð¦gVæ7F–öâ6æ6VÄ7F—fTW‡÷'B‡&V6öâÒ-Š­‹­˜­‹Š}˜M˜]‹M‹˜‹’Š=Š½˜mŠ}ŠŠ}˜MŠ­‹]Šý˜­‹â"’°¢6öç7B'Vææ–ærÒ7F—fTW‡÷'C°¢–b‚'Vææ–ær’&WGW&ã°¢6öç7B&÷'DW'&÷"ÒæWrDôÔW†6WF–öâ‡&V6öâÂ$&÷'DW'&÷""“°¢'Vææ–æræ6öçG&öÆÆW"æ&÷'B†&÷'DW'&÷"“°¢'Vææ–ærç6W76–öãòæ6æ6VÂ†&÷'DW'&÷"“°¢–b‡'Vææ–ærç&d–B’6æ6VÄæ–ÖF–öäg&ÖR‡'Vææ–ærç&d–B“°¢–b‡'Vææ–ærç7F÷F–ÖW"’6ÆV%F–ÖV÷WB‡'Vææ–ærç7F÷F–ÖW"“°¢–b‡'Vææ–æræ¶–æBÓÓÒ&–çFVw&FVB"’–çFVw&FVE7FGW2çFW‡D6öçFVçBÒ-ŠÍŠ}‹˜ÒŠ]˜M‹­Š}ŠŠ}˜MŠ­‹]Šý˜­‹˜Š­˜m‹˜­˜˜]˜Š}‹ŠòŠ}˜M‹]˜Š¢˜Š}˜M‹]˜‹Šž(
+b#°¢VÇ6RW‡÷'E7FGW2çFW‡D6öçFVçBÒ-ŠÍŠ}‹˜ÒŠ]˜­˜-Š}˜Š}˜MŠ­‹=ŠÍ˜­˜B˜Š­˜m‹˜­˜Š}˜M˜]˜Š}‹Šþ(
+b#°§Ð¦gVæ7F–öâ–çfÆ–FFTW‡÷'B‡&V6öâ’°¢6æ6VÄ7F—fTW‡÷'B‡&V6öâ“°¢6ÆV$W‡÷'E&W7VÇB‚“°¢6ÆV$–çFVw&FVE&W7VÇB‚“°¢&Vg&W6„W‡÷'D6öçG&öÇ2‚“°§Ð¦gVæ7F–öâ&Vg&W6„W‡÷'D6öçG&öÇ2‚’°¢7GVF–õ&ö÷BæFF6WBæ–ÖvU&VG’Ò7G&–ær„&ööÆVâ†7W'&VçDf–ÆT–æfò’“°¢6öç7B&V6÷&FW$6Æ72ÒG—VöbÖVF–&V6÷&FW"ÓÓÒ&gVæ7F–öâ"òÖVF–&V6÷&FW"¢çVÆÃ°¢6öç7B†4ÖVF–&V6÷&FW"Ò&ööÆVâ…&V6÷&FW$6Æ72bbG—Vöb6çf2æ6GW&U7G&VÒÓÓÒ&gVæ7F–öâ"“°¢W‡÷'D6&–Æ—G’Ò°¢×C¢†4ÖVF–&V6÷&FW"ò7W÷'FVD6æF–FFW2…&V6÷&FW$6Æ72Â&×B"’¢µÒÀ¢vV&Ó¢†4ÖVF–&V6÷&FW"ò7W÷'FVD6æF–FFW2…&V6÷&FW$6Æ72Â'vV&Ò"’¢µÐ¢Ó°¢f÷"†6öç7Bf÷&ÖBöb²&×B"Â'vV&Ò%Ò’°¢6öç7B÷F–öâÒW‡÷'Df÷&ÖBçVW'•6VÆV7F÷"†÷F–öå·fÇVSÒ"G¶f÷&ÖGÒ%Ö“°¢÷F–öâæF—6&ÆVBÒW‡÷'D6&–Æ—G•¶f÷&ÖEÒæÆVæwF‚ÓÓÒ°¢÷F–öâçFW‡D6öçFVçBÒG¶f÷&ÖBçFõWW$66R‚—ÒG¶÷F–öâæF—6&ÆVBò"+r‹­˜­‹˜]Šý‹˜˜R"¢"+r˜]Š­Š}ŠÒ'Ö°¢Ð¢6öç7B&VfW'&VBÒ6†ö÷6TFVfVÇDf÷&ÖB…&V6÷&FW$6Æ72“°¢–b‡&VfW'&VBbb‚W‡÷'Df÷&ÖD–æ—F–Æ—¦VBÇÂW‡÷'D6&–Æ—G•¶W‡÷'Df÷&ÖBçfÇVUÓòæÆVæwF‚ÓÓÒ’’W‡÷'Df÷&ÖBçfÇVRÒ&VfW'&VC°¢W‡÷'Df÷&ÖD–æ—F–Æ—¦VBÒG'VS°¢6öç7Bf–Æ&ÆRÒ&ööÆVâ‡&VfW'&VB“°¢6öç7B&V6÷&F–æt&Æö6¶VBÒÖ–7&÷†öæT÷W&F–öä7F—fR‚“°¢W‡÷'D'WGFöâæF—6&ÆVBÒf–Æ&ÆRÇÂ7W'&VçDf–ÆT–æfòÇÂ&ööÆVâ†7F—fTW‡÷'B’ÇÂ&V6÷&F–æt&Æö6¶VBÇÂVæF–æt–ÖvU&WVW7BÓÒçVÆÂÇÂVæF–ætVF–õ&WVW7BÓÒçVÆÃ°¢W‡÷'Df÷&ÖBæF—6&ÆVBÒ&ööÆVâ†7F—fTW‡÷'BÇÂ&V6÷&F–æt&Æö6¶VB“°¢–b‚W‡÷'E7FGW4†5&W7VÇBbb7F—fTW‡÷'B’°¢W‡÷'E7FGW2çFW‡D6öçFVçBÒ†4ÖVF–&V6÷&FW ¢ò-Š}˜MŠ­‹]Šý˜­‹‹­˜­‹˜]Š­Š}ŠÓ¢˜}‹ŠrŠ}˜M˜]Š­‹]˜ŠÒ˜MŠr˜­˜˜‹ÖVF–&V6÷&FW"˜„6çf26GW&U7G&VÒâ ¢¢f–Æ&ÆP¢ò˜ŠÝ‹RÖVF–&V6÷&FW#¢ÕBG¶W‡÷'D6&–Æ—G’æ×BæÆVæwF‚ò-˜]Šý‹˜˜R"¢-‹­˜­‹˜]Šý‹˜˜R'ÝˆÂvV$ÒG¶W‡÷'D6&–Æ—G’çvV&ÒæÆVæwF‚ò-˜]Šý‹˜˜R"¢-‹­˜­‹˜]Šý‹˜˜R'Òâ˜-Šò˜­‹˜‹bŠ}˜MŠÍ˜}Š}‹"ŠŠýŠŠ}˜MŠ­‹=ŠÍ˜­˜B‹‹­˜RŠ}˜M˜ŠÝ‹Ræ ¢¢-˜MŠr˜­Šý‹˜R˜}‹ŠrŠ}˜M˜]Š­‹]˜ŠÒvV$Ò˜˜MŠrÕB‹Š‹ÖVF–&V6÷&FW"â#°¢Ð¢&Vg&W6„–çFVw&FVD6öçG&öÇ2‚“°§Ð¦gVæ7F–öâ–çFVw&FVE&7FW"‚’°¢&WGW&â&7FW$f÷%VÆ—G’‡&ö¦V7Bçf–Ww÷'BÂ–çFVw&FVEVÆ—G’çfÇVR“°§Ð¦gVæ7F–öâ–çFVw&FVD6&–Æ—G”¶W’‚’°¢6öç7B&7FW"Ò–çFVw&FVE&7FW"‚“°¢&WGW&âG·&7FW"çv–GF‡×‚G·&7FW"æ†V–v‡GÓ¢G·&ö¦V7Bçf–Ww÷'Bæg7Ó¢G¶–çFVw&FVDVF–òçfÇVWÓ¢G¶–çFVw&FVDf÷&ÖBçfÇVWÖ°§Ð¦gVæ7F–öâ&Vg&W6„–çFVw&FVD6öçG&öÇ2‚’°¢ÆWB†5fW&–f–VBÒfÇ6S°¢G'’²†5fW&–f–VBÒvWEfW&–f–VD–çFVw&FVD6&–Æ—F–W2‚’æÆVæwF‚â²Ð¢6F6‚²†5fW&–f–VBÒfÇ6S²Ð¢6öç7B&Æö6¶VBÒ&ööÆVâ†7F—fTW‡÷'BÇÂÖ–7&÷†öæT÷W&F–öä7F—fR‚’ÇÂVæF–æt–ÖvU&WVW7BÓÒçVÆÂÇÂVæF–ætVF–õ&WV]úß®­¢G§²ÚîÆ­y×6–öâç&V6÷&FW"ç7FFRÓÓÒ'&V6÷&F–ær"’°¢Ö–7&÷†öæU6W76–öâç7F÷&WVW7FVDBÒW&f÷&Öæ6Rææ÷r‚“°¢G'’²Ö–7&÷†öæU6W76–öâç&V6÷&FW"ç7F÷‚“²Ð¢6F6‚†W'&÷"’²B‚&VF–õF–ÖVÆ–æTÖW76vR"’çFW‡D6öçFVçBÒŠ­‹‹‹Š]˜­˜-Š}˜Š}˜MŠ­‹=ŠÍ˜­˜C¢G¶W'&÷%FW‡B†W'&÷"—Ö²Ð¢Ð¢&WGW&ã°¢Ð¢–b†Ö–7&÷†öæU7F'F–ærÇÂÖ–7&÷†öæTf–æÆ—¦–ærÇÂ7F—fTW‡÷'BÇÂVæF–ætVF–õ&WVW7BÓÒçVÆÂ’&WGW&ã°¢6öç7BG&6²ÒVF–õG&6·2æf–æB†—FVÒÓâ—FVÒçG—RÓÓÒB‚&VF–õG&6µG—R"’çfÇVR“°¢–b‚G&6²’²B‚&VF–õF–ÖVÆ–æTÖW76vR"’çFW‡D6öçFVçBÒ-Š}ŠíŠ­‹˜]‹=Š}‹˜½Šr‹]˜Š­˜­˜½Šr˜-Š˜BŠ}˜MŠ­‹=ŠÍ˜­˜Bâ#²&WGW&ã²Ð¢–b†7W'&VçD×2ãÒ&ö¦V7BæGW&F–öä×2’²B‚&VF–õF–ÖVÆ–æTÖW76vR"’çFW‡D6öçFVçBÒ-ŠÝ‹™˜2Š}˜M˜]ŠM‹M‹Š]˜M˜’ŠýŠ}Ší˜B˜]ŠýŠ’Š}˜M˜]‹M˜}Šò˜-Š˜BŠ}˜MŠ­‹=ŠÍ˜­˜Bâ#²&WGW&ã²Ð¢Ö–7&÷†öæU7F'F–ærÒG'VS°¢Ö–7&÷†öæUvT†–F–ærÒfÇ6S°¢6öç7B7F'GW6öçG&öÆÆW"ÒæWr&÷'D6öçG&öÆÆW"‚“°¢Ö–7&÷†öæU7F'GW6öçG&öÆÆW"Ò7F'GW6öçG&öÆÆW#°¢Æ7DÖ–7&÷†öæTF–væ÷7F–2Ò²7FFS¢-‹}˜MŠ‚Š]‹˜bŠ}˜M˜]˜­˜=‹˜˜˜˜b"Â7F'FVDC¢æWrFFR‚’çFô•4õ7G&–ær‚’Ó°¢7F÷Æ–&6²‚“°¢&Vg&W6„Ö–7&÷†öæT'W7”6öçG&öÇ2‚“°¢ÆWB7G&VÓ°¢ÆWB&V6÷&FW#°¢ÆWB6W76–öâÒçVÆÃ°¢G'’°¢–b‚—56V7W&T6öçFW‡BÇÂæf–vF÷"æÖVF–FWf–6W3òævWEW6W$ÖVF–ÇÂG—VöbÖVF–&V6÷&FW"ÓÒ&gVæ7F–öâ"’°¢F‡&÷ræWrW'&÷"‚-Š}˜M˜]˜­˜=‹˜˜˜˜b˜­Š­‹}˜MŠ‚…EE2Š=˜‚vV%f–Wr˜­Š­˜­ŠÒvWEW6W$ÖVF–Š‹]˜MŠ}ŠÝ˜­Š’Š-˜]˜mŠ’âŠ}˜Š­ŠÒ‹Š}Š‹r…EE2Š=˜‚Š}‹=Š­˜‹Šò˜]˜M˜˜½Šr‹]˜Š­˜­˜½Šrâ"“°¢Ð¢òò&WVW7B6GW&R–ÖÖVF–FVÇ’–ç6–FRF†RW6W"vW7GW&RâVF–ô6öçFW‡B—2÷F–öæÀ¢òòÖWFW&–æræB×W7BæWfW"vFRÖ–7&÷†öæR6GW&R÷"76WB–ç6W'F–öâà¢7G&VÒÒv—B&WVW7DÖ–7&÷†öæUv—F…F–ÖV÷WBƒ3Â7F'GW6öçG&öÆÆW"ç6–væÂ“°¢Ö–7&÷†öæU7F'GW6öçG&öÆÆW"ÒçVÆÃ°¢–b†Ö–7&÷†öæUvT†–F–ær’F‡&÷ræWrDôÔW†6WF–öâ‚-Š=˜ý‹­˜M˜-Š¢Š}˜M‹]˜ŠÝŠ’Š=Š½˜mŠ}Š‹}˜MŠ‚Š}˜M˜]˜­˜=‹˜˜˜˜bâ"Â$&÷'DW'&÷""“°¢–b†7F—fTW‡÷'BÇÂVæF–ætVF–õ&WVW7BÓÒçVÆÂ’F‡&÷ræWrW'&÷"‚-Š}˜mŠ­‹‹Š}˜mŠ­˜}Š}ŠŠ}˜M‹˜]˜M˜­Š’Š}˜MŠÝŠ}˜M˜­Š’˜-Š˜BŠ}˜MŠ­‹=ŠÍ˜­˜Bâ"“°¢6öç7B7W÷'FVBÒÖ–7&÷†öæU&V6÷&F–ætÖ–ÖR„ÖVF–&V6÷&FW"“°¢–b‚7W÷'FVB’F‡&÷ræWrW'&÷"‚-˜MŠr˜­Šý‹˜R˜}‹ŠrŠ}˜M˜]Š­‹]˜ŠÒŠ­‹=ŠÍ˜­˜BvV$ÒŠ=˜‚ÕBŠ=˜‚ôtrâÕ"‹­˜­‹˜]Š­Š}ŠÒ˜˜¢ÖVF–&V6÷&FW"Š}˜M˜-˜­Š}‹=˜¢â"“°¢&V6÷&FW"ÒæWrÖVF–&V6÷&FW"‡7G&VÒÂ²Ö–ÖUG—S¢7W÷'FVBæÖ–ÖRÒ“°¢6öç7B6GW&RÒ²66VæT–C¢7F—fU66VæT–BÂ7F'D×3¢ÖF‚ç&÷VæB†7W'&VçD×2’ÂG&6´–C¢G&6²æ–BÓ°¢6W76–öâÒ²&V6÷&FW"Â7G&VÒÂÖWFW$6öçFW‡C¢çVÆÂÂ6‡Væ·3¢µÒÂ'—FW3¢Âf–ÆVC¢fÇ6RÀ¢7F'FVDC¢Â7F÷&WVW7FVDC¢çVÆÂÂF–ÖW#¢Â6GW&RÂÖ–ÖS¢7W÷'FVBÓ°¢Ö–7&÷†öæU6W76–öâÒ6W76–öã°¢&V6÷&FW"æöæFFf–Æ&ÆRÒWfVçBÓâ°¢–b‚WfVçBæFFòç6—¦R’&WGW&ã°¢6W76–öâæ'—FW2³ÒWfVçBæFFç6—¦S°¢–b‡6W76–öâæ'—FW2â#¢#B¢#B’°¢6W76–öâæf–ÆVBÒG'VS°¢–b‡&V6÷&FW"ç7FFRÓÓÒ'&V6÷&F–ær"’°¢6W76–öâç7F÷&WVW7FVDBÒW&f÷&Öæ6Rææ÷r‚“°¢G'’²&V6÷&FW"ç7F÷‚“²Ò6F6‚²ò¢öç7F÷7F–ÆÂ÷vç26ÆVçW¢òÐ¢Ð¢&WGW&ã°¢Ð¢6W76–öâæ6‡Væ·2çW6‚†WfVçBæFF“°¢Ó°¢&V6÷&FW"æöæW'&÷"ÒWfVçBÓâ°¢6W76–öâæf–ÆVBÒG'VS°¢6W76–öâæW'&÷"ÒWfVçBæW'&÷#°¢–b‡&V6÷&FW"ç7FFRÓÓÒ'&V6÷&F–ær"’°¢6W76–öâç7F÷&WVW7FVDBÒW&f÷&Öæ6Rææ÷r‚“°¢G'’²&V6÷&FW"ç7F÷‚“²Ò6F6‚²ò¢öç7F÷7F–ÆÂ÷vç26ÆVçW¢òÐ¢Ð¢Ó°¢&V6÷&FW"æöç7F÷Ò7–æ2‚’Óâ°¢6ÆV%F–ÖV÷WB‡6W76–öâçF–ÖW"“°¢6W76–öâç7F÷&WVW7FVDBóóÒW&f÷&Öæ6Rææ÷r‚“°¢7F÷Ö–7&÷†öæTÖWFW"‡6W76–öâ“°¢7G&VÒævWEG&6·2‚’æf÷$V6‚†ÖVF–G&6²ÓâÖVF–G&6²ç7F÷‚’“°¢Ö–7&÷†öæU6W76–öâÒçVÆÃ°¢–b†Ö–7&÷†öæUvT†–F–ær’²Ö–7&÷†öæTf–æÆ—¦–ærÒfÇ6S²&WGW&ã²Ð¢Ö–7&÷†öæTf–æÆ—¦–ærÒG'VS°¢&Vg&W6„Ö–7&÷†öæT'W7”6öçG&öÇ2‚“°¢G'’°¢–b‡6W76–öâæf–ÆVBÇÂ6W76–öâæ'—FW2’F‡&÷r6W76–öâæW'&÷"óòæWrW'&÷"‚-˜M˜R˜­˜mŠ­ŠÂŠ}˜MŠ­‹=ŠÍ˜­˜BŠ=˜¢Š˜­Š}˜mŠ}Š¢‹]˜Š­˜­Š’â"“°¢6öç7B&6TÖ–ÖRÒ‡&V6÷&FW"æÖ–ÖUG—RÇÂ7W÷'FVBæ&6R’ç7Æ—B‚#²"•³ÒçFôÆ÷vW$66R‚“°¢6öç7BVÆ6VD×2ÒÖF‚ç&÷VæB‡6W76–öâç7F÷&WVW7FVDBÒ6W76–öâç7F'FVDB“°¢–b‚çVÖ&W"æ—4f–æ—FR†VÆ6VD×2’ÇÂVÆ6VD×2Â#S’F‡&÷ræWrW'&÷"‚-Š}˜MŠ­‹=ŠÍ˜­˜B˜-‹]˜­‹ŠÍŠý˜½Š}‰²‹=ŠÍ™˜B˜M˜]ŠýŠ’‹Š‹’Š½Š}˜m˜­Š’‹˜M˜’Š}˜MŠ=˜-˜Bâ"“°¢6öç7Bf–ÆRÒæWrf–ÆR‡6W76–öâæ6‡Væ·2Â&V6÷&F–ærÒG´FFRææ÷r‚—ÒâG·7W÷'FVBæW‡FVç6–öçÖÂ²G—S¢&6TÖ–ÖRÒ“°¢6öç7B–×÷'FVBÒv—B–×÷'E7GVF–ôVF–ò†f–ÆR“°¢–b‚–×÷'FVB’F‡&÷ræWrW'&÷"‚-Š­‹‹‹Š}˜MŠ­ŠÝ˜-˜"˜]˜bŠ}˜MŠ­‹=ŠÍ˜­˜M‰²˜M˜RŠ­Š­˜RŠ]‹mŠ}˜Š­˜rŠ]˜M˜’F–ÖVÆ–æRâ"“°¢FE&V6÷&FVDVF–õFõF–ÖVÆ–æR†–×÷'FVBÂ6W76–öâæ6GW&R“°¢Æ7DÖ–7&÷†öæTF–væ÷7F–2Ò°¢7FFS¢-Š­˜RŠ}˜MŠ­ŠÝ˜-˜"˜Š]‹mŠ}˜Š’Š}˜MŠ­‹=ŠÍ˜­˜B"À¢Ö–ÖS¢f–ÆRçG—RÂ'—FW3¢f–ÆRç6—¦RÂFV6öFVDGW&F–öä×3¢–×÷'FVBæGW&F–öä×2À¢VÆ6VD×2Â76WD–C¢–×÷'FVBæ–BÂ&×3¢6W76–öâç6–væÃòç&×2óòçVÆÂÀ¢V³¢6W76–öâç6–væÃòçV²óòçVÆÂÂ6×ÆU&FS¢6W76–öâç6–væÃòç6×ÆU&FRóòçVÆÂÀ¢ÖWFW$W'&÷#¢6W76–öâæÖWFW$W'&÷"óòçVÆÂÂF–ÖVÆ–æT6Æ—6÷VçC¢VF–õG&6·2ç&VGV6R‚†6÷VçBÂ—FVÒ’Óâ6÷VçB²—FVÒæ6Æ—2æÆVæwF‚Â¢Ó°¢B‚&VF–ôF–væ÷7F–57FGW2"’çFW‡D6öçFVçBÒ-Š­˜RŠ}˜MŠ­ŠÝ˜-˜"˜]˜bŠ-Ší‹Š­‹=ŠÍ˜­˜B˜Š]‹mŠ}˜Š­˜rŠ]˜M˜’F–ÖVÆ–æRâ#°¢Ò6F6‚†W'&÷"’°¢Æ7DÖ–7&÷†öæTF–væ÷7F–2Ò²7FFS¢-˜‹M˜BŠ}‹Š­˜]Š}ŠòŠ}˜MŠ­‹=ŠÍ˜­˜B"ÂW'&÷#¢W'&÷%FW‡B†W'&÷"’Â'—FW3¢6W76–öâæ'—FW2À¢Ö–ÖS¢&V6÷&FW"æÖ–ÖUG—RÇÂ7W÷'FVBæÖ–ÖRÂÖWFW$W'&÷#¢6W76–öâæÖWFW$W'&÷"óòçVÆÂÓ°¢B‚&VF–õF–ÖVÆ–æTÖW76vR"’çFW‡D6öçFVçBÒŠ­‹‹‹Š}‹Š­˜]Š}ŠòŠ}˜MŠ­‹=ŠÍ˜­˜C¢G¶W'&÷%FW‡B†W'&÷"—Ö°¢B‚&VF–ôF–væ÷7F–57FGW2"’çFW‡D6öçFVçBÒ˜‹M˜BŠ-Ší‹Š­‹=ŠÍ˜­˜C¢G¶W'&÷%FW‡B†W'&÷"—Ö°¢Òf–æÆÇ’°¢Ö–7&÷†öæTf–æÆ—¦–ærÒfÇ6S°¢&Vg&W6„Ö–7&÷†öæT'W7”6öçG&öÇ2‚“°¢Ð¢Ó°¢&V6÷&FW"ç7F'Bƒ#S“°¢6W76–öâç7F'FVDBÒW&f÷&Öæ6Rææ÷r‚“°¢B‚&Ö–7&÷†öæU&V6÷&F–æu7FGW2"’æ†–FFVâÒfÇ6S°¢B‚&Ö–7&÷†öæTVÆ6VB"’çFW‡D6öçFVçBÒ#£#°¢fö–B7F'DÖ–7&÷†öæTÖWFW"‡6W76–öâ“°¢6W76–öâçF–ÖW"Ò6WEF–ÖV÷WB‚‚’Óâ°¢–b†Ö–7&÷†öæU6W76–öâÓÓÒ6W76–öâbb&V6÷&FW"ç7FFRÓÓÒ'&V6÷&F–ær"’°¢6W76–öâç7F÷&WVW7FVDBÒW&f÷&Öæ6Rææ÷r‚“°¢G'’²&V6÷&FW"ç7F÷‚“²Ò6F6‚²ò¢öç7F÷7F–ÆÂ÷vç26ÆVçW¢òÐ¢Ð¢ÒÂc“°¢B‚&VF–õF–ÖVÆ–æTÖW76vR"’çFW‡D6öçFVçBÒŠÍŠ}‹˜ÒŠ}˜MŠ­‹=ŠÍ˜­˜BŠ‹]˜­‹­Š’G·7W÷'FVBæ&6WÒŠ}˜MŠÝŠòcŠ½Š}˜m˜­Š’’âŠ=˜˜-˜˜r˜MŠ]‹mŠ}˜Š­˜rŠ­˜M˜-Š}Šm˜­˜½ŠrŠ]˜M˜’F–ÖVÆ–æRæ°¢Ò6F6‚†W'&÷"’°¢Ö–7&÷†öæU7F'GW6öçG&öÆÆW"ÒçVÆÃ°¢7F'GW6öçG&öÆÆW"æ&÷'B‚“°¢–b‡6W76–öâ’°¢6ÆV%F–ÖV÷WB‡6W76–öâçF–ÖW"“°¢7F÷Ö–7&÷†öæTÖWFW"‡6W76–öâ“°¢6W76–öâç&V6÷&FW"æöæFFf–Æ&ÆRÒçVÆÃ²6W76–öâç&V6÷&FW"æöæW'&÷"ÒçVÆÃ²6W76–öâç&V6÷&FW"æöç7F÷ÒçVÆÃ°¢–b‡6W76–öâç&V6÷&FW"ç7FFRÓÓÒ'&V6÷&F–ær"’²G'’²6W76–öâç&V6÷&FW"ç7F÷‚“²Ò6F6‚²ò¢7G&VÒ6ÆVçW&VÆ÷r—2WF†÷&—FF—fRâ¢òÒÐ¢Ð¢7G&VÓòævWEG&6·2‚’æf÷$V6‚†ÖVF–G&6²ÓâÖVF–G&6²ç7F÷‚’“°¢–b†Ö–7&÷†öæU6W76–öãòç&V6÷&FW"ÓÓÒ&V6÷&FW"’Ö–7&÷†öæU6W76–öâÒçVÆÃ°¢B‚&Ö–7&÷†öæU&V6÷&F–æu7FGW2"’æ†–FFVâÒG'VS°¢ÆWBÖW76vRÒW'&÷%FW‡B†W'&÷"“°¢–b†W'&÷#òææÖRÓÓÒ$æ÷DÆÆ÷vVDW'&÷""ÇÂW'&÷#òææÖRÓÓÒ%6V7W&—G”W'&÷""’ÖW76vRÒ-˜M˜R˜­˜ý‹=˜]ŠÒŠŠ}˜M˜]˜­˜=‹˜˜˜˜bâŠ}‹=˜]ŠÒ˜M˜M˜]˜˜-‹’ŠŠ}‹=Š­ŠíŠýŠ}˜]˜r˜Š}˜Š­ŠÒÖ÷F–öâ7GVF–ò‹Š‹…EE2Š=˜‚vV%f–WrŠ-˜]˜bâ#°¢VÇ6R–b†W'&÷#òææÖRÓÓÒ%F–ÖV÷WDW'&÷""’ÖW76vRÒ-˜M˜R˜­‹]˜B‹Šò˜]˜bæG&ö–B‹˜M˜’‹}˜MŠ‚Š}˜M˜]˜­˜=‹˜˜˜˜bŠí˜MŠ}˜B3Š½Š}˜m˜­Š’âŠ­ŠÝ˜-˜"˜]˜bŠ]‹˜bŠ}˜M˜]˜­˜=‹˜˜˜˜b˜M˜M˜m‹Š}˜R˜Š}˜MŠ­‹}Š˜­˜"Š½˜RŠ=‹ŠòŠ}˜M˜]ŠÝŠ}˜˜MŠ’â#°¢VÇ6R–b†W'&÷#òææÖRÓÓÒ$æ÷Df÷VæDW'&÷""ÇÂW'&÷#òææÖRÓÓÒ$FWf–6W4æ÷Df÷VæDW'&÷""’ÖW76vRÒ-˜M˜R˜­‹Š½‹æG&ö–B‹˜M˜’˜]˜­˜=‹˜˜˜˜b˜]Š­Š}ŠÒâ#°¢VÇ6R–b†W'&÷#òææÖRÓÓÒ$æ÷E&VF&ÆTW'&÷""ÇÂW'&÷#òææÖRÓÓÒ%G&6µ7F'DW'&÷""’ÖW76vRÒ-Š}˜M˜]˜­˜=‹˜˜˜˜b˜]‹M‹­˜˜BŠ=˜‚‹˜‹bæG&ö–BŠŠýŠŠ}˜MŠ}˜MŠ­˜-Š}‹râ#°¢–b‚Ö–7&÷†öæUvT†–F–ær’°¢B‚&VF–õF–ÖVÆ–æTÖW76vR"’çFW‡D6öçFVçBÒÖW76vS°¢Æ7DÖ–7&÷†öæTF–væ÷7F–2Ò²7FFS¢-˜‹M˜BŠŠýŠŠ}˜MŠ­‹=ŠÍ˜­˜B"ÂW'&÷#¢ÖW76vRÓ°¢B‚&VF–ôF–væ÷7F–57FGW2"’çFW‡D6öçFVçBÒÖW76vS°¢Ð¢Òf–æÆÇ’°¢–b†Ö–7&÷†öæU7F'GW6öçG&öÆÆW"ÓÓÒ7F'GW6öçG&öÆÆW"’Ö–7&÷†öæU7F'GW6öçG&öÆÆW"ÒçVÆÃ°¢Ö–7&÷†öæU7F'F–ærÒfÇ6S°¢&Vg&W6„Ö–7&÷†öæT'W7”6öçG&öÇ2‚“°¢Ð§Ò“°§v–æF÷ræFDWfVçDÆ—7FVæW"‚'vV†–FR"Â‚’Óâ°¢Ö–7&÷†öæUvT†–F–ærÒG'VS°¢Ö–7&÷†öæU7F'GW6öçG&öÆÆW#òæ&÷'B‚“°¢Ö–7&÷†öæU7F'GW6öçG&öÆÆW"ÒçVÆÃ°¢VF–ô–×÷'D–çFVçBÒçVÆÃ°¢7F÷6VÆV7FVDVF–õ&Wf–Wr‚“°¢6öç7B6W76–öâÒÖ–7&÷†öæU6W76–öã°¢–b‚6W76–öâ’°¢–b†Ö–7&÷†öæU7F'F–ær’Æ7DÖ–7&÷†öæTF–væ÷7F–2Ò²7FFS¢-Š=˜ý˜M‹­˜¢‹}˜MŠ‚Š}˜MŠ]‹˜bŠ‹=ŠŠ‚˜]‹­Š}Šý‹Š’Š}˜M‹]˜ŠÝŠ’"Ó°¢&WGW&ã°¢Ð¢6ÆV%F–ÖV÷WB‡6W76–öâçF–ÖW"“°¢7F÷Ö–7&÷†öæTÖWFW"‡6W76–öâ“°¢6W76–öâç&V6÷&FW"æöç7F÷ÒçVÆÃ°¢G'’²–b‡6W76–öâç&V6÷&FW"ç7FFRÓÓÒ'&V6÷&F–ær"’6W76–öâç&V6÷&FW"ç7F÷‚“²Ò6F6‚²ò¢6Æ÷6–ærF†RvR&VÆV6W2F†RVæ6öFW"â¢òÐ¢6W76–öâç7G&VÒævWEG&6·2‚’æf÷$V6‚‡G&6²ÓâG&6²ç7F÷‚’“°¢Ö–7&÷†öæU6W76–öâÒçVÆÃ°¢Ö–7&÷†öæTf–æÆ—¦–ærÒfÇ6S°¢Æ7DÖ–7&÷†öæTF–væ÷7F–2Ò²7FFS¢-Š=˜ý˜M‹­˜¢Š}˜MŠ­‹=ŠÍ˜­˜BŠ‹=ŠŠ‚˜]‹­Š}Šý‹Š’Š}˜M‹]˜ŠÝŠ’"Â'—FW3¢6W76–öâæ'—FW2À¢Ö–ÖS¢6W76–öâç&V6÷&FW"æÖ–ÖUG—RÇÂ6W76–öâæÖ–ÖSòæÖ–ÖRÂ&×3¢6W76–öâç6–væÃòç&×2óòçVÆÂÂV³¢6W76–öâç6–væÃòçV²óòçVÆÂÓ°§Ò“°§v–æF÷ræFDWfVçDÆ—7FVæW"‚'vW6†÷r"Â‚’Óâ²Ö–7&÷†öæUvT†–F–ærÒfÇ6S²Ò“°¦7–æ2gVæ7F–öâ–×÷'E7GVF–ôVF–ò†f–ÆR’°¢–b‚f–ÆR’&WGW&âçVÆÃ°¢6öç7B&WVW7EFö¶VâÒVF–õ&WVW7Bæ&Vv–â‚“°¢VæF–ætVF–õ&WVW7BÒ&WVW7EFö¶Vã°¢ÆWB–×÷'FVBÒçVÆÃ°¢òòFòæ÷BÆWBâFBFGW&–ærÖWFFF÷7F÷&vRv÷&²GF6‚F†R&Wf–÷W2f–ÆRà¢7F—fTVF–ô76WD–BÒçVÆÃ°¢B‚&VF–ôf–ÆTæÖR"’çFW‡D6öçFVçBÒf–ÆRææÖRÇÂ-ŠÍŠ}‹˜ÒŠ­ŠÍ˜}˜­‹"Š}˜M˜]˜M˜Š}˜M‹]˜Š­˜®(
+b#°¢B‚&VF–õF–ÖVÆ–æTÖW76vR"’çFW‡D6öçFVçBÒ-ŠÍŠ}‹˜ÒŠ­ŠÍ˜}˜­‹"Š}˜M˜]˜M˜Š}˜M‹]˜Š­˜­‰²‹=˜­˜ý˜‹™˜B‹-‹Š}˜MŠ]‹mŠ}˜Š’Š‹ŠòŠ}˜=Š­˜]Š}˜BŠ}˜MŠ­ŠÝ˜-˜"â#°¢&VæFW$VF–ô–ç7V7F÷"‚“²&Vg&W6„Ö–7&÷†öæT'W7”6öçG&öÇ2‚“°¢G'’°¢6öç7BÖWFFFÒfÆ–FFTVF–ôf–ÆR†f–ÆR“°¢B‚&VF–õF–ÖVÆ–æTÖW76vR"’çFW‡D6öçFVçBÒ-ŠÍŠ}‹˜ÒŠ}˜MŠ­ŠÝ˜-˜"˜]˜b˜˜2Š­‹˜]˜­‹"Š}˜M‹]˜Š¢˜˜-‹Š}ŠŠ’˜]ŠýŠ­˜~(
+b#°¢6öç7BGW&F–öä×2Òv—B&VDVF–ôGW&F–öâ†f–ÆR“°¢–b‚VF–õ&WVW7Bæ—47W'&VçB‡&WVW7EFö¶Vâ’’&WGW&ã°¢6öç7B6†&VBÒv—B&Vv—7FW$76WDf–ÆR†f–ÆR“°¢–b‚VF–õ&WVW7Bæ—47W'&VçB‡&WVW7EFö¶Vâ’’&WGW&ã°¢6öç7B–BÒ6†&VBæ–C°¢6öç7Bæ÷&ÖÆ—¦VDf–ÆRÒf–ÆRçG—RÓÓÒÖWFFFæÖ–ÖRòf–ÆR¢æWrf–ÆR…¶f–ÆUÒÂf–ÆRææÖRÂ²G—S¢ÖWFFFæÖ–ÖRÒ“°¢6öç7BW&ÂÒU$Âæ7&VFTö&¦V7EU$Â†æ÷&ÖÆ—¦VDf–ÆR“°¢6öç7B&Wf–÷W2ÒVF–ôf–ÆW2ævWB†–B“°¢–b‡&Wf–÷W3òçW&Â’U$Âç&Wfö¶Tö&¦V7EU$Â‡&Wf–÷W2çW&Â“°¢VF–ôf–ÆW2ç6WB†–BÂ²f–ÆS¢æ÷&ÖÆ—¦VDf–ÆRÂW&ÂÂGW&F–öä×2Ò“°¢&VÖVÖ&W$VF–ôGW&F–öâ†–BÂGW&F–öä×2“°¢VF–ô76WG2Ò6WVVæ6TVF—F÷"ç6WVVæ6Ræ76WG2æf–ÇFW"†76WBÓâ76WBæ¶–æBÓÓÒ&VF–ò"’æÖ†76WDÖWFFFFôVF–ò“°¢7F—fTVF–ô76WD–BÒ–C°¢&V'V–ÆDVF–õÆ–W"‡²&W7VÖS¢—5Æ––ærÒ“°¢B‚&VF–ôf–ÆTæÖR"’çFW‡D6öçFVçBÒG¶ÖWFFFææÖWÒ+rG²†ÖWFFFç6—¦Rò#Bò#B’çFôf—†VBƒ"—ÒÖ”"+rG²†GW&F–öä×2ò’çFôf—†VBƒ"—ÒŠ¶°¢B‚&VF–õF–ÖVÆ–æTÖW76vR"’çFW‡D6öçFVçBÒŠ­˜RŠ}˜MŠ­ŠÝ˜-˜"˜]˜bŠ}˜M˜]˜M˜â˜]ŠýŠ­˜rG²†GW&F–öä×2ò’çFôf—†VBƒ"—ÒŠ½Š}˜m˜­Š‰²Š=‹m˜˜rŠ]˜M˜’˜]‹=Š}‹‹˜mŠòŠ}˜M˜]ŠM‹M‹æ°¢&VæFW$VF–ô–ç7V7F÷"‚“°¢–×÷'FVBÒ²–BÂGW&F–öä×2ÂÖWFFFÓ°¢Ò6F6‚†W'&÷"’°¢–b†VF–õ&WVW7Bæ—47W'&VçB‡&WVW7EFö¶Vâ’’°¢7F—fTVF–ô76WD–BÒçVÆÃ°¢6öç7B&V6öâÒõÂæ×"Bö’çFW7B†f–ÆRææÖR’ÇÂõæVF–õÂö×"ƒó¢×v"“òBö’çFW7B†f–ÆRçG—R¢ò-Š­‹=ŠÍ˜­˜BÕ"‹­˜­‹˜]Šý‹˜˜R˜˜¢6‡&öÖ—VÒâŠ}ŠíŠ­‹ÓDŠ=˜‚tbŠ=˜‚vV$ÒŠ=˜‚Õ2â ¢¢W'&÷%FW‡B†W'&÷"“°¢B‚&VF–ôf–ÆTæÖR"’çFW‡D6öçFVçBÒ˜M˜R˜­˜ý‹Š­˜]ŠòŠ}˜M˜]˜M˜¢G·&V6öçÖ°¢B‚&VF–õF–ÖVÆ–æTÖW76vR"’çFW‡D6öçFVçBÒ&V6öã°¢Ð¢Ð¢f–æÆÇ’°¢6öç7B—47W'&VçE&WVW7BÒVF–õ&WVW7Bæ—47W'&VçB‡&WVW7EFö¶Vâ“°¢–b‡VæF–ætVF–õ&WVW7BÓÓÒ&WVW7EFö¶Vâ’VæF–ætVF–õ&WVW7BÒçVÆÃ°¢–b†—47W'&VçE&WVW7B’°¢B‚&VF–ô–çWB"’çfÇVRÒ"#°¢òòF†R–ç7V7F÷"v2&VæFW&VBv†–ÆRVæF–ætVF–õ&WVW7Bv27F–ÆÂ6WBà¢òò&R×&VæFW"öæÇ’gFW"6ÆV&–ær—B6òFB—2Væ&ÆVBf÷"F†R–×÷'FVB76WBà¢&VæFW$VF–ô–ç7V7F÷"‚“°¢&Vg&W6„Ö–7&÷†öæT'W7”6öçG&öÇ2‚“°¢Ð¢Ð¢&WGW&â–×÷'FVC°§Ð¢B‚&FDVF–ô6Æ—"’æFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â‚’Óâ°¢–b†7F—fTW‡÷'BÇÂÖ–7&÷†öæT÷W&F–öä7F—fR‚’’&WGW&ã°¢–b‡VæF–ætVF–õ&WVW7BÓÒçVÆÂ’°¢B‚&VF–õF–ÖVÆ–æTÖW76vR"’çFW‡D6öçFVçBÒ-Š}˜mŠ­‹‹Š}˜=Š­˜]Š}˜BŠ­ŠÍ˜}˜­‹"Š}˜M˜]˜M˜Š}˜M‹]˜Š­˜¢˜-Š˜BŠ]‹mŠ}˜Š­˜râ#°¢&WGW&ã°¢Ð¢–b‚7F—fTVF–ô76WD–B’°¢B‚&VF–õF–ÖVÆ–æTÖW76vR"’çFW‡D6öçFVçBÒ-Š}ŠíŠ­‹˜]˜M˜˜½Šr‹]˜Š­˜­˜½Šr˜]˜bŠ}˜M˜}Š}Š­˜Š=˜‚˜]˜=Š­ŠŠ’Š}˜MŠ=‹]˜˜BŠ=˜˜M˜½Šrâ#°¢&WGW&ã°¢Ð¢G'’°¢6öç7BG&6µG—RÒB‚&VF–õG&6µG—R"’çfÇVS°¢6öç7BG&6²ÒVF–õG&6·2æf–æB‚†—FVÒ’Óâ—FVÒçG—RÓÓÒG&6µG—R“°¢–b‚G&6²’F‡&÷ræWrW'&÷"‚-Š}˜M˜]‹=Š}‹Š}˜M‹]˜Š­˜¢Š}˜M˜]ŠÝŠýŠò‹­˜­‹˜]˜ŠÍ˜Šòâ"“°¢6öç7B7F'D×2ÒÖF‚æÖ‚ƒÂÖF‚æÖ–â„ÖF‚ç&÷VæB†7W'&VçD×2’Â&ö¦V7BæGW&F–öä×2Ò’“°¢6öç7B76WD–BÒ7F—fTVF–ô76WD–C°¢6öç7BÖWFFFÒVF–ô76WG2æf–æB‚‡²–BÒ’Óâ–BÓÓÒ76WD–B“°¢6öç7B6÷W&6RÒVF–ôf–ÆW2ævWB†76WD–B“°¢–b‚6÷W&6SòçW&ÂÇÂçVÖ&W"æ—4f–æ—FR‡6÷W&6RæGW&F–öä×2’ÇÂ6÷W&6RæGW&F–öä×2ÃÒ’°¢F‡&÷ræWrW'&÷"‚-˜]˜M˜Š}˜M‹]˜Š¢‹­˜­‹ŠÍŠ}˜}‹"˜M˜MŠ­‹M‹­˜­˜BâŠ=‹ŠòŠ}‹=Š­˜­‹Š}Šý˜rŠ=˜‚‹Š‹}˜r˜]˜bŠ}˜M˜]˜=Š­ŠŠ’â"“°¢Ð¢–b‚ÖWFFFÇÂ6WVVæ6TVF—F÷"ç6WVVæ6Ræ76WG2ç6öÖR†76WBÓâ76WBæ–BÓÓÒ76WD–Bbb76WBæ¶–æBÓÓÒ&VF–ò"’’°¢F‡&÷ræWrW'&÷"‚-Š­‹‹‹˜]‹}Š}Š˜-Š’˜]˜M˜Š}˜M‹]˜Š¢Š}˜M˜]ŠÝŠýŠò˜]‹’Š=‹]˜BŠ}˜M˜]‹M‹˜‹’âŠ=‹ŠòŠ}‹=Š­˜­‹Š}Šý˜r˜]˜bŠ}˜M˜}Š}Š­˜â"“°¢Ð¢6öç7BGW&F–öä×2ÒÖF‚æÖ‚ƒÂÖF‚æÖ–â„ÖF‚ç&÷VæB‡6÷W&6RæGW&F–öä×2’Â&ö¦V7BæGW&F–öä×2Ò7F'D×2’“°¢6öç7B6Æ—Ò²–C¢VF–òÖ6Æ—ÒG´FFRææ÷r‚—ÒÒG²²¶VF–ô76WE6W&–ÇÖÂ76WC¢76WD–BÂæÖS¢ÖWFFFææÖRÂ7F'D×2ÂGW&F–öä×2ÂföÇVÖS¢À¢âââ‡G&6µG—RÓÓÒ&F–ÆöwVR"ò²ÆæwVvS¢B‚&F–ÆöwVTÆæwVvR"’çfÇVRÂf—6VÖW3¢µÒÒ¢·Ò’Ó°¢6öç7BæW‡BÒFDVF–ô6Æ—†VF–õG&6·2Â&ö¦V7BæGW&F–öä×2ÂG&6²æ–BÂ6Æ—“°¢6öÖÖ—DVF–õG&6·2†æW‡B“°¢6öç7B6öÖÖ—GFVBÒVF–õG&6·2æf–æB†—FVÒÓâ—FVÒæ–BÓÓÒG&6²æ–B“òæ6Æ—2æf–æB†—FVÒÓâ—FVÒæ–BÓÓÒ6Æ—æ–B“°¢–b‚6öÖÖ—GFVB’F‡&÷ræWrW'&÷"‚-˜M˜R˜­˜ý‹Š­˜]ŠòŠ}˜M˜]˜-‹}‹’˜˜¢Š}˜M˜]‹=Š}‹Š}˜M‹]˜Š­˜­‰²Š=‹ŠòŠ}˜M˜]ŠÝŠ}˜˜MŠ’â"“°¢VF–ô6Æ—6VÆV7F–öâÒ²G&6´–C¢G&6²æ–BÂ6Æ—–C¢6Æ—æ–BÓ°¢VF–õF–ÖVÆ–æRç6VÆV7B†VF–ô6Æ—6VÆV7F–öâ“°¢&VæFW$VF–ô–ç7V7F÷"‚“°¢B‚&VF–õF–ÖVÆ–æTÖW76vR"’çFW‡D6öçFVçBÒŠ=˜ý‹m˜­˜G¶ÖWFFFææÖWÒŠ]˜M˜’Š}˜M˜]‹=Š}‹‹˜mŠòG¶f÷&ÖEF–ÖR‡7F'D×2—Ò˜M˜]ŠýŠ’G¶f÷&ÖEF–ÖR†GW&F–öä×2—Òæ°¢Ò6F6‚†W'&÷"’²B‚&VF–õF–ÖVÆ–æTÖW76vR"’çFW‡D6öçFVçBÒW'&÷%FW‡B†W'&÷"“²Ð§Ò“°¢B‚&FVÆWFTVF–ô6Æ—"’æFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â‚’Óâ°¢–b†7F—fTW‡÷'BÇÂÖ–7&÷†öæT÷W&F–öä7F—fR‚’ÇÂVF–ô6Æ—6VÆV7F–öâ’&WGW&ã°¢G'’°¢7F÷6VÆV7FVDVF–õ&Wf–Wr‚“°¢VF–õG&6·2ÒFVÆWFTVF–ô6Æ—†VF–õG&6·2Â&ö¦V7BæGW&F–öä×2ÂVF–ô6Æ—6VÆV7F–öâçG&6´–BÂVF–ô6Æ—6VÆV7F–öâæ6Æ—–B“°¢VF–ô6Æ—6VÆV7F–öâÒçVÆÃ²&V'V–ÆDVF–õÆ–W"‡²&W7VÖS¢G'VRÒ“²VF–õF–ÖVÆ–æRæ6ÆV%6VÆV7F–öâ‚“²&VæFW$VF–ô–ç7V7F÷"‚“²&VæFW$B†7W'&VçD×2“°¢Ò6F6‚†W'&÷"’²B‚&VF–õF–ÖVÆ–æTÖW76vR"’çFW‡D6öçFVçBÒW'&÷%FW‡B†W'&÷"“²Ð§Ò“°¦f÷"†6öç7B¶–BÂf–VÆEÒöbµ²&VF–ô6Æ—7F'B"Â'7F'D×2%ÒÂ²&VF–ô6Æ—GW&F–öâ"Â&GW&F–öä×2%ÒÂ²&VF–ô6Æ—föÇVÖR"Â'föÇVÖR%ÕÒ’°¢B†–B’æFDWfVçDÆ—7FVæW"‚&6†ævR"Â‚’Óâ°¢6öç7B6VÆV7FVBÒ6VÆV7FVDVF–ô6Æ—‚“²–b‚6VÆV7FVBÇÂ7F—fTW‡÷'BÇÂÖ–7&÷†öæT÷W&F–öä7F—fR‚’’&WGW&ã°¢G'’°¢6öç7BfÇVRÒçVÖ&W"‚B†–B’çfÇVR“°¢6öç7BæW‡BÒVF—DVF–ô6Æ—†VF–õG&6·2Â&ö¦V7BæGW&F–öä×2Â6VÆV7FVBçG&6²æ–BÂ6VÆV7FVBæ6Æ—æ–BÂ²¶f–VÆEÓ¢fÇVRÒ“°¢6öÖÖ—DVF–õG&6·2†æW‡B“²VF–õF–ÖVÆ–æRç6VÆV7B†VF–ô6Æ—6VÆV7F–öâ“°¢B‚&VF–õF–ÖVÆ–æTÖW76vR"’çFW‡D6öçFVçBÒ-Š­˜RŠ­ŠÝŠý˜­Š²Š}˜M˜]˜-‹}‹’Š}˜M‹]˜Š­˜¢â#°¢Ò6F6‚†W'&÷"’²B‚&VF–õF–ÖVÆ–æTÖW76vR"’çFW‡D6öçFVçBÒW'&÷%FW‡B†W'&÷"“²&VæFW$VF–ô–ç7V7F÷"‚“²Ð¢Ò“°§Ð¢B‚&F–ÆöwVTÆæwVvR"’æFDWfVçDÆ—7FVæW"‚&6†ævR"Â‚’Óâ°¢6öç7B6VÆV7FVBÒ6VÆV7FVDVF–ô6Æ—‚“²–b‚6VÆV7FVBÇÂ6VÆV7FVBçG&6²çG—RÓÒ&F–ÆöwVR"ÇÂ7F—fTW‡÷'BÇÂÖ–7&÷†öæT÷W&F–öä7F—fR‚’’&WGW&ã°¢G'’²6öÖÖ—DVF–õG&6·2†VF—DVF–ô6Æ—†VF–õG&6·2Â&ö¦V7BæGW&F–öä×2Â6VÆV7FVBçG&6²æ–BÂ6VÆV7FVBæ6Æ—æ–BÂ²ÆæwVvS¢B‚&F–ÆöwVTÆæwVvR"’çfÇVRÒ’“²Ð¢6F6‚†W'&÷"’²B‚&VF–õF–ÖVÆ–æTÖW76vR"’çFW‡D6öçFVçBÒW'&÷%FW‡B†W'&÷"“²Ð§Ò“°¢B‚&FEf—6VÖR"’æFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â‚’Óâ°¢6öç7B6VÆV7FVBÒ6VÆV7FVDVF–ô6Æ—‚“²–b‚6VÆV7FVBÇÂ6VÆV7FVBçG&6²çG—RÓÒ&F–ÆöwVR"ÇÂ7F—fTW‡÷'B’&WGW&ã°¢G'’°¢6öç7BD×2Ò7W'&VçD×2Ò6VÆV7FVBæ6Æ—ç7F'D×3°¢6öç7BæW‡BÒ6WDVF–õf—6VÖR†VF–õG&6·2Â&ö¦V7BæGW&F–öä×2Â6VÆV7FVBçG&6²æ–BÂ6VÆV7FVBæ6Æ—æ–BÂD×2ÂB‚'f—6VÖUG—R"’çfÇVRÂB‚'†öæVÖTÆ&VÂ"’çfÇVR“°¢6öÖÖ—DVF–õG&6·2†æW‡B“²VF–õF–ÖVÆ–æRç6VÆV7B†VF–ô6Æ—6VÆV7F–öâ“°¢B‚&VF–õF–ÖVÆ–æTÖW76vR"’çFW‡D6öçFVçBÒŠ=˜ý‹m˜­˜˜]˜Š­Š}ŠÒG²B‚'f—6VÖUG—R"’ç6VÆV7FVD÷F–öç5³ÒçFW‡D6öçFVçGÒ‹˜mŠòG¶f÷&ÖEF–ÖR†7W'&VçD×2—Òæ°¢Ò6F6‚†W'&÷"’²B‚&VF–õF–ÖVÆ–æTÖW76vR"’çFW‡D6öçFVçBÒW'&÷%FW‡B†W'&÷"“²Ð§Ò“°¢B‚&VF–ôÖ7FW%föÇVÖR"’æFDWfVçDÆ—7FVæW"‚&–çWB"Â‚’Óâ°¢VF–ôÖ7FW%föÇVÖRÒçVÖ&W"‚B‚&VF–ôÖ7FW%föÇVÖR"’çfÇVR“°¢G'’²VF–õÆ–W"ç6WDÖ7FW%föÇVÖR†VF–ôÖ7FW%föÇVÖR“²Ð¢6F6‚†W'&÷"’²B‚&VF–õF–ÖVÆ–æTÖW76vR"’çFW‡D6öçFVçBÒW'&÷%FW‡B†W'&÷"“²Ð§Ò“°¦f÷"†6öç7B–Böb²&GW&F–öâ"Â'7F'E¦ööÒ"Â&VæE¦ööÒ"Â'7F'E‚"Â&VæE‚"Â'7F'E’"Â&VæE’%Ò’°¢B†–B’æFDWfVçDÆ—7FVæW"‚&–çWB"Â‚’ÓâWFFU&ö¦V7B‡²&W6WEÆ–&6³¢–BÓÓÒ&GW&F–öâ"ÂVF—FVD6öçG&öÃ¢–BÒ’“°§Ð ¦7V7E6VÆV7BæFDWfVçDÆ—7FVæW"‚&6†ævR"Â‚’Óâ°¢7V7E&W6WBÒ7V7E6VÆV7BçfÇVS°¢66VæU6WGF–æw2ç6WB†7F—fU66VæT–BÂ²7V7E&W6WBÂf—DÖöFRÂ–ÖvS¢7W'&VçDf–ÆT–æfòÒ“°¢W'6—7E6WVVæ6TÖWFFF‚“°¢WFFU&ö¦V7B‡²f–Ww÷'C¢F–ÖVç6–öç4f÷$7W'&VçE&W6WB‚’Ò“°¢&Vg&W6…6VÆV7FVD–ÖvR‚“°§Ò“°¦f—E6VÆV7BæFDWfVçDÆ—7FVæW"‚&6†ævR"Â‚’Óâ°¢–çfÆ–FFTW‡÷'B‚-Š­‹­˜­™‹Š¢‹}‹˜­˜-Š’‹‹‹bŠ}˜M‹]˜‹Š’â"“°¢f—DÖöFRÒf—E6VÆV7BçfÇVS°¢66VæU6WGF–æw2ç6WB†7F—fU66VæT–BÂ²7V7E&W6WBÂf—DÖöFRÂ–ÖvS¢7W'&VçDf–ÆT–æfòÒ“°¢W'6—7E6WVVæ6TÖWFFF‚“°¢&Vg&W6…6VÆV7FVD–ÖvR‚“°§Ò“° ¦–ÖvT–çWBæFDWfVçDÆ—7FVæW"‚&6†ævR"Â7–æ2‚’Óâ°¢–çfÆ–FFTW‡÷'B‚-Š}ŠíŠ­˜­‹Š¢‹]˜‹Š’ŠÍŠý˜­ŠýŠ’â"“°¢6öç7B&WVW7EFö¶VâÒ–ÖvU&WVW7Bæ&Vv–â‚“°¢VæF–æt–ÖvU&WVW7BÒ&WVW7EFö¶Vã°¢6ÆV$f–ÇW&R‚“°¢6öç7Bf–ÆRÒ–ÖvT–çWBæf–ÆW3òå³Ó°¢–b‚f–ÆR’&WGW&ã°¢6VÆV7FVD–ÖvTf–ÆRÒf–ÆS°¢6VÆV7FVD–ÖvTF–ÖVç6–öç2ÒçVÆÃ°¢7W'&VçDf–ÆT–æfòÒçVÆÃ°¢–ÖvU6÷W&6RÒÆ6V†öÆFW#°¢&Vg&W6„W‡÷'D6öçG&öÇ2‚“°¢&VæFW$B†7W'&VçD×2“°¢7FGW2çFW‡D6öçFVçBÒ-ŠÍŠ}‹˜ÒŠ­ŠÝ˜]˜­˜BŠ}˜M‹]˜‹Šž(
+b#°¢G'’°¢6öç7B76WBÒv—B&Vv—7FW$76WDf–ÆR†f–ÆR“°¢–b‚–ÖvU&WVW7Bæ—47W'&VçB‡&WVW7EFö¶Vâ’’&WGW&ã°¢6öç7B&W&VBÒv—BÆöD–ÖvU7W&f6R†f–ÆRÂ&WVW7EFö¶Vâ“°¢–b‚&W&VBÇÂ–ÖvU&WVW7Bæ—47W'&VçB‡&WVW7EFö¶Vâ’’&WGW&ã°¢–ÖvU6÷W&6RÒ&W&VBç7W&f6S°¢66VæT–ÖvU6÷W&6W2ç6WB†76WBæ–BÂ–ÖvU6÷W&6R“°¢&ö¦V7BÒ²ââç&ö¦V7BÂÆ–W'3¢&ö¦V7BæÆ–W'2æÖ‚†Æ–W"Â–æFW‚’Óâ–æFW‚ÓÓÒò²ââæÆ–W"Â76WD–C¢76WBæ–BÒ¢Æ–W"’Ó°¢7W'&VçDf–ÆT–æfòÒ²æÖS¢76WBææÖRÂG—S¢76WBæÖ–ÖUG—RÂ6—¦S¢76WBç6—¦RÓ°¢6ö×–ÆVBÒ6ö×–ÆU&ö¦V7B‡&ö¦V7Df÷%&7FW"‡&ö¦V7BÂ&Wf–Wuf–Ww÷'B’Â–ÖvU&÷f–FW"“°¢66VæU6WGF–æw2ç6WB†7F—fU66VæT–BÂ²7V7E&W6WBÂf—DÖöFRÂ–ÖvS¢7W'&VçDf–ÆT–æfòÒ“°¢6GW&T7W'&VçE66VæR‡²&Vg&W6ƒ¢G'VRÒ“°¢v—BW'6—7FVçD76WG3òç&WÆ6U6WVVæ6R‡6WVVæ6TVF—F÷"ç6WVVæ6R“°¢–ÖvTæÖRçFW‡D6öçFVçBÒG¶7W'&VçDf–ÆT–æfòææÖWÒ+rG·&W&VBæF–ÖVç6–öç2çv–GF‡Ü9rG·&W&VBæF–ÖVç6–öç2æ†V–v‡GÖ°¢&VæFW$B†7W'&VçD×2“°¢Ö¶UF‡VÖ&æ–Â‚“°¢&VæFW%6WVVæ6T÷fW'f–Wr‡²&V'V–ÆD76WG3¢fÇ6RÒ“°¢7FGW2çFW‡D6öçFVçBÒ-Š}˜M˜]‹Š}˜­˜mŠ’ŠÍŠ}˜}‹-Š’#°¢&Vg&W6„W‡÷'D6öçG&öÇ2‚“°¢Ò6F6‚†W'&÷"’°¢–b†–ÖvU&WVW7Bæ—47W'&VçB‡&WVW7EFö¶Vâ’’f–Â†W'&÷"“°¢Ð¢f–æÆÇ’°¢–b‡VæF–æt–ÖvU&WVW7BÓÓÒ&WVW7EFö¶Vâ’VæF–æt–ÖvU&WVW7BÒçVÆÃ°¢–ÖvT–çWBçfÇVRÒ"#°¢&Vg&W6„W‡÷'D6öçG&öÇ2‚“°¢Ð§Ò“° ¢B‚'6fU&ö¦V7D'WGFöâ"’æFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â7–æ2‚’Óâ°¢–b†Ö–7&÷†öæT÷W&F–öä7F—fR‚’ÇÂ7F—fTW‡÷'B’°¢7FGW2çFW‡D6öçFVçBÒ-Š=˜˜-˜Š}˜MŠ­‹=ŠÍ˜­˜BŠ=˜‚Š}˜mŠ­‹‹Š}˜mŠ­˜}Š}ŠŠ}‹=Š­˜­‹Š}ŠòŠ}˜M‹]˜Š¢Š=˜‚Š}˜MŠ­‹]Šý˜­‹˜-Š˜BŠÝ˜‹‚Š}˜M˜]‹M‹˜‹’â#°¢&WGW&ã°¢Ð¢6ÆV$f–ÇW&R‚“°¢G'’°¢6GW&T7W'&VçE66VæR‚“°¢v—BW'6—7FVçD76WG3òç&WÆ6U6WVVæ6R‡6WVVæ6TVF—F÷"ç6WVVæ6R“°¢6öç7BFFÒ6WVVæ6TVF—F÷"ç66VæW2æÆVæwF‚â¢ò6W&–Æ—¦U7GVF–õ6WVVæ6Tf–ÆR‡6WVVæ6TVF—F÷"Â²&ö¦V7D–C¢&ö¦V7E7F÷&vT–BÂ7V7E&W6WBÂf—DÖöFRÂVF–ôÖ7FW%föÇVÖRÒ¢¢¥4ôâç7G&–æv–g’†Ö¶U&ö¦V7Df–ÆR‡&ö¦V7BÂ7W'&VçDf–ÆT–æfòÂ²7V7E&W6WBÂf—DÖöFRÒÂ6†&7FW%G&6²ÂVF–õG&6·2ÂVF–ô76WG2ÂVF–ôÖ7FW%föÇVÖRÂf—7VÄVffV7G5G&6²’ÂçVÆÂÂ"“°¢6öç7BW&ÂÒU$Âæ7&VFTö&¦V7EU$Â†æWr&Æö"…¶FFÒÂ²G—S¢&Æ–6F–öâö§6öâ"Ò’“°¢6öç7BÆ–æ²ÒFö7VÖVçBæ7&VFTVÆVÖVçB‚&"“°¢Æ–æ²æ‡&VbÒW&Ã°¢Æ–æ²æF÷væÆöBÒ6WVVæ6TVF—F÷"ç66VæW2æÆVæwF‚âò''FöâÖÖ÷F–öâ×6WVVæ6Ræ§6öâ"¢''FöâÖÖ÷F–öâ×&ö¦V7Bæ§6öâ#°¢Æ–æ²æ6Æ–6²‚“°¢6WEF–ÖV÷WB‚‚’ÓâU$Âç&Wfö¶Tö&¦V7EU$Â‡W&Â’Â“°¢7FGW2çFW‡D6öçFVçBÒ-Š­˜RŠ­ŠÍ˜}˜­‹"˜]˜M˜Š}˜M˜]‹M‹˜‹’¥4ôí‰²Š}˜MŠ=‹]˜˜B˜]ŠÝ˜˜‹Š’˜]ŠÝ˜M˜­˜½ŠrŠ‹M˜=˜B˜]˜m˜‹]˜B#°¢Ò6F6‚†W'&÷"’²f–Â†W'&÷"“²Ð§Ò“°¢B‚&ÆöE&ö¦V7D'WGFöâ"’æFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â‚’Óâ&ö¦V7D–çWBæ6Æ–6²‚’“°§&ö¦V7D–çWBæFDWfVçDÆ—7FVæW"‚&6†ævR"Â7–æ2‚’Óâ°¢–çfÆ–FFTW‡÷'B‚-˜˜ýŠ­ŠÒ˜]˜M˜˜]‹M‹˜‹’ŠÍŠý˜­Šòâ"“°¢–ÖvU&WVW7Bæ&Vv–â‚“°¢VF–õ&WVW7Bæ&Vv–â‚“²VæF–ætVF–õ&WVW7BÒçVÆÃ°¢6ÆV$f–ÇW&R‚“°¢6öç7Bf–ÆRÒ&ö¦V7D–çWBæf–ÆW3òå³Ó°¢–b‚f–ÆR’&WGW&ã°¢G'’°¢–b†f–ÆRç6—¦Râ"¢#B¢#B’F‡&÷ræWr&ævTW'&÷"‚-˜]˜M˜Š}˜M˜]‹M‹˜‹’Š=˜=Š‹˜]˜bŠ}˜MŠÝŠòŠ}˜M˜]‹=˜]˜ŠÒƒ"Ö”"’â"“°¢6öç7Bf–ÆUFW‡BÒv—Bf–ÆRçFW‡B‚“°¢ÆWB†VFW#°¢G'’²†VFW"Ò¥4ôâç'6R†f–ÆUFW‡B“²Ò6F6‚²F‡&÷ræWrG—TW'&÷"‚-˜]˜M˜¥4ôâ‹­˜­‹‹]Š}˜MŠÒâ"“²Ð¢–b††VFW"æf÷&ÖBÓÓÒ5ETD”õõ4UTTä4Uôd”ÄUôdõ$ÔB’°¢6öç7BÆöFVBÒ'6U7GVF–õ6WVVæ6Tf–ÆR†f–ÆUFW‡B“°¢7F÷Æ–&6²‚“°¢f÷"†6öç7B²W&ÂÒöbVF–ôf–ÆW2çfÇVW2‚’’–b‡W&Â’U$Âç&Wfö¶Tö&¦V7EU$Â‡W&Â“°¢VF–ôf–ÆW2æ6ÆV"‚“²Æö6Ä76WDf–ÆW2æ6ÆV"‚“²66VæUF‡VÖ&æ–Ç2æ6ÆV"‚“²66VæU6WGF–æw2æ6ÆV"‚“²66VæTW‡G&6†&7FW%G&6·2æ6ÆV"‚“°¢7V7E&W6WBÒÆöFVBç6WGF–æw2æ7V7E&W6WC²f—DÖöFRÒÆöFVBç6WGF–æw2æf—DÖöFS²VF–ôÖ7FW%föÇVÖRÒÆöFVBæVF–ôÖ7FW%föÇVÖS°¢7V7E6VÆV7BçfÇVRÒ7V7E&W6WC²f—E6VÆV7BçfÇVRÒf—DÖöFS²B‚&VF–ôÖ7FW%föÇVÖR"’çfÇVRÒ7G&–ær†VF–ôÖ7FW%föÇVÖR“°¢v—BGF6…6WVVæ6U&ö¦V7B†ÆöFVBæVF—F÷"ÂÆöFVBç&ö¦V7D–BÂÆöFVBç66VæU6WGF–æw2“°¢v—B7F—fFU7GVF–õ66VæR‡6WVVæ6TVF—F÷"ç66VæW5³Òæ–BÂ²vÆö&ÅF–ÖT×3¢ÂÆö6ÅF–ÖT×3¢Ò“°¢7F÷Æ–&6²‚“²6WVVæ6UF–ÖT×2Ò°¢7FGW2çFW‡D6öçFVçBÒ-˜˜ýŠ­ŠÒŠ­‹=˜M‹=˜BŠ}˜M˜]‹MŠ}˜}Šý‰²Š=‹Šò‹Š‹rŠ}˜MŠ=‹]˜˜B‹­˜­‹Š}˜M˜]Š­Š}ŠÝŠ’‹˜M˜’˜}‹ŠrŠ}˜MŠÍ˜}Š}‹"#°¢&Vg&W6„W‡÷'D6öçG&öÇ2‚“°¢&WGW&ã°¢Ð¢–b†f–ÆRç6—¦Râ#‚¢#B’F‡&÷ræWr&ævTW'&÷"‚-˜]˜M˜Š}˜M˜]‹M‹˜‹’Š}˜M˜-Šý˜­˜RŠ=˜=Š‹˜]˜bŠ}˜MŠÝŠòŠ}˜M˜]‹=˜]˜ŠÒƒ#‚˜=˜­˜M˜ŠŠ}˜­Š¢’â"“°¢6öç7B'6VBÒ'6U&ö¦V7Df–ÆR†f–ÆUFW‡B“°¢6öç7B–×÷'FVD–ÖvU&÷f–FW"Ò²vWC¢†76WD–B’Óâ'6VBç&ö¦V7BæÆ–W'2ç6öÖR‚†Æ–W"’ÓâÆ–W"æ76WD–BÓÓÒ76WD–B’òÆ6V†öÆFW"¢çVÆÂÓ°¢6ö×–ÆU&ö¦V7B‡'6VBç&ö¦V7BÂ–×÷'FVD–ÖvU&÷f–FW"“°¢6öç7B'6VD6†&7FW$æ–ÖF–öâÒ6ö×–ÆT6†&7FW%G&6²‡'6VBæ6†&7FW%G&6²Â'6VBç&ö¦V7BæGW&F–öä×2“°¢7V7E&W6WBÒ'6VBç6WGF–æw3òæ7V7E&W6WBóò–æfW$7V7E&W6WB‡'6VBç&ö¦V7Bçf–Ww÷'Bçv–GF‚Â'6VBç&ö¦V7Bçf–Ww÷'Bæ†V–v‡B“°¢f—DÖöFRÒ'6VBç6WGF–æw3òæf—DÖöFRóò&f—B#°¢7V7E6VÆV7BçfÇVRÒ7V7E&W6WC°¢f—E6VÆV7BçfÇVRÒf—DÖöFS°¢F–ÖVÆ–æTVF—F÷"æ6ÆV%6VÆV7F–öâ‚“°¢7F÷Æ–&6²‚“°¢–b†VF–õÆ–W"’²G'’²VF–õÆ–W"æFW7G&÷’‚“²Ò6F6‚†W'&÷"’²B‚&VF–õF–ÖVÆ–æTÖW76vR"’çFW‡D6öçFVçBÒŠ­‹‹‹Š­˜m‹˜­˜Š}˜M‹]˜Š¢Š}˜M˜-Šý˜­˜S¢G¶W'&÷%FW‡B†W'&÷"—Ö²ÒÐ¢f÷"†6öç7B²W&ÂÒöbVF–ôf–ÆW2çfÇVW2‚’’–b‡W&Â’U$Âç&Wfö¶Tö&¦V7EU$Â‡W&Â“°¢VF–ôf–ÆW2æ6ÆV"‚“²7F—fTVF–ô76WD–BÒçVÆÃ°¢òòÆVv7’–×÷'G2Ç6ò7F'BæWr&ö¦V7C²æWfW"&WW6Ræ÷F†W"&ö¦V7Bw266†VB76WG2à¢Æö6Ä76WDf–ÆW2æ6ÆV"‚“²66VæUF‡VÖ&æ–Ç2æ6ÆV"‚“²66VæTW‡G&6†&7FW%G&6·2æ6ÆV"‚“°¢VF–õG&6·2Ò'6VBæVF–õG&6·3²VF–ô76WG2Ò'6VBæVF–ô76WG3²VF–ôÖ7FW%föÇVÖRÒ'6VBæVF–ôÖ7FW%föÇVÖS°¢f—7VÄVffV7G5G&6²Ò'6VBçf—7VÄVffV7G5G&6³²f—7VÄVffV7E6VÆV7F–öâÒçVÆÃ°¢VF–ô6Æ—6VÆV7F–öâÒçVÆÃ°¢B‚&VF–ôÖ7FW%föÇVÖR"’çfÇVRÒ7G&–ær†VF–ôÖ7FW%föÇVÖR“°¢B‚&VF–ôf–ÆTæÖR"’çFW‡D6öçFVçBÒVF–ô76WG2æÆVæwF‚ò-Š=‹ŠòŠ}ŠíŠ­˜­Š}‹˜]˜M˜Š}Š¢Š}˜M‹]˜Š¢Š}˜M˜]‹Š­Š‹}Š’ŠŠ}˜M˜]‹M‹˜‹’˜]˜bŠ}˜M˜}Š}Š­˜"¢$Õ2+rÓD+r2+rtb+rôtr+rvV$Ò+rŠÝŠ­˜’#Ö”"#°¢VF–õF–ÖVÆ–æRæ6ÆV%6VÆV7F–öâ‚“²&VæFW$VF–ô–ç7V7F÷"‚“°¢f—7VÄVffV7G5F–ÖVÆ–æRæ6ÆV%6VÆV7F–öâ‚“²&VæFW%f—7VÄVffV7D–ç7V7F÷"‚“°¢&ö¦V7BÒ'6VBç&ö¦V7C°¢6†&7FW%G&6²Ò'6VBæ6†&7FW%G&6³°¢6†&7FW$æ–ÖF–öâÒ'6VD6†&7FW$æ–ÖF–öã°¢6VÆV7FVD–ÖvTf–ÆRÒçVÆÃ°¢6VÆV7FVD–ÖvTF–ÖVç6–öç2ÒçVÆÃ°¢7W'&VçDf–ÆT–æfòÒçVÆÃ°¢–ÖvU6÷W&6RÒÆ6V†öÆFW#°¢66VæT–ÖvU6÷W&6W2æ6ÆV"‚“°¢6öç7BÆVv7”76WDÖÒæWrÖ‡'6VBç&ö¦V7BæÆ–W'2æÖ‚†Æ–W"Â–æFW‚’Óâ¶Æ–W"æ76WD–BÂ°¢–C¢Æ–W"æ76WD–BÂ¶–æC¢&–ÖvR"ÂæÖS¢'6VBæ–ÖvSòææÖRóòÆVv7’Ö–ÖvRÒG¶–æFW‚²ÒçævÀ¢Ö–ÖUG—S¢'6VBæ–ÖvSòçG—RÇÂ&–ÖvR÷ær"Â6—¦S¢'6VBæ–ÖvSòç6—¦Róò ¢ÕÒ’“°¢f÷"†6öç7B76WBöb'6VBæVF–ô76WG2’ÆVv7”76WDÖç6WB†76WBæ–BÂ²–C¢76WBæ–BÂ¶–æC¢&VF–ò"ÂæÖS¢76WBææÖRÀ¢Ö–ÖUG—S¢76WBçG—RÂ6—¦S¢76WBç6—¦RÒ“°¢f÷"†6öç7B–Böb'6VD6†&7FW$æ–ÖF–öâæg&ÖT76WG2óòµÒ’–b‚ÆVv7”76WDÖæ†2†–B’’ÆVv7”76WDÖç6WB†–BÂ°¢–BÂ¶–æC¢&–ÖvR"ÂæÖS¢G¶–GÒçævÂÖ–ÖUG—S¢&–ÖvR÷ær"Â6—¦S¢ ¢Ò“°¢6öç7BÆVv7•6WVVæ6RÒ7&VFU7GVF–õ6WVVæ6Uc‡²f–Ww÷'C¢'6VBç&ö¦V7Bçf–Ww÷'BÂ76WG3¢²ââæÆVv7”76WDÖçfÇVW2‚•ÒÂ66VæW3¢·°¢–C¢&ÆVv7’×66VæR"Â&ö¦V7C¢'6VBç&ö¦V7BÂVF–õG&6·3¢'6VBæVF–õG&6·2À¢6†&7FW%G&6·3¢·'6VBæ6†&7FW%G&6µÒÂf—7VÄVffV7G5G&6³¢'6VBçf—7VÄVffV7G5G&6°¢ÕÒÒ“°¢v—BGF6…6WVVæ6U&ö¦V7B†7&VFU7GVF–õ6WVVæ6TVF—F÷"†ÆVv7•6WVVæ6RÂ²æÖW3¢²&ÆVv7’×66VæR#¢-Š}˜M˜]‹M˜}Šò"ÒÒ’ÂÖ¶TÆö6Ä–B‚'&ö¦V7B"’Â°¢&ÆVv7’×66VæR#¢²7V7E&W6WBÂf—DÖöFRÐ¢Ò“°¢6öç7B7F'BÒ&ö¦V7Bæ6ÖW&òå³ÓòçfÇVS°¢6öç7BVæBÒ&ö¦V7Bæ6ÖW&òæB‚Ó“òçfÇVS°¢B‚&GW&F–öâ"’çfÇVRÒ7G&–ær‡&ö¦V7BæGW&F–öä×2ò“°¢–b‡7F'BbbVæB’°¢f÷"†6öç7B¶–BÂfÇVUÒöbµ²'7F'E¦ööÒ"Â7F'Bç¦ööÕÒÂ²&VæE¦ööÒ"ÂVæBç¦ööÕÒÂ²'7F'E‚"Â7F'Bç…ÒÂ²&VæE‚"ÂVæBç…ÒÂ²'7F'E’"Â7F'Bç•ÒÂ²&VæE’"ÂVæBç•ÕÒ’B†–B’çfÇVRÒ7G&–ær‡fÇVR“°¢Ð¢WFFU&ö¦V7B‡²f–Ww÷'C¢&ö¦V7Bçf–Ww÷'BÒ“°¢–ÖvTæÖRçFW‡D6öçFVçBÒ'6VBæ–ÖvSòææÖRòŠ=‹ŠòŠ}ŠíŠ­˜­Š}‹Š}˜M‹]˜‹Š“¢G·'6VBæ–ÖvRææÖWÖ¢-Š}ŠíŠ­‹Š}˜M‹]˜‹Š’˜]˜bŠÍŠý˜­Šò˜M‹‹‹bŠ}˜M˜]‹Š}˜­˜mŠ’#°¢7F÷Æ–&6²‚“°¢&VæFW$Bƒ“°¢7–æ4÷WGWG2‚“°¢7FGW2çFW‡D6öçFVçBÒ-˜˜ýŠ­ŠÒŠ}˜M˜]‹M‹˜‹‰²Š}ŠíŠ­‹Š}˜M‹]˜‹Š’Š}˜M˜]‹Š­Š‹}Š’Š˜r#°¢6WVVæ6UF–ÖT×2Ò²&VæFW%6WVVæ6T÷fW'f–Wr‚“²W'6—7E6WVVæ6TÖWFFF‚“°¢&Vg&W6„W‡÷'D6öçG&öÇ2‚“°¢Ò6F6‚†W'&÷"’²f–Â†W'&÷"“²Ð¢f–æÆÇ’²&ö¦V7D–çWBçfÇVRÒ"#²Ð§Ò“° §6WDVF—F÷$ÖöFR‚'6–×ÆR"“°§6WDVF—F÷%6V7F–öâ‚'66VæW2"“°§7–æ4Ö÷F–öåF–ÖT&÷VæG2‚“°§&Vg&W6„Ö÷F–öåVæFô'WGFöç2‚“°§WFFU&ö¦V7B‡²f–Ww÷'C¢&ö¦V7Bçf–Ww÷'BÒ“°§F–ÖVÆ–æTVF—F÷"ç&VæFW"‚“°§&Vg&W6„6†&7FW%F–ÖVÆ–æR‚“°§&VæFW$Bƒ“°§&Vg&W6„W‡÷'D6öçG&öÇ2‚“°§&VæFW%6WVVæ6T÷fW'f–Wr‚“°§7–æ4–çFVw&FVE&ævR‚“°§fö–B&W7F÷&TÖ÷7E&V6VçE6WVVæ6R‚“°¦W‡÷'D'WGFöâæFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â‚’Óâ²fö–BW‡÷'Ef–FVôf–ÆR‚“²Ò“°¦6æ6VÄW‡÷'D'WGFöâæFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â‚’Óâ6æ6VÄ7F—fTW‡÷'B‚-Š=˜M‹­˜’Š}˜M˜]‹=Š­ŠíŠý˜RŠ}˜MŠ­‹=ŠÍ˜­˜Bâ"’“°§G'•vV&Ô'WGFöâæFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â‚’Óâ°¢W‡÷'Df÷&ÖBçfÇVRÒ'vV&Ò#°¢W‡÷'Df÷&ÖBæF—7F6„WfVçB†æWrWfVçB‚&6†ævR"Â²'V&&ÆW3¢G'VRÒ’“°§Ò“°¦–çFVw&FVE&ö&T'WGFöâæFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â‚’Óâ²fö–B&ö&T–çFVw&FVDW‡÷'B‚“²Ò“°¦–çFVw&FVDW‡÷'D'WGFöâæFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â‚’Óâ²fö–BW‡÷'D–çFVw&FVE&ö¦V7B‚“²Ò“°¦f÷"†6öç7B6öçG&öÂöb¶–çFVw&FVEVÆ—G’Â–çFVw&FVDf÷&ÖBÂ–çFVw&FVDVF–òÂ–çFVw&FVDÖ—76–ætVF–òÂ–çFVw&FVDg&öÒÂ–çFVw&FVEFõÒ’°¢6öçG&öÂæFDWfVçDÆ—7FVæW"‚&6†ævR"Â‚’Óâ°¢6ÆV$–çFVw&FVE&W7VÇB‚“°¢–çFVw&FVDW'&÷"æ†–FFVâÒG'VS°¢–çFVw&FVDW'&÷"çFW‡D6öçFVçBÒ"#°¢–çFVw&FVE7FGW2çFW‡D6öçFVçBÒ-Š­‹­˜­‹Š¢Š]‹ŠýŠ}ŠýŠ}Š¢Š}˜MŠ­‹]Šý˜­‹âŠ=‹Šò˜ŠÝ‹RŠ}˜M‹]˜­‹­Š’˜Š}˜MŠý˜-Š’˜-Š˜BŠ}˜MŠŠýŠâ#°¢&Vg&W6„–çFVw&FVD6öçG&öÇ2‚“°¢Ò“°§Ð¦f÷"†6öç7B6öçG&öÂöb¶W‡÷'Df÷&ÖBÂW‡÷'DGW&F–öâÂW‡÷'EVÆ—G’ÂW‡÷'DVF–ôVæ&ÆVEÒ’°¢6öçG&öÂæFDWfVçDÆ—7FVæW"‚&6†ævR"Â‚’Óâ°¢6ÆV$W‡÷'E&W7VÇB‚“°¢&Vg&W6„W‡÷'D6öçG&öÇ2‚“°¢Ò“°§Ð§v–æF÷ræFDWfVçDÆ—7FVæW"‚'vV†–FR"Â‚’Óâ°¢–b‡6WVVæ6TWF÷6fUF–ÖW"’6ÆV%F–ÖV÷WB‡6WVVæ6TWF÷6fUF–ÖW"“°¢G'’²6GW&T7W'&VçE66VæR‚“²Ò6F6‚²ò¢F†R7W'&VçB¥4ôâ&VÖ–ç2f–Æ&ÆRg&öÒF†RÆ7BfÆ–BVF—Bâ¢òÐ¢6æ6VÄ7F—fTW‡÷'B‚-‹­Š}Šý‹Š¢Š}˜M‹]˜ŠÝŠ’Š=Š½˜mŠ}ŠŠ}˜MŠ­‹]Šý˜­‹â"“°¢VF–õ&WVW7Bæ&Vv–â‚“°¢VæF–ætVF–õ&WVW7BÒçVÆÃ°¢VF–ô–×÷'D–çFVçBÒçVÆÃ°¢7F÷6VÆV7FVDVF–õ&Wf–Wr‚“°¢G'’²VF–õÆ–W#òæFW7G&÷’‚“²Ò6F6‚²ò¢'&÷w6W"—2VæÆöF–æs²ÆÂÆö6ÂÆ–&6²†æFÆW2&R&V–ærF—66&FVBâ¢òÐ¢f÷"†6öç7B²W&ÂÒöbVF–ôf–ÆW2çfÇVW2‚’’–b‡W&Â’U$Âç&Wfö¶Tö&¦V7EU$Â‡W&Â“°¢VF–ôf–ÆW2æ6ÆV"‚“°¢–b†W‡÷'Ef–FVõW&Â’U$Âç&Wfö¶Tö&¦V7EU$Â†W‡÷'Ef–FVõW&Â“°¢W‡÷'Ef–FVõW&ÂÒçVÆÃ°¢–b†–çFVw&FVEf–FVõW&Â’U$Âç&Wfö¶Tö&¦V7EU$Â†–çFVw&FVEf–FVõW&Â“°¢–çFVw&FVEf–FVõW&ÂÒçVÆÃ°§Ò“°

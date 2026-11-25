@@ -31,6 +31,7 @@ on:
       - feature/integrated-av-export-l10b
       - refactor/motion-studio-l11g
       - feature/audio-core-fix-a-final
+      - feature/motion-studio-easy-mobile-l13l1
   workflow_dispatch:
 
 permissions:

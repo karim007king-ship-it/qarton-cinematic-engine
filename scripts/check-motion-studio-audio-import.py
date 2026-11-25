@@ -89,7 +89,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-audio-import-") as directory:
         page.wait_for_function("document.querySelector('#stage')?.width > 0")
         page.locator("#imageInput").set_input_files(str(image))
         page.wait_for_function("document.querySelector('#imageName').textContent.includes('preview-test.png')")
-        page.locator('nav.bottom-dock [data-editor-section="more"]').click()
+        page.locator('nav.bottom-dock [data-editor-section="project"]').click()
         page.locator("#advancedProjectOptions > summary").click()
         page.locator("#duration").press("Home")
         page.wait_for_function("document.querySelector('#integratedTo').value === '3000'")
@@ -199,7 +199,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-audio-import-") as directory:
         }""")
         assert restored_signal["rms"] > 0.015 and abs(restored_signal["frequency"] - 660) < 35, restored_signal
 
-        page.locator('nav.bottom-dock [data-editor-section="more"]').click()
+        page.locator('nav.bottom-dock [data-editor-section="project"]').click()
         page.locator(".export-options > summary").click()
         page.locator("#integratedFormat").select_option("webm")
         page.locator("#integratedAudio").select_option("mix")

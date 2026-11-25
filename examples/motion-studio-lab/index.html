@@ -376,17 +376,19 @@
     </section>
     <section class="tool-drawer" aria-label="أدوات التحرير">
       <section id="toolPanel-scenes" class="tool-panel" data-tool-panel="scenes" hidden aria-label="أدوات المشاهد"></section>
-      <section id="toolPanel-motion" class="tool-panel" data-tool-panel="motion" aria-label="أدوات الحركة"></section>
+      <section id="toolPanel-motion" class="tool-panel" data-tool-panel="motion" hidden aria-label="أدوات الحركة"></section>
       <section id="toolPanel-audio" class="tool-panel" data-tool-panel="audio" hidden aria-label="أدوات الصوت"></section>
+      <section id="toolPanel-characters" class="tool-panel" data-tool-panel="characters" hidden aria-label="أدوات الشخصيات"></section>
       <section id="toolPanel-effects" class="tool-panel" data-tool-panel="effects" hidden aria-label="أدوات المؤثرات"></section>
-      <section id="toolPanel-more" class="tool-panel" data-tool-panel="more" hidden aria-label="المزيد من الأدوات"></section>
+      <section id="toolPanel-project" class="tool-panel" data-tool-panel="project" hidden aria-label="المشروع والحفظ والتصدير"></section>
     </section>
     <nav class="bottom-dock" aria-label="أقسام التحرير">
       <button type="button" data-editor-section="scenes" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="8" height="7" rx="1"/><rect x="13" y="4" width="8" height="7" rx="1"/><rect x="3" y="13" width="8" height="7" rx="1"/><rect x="13" y="13" width="8" height="7" rx="1"/></svg><span>المشاهد</span></button>
-      <button type="button" data-editor-section="motion" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17 17 4l3 3L7 20l-3-3Zm10-10 3 3M5 8V4m-2 2h4m10 12v-4m-2 2h4"/></svg><span>الحركة</span></button>
+      <button type="button" data-editor-section="motion" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17 17 4l3 3L7 20l-3-3Zm10-10 3 3M5 8V4m-2 2h4m10 12v-4m-2 2h4"/></svg><span>الحركة</span></button>
       <button type="button" data-editor-section="audio" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4m4-8v12m4-15v18m4-14v10m4-7v4"/></svg><span>الصوت</span></button>
+      <button type="button" data-editor-section="characters" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0M9 8h.01M15 8h.01"/></svg><span>الشخصيات</span></button>
       <button type="button" data-editor-section="effects" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2Zm7 13 .8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z"/></svg><span>المؤثرات</span></button>
-      <button type="button" data-editor-section="more" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg><span>المزيد</span></button>
+      <button type="button" data-editor-section="project" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM8 4v6h8V4M8 20v-6h8v6"/></svg><span>المشروع</span></button>
     </nav>
     <details id="professionalMotionControls" class="advanced-motion-drawer">
       <summary>الإعدادات الاحترافية للحركة</summary>

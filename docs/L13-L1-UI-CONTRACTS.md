@@ -1,12 +1,12 @@
-# L13-L1 — Easy Studio mobile rebuild: initial audit and UI contracts
+# L13-L1 — Easy Studio mobile rebuild: UI contracts and shell
 
-Status: Draft planning on `feature/motion-studio-easy-mobile-l13l1`, based on PR #143 head `2459e5a6143c1d20226d73a8321f2bbeeb9e477b`. Visual layout and destructive control-removal decisions are intentionally unapproved pending Sol L13-S1 recommendations.
+Status: Draft implementation on `feature/motion-studio-easy-mobile-l13l1`, based on PR #143 head `2459e5a6143c1d20226d73a8321f2bbeeb9e477b`. Reconciled with Sol L13-S1 audit on PR #144. PR #144 and Sol's branch were read-only; this implementation is on PR #145.
 
 ## Current structure
 
 `examples/motion-studio-lab/studio.js` is the browser composition root and still contains project orchestration, playback/export coordination, UI state, and event wiring. A source scan finds 68 `.addEventListener(...)` call sites in this file. Some attach during rendering and are recreated with their controls; lifecycle listeners include `pagehide`, `pageshow`, and `focus`. The current stable behavior includes project/image open and save, undo, scene CRUD/reorder, playback/seek/replay, camera presets and manual keyframes, characters, audio record/import/music, visual effects, and video export.
 
-The existing engine boundary is already partly modular: Motion Studio model/export/runtime code lives under `packages/motion-studio/`; camera, motion, audio, character, and effects primitives live under `src/`; browser-specific presentation and file pickers live under `examples/motion-studio-lab/`. L13 should improve the editor boundary without moving browser concerns into the engine or changing the project schema.
+The existing engine boundary is already partly modular: Motion Studio model/export/runtime code lives under `packages/motion-studio/`; camera, motion, audio, character, and effects primitives live under `src/`; browser-specific presentation and file pickers live under `examples/motion-studio-lab/`. This L13-L1 shell does not move browser concerns into the engine or change the project schema.
 
 ## Initial control and listener inventory
 
@@ -22,9 +22,12 @@ The existing engine boundary is already partly modular: Motion Studio model/expo
 
 The scan count is a source inventory, not a claim that each handler is unique or defective. No control will be removed based only on this scan.
 
-## Proposed UI and controller boundaries (not final visual design)
+## Sol L13-S1 reconciliation and L13-L1 shell
 
-- **StudioShell**: persistent preview, top actions, scene strip, bottom section navigation, and an active settings panel.
+- The shell now has a persistent preview, top save/undo/export actions, a scene thumbnail strip with an add-scene action, and six bottom sections: Scenes, Motion, Audio, Characters, Effects, and Project.
+- The simple mode remains the default. Mode selection is inside Project; changing a section does not silently switch to professional mode.
+- Character timeline is presented in its own section. Existing scene, project, and export controls remain reachable; technical project/export controls remain in their advanced disclosures.
+- This is the L13-L1 shell stage only. It keeps existing DOM IDs and engine/project APIs. It does not claim the full operation-state/controller split or completion of every simplified workflow.
 - **EditorState**: selected scene, active section, simplified/professional mode, focus target, and transient busy state. Keep this out of saved project JSON.
 - **Domain controllers**: `SceneController`, `MotionController`, `CharacterController`, `AudioController`, `EffectsController`, `ProjectController`, and `ExportController`. Controllers accept commands and return state/results without DOM access.
 - **View modules**: section-specific render/update functions subscribe to controller state and update only their own panel. Rendering must preserve focused inputs and pointer capture.
@@ -40,6 +43,6 @@ The scan count is a source inventory, not a claim that each handler is unique or
 6. Simplified mode is the default; technical controls remain available through a deliberate professional/advanced path.
 7. A UI adapter cannot modify the engine clock or project except through validated controller commands.
 
-## Next steps after Sol L13-S1
+## Remaining staged work
 
-Compare Sol's layout and interaction proposal with this inventory, agree on the smallest module boundaries, then implement the compact shell and section-specific views in reviewable stages. Run Chromium checks for every action and short mobile viewports, then package the Android preview. No final layout, icon system, or control relocation is locked in this initial planning commit.
+Continue with section workflow simplification, central busy/operation state, focus and pointer-preserving view updates, and full Android-sized Chromium action coverage in follow-up L13 stages. Sol L13-S1 prototype is a design reference only; it does not prove real microphone capture or replace production editor controls. Keep publication isolated from the existing GitHub Pages origin because its site-wide replacement and shared browser storage would affect unrelated content.
