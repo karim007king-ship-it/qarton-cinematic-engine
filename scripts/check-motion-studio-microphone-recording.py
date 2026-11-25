@@ -238,6 +238,9 @@ with tempfile.TemporaryDirectory(prefix="qarton-virtual-mic-") as directory:
             # Export both scenes, decode the file, and verify the recorded signal is present in its audio stream.
             page.locator('nav.bottom-dock [data-editor-section="more"]').click()
             page.locator(".export-options > summary").click()
+            page.locator("#integratedFormat").select_option(video_format)
+            page.locator("#integratedAudio").select_option("mix")
+            page.locator("#integratedQuality").select_option("480p")
             page.locator("#integratedProbeButton").click()
             page.wait_for_function("document.querySelector('#integratedStatus').textContent.includes('تم التحقق فعليًا') || !document.querySelector('#integratedError').hidden", timeout=30000)
             assert "تم التحقق فعليًا" in page.locator("#integratedStatus").inner_text(), page.locator("#integratedError").inner_text()
