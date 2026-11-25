@@ -164,7 +164,7 @@ jobs:
           retention-days: 30
 
   publish-l12-a2-preview:
-    if: github.event_name == 'pull_request' && github.head_ref == 'feature/audio-core-fix-a-final'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feature/audio-core-fix-a-final'
     needs: preview
     runs-on: ubuntu-24.04
     concurrency:
