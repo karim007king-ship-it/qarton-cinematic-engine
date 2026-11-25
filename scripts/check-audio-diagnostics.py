@@ -26,6 +26,18 @@ try:
             assert result["source"] == source and result["status"] == "finalized", result
             assert result["decodedDurationMs"] > 4000 and result["rms"] > 0.001 and result["peak"] > 0.001, result
             print(source, result)
+        assert result["liveMic"]["frames"] > 0 and result["liveMic"]["peak"] > 0.001, result
+        page.set_viewport_size({"width": 320, "height": 568})
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        page.click("#full")
+        page.wait_for_function("document.querySelector('#level').value > 0", timeout=10000)
+        assert page.locator("#tone").is_disabled()
+        page.wait_for_function("!document.querySelector('#full').disabled", timeout=40000)
+        assert page.evaluate("state.fullTest.mic === 'pass' && state.fullTest.synthetic === 'pass'")
+        assert json.loads(page.locator("#result").inner_text())["source"] == "mic"
+        assert page.locator("#level").get_attribute("max") == "1"
+        page.click("#copy")
+        page.wait_for_function("document.querySelector('#report-status').textContent.length > 0")
         page.click("#play")
         page.wait_for_function("document.querySelector('#log').textContent.includes('started')")
         page.evaluate("""async () => {
