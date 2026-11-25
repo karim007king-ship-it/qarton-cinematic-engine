@@ -2097,7 +2097,16 @@ $("audioInput").addEventListener("change", async () => {
     $("audioFileName").textContent = `${metadata.name} · ${(metadata.size / 1024 / 1024).toFixed(2)} MiB · ${(durationMs / 1000).toFixed(2)} ث`;
     $("audioTimelineMessage").textContent = `تم التحقق من الملف. مدته ${(durationMs / 1000).toFixed(2)} ثانية؛ أضفه إلى مسار عند المؤشر.`;
     renderAudioInspector();
-  } catch (error) { if (audioRequest.isCurrent(requestToken)) $("audioTimelineMessage").textContent = errorText(error); }
+   } catch (error) {
+    if (audioRequest.isCurrent(requestToken)) {
+      activeAudioAssetId = null;
+      const reason = /\.amr$/i.test(file.name) || /^audio\/amr(?:-wb)?$/i.test(file.type)
+        ? "تسجيل AMR غير مدعوم حاليًا. اختر تسجيلًا بصيغة M4A أو WAV أو WebM أو MP3."
+        : errorText(error);
+      $("audioFileName").textContent = "لم يُعتمد الملف: " + reason;
+      $("audioTimelineMessage").textContent = reason;
+    }
+  }
   finally {
     const isCurrentRequest = audioRequest.isCurrent(requestToken);
     if (pendingAudioRequest === requestToken) pendingAudioRequest = null;
