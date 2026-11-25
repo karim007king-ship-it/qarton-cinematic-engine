@@ -183,13 +183,23 @@ jobs:
         with:
           ref: main
           path: pages-base
+      - name: Checkout the L12-A2 preview source
+        uses: actions/checkout@v4
+        with:
+          ref: feature/audio-core-fix-a-final
+          path: preview-source
+      - name: Build isolated Motion Studio preview
+        working-directory: preview-source
+        run: |
+          npm install --no-save --no-package-lock esbuild@0.25.12
+          MOTION_STUDIO_PREVIEW_SLUG=motion-studio-l12-a2 node scripts/build-motion-studio-preview.mjs
       - name: Add the isolated Motion Studio preview route
         run: |
           mkdir -p _site
           cp -R pages-base/index.html pages-base/docs pages-base/examples pages-base/packages pages-base/src pages-base/official-intro.mp4 _site/
           mkdir -p _site/motion-studio-l12-a2
-          cp dist/motion-studio-l12-a2/index.html _site/motion-studio-l12-a2/index.html
-          cp dist/motion-studio-l12-a2/README.txt _site/motion-studio-l12-a2/README.txt
+          cp preview-source/dist/motion-studio-l12-a2/index.html _site/motion-studio-l12-a2/index.html
+          cp preview-source/dist/motion-studio-l12-a2/README.txt _site/motion-studio-l12-a2/README.txt
           sha256sum _site/motion-studio-l12-a2/index.html _site/motion-studio-l12-a2/README.txt > _site/motion-studio-l12-a2/SHA256SUMS.txt
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
