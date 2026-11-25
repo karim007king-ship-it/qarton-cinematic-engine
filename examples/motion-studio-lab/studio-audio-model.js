@@ -91,11 +91,13 @@ export function makeAudioAssetMetadata(id, file) {
 
 export async function readAudioDuration(file, { AudioClass = globalThis.Audio, timeoutMs = 10000 } = {}) {
   if (typeof AudioClass !== "function") throw new Error("لا يتوفر قارئ بيانات الصوت في هذا المتصفح.");
-  const url = URL.createObjectURL(file);
+  const { mime } = validateAudioFile(file);
+  const source = file.type === mime ? file : new Blob([file], { type: mime });
   const audio = new AudioClass();
+  const url = URL.createObjectURL(source);
   try {
     return await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("انتهت مهلة قراءة مدة ملف الصوت.")), timeoutMs);
+      const timer = setTimeout(() => { cleanup(); reject(new Error("انتهت مهلة قراءة مدة ملف الصوت.")); }, timeoutMs);
       const cleanup = () => { clearTimeout(timer); audio.removeEventListener?.("loadedmetadata", loaded); audio.removeEventListener?.("error", failed); };
       const loaded = () => {
         cleanup();

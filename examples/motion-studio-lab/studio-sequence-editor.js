@@ -1,7 +1,7 @@
 import {
-  addStudioSequenceScene, compileStudioSequence, createStudioSequenceV1,
+  addStudioSequenceScene, compileStudioSequence, compileStudioSequenceV2, createStudioSequenceV1,
   deleteStudioSequenceScene, duplicateStudioSequenceScene, reorderStudioSequenceScene,
-  sampleStudioSequence, validateStudioSequenceV1
+  migrateStudioSequenceV1ToV2, sampleStudioSequenceV2, validateStudioSequenceV1
 } from "../../packages/motion-studio/index.js";
 
 const NAME_LIMIT = 80;
@@ -24,6 +24,7 @@ function sceneIndex(sequence, id) {
 export function createStudioSequenceEditor(sequence, { names = {}, activeSceneId } = {}) {
   let snapshot = validateStudioSequenceV1(sequence);
   let compiledSnapshot = compileStudioSequence(snapshot);
+  let compiledSnapshotV2 = compileStudioSequenceV2(migrateStudioSequenceV1ToV2(snapshot));
   let sceneSummaries = [];
   const labels = new Map();
   for (const scene of snapshot.scenes) labels.set(scene.id, checkedName(names[scene.id] ?? `المشهد ${sceneIndex(snapshot, scene.id) + 1}`));
@@ -44,6 +45,7 @@ export function createStudioSequenceEditor(sequence, { names = {}, activeSceneId
   function adopt(next, nextActive = activeId) {
     snapshot = validateStudioSequenceV1(next);
     compiledSnapshot = compileStudioSequence(snapshot);
+    compiledSnapshotV2 = compileStudioSequenceV2(migrateStudioSequenceV1ToV2(snapshot));
     const present = new Set(snapshot.scenes.map(scene => scene.id));
     for (const id of labels.keys()) if (!present.has(id)) labels.delete(id);
     snapshot.scenes.forEach((scene, index) => {
@@ -58,7 +60,7 @@ export function createStudioSequenceEditor(sequence, { names = {}, activeSceneId
     return Object.freeze({ sequence: snapshot, activeSceneId: activeId,
       scenes: Object.freeze(sceneSummaries),
       durationMs: compiledSnapshot.durationMs,
-      compiled: compiledSnapshot });
+      compiled: compiledSnapshot, compiledV2: compiledSnapshotV2 });
   }
 
   function updateScene(id, update) {
@@ -116,7 +118,7 @@ export function createStudioSequenceEditor(sequence, { names = {}, activeSceneId
         return { ...scene, project };
       });
     },
-    sample(timeMs) { return sampleStudioSequence(compiledSnapshot, timeMs); },
+    sample(timeMs) { return sampleStudioSequenceV2(compiledSnapshotV2, timeMs); },
     timeFor(id, localMs) {
       const index = sceneIndex(snapshot, id);
       const scene = snapshot.scenes[index];
