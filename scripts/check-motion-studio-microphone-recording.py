@@ -90,6 +90,10 @@ with tempfile.TemporaryDirectory(prefix="qarton-virtual-mic-") as directory:
               window.__qartonRecordedPreviewVoices = [];
               window.Audio = function(...args) {
                 const voice = new NativeAudio(...args);
+                const nativeDuration = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'duration').get;
+                Object.defineProperty(voice, 'duration', {configurable: true, get() {
+                  return window.__qartonForceInfiniteAudioDuration ? Infinity : nativeDuration.call(this);
+                }});
                 const Ctx = window.AudioContext || window.webkitAudioContext;
                 if (Ctx) {
                   const context = new Ctx();
@@ -197,6 +201,8 @@ with tempfile.TemporaryDirectory(prefix="qarton-virtual-mic-") as directory:
 
             page.locator('nav.bottom-dock [data-editor-section="audio"]').click()
             page.locator("#audioTrackType").select_option("music")
+            # Reproduce Android WebView's metadata quirk while retaining real Chromium decoding.
+            page.evaluate("window.__qartonForceInfiniteAudioDuration = true")
             record_button = page.locator(".microphone-record-button")
             record_button.click()
             page.wait_for_function("document.querySelector('.microphone-record-button').textContent === 'إيقاف التسجيل'", timeout=10000)
@@ -205,6 +211,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-virtual-mic-") as directory:
             page.wait_for_timeout(1800)
             record_button.click()
             page.wait_for_function("document.querySelectorAll('#audioTracks .audio-clip').length === 1", timeout=30000)
+            page.evaluate("window.__qartonForceInfiniteAudioDuration = false")
             clip = page.locator("#audioTracks .audio-clip")
             assert "recording-" in clip.inner_text(), clip.inner_text()
             duration_ms = int(page.locator("#audioClipDuration").input_value())
