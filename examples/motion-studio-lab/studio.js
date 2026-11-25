@@ -225,6 +225,36 @@ function readStoredProjectId() {
   } catch { return null; }
 }
 let projectStorageId = readStoredProjectId() ?? makeLocalId("project");
+const AUDIO_DURATION_METADATA_PREFIX = "qarton-motion-studio-audio-durations:";
+function readAudioDurationHint(assetId) {
+  try {
+    const metadata = JSON.parse(localStorage.getItem(`${AUDIO_DURATION_METADATA_PREFIX}${projectStorageId}`) || "{}");
+    const durationMs = metadata?.[assetId];
+    if (Number.isSafeInteger(durationMs) && durationMs > 0 && durationMs <= 3_600_000) return durationMs;
+  } catch { /* Storage metadata is advisory; the browser decoder remains authoritative when available. */ }
+  let inferredMs = 0;
+  for (const scene of sequenceEditor?.sequence.scenes ?? []) for (const track of scene.audioTracks) {
+    for (const clip of track.clips) if (clip.asset === assetId && Number.isSafeInteger(clip.durationMs)) {
+      inferredMs = Math.max(inferredMs, clip.durationMs);
+    }
+  }
+  return inferredMs;
+}
+function rememberAudioDuration(assetId, durationMs) {
+  const value = Math.round(durationMs);
+  if (typeof assetId !== "string" || !Number.isSafeInteger(value) || value <= 0 || value > 3_600_000) return false;
+  try {
+    const key = `${AUDIO_DURATION_METADATA_PREFIX}${projectStorageId}`;
+    let metadata = {};
+    try { metadata = JSON.parse(localStorage.getItem(key) || "{}"); } catch { /* Replace corrupt advisory metadata. */ }
+    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) metadata = {};
+    metadata[assetId] = value;
+    const keys = Object.keys(metadata);
+    for (const staleId of keys.slice(0, Math.max(0, keys.length - 256))) delete metadata[staleId];
+    localStorage.setItem(key, JSON.stringify(metadata));
+    return true;
+  } catch { return false; }
+}
 let sequenceEditor = createStudioSequenceEditor(createStudioSequenceV1({
   viewport: project.viewport,
   scenes: [{ id: "scene-1", project, audioTracks, characterTracks: [characterTrack], visualEffectsTrack }],
@@ -813,6 +843,7 @@ async function prepareSequenceAudioInfo(sequence, signal) {
       source = { file, url, durationMs };
       audioFiles.set(id, source);
     }
+    if (!source.durationMs) source.durationMs = readAudioDurationHint(id);
     if (!source.durationMs) throw new Error(`مدة ملف الصوت غير معروفة: ${asset.name}`);
     info.push({ id, durationMs: Math.max(1, Math.round(source.durationMs)), channels: 2, sampleRate: 48_000 });
   }
@@ -1296,7 +1327,8 @@ async function useLibraryAsset(id) {
       if (!audio) {
         const file = new File([blob], asset.name, { type: asset.mimeType });
         const url = URL.createObjectURL(file);
-        let durationMs = 0; try { durationMs = await readAudioDuration(file); } catch { /* Timeline clips retain their authored duration. */ }
+        let durationMs = 0; try { durationMs = await readAudioDuration(file); } catch { /* Use the validated duration captured when this asset was recorded/imported. */ }
+        durationMs ||= readAudioDurationHint(id);
         audio = { file, url, durationMs }; audioFiles.set(id, audio);
       }
       activeAudioAssetId = id;
@@ -1722,7 +1754,10 @@ async function restoreSceneAssets(scene) {
     const url = URL.createObjectURL(file);
     let durationMs = 0;
     try { durationMs = await readAudioDuration(file); }
-    catch (error) { $("audioTimelineMessage").textContent = `تعذر قراءة الصوت ${asset.name}: ${errorText(error)}`; }
+    catch (error) {
+      durationMs = readAudioDurationHint(asset.id);
+      if (!durationMs) $("audioTimelineMessage").textContent = `تعذر قراءة الصوت ${asset.name}: ${errorText(error)}`;
+    }
     if (cached?.url) URL.revokeObjectURL(cached.url);
     audioFiles.set(asset.id, { file, url, durationMs });
   }
@@ -2288,6 +2323,7 @@ async function importStudioAudio(file, { durationHintMs = null, recorded = false
     const previous = audioFiles.get(id);
     if (previous?.url) URL.revokeObjectURL(previous.url);
     audioFiles.set(id, { file: normalizedFile, url, durationMs });
+    rememberAudioDuration(id, durationMs);
     audioAssets = sequenceEditor.sequence.assets.filter(asset => asset.kind === "audio").map(assetMetadataToAudio);
     activeAudioAssetId = id;
     rebuildAudioPlayer({ resume: isPlaying });
