@@ -250,8 +250,8 @@ def exercise(context, url):
     square_project = re.search(r"(\d+) × (\d+) · معاينة (\d+) × (\d+)", page.locator("#viewportValue").evaluate("el => el.textContent"))
     assert square_project and square_project.group(1) == square_project.group(2)
 
-    page.locator('[data-editor-mode-button="professional"]').click()
     reveal_editor_section("project")
+    page.locator('[data-editor-mode-button="professional"]').click()
     assert page.locator("#aspectPreset").is_visible()
     assert page.locator("#aspectPreset").input_value() == "original"
     assert page.locator("#fitMode").input_value() == "fit"
