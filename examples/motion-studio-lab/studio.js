@@ -2069,6 +2069,70 @@ $("assetLibraryInput").addEventListener("change", async () => {
 });
 
 $("audioInput").addEventListener("change", () => { void importStudioAudio($("audioInput").files?.[0]); });
+// Microphone capture shares the validated import path.
+const microphoneButton = document.createElement("button");
+microphoneButton.type = "button";
+microphoneButton.className = "secondary-button";
+microphoneButton.textContent = "تسجيل بالميكروفون";
+$("audioInput").after(microphoneButton);
+let microphoneSession = null;
+let microphoneStarting = false;
+microphoneButton.addEventListener("click", async () => {
+  if (microphoneSession) {
+    if (microphoneSession.recorder.state === "recording") microphoneSession.recorder.stop();
+    return;
+  }
+  if (microphoneStarting || activeExport || pendingAudioRequest !== null) return;
+  microphoneStarting = true;
+  microphoneButton.disabled = true;
+  let stream;
+  try {
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder !== "function") throw new Error("الميكروفون غير متاح في هذا المتصفح. افتح التطبيق عبر HTTPS أو استورد ملفًا صوتيًا.");
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    if (activeExport || pendingAudioRequest !== null) throw new Error("انتظر انتهاء العملية الحالية.");
+    const mimeType = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm", "audio/ogg;codecs=opus"].find(type => MediaRecorder.isTypeSupported(type));
+    if (!mimeType) throw new Error("لا توجد صيغة تسجيل متوافقة.");
+    const recorder = new MediaRecorder(stream, { mimeType });
+    const chunks = [];
+    let bytes = 0, failed = false;
+    const session = { recorder, stream };
+    microphoneSession = session;
+    const timer = setTimeout(() => { if (recorder.state === "recording") recorder.stop(); }, 60000);
+    recorder.ondataavailable = event => {
+      bytes += event.data.size;
+      if (bytes > 20 * 1024 * 1024) { failed = true; if (recorder.state === "recording") recorder.stop(); }
+      else if (event.data.size) chunks.push(event.data);
+    };
+    recorder.onerror = () => { failed = true; if (recorder.state === "recording") recorder.stop(); };
+    recorder.onstop = async () => {
+      clearTimeout(timer);
+      stream.getTracks().forEach(track => track.stop());
+      microphoneSession = null;
+      microphoneButton.textContent = "تسجيل بالميكروفون";
+      microphoneButton.disabled = false;
+      if (failed || !bytes) { $("audioTimelineMessage").textContent = "تعذر حفظ التسجيل الصوتي."; return; }
+      const type = (recorder.mimeType || mimeType).split(";")[0];
+      const ext = type === "audio/mp4" ? "m4a" : type === "audio/ogg" ? "ogg" : "webm";
+      if (activeExport || pendingAudioRequest !== null) { $("audioTimelineMessage").textContent = "تعذر اعتماد التسجيل أثناء عملية أخرى."; return; }
+      await importStudioAudio(new File(chunks, "recording-" + Date.now() + "." + ext, { type }));
+    };
+    try { recorder.start(250); } catch (error) { clearTimeout(timer); microphoneSession = null; throw error; }
+    microphoneButton.textContent = "إيقاف التسجيل";
+    $("audioTimelineMessage").textContent = "جارٍ التسجيل (حتى 60 ثانية).";
+  } catch (error) {
+    stream?.getTracks().forEach(track => track.stop());
+    $("audioTimelineMessage").textContent = errorText(error);
+  } finally {
+    microphoneStarting = false;
+    microphoneButton.disabled = false;
+  }
+});
+window.addEventListener("pagehide", () => {
+  if (microphoneSession) {
+    microphoneSession.recorder.onstop = null;
+    microphoneSession.stream.getTracks().forEach(track => track.stop());
+  }
+});
 async function importStudioAudio(file) {
   if (!file) return;
   const requestToken = audioRequest.begin();
