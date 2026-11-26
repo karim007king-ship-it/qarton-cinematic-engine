@@ -25,3 +25,8 @@ test("rejects actual external script and stylesheet references", () => {
   const external = html.replace("</head>", '<script src="https://example.invalid/app.js"></script></head>');
   assert.throws(() => inlineMotionStudioV2Html(external, css, js, "abcdef1234567"), /external resource/u);
 });
+
+test("escapes closing-script text inside the inlined bundle", () => {
+  const result = inlineMotionStudioV2Html(html, css, js + 'const sample = "</script>";', "abcdef1234567");
+  assert.match(result, /<\\\/script>/u);
+});

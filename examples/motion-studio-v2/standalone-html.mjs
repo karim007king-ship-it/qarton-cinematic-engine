@@ -14,7 +14,8 @@ export function inlineMotionStudioV2Html(html, css, javascript, commit) {
   markup = markup.replace(/<script\s+type="module"\s+src="\.\/app\.js"\s*>\s*<\/script>/iu, "");
   const externalMarkupResource = /<(?:script|link|img|iframe|audio|video|source)\b[^>]*\b(?:src|href)\s*=\s*["'](?:https?:)?\/\//iu.test(markup) ||
     /<(?:script|link|img|iframe|audio|video|source)\b[^>]*\b(?:src|href)\s*=/iu.test(markup);
-  let result = markup.replace("</body>", `<script>\n${javascript}\n</script>\n</body>`);
+  const safeJavascript = javascript.replace(/<\/script/giu, "<\\/script");
+  let result = markup.replace("</body>", `<script>\n${safeJavascript}\n</script>\n</body>`);
   result = result.replace('data-commit="dev"', `data-commit="${commit}"`);
   if (result === html || externalMarkupResource || /@import\s+url\(\s*["']?https?:\/\//iu.test(css) ||
       /url\(\s*["']?https?:\/\//iu.test(css)) {
