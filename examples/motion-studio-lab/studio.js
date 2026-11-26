@@ -2625,7 +2625,7 @@ microphoneButton.addEventListener("click", async () => {
     });
     const message = classification.message;
     if (!microphonePageHiding) {
-      $("audioTimelineMessage").textContent = message;
+      $("audioTimelineMessage").textContent = `${message} (${classification.errorName})`;
       lastMicrophoneDiagnostic = { state: "فشل بدء التسجيل", ...classification };
       const help = $("microphonePermissionHelp");
       $("microphonePermissionInstructions").textContent = classification.category === "permission_denied"

@@ -138,7 +138,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-virtual-mic-") as directory:
             page.wait_for_function("document.querySelector('#audioDiagnosticStatus').textContent.includes('NotAllowedError')")
             assert page.locator(".microphone-record-button").is_enabled(), "permission denial must release the record button"
             assert page.locator("#microphonePermissionHelp").is_visible(), "denied permission must expose Android recovery steps"
-            assert "NotAllowedError" in page.locator("#audioDiagnosticStatus").inner_text(), "diagnostics must preserve the browser error name"
+            assert "NotAllowedError" in page.locator("#audioTimelineMessage").inner_text(), "visible error must retain the browser error name"
             page.evaluate("""() => {
               window.__qartonRetryCalls = 0;
               Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {configurable:true, value:() => {
