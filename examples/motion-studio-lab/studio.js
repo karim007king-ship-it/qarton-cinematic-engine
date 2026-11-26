@@ -2512,7 +2512,14 @@ microphoneButton.addEventListener("click", async () => {
   microphonePageHiding = false;
   const startupController = new AbortController();
   microphoneStartupController = startupController;
-  lastMicrophoneDiagnostic = { state: "طلب إذن الميكروفون", startedAt: new Date().toISOString() };
+  lastMicrophoneDiagnostic = {
+    state: "طلب إذن الميكروفون", requestStage: "preflight", startedAt: new Date().toISOString(),
+    requestContext: {
+      origin: location.origin, secureContext: isSecureContext, topLevel: window.top === window.self,
+      getUserMedia: Boolean(navigator.mediaDevices?.getUserMedia), mediaRecorder: typeof MediaRecorder === "function",
+      microphonePolicyAllows: microphonePolicyAllows()
+    }
+  };
   stopPlayback();
   refreshMicrophoneBusyControls();
   let stream;
@@ -2524,7 +2531,9 @@ microphoneButton.addEventListener("click", async () => {
     }
     // Request capture immediately inside the user gesture. AudioContext is optional
     // metering and must never gate microphone capture or asset insertion.
+    lastMicrophoneDiagnostic.requestStage = "getUserMedia";
     stream = await requestMicrophoneWithTimeout(30000, startupController.signal);
+    lastMicrophoneDiagnostic.requestStage = "stream-acquired";
     microphoneStartupController = null;
     $("microphonePermissionHelp").hidden = true;
     if (microphonePageHiding) throw new DOMException("أُغلقت الصفحة أثناء طلب الميكروفون.", "AbortError");
@@ -2626,12 +2635,15 @@ microphoneButton.addEventListener("click", async () => {
     const message = classification.message;
     if (!microphonePageHiding) {
       $("audioTimelineMessage").textContent = `${message} (${classification.errorName})`;
-      lastMicrophoneDiagnostic = { state: "فشل بدء التسجيل", ...classification };
+      lastMicrophoneDiagnostic = {
+        state: "فشل بدء التسجيل", requestStage: lastMicrophoneDiagnostic.requestStage,
+        requestContext: lastMicrophoneDiagnostic.requestContext, ...classification
+      };
       const help = $("microphonePermissionHelp");
       $("microphonePermissionInstructions").textContent = classification.category === "permission_denied"
         ? "Android: الإعدادات ← التطبيقات ← التطبيق أو المتصفح الذي فتح Motion Studio ← الأذونات ← الميكروفون ← سماح. إذا فُتح داخل متصفح: معلومات الموقع/أذونات الموقع ← الميكروفون ← سماح. ارجع إلى Motion Studio ثم اضغط أعد المحاولة."
         : "افتح Motion Studio مباشرة في المتصفح، اسمح بطلب الميكروفون في نافذة الإذن، وتحقق من إذن الميكروفون للتطبيق في إعدادات Android. ثم اضغط أعد المحاولة.";
-      help.hidden = classification.category !== "permission_denied" && classification.category !== "permission_prompt_denied" && classification.category !== "source_policy_blocked" && classification.category !== "source_security_blocked";
+      help.hidden = classification.category !== "permission_denied" && classification.category !== "permission_or_policy_blocked" && classification.category !== "source_policy_blocked" && classification.category !== "source_security_blocked";
       $("audioDiagnosticStatus").textContent = `${message} ( ${classification.errorName}: ${classification.errorMessage} )`;
     }
   } finally {
@@ -2811,24 +2823,25 @@ fitSelect.addEventListener("change", () => {
 });
 
 imageInput.addEventListener("change", async () => {
+  const file = imageInput.files?.[0];
+  if (!file) {
+    status.textContent = "لم يتم اختيار صورة؛ بقيت المعاينة الحالية كما هي.";
+    imageInput.value = "";
+    return;
+  }
   invalidateExport("اختيرت صورة جديدة.");
   const requestToken = imageRequest.begin();
   pendingImageRequest = requestToken;
   clearFailure();
-  const file = imageInput.files?.[0];
-  if (!file) return;
-  selectedImageFile = file;
-  selectedImageDimensions = null;
-  currentFileInfo = null;
-  imageSource = placeholder;
   refreshExportControls();
-  renderAt(currentMs);
-  status.textContent = "جارٍ تحميل الصورة…";
+  status.textContent = "جارٍ تحميل الصورة الجديدة؛ بقيت الصورة الحالية ظاهرة حتى نجاحها.";
   try {
     const asset = await registerAssetFile(file);
     if (!imageRequest.isCurrent(requestToken)) return;
     const prepared = await loadImageSurface(file, requestToken);
     if (!prepared || !imageRequest.isCurrent(requestToken)) return;
+    selectedImageFile = file;
+    selectedImageDimensions = prepared.dimensions;
     imageSource = prepared.surface;
     sceneImageSources.set(asset.id, imageSource);
     project = { ...project, layers: project.layers.map((layer, index) => index === 0 ? { ...layer, assetId: asset.id } : layer) };
@@ -2838,6 +2851,7 @@ imageInput.addEventListener("change", async () => {
     captureCurrentScene({ refresh: true });
     await persistentAssets?.replaceSequence(sequenceEditor.sequence);
     imageName.textContent = `${currentFileInfo.name} · ${prepared.dimensions.width}×${prepared.dimensions.height}`;
+    imageInput.labels?.[0]?.querySelector("strong")?.replaceChildren("تغيير الصورة");
     renderAt(currentMs);
     makeThumbnail();
     renderSequenceOverview({ rebuildAssets: false });

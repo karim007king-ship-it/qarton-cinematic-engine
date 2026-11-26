@@ -194,7 +194,6 @@ body {
 #previewImagePicker .file-picker > span:first-child { width: 34px; height: 34px; font-size: 20px; }
 #previewImagePicker .file-picker strong { font-size: 12px; }
 #previewImagePicker .file-picker small { display: none; }
-.studio[data-image-ready="true"] #previewImagePicker { display: none; }
 #previewSceneStrip { display: none !important; }
 .preview-transport-host { min-width: 0; }
 .transport { display: grid; grid-template-columns: 44px minmax(64px, auto) minmax(0, 1fr); align-items: center; gap: 6px; min-height: 44px; margin: 0; }

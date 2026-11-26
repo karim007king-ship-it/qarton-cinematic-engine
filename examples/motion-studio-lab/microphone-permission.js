@@ -19,8 +19,8 @@ export function classifyMicrophoneFailure(error, {
     category = "permission_denied";
     message = "إذن الميكروفون مرفوض لهذا التطبيق أو الموقع. فعّله من إعدادات Android أو أذونات الموقع، ثم اضغط «أعد المحاولة».";
   } else if (errorName === "NotAllowedError") {
-    category = "permission_prompt_denied";
-    message = "لم يمنح المتصفح إذن الميكروفون. اسمح به من الطلب الظاهر، أو افتح إعدادات أذونات الموقع والتطبيق ثم أعد المحاولة.";
+    category = "permission_or_policy_blocked";
+    message = "رفض المتصفح طلب الميكروفون أو منعته سياسة الموقع أو الإطار. تحقق من إذن التطبيق والموقع، وافتح الرابط مباشرةً في المتصفح عند استخدام إطار مضمّن، ثم أعد المحاولة.";
   } else if (errorName === "SecurityError") {
     category = "source_security_blocked";
     message = "المتصفح حظر الميكروفون لهذا المصدر أو الإطار. افتح الرابط مباشرةً عبر HTTPS وتحقق من سياسة الأذونات.";
