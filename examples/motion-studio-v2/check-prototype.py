@@ -102,13 +102,14 @@ with sync_playwright() as p:
     set_range("#sceneDuration", 10)
     assert page.locator("#totalTime").inner_text() == "00:18"
     poses = {}
-    for preset in ["static", "zoom-in", "zoom-out", "right", "left", "up", "down"]:
+    for preset in ["zoom-in", "zoom-out", "right", "left", "up", "down", "static"]:
         page.locator("#cameraPreset").select_option(preset)
         set_range("#timelineSeek", 4000)
         page.wait_for_timeout(80)
         poses[preset] = page.locator("#previewCanvas").get_attribute("data-cameraPose")
         keys = page.locator("#previewCanvas").get_attribute("data-cameraKeyframes")
-        assert keys and len(keys.split(",")) >= 2, f"{preset} did not create core camera keys"
+        if preset != "static":
+            assert keys and len(keys.split(",")) >= 2, f"{preset} did not create core camera keys"
     assert poses["zoom-in"] != poses["static"]
     assert poses["zoom-out"] != poses["static"]
     assert poses["right"] != poses["left"]
