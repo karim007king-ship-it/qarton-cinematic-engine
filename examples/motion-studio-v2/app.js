@@ -133,6 +133,8 @@ import { createStudioV2Engine } from "./engine-adapter.js";
   } catch (error) {
     document.documentElement.dataset.prototypeReady = "false";
     document.documentElement.dataset.engineReady = "false";
+    document.documentElement.dataset.engineError = error?.message || String(error);
+    console.error("QARTON Motion Studio engine initialization failed", error);
     $("#demoReady").textContent = "تعذر التهيئة";
     $("#engineReady").textContent = "غير متصل";
     showToast(error?.message || "تعذر تشغيل المحرك.");

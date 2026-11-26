@@ -33,7 +33,8 @@ with sync_playwright() as p:
     page.route("https://**/*", lambda route: (external_requests.append(route.request.url), route.abort()))
     page.route("http://**/*", lambda route: (external_requests.append(route.request.url), route.abort()))
     page.goto(HTML.as_uri(), wait_until="load")
-    page.wait_for_function("document.documentElement.dataset.engineReady === 'true'")
+    page.wait_for_function("document.documentElement.dataset.engineReady === 'true' || document.documentElement.dataset.engineError || document.documentElement.dataset.jsError", timeout=10000)
+    assert page.evaluate("document.documentElement.dataset.engineReady") == "true", page.evaluate("JSON.stringify({engine:document.documentElement.dataset.engineError,js:document.documentElement.dataset.jsError,ready:document.documentElement.dataset.prototypeReady})")
     assert page.locator("#demoReady").inner_text() == "جاهز"
     assert page.locator("#engineReady").inner_text() == "متصل"
     assert page.locator("#previewCanvas").get_attribute("data-ready") == "true"
