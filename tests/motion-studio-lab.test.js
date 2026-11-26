@@ -45,8 +45,10 @@ test("L11-F2 Android workspace expands the preview and keeps file and scene cont
     "the Canvas has no reserved blank strip below the preview title");
   assert.match(css, /\.sr-only\s*\{[^}]*clip-path:\s*inset\(50%\)/,
     "native file inputs use a real screen-reader-only treatment");
-  assert.match(css, /\.studio\[data-image-ready="true"\]\s+#previewImagePicker\s*\{\s*display:\s*none/,
-    "image picker is removed from the preview after media loads");
+  assert.doesNotMatch(css, /\.studio\[data-image-ready="true"\]\s+#previewImagePicker\s*\{\s*display:\s*none/,
+    "image picker remains available for replacing the current image");
+  assert.match(script, /replaceChildren\("تغيير الصورة"\)/,
+    "the visible picker changes its label after an image loads");
   assert.match(html, /id="moveSceneLeftButton"/);
   assert.match(html, /id="moveSceneRightButton"/);
   assert.match(html, /data-motion-preset="zoom-in"[^>]*>[\s\S]*?<svg viewBox="0 0 24 24"/);

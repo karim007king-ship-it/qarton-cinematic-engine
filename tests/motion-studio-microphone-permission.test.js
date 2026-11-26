@@ -15,9 +15,12 @@ test("Android permission denial is distinguished from an unavailable secure cont
   assert.notEqual(insecure.category, denied.category);
 });
 
-test("NotAllowedError distinguishes prompt denial and source policy from permission state", () => {
+test("NotAllowedError stays ambiguous unless permission or source policy is confirmed", () => {
   const error = Object.assign(new Error("NotAllowedError: blocked"), { name: "NotAllowedError" });
-  assert.equal(classifyMicrophoneFailure(error, { permissionState: "prompt" }).category, "permission_prompt_denied");
+  const prompt = classifyMicrophoneFailure(error, { permissionState: "prompt" });
+  assert.equal(prompt.category, "permission_or_policy_blocked");
+  assert.match(prompt.message, /سياسة الموقع أو الإطار/);
+  assert.equal(classifyMicrophoneFailure(error, { permissionState: "unknown" }).category, "permission_or_policy_blocked");
   assert.equal(classifyMicrophoneFailure(error, { permissionState: "granted", policyAllowed: false }).category, "source_policy_blocked");
   assert.equal(classifyMicrophoneFailure(Object.assign(new Error("sandbox"), { name: "SecurityError" })).category, "source_security_blocked");
 });
