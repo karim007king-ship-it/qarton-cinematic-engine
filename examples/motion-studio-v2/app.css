@@ -48,3 +48,38 @@ body { color:var(--text); } button,input,select { font:inherit; } button { -webk
 @media(max-width:359px) { :root { --nav-height:62px; } .studio { grid-template-rows:54px minmax(0,1fr) 48px 82px calc(var(--nav-height) + var(--safe-bottom)); } .topbar { gap:4px; padding-inline:8px; } .brand { gap:5px; } .brand-mark { width:30px; height:30px; border-radius:9px; font-size:20px; } .brand-copy strong { font-size:10px; } .prototype-tag { max-width:34px; font-size:8px; } .icon-action { width:44px; height:48px; } .icon-action svg { width:18px; height:18px; } .transport { gap:5px; padding-inline:10px; } .fullscreen-button { width:44px; padding:0; } .fullscreen-button span { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); } .scene-rail { padding-inline:9px; } .add-scene { min-width:59px; padding-inline:5px; } .bottom-nav { padding-inline:4px; } .bottom-nav button span { font-size:9px; } .tool-sheet { inset-inline:5px; padding-inline:10px; } }
 @media(min-height:760px) { .studio { grid-template-rows:58px minmax(0,1fr) 54px 98px calc(var(--nav-height) + var(--safe-bottom)); } }
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; animation-duration:.01ms!important; animation-iteration-count:1!important; transition-duration:.01ms!important; } }
+
+.preview-canvas { display:block; object-fit:contain; }
+.time-readout { position:relative; padding-bottom:8px; }
+#timelineSeek { position:absolute; inset-inline:0; inset-block-end:-7px; width:100%; height:22px; margin:0; accent-color:var(--gold); cursor:pointer; touch-action:pan-y; }
+#timelineSeek::-webkit-slider-runnable-track { height:3px; border-radius:3px; background:#393a40; }
+#timelineSeek::-moz-range-track { height:3px; border-radius:3px; background:#393a40; }
+#timelineSeek::-webkit-slider-thumb { width:12px; height:12px; margin-top:-4px; border-radius:50%; background:var(--gold-bright); }
+.scene-rail { position:relative; }
+.rail-heading { position:relative; }
+.scene-menu-toggle { display:grid; place-items:center; width:44px; height:44px; margin-inline-start:auto; border:1px solid #353740; border-radius:12px; background:#17191f; color:var(--gold-bright); font-size:22px; line-height:1; cursor:pointer; }
+.scene-menu { position:absolute; z-index:7; inset-inline-start:0; inset-block-start:43px; display:grid; grid-template-columns:1fr 1fr; gap:5px; width:min(260px,calc(100vw - 34px)); padding:7px; border:1px solid #4a402d; border-radius:14px; background:#17191ff5; box-shadow:0 12px 30px #000b; }
+.scene-menu[hidden] { display:none!important; }
+.scene-menu button { min-height:44px; border:1px solid #33363e; border-radius:10px; background:#20222a; color:#eee8da; font-size:11px; cursor:pointer; }
+.scene-menu button:disabled { opacity:.4; cursor:default; }
+.select-row { align-items:center; }
+.select-row select { grid-column:1/-1; width:100%; min-height:44px; padding:0 10px; border:1px solid #393c43; border-radius:10px; background:#111319; color:var(--text); }
+.range-row input[type="range"] { min-height:36px; }
+.tool-tile:disabled { opacity:.45; cursor:default; }
+@media (orientation:landscape) and (max-height:500px) {
+  :root { --nav-height:57px; }
+  .studio { grid-template-columns:minmax(155px,28%) minmax(0,1fr); grid-template-rows:46px minmax(0,1fr) 54px calc(var(--nav-height) + var(--safe-bottom)); }
+  .topbar { grid-column:1/-1; padding-inline:8px; }
+  .preview-wrap { grid-column:2; grid-row:2; padding:5px 9px; }
+  .transport { grid-column:2; grid-row:3; padding-inline:9px; }
+  .scene-rail { grid-column:1; grid-row:2; grid-template-columns:1fr; grid-template-rows:22px minmax(0,1fr) auto; padding:5px 7px; border-inline-end:1px solid #ffffff0a; }
+  .rail-heading { grid-column:1; }
+  .scene-list { align-content:start; flex-direction:column; align-items:stretch; overflow-x:hidden; overflow-y:auto; }
+  .scene-card { display:flex; align-items:center; flex:0 0 auto; width:100%; min-height:50px; }
+  .scene-thumb { width:48px; height:42px; flex:0 0 48px; }
+  .scene-number { margin-inline-start:auto; padding-inline:5px; }
+  .add-scene { width:100%; min-height:44px; }
+  .bottom-nav { grid-column:1/-1; grid-row:4; grid-template-columns:repeat(5,minmax(44px,1fr)); }
+  .tool-sheet { max-height:min(52dvh,250px); bottom:calc(var(--nav-height) + var(--safe-bottom) + 5px); }
+  .panel-body { max-height:calc(min(52dvh,250px) - 65px); }
+}

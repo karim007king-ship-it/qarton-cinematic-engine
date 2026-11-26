@@ -1,13 +1,12 @@
-# QARTON Motion Studio V2 — L14-A standalone Android preview
+# QARTON Motion Studio V2 — L14-B
 
-This prototype keeps `index.html`, `app.css`, and `app.js` separate for development. Run `python build_standalone.py --commit <full-sha>` to inline them into `dist/qarton-motion-studio-v2.html`.
+Mobile-first Arabic RTL interface integrated with the existing Motion Studio sequence, camera and rendering core.
 
-The generated HTML contains its CSS and JavaScript, has no external file dependencies, and can be opened directly after extracting the preview ZIP, including from Android's `content://` file picker. The visible Commit label identifies the source revision used for the build.
+- The preview uses `StudioSequenceV1`, the shared `createSceneClock`, the existing asset registry, image decoder, camera-motion helper and `drawFrame` renderer.
+- Images can be added, replaced and removed per scene. Decode happens before updating the sequence, so a failed replacement leaves the previous image in place.
+- Scene add, delete, duplicate and reorder call the existing sequence functions. The selected image remains shared where appropriate, and unused assets are cleaned after removal.
+- Camera presets cover static, zoom in/out and four directions. Scene duration, speed, strength, playback, stop/restart and global seek use the engine project and unified clock.
+- The build bundles CSS and JavaScript into `dist/motion-studio-v2-l14b-android-preview/index.html` and rejects missing CSS, missing engine JavaScript or remaining external resources.
+- Audio integration, microphone recording, project save and video export are explicitly outside this phase.
 
-## Offline validation
-
-Run `python check-prototype.py` after installing Playwright and Chromium. It builds the standalone document, rejects missing/empty CSS or JavaScript, blocks HTTPS requests, checks CSS application and JavaScript readiness, and exercises demo controls at five phone widths.
-
-## Prototype limits
-
-Image preview, playback, scene selection/addition, motion, effects, and audio filename selection are UI demonstrations. Save, undo, export, and microphone recording are not connected to the engine. Engine integration waits for design approval.
+Run `node scripts/build-motion-studio-v2-preview.mjs` with `L14B_COMMIT=<full-commit-sha>`, then `python examples/motion-studio-v2/check-prototype.py`. GitHub Actions packages the standalone Android Preview ZIP and runs Chromium tests on 320, 360, 390, 412 and 480px widths plus landscape.

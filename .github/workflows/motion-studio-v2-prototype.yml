@@ -1,48 +1,54 @@
-name: Motion Studio V2 L14-A prototype
+name: Motion Studio V2 Android Preview
 on:
   pull_request:
-    branches: [feature/motion-studio-easy-mobile-l13l1]
     paths:
-      - '.github/workflows/motion-studio-v2-prototype.yml'
       - 'examples/motion-studio-v2/**'
-  push:
-    branches: [feature/motion-studio-v2-l14a]
-    paths:
+      - 'packages/motion-studio/**'
+      - 'src/motion/scene-clock.js'
+      - 'examples/motion-studio-lab/studio-image.js'
+      - 'examples/motion-studio-lab/studio-motion-presets.js'
+      - 'scripts/build-motion-studio-v2-preview.mjs'
+      - 'tests/motion-studio-v2-standalone.test.mjs'
       - '.github/workflows/motion-studio-v2-prototype.yml'
-      - 'examples/motion-studio-v2/**'
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  prototype:
-    runs-on: ubuntu-24.04
-    env:
-      L14_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+  standalone-preview:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install browser test dependencies
+      - name: Install bundler and browser test
         run: |
-          python -m pip install playwright==1.55.0
+          npm install --no-save --no-package-lock esbuild@0.25.12
+          python -m pip install playwright==1.56.0
           python -m playwright install --with-deps chromium
-      - name: Build and test standalone HTML offline
-        working-directory: examples/motion-studio-v2
-        run: python check-prototype.py
-      - name: Package Android standalone preview
+      - name: Guard standalone CSS and engine bundle
+        run: node --test tests/motion-studio-v2-standalone.test.mjs
+      - name: Build single-file offline preview
+        env:
+          L14B_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/build-motion-studio-v2-preview.mjs
+      - name: Chromium functional and responsive tests
+        run: python examples/motion-studio-v2/check-prototype.py
+      - name: Package Android preview ZIP
         run: |
-          cd examples/motion-studio-v2
-          zip -r motion-studio-v2-l14a-android-preview.zip dist/qarton-motion-studio-v2.html README.md
+          cd dist/motion-studio-v2-l14b-android-preview
+          zip -j ../qarton-motion-studio-v2-l14b-android-preview.zip index.html qarton-motion-studio-v2.html README.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: motion-studio-v2-l14a-android-preview
-          path: examples/motion-studio-v2/motion-studio-v2-l14a-android-preview.zip
+          name: qarton-motion-studio-v2-l14b-android-preview
+          path: |
+            dist/qarton-motion-studio-v2-l14b-android-preview.zip
+            dist/motion-studio-v2-l14b-android-preview/index.html
+            dist/motion-studio-v2-l14b-android-preview/qarton-motion-studio-v2.html
+            dist/motion-studio-v2-l14b-android-preview/README.txt
+            dist/motion-studio-v2-l14b-android-preview/screenshots/**
           if-no-files-found: error
-          retention-days: 30
-      - uses: actions/upload-artifact@v4
-        with:
-          name: motion-studio-v2-l14a-section-screenshots
-          path: examples/motion-studio-v2/screenshots/*.png
-          if-no-files-found: error
-          retention-days: 30
+          retention-days: 14
