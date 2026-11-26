@@ -78,6 +78,7 @@ with sync_playwright() as p:
     assert page.locator("#imageAssetCount").inner_text() == "0"
     choose_file(page.locator("#imageInput"), "scene-image.png", img_a)
     page.wait_for_function("document.querySelector('#previewCanvas').hidden === false")
+    page.locator("#closeSheetButton").click()
 
     # Scene operations use the sequence API: add, duplicate, reorder, delete, select.
     page.locator("#addSceneButton").click()
