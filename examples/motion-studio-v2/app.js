@@ -2,20 +2,20 @@ import { createStudioV2Engine } from "./engine-adapter.js";
 
 (() => {
   "use strict";
-  const $ = (selector, root = document) => root.querySelector(selector);
-  const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
-  const studio = $("#studio");
-  const canvas = $("#previewCanvas");
-  const sheet = $("#toolSheet");
-  const title = $("#sheetTitle");
-  const toast = $("#toast");
-  const imageInput = $("#imageInput");
-  const emptyState = $("#emptyState");
-  const replaceButton = $("#replaceImageButton");
-  const menu = $("#sceneMenu");
-  const menuToggle = $("#sceneMenuToggle");
-  const seek = $("#timelineSeek");
-  const commitChip = $("#commitIndicator");
+  const byId = (selector, root = document) => root.querySelector(selector);
+  const all = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+  const studio = byId("#studio");
+  const canvas = byId("#previewCanvas");
+  const sheet = byId("#toolSheet");
+  const title = byId("#sheetTitle");
+  const toast = byId("#toast");
+  const imageInput = byId("#imageInput");
+  const emptyState = byId("#emptyState");
+  const replaceButton = byId("#replaceImageButton");
+  const menu = byId("#sceneMenu");
+  const menuToggle = byId("#sceneMenuToggle");
+  const seek = byId("#timelineSeek");
+  const commitChip = byId("#commitIndicator");
   const commitId = document.documentElement.dataset.commit || "source";
   const sectionNames = { photos: "الصور", motion: "الحركة", audio: "الصوت", effects: "المؤثرات", more: "المزيد" };
   let activeSection = "";
@@ -37,14 +37,14 @@ import { createStudioV2Engine } from "./engine-adapter.js";
     if (toggle && activeSection === name && !sheet.hidden) {
       activeSection = "";
       sheet.hidden = true;
-      $$('[data-section]').forEach(button => button.setAttribute("aria-pressed", "false"));
+      all('[data-section]').forEach(button => button.setAttribute("aria-pressed", "false"));
       return;
     }
     activeSection = name;
     title.textContent = sectionNames[name];
     sheet.hidden = false;
-    $$(".panel-body").forEach(panel => { panel.hidden = panel.dataset.panel !== name; });
-    $$('[data-section]').forEach(button => button.setAttribute("aria-pressed", String(button.dataset.section === name)));
+    all(".panel-body").forEach(panel => { panel.hidden = panel.dataset.panel !== name; });
+    all('[data-section]').forEach(button => button.setAttribute("aria-pressed", String(button.dataset.section === name)));
   }
   function updateState(state) {
     if (!state) return;
@@ -54,33 +54,33 @@ import { createStudioV2Engine } from "./engine-adapter.js";
     emptyState.hidden = state.hasImage;
     replaceButton.hidden = !state.hasImage;
     studio.dataset.playing = String(state.playing);
-    $("#playIcon").hidden = state.playing;
-    $("#pauseIcon").hidden = !state.playing;
-    $("#playButton").setAttribute("aria-label", state.playing ? "إيقاف مؤقت" : "تشغيل المعاينة");
-    $("#previewLabel").textContent = state.hasImage ? state.imageName : "معاينة المحرك";
-    $("#currentTime").textContent = state.formattedTime;
-    $("#totalTime").textContent = state.formattedTotal;
+    byId("#playIcon").hidden = state.playing;
+    byId("#pauseIcon").hidden = !state.playing;
+    byId("#playButton").setAttribute("aria-label", state.playing ? "إيقاف مؤقت" : "تشغيل المعاينة");
+    byId("#previewLabel").textContent = state.hasImage ? state.imageName : "معاينة المحرك";
+    byId("#currentTime").textContent = state.formattedTime;
+    byId("#totalTime").textContent = state.formattedTotal;
     updatingSeek = true;
     seek.max = String(state.totalDurationMs);
     seek.value = String(state.timeMs);
     updatingSeek = false;
-    $("#sceneCount").textContent = `مشهد ${state.selectedIndex + 1} من ${state.sceneCount}`;
-    $("#sceneDuration").value = String(Math.round(state.sceneDurationMs / 1000));
-    $("#sceneDurationValue").textContent = `${Math.round(state.sceneDurationMs / 1000)} ث`;
-    $("#cameraPreset").value = state.motion.preset;
-    $("#motionSpeed").value = String(state.motion.speed);
-    $("#motionSpeedValue").textContent = `${Number(state.motion.speed).toFixed(1).replace(/\.0$/u, "")}×`;
-    $("#motionStrength").value = String(state.motion.strength);
-    $("#motionStrengthValue").textContent = `${state.motion.strength}٪`;
-    $("#deleteImageButton").disabled = !state.hasImage;
-    $("#demoReady").textContent = "جاهز";
-    $("#engineReady").textContent = "متصل";
-    $("#imageAssetCount").textContent = String(state.imageAssetCount);
+    byId("#sceneCount").textContent = `مشهد ${state.selectedIndex + 1} من ${state.sceneCount}`;
+    byId("#sceneDuration").value = String(Math.round(state.sceneDurationMs / 1000));
+    byId("#sceneDurationValue").textContent = `${Math.round(state.sceneDurationMs / 1000)} ث`;
+    byId("#cameraPreset").value = state.motion.preset;
+    byId("#motionSpeed").value = String(state.motion.speed);
+    byId("#motionSpeedValue").textContent = `${Number(state.motion.speed).toFixed(1).replace(/\.0$/u, "")}×`;
+    byId("#motionStrength").value = String(state.motion.strength);
+    byId("#motionStrengthValue").textContent = `${state.motion.strength}٪`;
+    byId("#deleteImageButton").disabled = !state.hasImage;
+    byId("#demoReady").textContent = "جاهز";
+    byId("#engineReady").textContent = "متصل";
+    byId("#imageAssetCount").textContent = String(state.imageAssetCount);
     renderSceneCards(state);
     updateSceneActions(state);
   }
   function renderSceneCards(state) {
-    const list = $("#sceneList");
+    const list = byId("#sceneList");
     list.replaceChildren();
     for (const scene of state.scenes) {
       const card = document.createElement("button");
@@ -110,7 +110,7 @@ import { createStudioV2Engine } from "./engine-adapter.js";
       card.addEventListener("click", () => engine.selectScene(scene.id));
       list.append(card);
     }
-    const selected = $(".scene-card.selected", list);
+    const selected = byId(".scene-card.selected", list);
     selected?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
   function updateSceneActions(state) {
@@ -120,14 +120,14 @@ import { createStudioV2Engine } from "./engine-adapter.js";
       "move-right": !state.canMoveRight,
       "move-left": !state.canMoveLeft
     };
-    $$('[data-scene-action]').forEach(button => { button.disabled = disabled[button.dataset.sceneAction]; });
+    all('[data-scene-action]').forEach(button => { button.disabled = disabled[button.dataset.sceneAction]; });
   }
   function openImagePicker() { imageInput.click(); }
 
   try {
     engine = createStudioV2Engine({ canvas, onState: updateState, onError: error => {
       document.documentElement.dataset.engineError = error?.message || String(error);
-      $("#engineReady").textContent = "تعذر العرض";
+      byId("#engineReady").textContent = "تعذر العرض";
     } });
     canvas.dataset.ready = "true";
   } catch (error) {
@@ -135,15 +135,15 @@ import { createStudioV2Engine } from "./engine-adapter.js";
     document.documentElement.dataset.engineReady = "false";
     document.documentElement.dataset.engineError = error?.message || String(error);
     console.error("QARTON Motion Studio engine initialization failed", error);
-    $("#demoReady").textContent = "تعذر التهيئة";
-    $("#engineReady").textContent = "غير متصل";
+    byId("#demoReady").textContent = "تعذر التهيئة";
+    byId("#engineReady").textContent = "غير متصل";
     showToast(error?.message || "تعذر تشغيل المحرك.");
   }
 
-  $$('[data-section]').forEach(button => button.addEventListener("click", () => setSection(button.dataset.section)));
-  $("#closeSheetButton").addEventListener("click", () => setSection(activeSection));
-  $("#chooseImageButton").addEventListener("click", openImagePicker);
-  $("#panelChooseImage").addEventListener("click", openImagePicker);
+  all('[data-section]').forEach(button => button.addEventListener("click", () => setSection(button.dataset.section)));
+  byId("#closeSheetButton").addEventListener("click", () => setSection(activeSection));
+  byId("#chooseImageButton").addEventListener("click", openImagePicker);
+  byId("#panelChooseImage").addEventListener("click", openImagePicker);
   replaceButton.addEventListener("click", openImagePicker);
   imageInput.addEventListener("change", async () => {
     const file = imageInput.files?.[0];
@@ -157,19 +157,19 @@ import { createStudioV2Engine } from "./engine-adapter.js";
       imageInput.value = "";
     }
   });
-  $("#deleteImageButton").addEventListener("click", () => {
+  byId("#deleteImageButton").addEventListener("click", () => {
     if (engine?.deleteImage()) showToast("حُذفت صورة هذا المشهد.");
   });
-  $("#playButton").addEventListener("click", () => engine?.togglePlayback());
-  $("#stopButton").addEventListener("click", () => engine?.stop());
+  byId("#playButton").addEventListener("click", () => engine?.togglePlayback());
+  byId("#stopButton").addEventListener("click", () => engine?.stop());
   seek.addEventListener("input", event => { if (!updatingSeek) engine?.seek(Number(event.target.value)); });
-  $("#fullscreenButton").addEventListener("click", async () => {
+  byId("#fullscreenButton").addEventListener("click", async () => {
     try {
-      if (!document.fullscreenElement) await $("#previewStage").requestFullscreen();
+      if (!document.fullscreenElement) await byId("#previewStage").requestFullscreen();
       else await document.exitFullscreen();
     } catch { showToast("ملء الشاشة غير متاح في هذا المتصفح."); }
   });
-  $("#addSceneButton").addEventListener("click", () => {
+  byId("#addSceneButton").addEventListener("click", () => {
     try { engine.addScene(); showToast("أُضيف مشهد مستقل."); }
     catch (error) { showToast(error.message || "تعذرت إضافة المشهد."); }
   });
@@ -196,35 +196,35 @@ import { createStudioV2Engine } from "./engine-adapter.js";
       menuToggle.setAttribute("aria-expanded", "false");
     }
   });
-  $("#cameraPreset").addEventListener("change", event => {
+  byId("#cameraPreset").addEventListener("change", event => {
     try { engine?.setMotionPreset(event.target.value); }
     catch (error) { showToast(error.message || "تعذر تغيير الحركة."); }
   });
-  $("#sceneDuration").addEventListener("change", event => {
+  byId("#sceneDuration").addEventListener("change", event => {
     try { engine?.setDuration(Number(event.target.value)); }
     catch (error) { showToast(error.message || "تعذر تغيير المدة."); }
   });
-  $("#motionSpeed").addEventListener("input", event => {
-    $("#motionSpeedValue").textContent = `${Number(event.target.value).toFixed(1).replace(/\.0$/u, "")}×`;
+  byId("#motionSpeed").addEventListener("input", event => {
+    byId("#motionSpeedValue").textContent = `${Number(event.target.value).toFixed(1).replace(/\.0$/u, "")}×`;
     try { engine?.setMotionSpeed(Number(event.target.value)); }
     catch (error) { showToast(error.message || "تعذر تغيير السرعة."); }
   });
-  $("#motionStrength").addEventListener("input", event => {
-    $("#motionStrengthValue").textContent = `${event.target.value}٪`;
+  byId("#motionStrength").addEventListener("input", event => {
+    byId("#motionStrengthValue").textContent = `${event.target.value}٪`;
     try { engine?.setMotionStrength(Number(event.target.value)); }
     catch (error) { showToast(error.message || "تعذر تغيير القوة."); }
   });
-  $$('[data-effect]').forEach(button => button.addEventListener("click", () => {
-    $$('[data-effect]').forEach(item => item.classList.toggle("active", item === button));
+  all('[data-effect]').forEach(button => button.addEventListener("click", () => {
+    all('[data-effect]').forEach(item => item.classList.toggle("active", item === button));
     studio.dataset.effect = button.dataset.effect;
   }));
-  $("#effectAmount").addEventListener("input", event => {
-    $("#effectAmountValue").textContent = event.target.value + "٪";
+  byId("#effectAmount").addEventListener("input", event => {
+    byId("#effectAmountValue").textContent = event.target.value + "٪";
     canvas.style.opacity = String(.65 + Number(event.target.value) / 100 * .35);
   });
-  $("#chooseAudioButton").addEventListener("click", () => $("#audioInput").click());
-  $("#audioInput").addEventListener("change", () => {
-    const file = $("#audioInput").files?.[0];
+  byId("#chooseAudioButton").addEventListener("click", () => byId("#audioInput").click());
+  byId("#audioInput").addEventListener("change", () => {
+    const file = byId("#audioInput").files?.[0];
     if (file) {
       const label = document.createElement("span");
       label.textContent = file.name + " · معاينة اسم فقط";
@@ -232,22 +232,22 @@ import { createStudioV2Engine } from "./engine-adapter.js";
       wave.className = "audio-wave";
       wave.setAttribute("aria-hidden", "true");
       wave.textContent = "▁ ▃ ▅ ▂ ▆";
-      $("#audioSelection").replaceChildren(wave, label);
+      byId("#audioSelection").replaceChildren(wave, label);
       showToast("ربط الصوت بالمحرك مؤجل لهذه المرحلة.");
     }
-    $("#audioInput").value = "";
+    byId("#audioInput").value = "";
   });
-  $("#demoRecordButton").addEventListener("click", () => showToast("التسجيل غير مفعّل في هذه المرحلة."));
-  $("#undoButton").addEventListener("click", () => showToast("التراجع غير متاح في هذه المرحلة."));
-  $("#saveButton").addEventListener("click", () => showToast("الحفظ غير متاح في هذه المرحلة."));
-  $("#exportButton").addEventListener("click", () => showToast("التصدير غير مفعّل في هذه المرحلة."));
+  byId("#demoRecordButton").addEventListener("click", () => showToast("التسجيل غير مفعّل في هذه المرحلة."));
+  byId("#undoButton").addEventListener("click", () => showToast("التراجع غير متاح في هذه المرحلة."));
+  byId("#saveButton").addEventListener("click", () => showToast("الحفظ غير متاح في هذه المرحلة."));
+  byId("#exportButton").addEventListener("click", () => showToast("التصدير غير مفعّل في هذه المرحلة."));
   window.addEventListener("error", event => {
     document.documentElement.dataset.jsError = event.message || "JavaScript error";
-    $("#demoReady").textContent = "خطأ JavaScript";
+    byId("#demoReady").textContent = "خطأ JavaScript";
   });
   window.addEventListener("unhandledrejection", event => {
     document.documentElement.dataset.jsError = event.reason?.message || String(event.reason || "Unhandled rejection");
-    $("#demoReady").textContent = "خطأ JavaScript";
+    byId("#demoReady").textContent = "خطأ JavaScript";
   });
   window.addEventListener("pagehide", () => engine?.dispose());
   document.documentElement.dataset.prototypeReady = engine ? "true" : "false";
