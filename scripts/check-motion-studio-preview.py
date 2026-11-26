@@ -1067,7 +1067,11 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         touch_page.wait_for_function("document.querySelector('#stage')?.width === 720")
         touch_page.locator("#imageInput").set_input_files(str(sample))
         touch_page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
-        assert touch_page.evaluate("document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight + 1"), "mobile editor shell must fit the viewport without long-page or horizontal scrolling"
+        layout = touch_page.evaluate("""() => ({width: innerWidth, height: innerHeight, scrollWidth: document.documentElement.scrollWidth,
+          scrollHeight: document.documentElement.scrollHeight, studio: (() => { const e=document.querySelector('.studio'), r=e.getBoundingClientRect();
+            return {top:r.top,bottom:r.bottom,height:r.height,rows:getComputedStyle(e).gridTemplateRows}; })()})""")
+        assert layout["scrollWidth"] <= layout["width"] and layout["scrollHeight"] <= layout["height"] + 1, \
+          f"mobile editor shell must fit the viewport without long-page or horizontal scrolling: {layout}"
         touch_page.screenshot(path=str(screenshot_dir / "motion-studio-mobile-motion.png"))
 
         # Exercise the three requested phone sizes, then repeat one on a WebView-style Android UA.
