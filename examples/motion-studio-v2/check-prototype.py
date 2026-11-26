@@ -72,6 +72,7 @@ with sync_playwright() as p:
     assert page.locator("#previewLabel").inner_text() == "replacement.png"
 
     # Exercise image removal and verified recovery from the empty state.
+    page.locator('[data-section="photos"]').click()
     page.locator("#deleteImageButton").click()
     page.wait_for_function("document.querySelector('#previewCanvas').hidden === true")
     assert page.locator("#imageAssetCount").inner_text() == "0"
