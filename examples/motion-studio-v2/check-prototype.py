@@ -107,7 +107,7 @@ with sync_playwright() as p:
         page.wait_for_function("preset => document.querySelector('#previewCanvas').dataset.motionPreset === preset", arg=preset)
         set_range("#timelineSeek", 4000)
         page.wait_for_timeout(80)
-        poses[preset] = page.locator("#previewCanvas").get_attribute("data-cameraPose")
+        poses[preset] = page.locator("#previewCanvas").get_attribute("data-camera-pose")
     assert poses["zoom-in"] != poses["static"], f"zoom-in camera pose did not change: {poses}"
     assert poses["zoom-out"] != poses["static"], f"zoom-out camera pose did not change: {poses}"
     assert poses["right"] != poses["left"], f"horizontal camera poses did not differ: {poses}"
