@@ -34,7 +34,12 @@ with sync_playwright() as p:
     page.route("http://**/*", lambda route: (external_requests.append(route.request.url), route.abort()))
     page.goto(HTML.as_uri(), wait_until="load")
     page.wait_for_timeout(500)
-    assert page.evaluate("document.documentElement.dataset.engineReady") == "true", page.evaluate("JSON.stringify({engine:document.documentElement.dataset.engineError,js:document.documentElement.dataset.jsError,ready:document.documentElement.dataset.prototypeReady})")
+    boot = page.evaluate("""() => ({
+      root: {...document.documentElement.dataset},
+      scripts: [...document.scripts].map(script => ({type:script.type, src:script.src, chars:script.textContent.length, start:script.textContent.slice(0,100)})),
+      tail: document.body.innerHTML.slice(-180)
+    })""")
+    assert page.evaluate("document.documentElement.dataset.engineReady") == "true", json.dumps(boot, ensure_ascii=False)
     assert page.locator("#demoReady").inner_text() == "جاهز"
     assert page.locator("#engineReady").inner_text() == "متصل"
     assert page.locator("#previewCanvas").get_attribute("data-ready") == "true"
