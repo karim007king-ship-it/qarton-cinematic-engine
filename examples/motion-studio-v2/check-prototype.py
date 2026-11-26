@@ -116,6 +116,7 @@ with sync_playwright() as p:
     set_range("#motionStrength", 75)
     assert page.locator("#motionSpeedValue").inner_text() == "1.5×"
     assert page.locator("#motionStrengthValue").inner_text() == "75٪"
+    page.locator("#closeSheetButton").click()
 
     # Unified transport: seek, play, pause, stop, replay.
     set_range("#timelineSeek", 2500)
