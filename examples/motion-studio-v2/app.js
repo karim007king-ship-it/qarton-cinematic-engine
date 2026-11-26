@@ -4,6 +4,9 @@
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
   const studio = $("#studio"), sheet = $("#toolSheet"), title = $("#sheetTitle"), toast = $("#toast"), imageInput = $("#imageInput"), image = $("#previewImage"), emptyState = $("#emptyState"), replaceButton = $("#replaceImageButton");
   let activeSection = "", selectedImageUrl = "", toastTimer = 0, timer = 0, elapsed = 0;
+  const commitChip = $("#commitIndicator");
+  const commitId = document.documentElement.dataset.commit || "source";
+  if (commitChip) { commitChip.textContent = "Commit " + commitId.slice(0, 7); commitChip.title = "Commit " + commitId; }
   const sectionNames = { photos:"الصور", motion:"الحركة", audio:"الصوت", effects:"المؤثرات", more:"المزيد" };
   function showToast(message) {
     toast.textContent = message; toast.hidden = false; clearTimeout(toastTimer);

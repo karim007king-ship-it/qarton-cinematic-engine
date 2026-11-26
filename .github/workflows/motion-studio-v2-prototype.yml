@@ -16,6 +16,8 @@ permissions:
 jobs:
   prototype:
     runs-on: ubuntu-24.04
+    env:
+      L14_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -25,13 +27,13 @@ jobs:
         run: |
           python -m pip install playwright==1.55.0
           python -m playwright install --with-deps chromium
-      - name: Test five phone widths and capture every section
+      - name: Build and test standalone HTML offline
         working-directory: examples/motion-studio-v2
         run: python check-prototype.py
-      - name: Package standalone Android preview
+      - name: Package Android standalone preview
         run: |
           cd examples/motion-studio-v2
-          zip -r motion-studio-v2-l14a-android-preview.zip index.html app.css app.js README.md screenshots
+          zip -r motion-studio-v2-l14a-android-preview.zip dist/qarton-motion-studio-v2.html README.md
       - uses: actions/upload-artifact@v4
         with:
           name: motion-studio-v2-l14a-android-preview

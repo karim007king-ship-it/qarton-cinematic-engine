@@ -1,15 +1,13 @@
-# QARTON Motion Studio V2 — L14-A prototype
+# QARTON Motion Studio V2 — L14-A standalone Android preview
 
-This is an isolated, mobile-first Arabic RTL UI prototype. It does not import Motion Studio engine modules, alter project storage, or connect saving/export/recording to real engine functions.
+This prototype keeps `index.html`, `app.css`, and `app.js` separate for development. Run `python build_standalone.py --commit <full-sha>` to inline them into `dist/qarton-motion-studio-v2.html`.
 
-## Interactive demo behaviors
+The generated HTML contains its CSS and JavaScript, has no external file dependencies, and can be opened directly after extracting the preview ZIP, including from Android's `content://` file picker. The visible Commit label identifies the source revision used for the build.
 
-- Choose an image: displays a local object URL in the mock preview; it is not uploaded.
-- Play/pause/stop, fullscreen, add/select scene, sample camera motion, and visual filters update the mock UI.
-- Audio selection shows a filename only. It does not create a timeline clip or record microphone audio.
-- Undo, save, and export controls clearly report that integration is not active.
-- Advanced settings and interface diagnostics are grouped under More.
+## Offline validation
 
-## Run
+Run `python check-prototype.py` after installing Playwright and Chromium. It builds the standalone document, rejects missing/empty CSS or JavaScript, blocks HTTPS requests, checks CSS application and JavaScript readiness, and exercises demo controls at five phone widths.
 
-Open index.html in a modern browser. No build step or network access is required.
+## Prototype limits
+
+Image preview, playback, scene selection/addition, motion, effects, and audio filename selection are UI demonstrations. Save, undo, export, and microphone recording are not connected to the engine. Engine integration waits for design approval.
