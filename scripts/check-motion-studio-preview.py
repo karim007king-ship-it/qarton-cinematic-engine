@@ -140,6 +140,11 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.goto(preview.as_uri())
         page.wait_for_function("document.querySelector('#stage')?.width === 720")
+        page.wait_for_function("window.QARTON_DIAGNOSTICS?.snapshot?.().phase === 'ready'")
+        expected_commit = environ.get("MOTION_STUDIO_BUILD_COMMIT", "development")[:12]
+        assert page.locator("#buildCommitBadge").get_attribute("data-build-commit") == expected_commit
+        assert page.locator("#runtimeReadiness").get_attribute("data-state") == "ready"
+        assert page.locator("#runtimeDiagnostics").is_hidden(), "runtime reported a JavaScript or resource error"
         support = page.evaluate("""() => ({
           secure: isSecureContext,
           recorder: typeof MediaRecorder === 'function',
@@ -153,8 +158,26 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
         assert support["webm"], f"Chrome test runner lacks the WebM encoder required for the artifact regression: {support}"
 
         image_input = page.locator("#imageInput")
+        picker = page.locator('label[for="imageInput"]')
+        assert picker.is_visible(), "primary image picker is missing from the built preview"
         image_input.set_input_files(str(sample))
         page.get_by_text("المعاينة جاهزة", exact=True).wait_for()
+        assert picker.is_visible(), "image picker disappeared after first image import"
+        first_count = page.locator(".asset-entry").count()
+        image_input.set_input_files(str(sequence_cards[0]))
+        page.wait_for_function("document.querySelector('#imageName').textContent.includes('sequence-red.png')", timeout=15000)
+        assert picker.is_visible(), "image picker disappeared after replacement"
+        replaced_name = page.locator("#imageName").inner_text()
+        image_input.dispatch_event("cancel")
+        assert page.locator("#imageName").inner_text() == replaced_name, "cancel changed the active image"
+        corrupt = Path(tmp) / "corrupt.png"
+        corrupt.write_bytes(b"not a decodable PNG")
+        asset_count = page.locator(".asset-entry").count()
+        image_input.set_input_files(str(corrupt))
+        page.wait_for_timeout(300)
+        assert "sequence-red.png" in page.locator("#imageName").inner_text(), "corrupt image replaced the previous image"
+        assert page.locator(".asset-entry").count() == asset_count, "corrupt image created an orphan asset"
+        assert asset_count >= first_count, "valid replacement unexpectedly removed assets"
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight + 1"), "desktop editor shell must not require page scrolling"
         page.screenshot(path=str(screenshot_dir / "motion-studio-desktop.png"))
         page.locator('nav.bottom-dock [data-editor-section="effects"]').click()

@@ -366,8 +366,9 @@ function sequenceAssetFromFile(file, id = makeLocalId("asset")) {
   if (kind === "audio") mimeType = validateAudioFile(file).mime;
   return { id, kind, name: file.name.slice(0, 255), mimeType, size: file.size };
 }
-async function registerAssetFile(file) {
+async function registerAssetFile(file, isCurrent = () => true) {
   await assetReady;
+  if (!isCurrent()) return null;
   const registry = persistentAssets;
   const candidate = sequenceAssetFromFile(file);
   // Matching metadata alone does not establish identical asset contents.
@@ -392,18 +393,28 @@ async function registerAssetFile(file) {
   }
   const asset = found ?? candidate;
   const linkedFile = (file.type || "").toLowerCase() === candidate.mimeType ? file : new File([file], file.name, { type: candidate.mimeType });
-  if (!found) {
-    const oldSequence = sequenceEditor.sequence;
-    const next = createStudioSequenceV1({ viewport: oldSequence.viewport, scenes: oldSequence.scenes,
-      assets: [...oldSequence.assets, asset] });
-    sequenceEditor.replaceSequence(next);
-    await registry?.replaceSequence(next);
+  const oldSequence = sequenceEditor.sequence, added = !found;
+  try {
+    if (!isCurrent()) return null;
+    if (added) {
+      const next = createStudioSequenceV1({ viewport: oldSequence.viewport, scenes: oldSequence.scenes,
+        assets: [...oldSequence.assets, asset] });
+      sequenceEditor.replaceSequence(next);
+      await registry?.replaceSequence(next);
+    }
+    localAssetFiles.set(asset.id, linkedFile);
+    if (registry && !registry.get(asset.id)) await registry.relink(asset.id, linkedFile);
+    if (!isCurrent()) throw new DOMException("أُلغي استيراد الصورة بعد فك ترميزها.", "AbortError");
+    renderAssetLibrary(); persistSequenceMetadata();
+    return asset;
+  } catch (error) {
+    if (added) {
+      localAssetFiles.delete(asset.id);
+      sequenceEditor.replaceSequence(oldSequence);
+      try { await registry?.replaceSequence(oldSequence); } catch { /* Preserve the original error. */ }
+    }
+    throw error;
   }
-  localAssetFiles.set(asset.id, linkedFile);
-  if (registry && !registry.get(asset.id)) await registry.relink(asset.id, linkedFile);
-  renderAssetLibrary();
-  persistSequenceMetadata();
-  return asset;
 }
 function getAssetBlob(id) { return persistentAssets?.get(id) ?? localAssetFiles.get(id) ?? null; }
 function assetMetadataToAudio(asset) {
@@ -2415,9 +2426,16 @@ for (const [id, format] of [["saveAudioDiagnosticsTxt", "txt"], ["saveAudioDiagn
   });
 }
 function requestMicrophoneWithTimeout(timeoutMs = 30000, signal = undefined) {
+  const diagnostics = window.QARTON_DIAGNOSTICS?.state?.microphone;
+  if (diagnostics) {
+    diagnostics.getUserMediaCalls += 1; diagnostics.stage = "getUserMedia-called"; diagnostics.lastRequestAt = new Date().toISOString();
+    const policy = document.permissionsPolicy || document.featurePolicy;
+    diagnostics.policyAllows = policy?.allowsFeature?.("microphone") ?? null;
+  }
   let expired = false;
   let timer;
   const request = navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+    if (diagnostics) diagnostics.stage = "stream-acquired";
     if (expired || signal?.aborted || microphonePageHiding) {
       stream.getTracks().forEach(track => track.stop());
       throw new DOMException("أُلغي طلب الميكروفون قبل بدء التسجيل.", "AbortError");
@@ -2497,6 +2515,8 @@ async function startMicrophoneMeter(session) {
   }
 }
 microphoneButton.addEventListener("click", async () => {
+  const runtimeMic = window.QARTON_DIAGNOSTICS?.state?.microphone;
+  if (runtimeMic) { runtimeMic.clickCount += 1; runtimeMic.stage = "record-button-clicked"; runtimeMic.lastClickAt = new Date().toISOString(); }
   if (microphoneSession) {
     if (microphoneSession.recorder.state === "recording") {
       microphoneSession.stopRequestedAt = performance.now();
@@ -2823,6 +2843,10 @@ fitSelect.addEventListener("change", () => {
   refreshSelectedImage();
 });
 
+imageInput.addEventListener("cancel", () => {
+  imageInput.value = "";
+  status.textContent = "أُلغي اختيار الصورة؛ بقيت المعاينة الحالية كما هي.";
+});
 imageInput.addEventListener("change", async () => {
   const file = imageInput.files?.[0];
   if (!file) {
@@ -2837,10 +2861,10 @@ imageInput.addEventListener("change", async () => {
   refreshExportControls();
   status.textContent = "جارٍ تحميل الصورة الجديدة؛ بقيت الصورة الحالية ظاهرة حتى نجاحها.";
   try {
-    const asset = await registerAssetFile(file);
-    if (!imageRequest.isCurrent(requestToken)) return;
     const prepared = await loadImageSurface(file, requestToken);
     if (!prepared || !imageRequest.isCurrent(requestToken)) return;
+    const asset = await registerAssetFile(file, () => imageRequest.isCurrent(requestToken));
+    if (!asset || !imageRequest.isCurrent(requestToken)) return;
     selectedImageFile = file;
     selectedImageDimensions = prepared.dimensions;
     imageSource = prepared.surface;
@@ -3032,3 +3056,7 @@ window.addEventListener("pagehide", () => {
   if (integratedVideoUrl) URL.revokeObjectURL(integratedVideoUrl);
   integratedVideoUrl = null;
 });
+
+window.QARTON_DIAGNOSTICS?.markReady([
+  "#imageInput", "#saveProjectButton", "#addSceneButton", "#playPauseButton", "#headerExportButton", "#quickRecordAudio"
+]);

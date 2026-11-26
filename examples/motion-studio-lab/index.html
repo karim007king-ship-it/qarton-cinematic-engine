@@ -7,6 +7,46 @@
   <meta name="theme-color" content="#101118">
   <meta name="mobile-web-app-capable" content="yes">
   <title>QARTON Motion Studio Lab</title>
+  <script>
+    (() => {
+      const state = { phase: "loading", buttonBindingsInitialized: false, buildCommit: "__QARTON_BUILD_COMMIT__", errors: [], microphone: { clickCount: 0, getUserMediaCalls: 0, stage: "idle" } };
+      const clean = value => String(value || "").replace(/[?#].*$/, "").slice(0, 240);
+      const report = (kind, detail = {}) => {
+        state.errors.push({ kind, time: new Date().toISOString(), ...detail });
+        state.errors = state.errors.slice(-20);
+        const paint = () => {
+          const box = document.getElementById("runtimeDiagnostics"), log = document.getElementById("runtimeDiagnosticsLog");
+          if (log) log.textContent = state.errors.map(item => `${item.kind}: ${item.message || item.url || item.source || ""}`).join("\\n");
+          if (box) box.hidden = false;
+          const badge = document.getElementById("runtimeReadiness");
+          if (badge) { badge.dataset.state = "error"; badge.textContent = "تعطّل JavaScript أو مورد"; }
+        };
+        if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", paint, { once: true }); else paint();
+      };
+      window.addEventListener("error", event => {
+        if (event.target && event.target !== window) report("resource-error", { url: clean(event.target.src || event.target.href || event.target.currentSrc) });
+        else report("javascript-error", { message: String(event.message || "خطأ JavaScript"), source: clean(event.filename) });
+      }, true);
+      window.addEventListener("unhandledrejection", event => report("unhandled-rejection", { message: String(event.reason?.stack || event.reason || "رفض Promise غير معالج").slice(0, 500) }));
+      window.QARTON_DIAGNOSTICS = {
+        state, report,
+        markReady(required) {
+          const missing = required.filter(selector => !document.querySelector(selector));
+          state.buttonBindingsInitialized = missing.length === 0;
+          state.phase = missing.length ? "controls-missing" : "ready"; state.missingControls = missing;
+          const badge = document.getElementById("runtimeReadiness");
+          if (badge) { badge.dataset.state = missing.length ? "error" : "ready"; badge.textContent = missing.length ? "تعذّر ربط بعض الأزرار" : "JavaScript والأزرار جاهزة"; }
+          if (missing.length) report("binding-error", { message: missing.join(", ") });
+        },
+        snapshot() {
+          const policy = document.permissionsPolicy || document.featurePolicy;
+          return { phase: state.phase, buttonBindingsInitialized: state.buttonBindingsInitialized, buildCommit: state.buildCommit,
+            errors: state.errors.slice(), microphone: { ...state.microphone, secureContext: isSecureContext,
+              topLevel: window.top === window.self, policyAllows: policy?.allowsFeature?.("microphone") ?? null } };
+        }
+      };
+    })();
+  </script>
   <link rel="stylesheet" href="./studio.css?v=l11h4-mobile-fix-01">
   <script type="importmap">
     {
@@ -23,9 +63,10 @@
   <main class="studio">
     <header class="topbar">
       <a class="brand-lockup" href="#studioPreview" aria-label="QARTON Motion Studio">
-        <span class="qarton-mark" aria-hidden="true">Q</span><span><strong>QARTON</strong><small>استوديو الحركة</small></span>
+        <span class="qarton-mark" aria-hidden="true">Q</span><span><strong>QARTON</strong><small>استوديو الحركة</small><small class="build-meta">Commit <span id="buildCommitBadge" data-build-commit="__QARTON_BUILD_COMMIT__">__QARTON_BUILD_COMMIT__</span><span id="runtimeReadiness" class="runtime-readiness" data-state="loading" role="status" aria-live="polite">JavaScript يتهيأ…</span></small></span>
       </a>
       <span class="status-pill" id="status" role="status" aria-live="polite">اختر صورة للبدء</span>
+      <details class="runtime-diagnostics" id="runtimeDiagnostics" hidden><summary>تشخيص JavaScript والموارد</summary><pre id="runtimeDiagnosticsLog"></pre></details>
       <div class="header-actions" role="group" aria-label="إجراءات المشروع">
         <button id="headerSaveButton" class="header-action" type="button" aria-label="حفظ المشروع" title="حفظ المشروع"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l4 4v14H3V3h2zm2 0v6h10V3M7 21v-8h10v8"/></svg><span>حفظ</span></button>
         <button id="headerUndoButton" class="header-action" type="button" aria-label="تراجع عن آخر حركة" title="تراجع"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5M4 9h9a7 7 0 0 1 0 14h-2"/></svg><span>تراجع</span></button>

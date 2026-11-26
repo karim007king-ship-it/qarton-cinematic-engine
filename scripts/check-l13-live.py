@@ -52,6 +52,8 @@ def browser_checks(args):
             environment = page.evaluate("""async () => ({
                 topLevel: window.top === window.self,
                 secureContext: isSecureContext,
+                buildCommit: document.querySelector('#buildCommitBadge')?.dataset.buildCommit ?? null,
+                runtime: window.QARTON_DIAGNOSTICS?.snapshot?.() ?? null,
                 microphonePolicy: (document.permissionsPolicy ?? document.featurePolicy)
                     ?.allowsFeature('microphone') ?? null,
                 permission: await navigator.permissions.query({name:'microphone'})
@@ -64,37 +66,51 @@ def browser_checks(args):
                 page.wait_for_function("JSON.parse(document.querySelector('#result').textContent).rms > 0.001",
                                        timeout=25000)
             else:
-                page.locator("#quickRecordAudio").wait_for(state="attached")
+                page.wait_for_function("window.QARTON_DIAGNOSTICS?.snapshot?.().phase === 'ready'", timeout=15000)
+                assert page.locator("#buildCommitBadge").is_visible(), "published build commit is not visible"
+                assert page.locator("#buildCommitBadge").get_attribute("data-build-commit"), "published build commit is empty"
+                assert page.locator("#runtimeDiagnostics").is_hidden(), "JavaScript or resource errors were reported at startup"
                 picker = page.locator('label[for="imageInput"]')
-                if not picker.is_visible():
-                    print("studio: restored project hides the primary image chooser")
-                else:
-                    with page.expect_file_chooser(timeout=5000) as chooser:
-                        picker.click()
-                    chooser.value.set_files({"name": "audit.png", "mimeType": "image/png", "buffer": PNG})
-                    page.wait_for_selector('.studio[data-image-ready="true"]', state="attached")
-                    assert picker.is_visible(), "image chooser disappeared after the first image loaded"
-                    with page.expect_file_chooser(timeout=5000) as replacement:
-                        picker.click()
-                    replacement.value.set_files({"name": "replacement.png", "mimeType": "image/png", "buffer": PNG})
-                    page.wait_for_function(
-                        "document.querySelector('#imageName').textContent.includes('replacement.png')",
-                        timeout=15000,
-                    )
-                    assert picker.is_visible(), "image chooser disappeared after replacing an image"
-                    print("studio: PNG import and replacement succeeded; chooser remains visible")
+                assert picker.is_visible(), "primary image picker is missing or hidden in the published HTTPS app"
+                image_input = page.locator("#imageInput")
+                image_input.set_input_files({"name": "audit-first.png", "mimeType": "image/png", "buffer": PNG})
+                page.wait_for_function("document.querySelector('#imageName').textContent.includes('audit-first.png')", timeout=15000)
+                assert picker.is_visible(), "image picker disappeared after the first image loaded"
+                image_input.set_input_files({"name": "audit-replacement.png", "mimeType": "image/png", "buffer": PNG})
+                page.wait_for_function("document.querySelector('#imageName').textContent.includes('audit-replacement.png')", timeout=15000)
+                assert picker.is_visible(), "image picker disappeared after image replacement"
+                image_input.dispatch_event("cancel")
+                assert "audit-replacement.png" in page.locator("#imageName").inner_text(), "cancelling the picker changed the active image"
+                corrupt_before = page.locator(".asset-entry").count()
+                image_input.set_input_files({"name": "broken.png", "mimeType": "image/png", "buffer": b"not a decodable PNG"})
+                page.wait_for_timeout(300)
+                assert "audit-replacement.png" in page.locator("#imageName").inner_text(), "corrupt image replaced the previous image"
+                assert page.locator(".asset-entry").count() == corrupt_before, "corrupt image created an orphan asset"
+                print("studio: first image, replacement, cancellation, corrupt-image rollback passed")
+                page.locator('[data-editor-section="scenes"]').click()
+                page.locator("#addSceneButton").click()
+                assert page.locator(".scene-card").count() >= 2, "Add Scene failed on the published app"
+                page.locator('[data-editor-section="motion"]').click()
+                assert page.locator("#cameraStartZoom").is_visible(), "Motion tab failed on the published app"
                 page.locator('[data-editor-section="audio"]').click()
                 record = page.locator("#quickRecordAudio")
                 assert record.is_visible(), "Audio tab did not reveal recording control"
+                before_mic = page.evaluate("QARTON_DIAGNOSTICS.snapshot().microphone")
+                record.click()
+                page.wait_for_function("QARTON_DIAGNOSTICS.snapshot().microphone.getUserMediaCalls > 0", timeout=5000)
+                mic = page.evaluate("QARTON_DIAGNOSTICS.snapshot().microphone")
+                assert mic["clickCount"] > before_mic["clickCount"], "record tap did not reach the recording handler"
+                assert mic["policyAllows"] is not None, "browser did not expose an actual microphone policy verdict"
+                print(json.dumps({"target": "studio-microphone-click", "diagnostics": mic}))
                 if args.fake_mic:
-                    record.click()
-                    page.wait_for_function(
-                        "document.querySelector('#quickRecordAudio').textContent.includes('إيقاف')",
-                        timeout=12000,
-                    )
+                    page.wait_for_function("document.querySelector('#quickRecordAudio').textContent.includes('إيقاف')", timeout=12000)
                     record.click()
                     page.wait_for_selector(".audio-clip", state="visible", timeout=20000)
             assert not errors, errors
+            if name == "studio":
+                runtime = page.evaluate("QARTON_DIAGNOSTICS.snapshot()")
+                assert runtime["phase"] == "ready" and runtime["buttonBindingsInitialized"], runtime
+                assert not runtime["errors"], runtime["errors"]
             page.close()
         browser.close()
 

@@ -19,6 +19,7 @@ on:
       - 'scripts/build-motion-studio-preview.mjs'
       - 'scripts/motion-studio-preview-html.js'
       - 'scripts/check-motion-studio-preview.py'
+      - 'scripts/check-l13-live.py'
       - 'scripts/check-motion-studio-audio-import.py'
       - 'scripts/check-motion-studio-microphone-recording.py'
       - 'scripts/check-motion-studio-assets.py'
@@ -115,6 +116,8 @@ jobs:
           echo "MOTION_STUDIO_PREVIEW_LABEL=$PREVIEW_LABEL" >> "$GITHUB_ENV"
           echo "slug=$PREVIEW_SLUG" >> "$GITHUB_OUTPUT"
       - name: Bundle the editor as a single offline HTML file
+        env:
+          MOTION_STUDIO_BUILD_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           npm install --no-save --no-package-lock esbuild@0.25.12
           node scripts/build-motion-studio-preview.mjs
@@ -126,6 +129,8 @@ jobs:
           sudo apt-get install -y ffmpeg
           python -m pip install playwright==1.55.0
           python scripts/check-motion-studio-preview.py
+        env:
+          MOTION_STUDIO_BUILD_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Verify recorded microphone, restored playback, and exported signal
         if: github.head_ref == 'feature/audio-core-fix-a-final' || github.head_ref == 'feature/motion-studio-easy-mobile-l13l1'
         env:
