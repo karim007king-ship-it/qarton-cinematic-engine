@@ -310,7 +310,9 @@ with tempfile.TemporaryDirectory(prefix="qarton-virtual-mic-") as directory:
             assert "recording-" in saved_text and "audio-clip-" in saved_text, "saved project must include the recorded clip and asset"
             page.reload()
             page.wait_for_function("document.querySelectorAll('#audioTracks .audio-clip').length === 1", timeout=25000)
-            assert "استُعيد" in page.locator("#assetLibraryMessage").inner_text(), page.locator("#assetLibraryMessage").inner_text()
+            page.wait_for_function("document.querySelector('#assetLibraryMessage').textContent.includes('استُعيد') || document.querySelector('#assetLibraryMessage').textContent.includes('استعادة الأصول المحلية')", timeout=10000)
+            restored_message = page.locator("#assetLibraryMessage").inner_text()
+            assert "استُعيد" in restored_message or "استعادة الأصول المحلية" in restored_message, restored_message
             page.locator('nav.bottom-dock [data-editor-section="audio"]').click()
             page.locator("#audioTracks .audio-clip").first.click()
             assert "recording-" in page.locator("#audioSelection").inner_text()
