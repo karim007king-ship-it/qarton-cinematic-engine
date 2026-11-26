@@ -859,7 +859,7 @@ async function prepareSequenceAudioInfo(sequence, signal, range, masterVolume = 
     for (const track of scene.audioTracks) for (const clip of track.clips) {
       const startMs = sceneStartMs + clip.startMs;
       const endMs = Math.min(sceneEndMs, sceneStartMs + clip.endMs);
-      if (track.volume > 0 && clip.volume > 0 && startMs < range.endMs && endMs > range.startMs) referencedIds.add(clip.asset);
+      if ((track.volume ?? 1) > 0 && (clip.volume ?? 1) > 0 && startMs < range.endMs && endMs > range.startMs) referencedIds.add(clip.asset);
     }
     sceneStartMs = sceneEndMs;
   }
