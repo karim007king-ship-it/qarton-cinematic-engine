@@ -311,7 +311,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-virtual-mic-") as directory:
             page.reload()
             page.wait_for_function("document.querySelectorAll('#audioTracks .audio-clip').length === 1", timeout=25000)
             page.wait_for_function("document.querySelector('#assetLibraryMessage').textContent.includes('استُعيد') || document.querySelector('#assetLibraryMessage').textContent.includes('استعادة الأصول المحلية')", timeout=10000)
-            restored_message = page.locator("#assetLibraryMessage").inner_text()
+            restored_message = page.locator("#assetLibraryMessage").text_content() or ""
             assert "استُعيد" in restored_message or "استعادة الأصول المحلية" in restored_message, restored_message
             page.locator('nav.bottom-dock [data-editor-section="audio"]').click()
             page.locator("#audioTracks .audio-clip").first.click()
