@@ -14,8 +14,12 @@ export function inlineMotionStudioV2Html(html, css, javascript, commit) {
   result = result.replace(/<script\s+type="module"\s+src="\.\/app\.js"\s*>\s*<\/script>/iu,
     `<script>\n${javascript}\n</script>`);
   result = result.replace('data-commit="dev"', `data-commit="${commit}"`);
-  if (result === html || /<script\s+type="module"\s+src=|<link\s+rel="stylesheet"\s+href=/iu.test(result) ||
-      /(?:src|href)="(?:https?:)?\/\//iu.test(result)) {
+  const resourceTags = [...result.matchAll(/<(?:script|link)\b[^>]*>/giu)].map(match => match[0]);
+  const unbundledResource = resourceTags.some(tag =>
+    /<script\b[^>]*\bsrc\s*=/iu.test(tag) || /<link\b[^>]*\bhref\s*=/iu.test(tag) ||
+    /(?:src|href)\s*=\s*["'](?:https?:)?\/\//iu.test(tag));
+  if (result === html || unbundledResource || /@import\s+url\(\s*["']?https?:\/\//iu.test(css) ||
+      /url\(\s*["']?https?:\/\//iu.test(css)) {
     throw new Error("Standalone build still references an external resource.");
   }
   if (!result.includes(`data-commit="${commit}"`) || !result.includes("createStudioV2Engine")) {

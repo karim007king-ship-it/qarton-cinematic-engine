@@ -20,3 +20,8 @@ test("fails the build when CSS is missing", () => {
 test("fails the build when engine JavaScript is missing", () => {
   assert.throws(() => inlineMotionStudioV2Html(html, css, "", "abcdef1234567"), /JavaScript/u);
 });
+
+test("rejects actual external script and stylesheet references", () => {
+  const external = html.replace("</head>", '<script src="https://example.invalid/app.js"></script></head>');
+  assert.throws(() => inlineMotionStudioV2Html(external, css, js, "abcdef1234567"), /external resource/u);
+});
