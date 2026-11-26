@@ -151,7 +151,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-virtual-mic-") as directory:
             assert page.locator("#microphonePermissionHelp").is_visible(), "retry should re-request permission after Android settings change"
             page.evaluate("Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {configurable:true, value:() => new Promise(() => {})})")
             page.locator("#quickRecordAudio").click()
-            page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('30 ثانية')")
+            page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('لم يصل رد على طلب الميكروفون')")
             assert page.locator(".microphone-record-button").is_enabled(), "microphone timeout must release the record button"
             page.evaluate("window.setTimeout = window.__qartonNativeTimeout; Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {configurable:true, value:window.__qartonNativeGetUserMedia})")
             page.evaluate("""() => {
