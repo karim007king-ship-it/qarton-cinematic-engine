@@ -34,6 +34,7 @@ with sync_playwright() as p:
         assert page.evaluate("document.documentElement.scrollHeight <= innerHeight"), f"vertical page scroll at {width}px"
         assert page.locator(".bottom-nav button").count() == 5
         assert page.locator("#previewStage").is_visible()
+        assert page.evaluate("Array.from(document.querySelectorAll('button')).filter(b => b.getClientRects().length).every(b => { const r=b.getBoundingClientRect(); return r.width >= 44 && r.height >= 44 })"), f"touch target smaller than 44px at {width}px"
         assert page.evaluate("document.querySelector('#previewStage').clientHeight") > 300, f"preview too small at {width}px"
         if width in (320, 390, 480):
             page.screenshot(path=str(OUT / f"viewport-{width}.png"))
@@ -53,6 +54,7 @@ with sync_playwright() as p:
                 if section == "audio":
                     page.locator("#audioInput").set_input_files({"name": "demo.wav", "mimeType": "audio/wav", "buffer": b"RIFFdemoWAVE"})
                     assert "demo.wav" in page.locator("#audioSelection").inner_text()
+            page.locator("#closeSheetButton").click()
             page.locator("#playButton").click()
             assert page.locator("#studio").get_attribute("data-playing") == "true"
             page.locator("#stopButton").click()
