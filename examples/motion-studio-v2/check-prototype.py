@@ -108,10 +108,10 @@ with sync_playwright() as p:
         set_range("#timelineSeek", 4000)
         page.wait_for_timeout(80)
         poses[preset] = page.locator("#previewCanvas").get_attribute("data-cameraPose")
-    assert poses["zoom-in"] != poses["static"]
-    assert poses["zoom-out"] != poses["static"]
-    assert poses["right"] != poses["left"]
-    assert poses["up"] != poses["down"]
+    assert poses["zoom-in"] != poses["static"], f"zoom-in camera pose did not change: {poses}"
+    assert poses["zoom-out"] != poses["static"], f"zoom-out camera pose did not change: {poses}"
+    assert poses["right"] != poses["left"], f"horizontal camera poses did not differ: {poses}"
+    assert poses["up"] != poses["down"], f"vertical camera poses did not differ: {poses}"
     set_range("#motionSpeed", 1.5)
     set_range("#motionStrength", 75)
     assert page.locator("#motionSpeedValue").inner_text() == "1.5×"
