@@ -1101,7 +1101,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
                     pageOverflow:document.documentElement.scrollWidth > innerWidth || document.body.scrollWidth > innerWidth || ["overflowX","overflowY"].some(axis => getComputedStyle(document.documentElement)[axis] !== "hidden" || getComputedStyle(document.body)[axis] !== "hidden"),
                     pageSize:{htmlWidth:document.documentElement.scrollWidth,htmlHeight:document.documentElement.scrollHeight,bodyWidth:document.body.scrollWidth,bodyHeight:document.body.scrollHeight,viewportWidth:innerWidth,viewportHeight:innerHeight,overflowElements:Array.from(document.querySelectorAll("body *")).map(el=>{const r=el.getBoundingClientRect();return {tag:el.tagName,id:el.id,classes:typeof el.className==="string"?el.className:"",top:r.top,bottom:r.bottom,left:r.left,right:r.right,overflowY:getComputedStyle(el).overflowY};}).filter(r=>r.bottom>innerHeight+1||r.right>innerWidth+1).slice(-12)},
                     picker:getComputedStyle(document.querySelector('#previewImagePicker')).display,
-                    pickerSection:document.querySelector('#previewImagePicker').closest('[data-tool-panel]')?.dataset.toolPanel,
+                    pickerHost:document.querySelector('#previewImagePicker').parentElement.id,
                     inputRect:(() => { const r=document.querySelector('#imageInput').getBoundingClientRect(); return {width:r.width,height:r.height}; })(),
                     canvasRatio:canvas.width/canvas.height, sourceRatio:(() => { const el=document.querySelector('#stage'); return el.width/el.height; })(), canvasTransportOverlap:overlaps(canvas,transport),
                     canvasHeadingOverlap:overlaps(canvas,heading), hasCardActions:Boolean(document.querySelector('#sceneThumbnails .scene-card-controls'))};
@@ -1111,7 +1111,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-motion-preview-") as tmp:
                 assert abs(layout["canvasRatio"] - layout["sourceRatio"]) < 0.02, (profile, width, height, layout)
                 assert layout["canvasHeightFill"] >= 0.9, (profile, width, height, layout)
                 assert not layout["canvasTransportOverlap"] and not layout["canvasHeadingOverlap"], (profile, width, height, layout)
-                assert layout["picker"] == "block" and layout["pickerSection"] == "scenes", (profile, width, height, layout)
+                assert layout["picker"] == "block" and layout["pickerHost"] == "studioPreview", (profile, width, height, layout)
                 assert max(layout["inputRect"]["width"], layout["inputRect"]["height"]) <= 1, (profile, width, height, layout)
                 assert not layout["hasCardActions"], "scene actions belong in the Scenes section"
                 if profile == "chrome":
