@@ -3,7 +3,7 @@ export function setExportErrorMessage(target, error, suggestion = "") {
   const arabic = error?.name === "NotSupportedError" ? "صيغة التصدير غير مدعومة على هذا الجهاز."
     : error?.code === "UNSUPPORTED_FORMAT" ? "صيغة الفيديو غير مدعومة أو تعذّر تشغيل مرمّزها."
       : error?.code === "CLOCK_STALLED" ? "توقفت ساعة التصدير أو تأخرت الإطارات. جرّب جودة أقل أو مدة أقصر."
-        : error?.code === "BUDGET_EXCEEDED" ? "حجم الفيديو تجاوز الحد الآمن. قلّل الجودة أو مدة الفيديو."
+        : error?.code === "BUDGET_EXCEEDED" ? "الملفات الصوتية النشطة ونطاق فكها تجاوزا ذاكرة الصوت الآمنة (32 MiB). قصّر نطاق الصوت أو مدة الملف الطويل، ثم أعد التصدير. لم يُحذف أي صوت."
           : error?.code === "BACKGROUNDED" ? "توقف التصدير لأن الصفحة انتقلت إلى الخلفية."
             : error?.code === "CAPTURE_FAILED" ? "تعذّر بدء التسجيل أو التقاط إطارات الفيديو."
               : error?.code === "INVALID_OUTPUT" ? "تعذّر التحقق من الفيديو الناتج. جرّب صيغة أو جودة أخرى."

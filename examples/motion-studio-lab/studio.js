@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 42428)
+Total output lines: 2958
+
 import { errorText, setExportErrorMessage } from "./studio-errors.js";
 import { compileProject, sampleFrame, planExport, rasterForQuality, probeExport, startExport } from "@qarton/cinematic-engine/motion-studio";
 import { createStudioSequenceV1 } from "@qarton/cinematic-engine/motion-studio";
@@ -849,9 +852,20 @@ async function prepareSequenceExportImages(sequence, viewport, signal) {
     throw error;
   }
 }
-async function prepareSequenceAudioInfo(sequence, signal) {
+async function prepareSequenceAudioInfo(sequence, signal, range, masterVolume = 1) {
   await assetReady;
-  const referencedIds = new Set(sequence.scenes.flatMap(scene => scene.audioTracks.flatMap(track => track.clips.map(clip => clip.asset))));
+  if (masterVolume <= 0) return [];
+  const referencedIds = new Set();
+  let sceneStartMs = 0;
+  for (const scene of sequence.scenes) {
+    const sceneEndMs = sceneStartMs + scene.project.durationMs;
+    for (const track of scene.audioTracks) for (const clip of track.clips) {
+      const startMs = sceneStartMs + clip.startMs;
+      const endMs = Math.min(sceneEndMs, sceneStartMs + clip.endMs);
+      if (track.volume > 0 && clip.volume > 0 && startMs < range.endMs && endMs > range.startMs) referencedIds.add(clip.asset);
+    }
+    sceneStartMs = sceneEndMs;
+  }
   const info = [];
   for (const id of referencedIds) {
     if (signal?.aborted) throw signal.reason ?? new DOMException("تم إلغاء التصدير.", "AbortError");
@@ -955,9 +969,11 @@ async function exportIntegratedProject() {
     stopPlayback();
     captureCurrentScene();
     await persistentAssets?.replaceSequence(sequenceEditor.sequence);
+    const range = { startMs: readRequiredMilliseconds(integratedFrom, "البداية"),
+      endMs: readRequiredMilliseconds(integratedTo, "النهاية") };
     const prepared = prepareStudioSequenceExport(sequenceEditor.sequence, {
       audioAssetInfo: integratedAudio.value === "mix"
-        ? await prepareSequenceAudioInfo(sequenceEditor.sequence, controller.signal) : [], audioMasterVolume
+        ? await prepareSequenceAudioInfo(sequenceEditor.sequence, controller.signal, range, audioMasterVolume) : [], audioMasterVolume
     });
     const snapshot = prepared.snapshot;
     // Older V1 projects migrate to V2 with zero-duration Cut transitions.
@@ -965,8 +981,6 @@ async function exportIntegratedProject() {
     sequenceRuntime = createStudioSequenceRuntime(sequenceEditor.sequence, {
       createSurface: (width, height) => Object.assign(document.createElement("canvas"), { width, height })
     });
-    const range = { startMs: readRequiredMilliseconds(integratedFrom, "البداية"),
-      endMs: readRequiredMilliseconds(integratedTo, "النهاية") };
     if (range.endMs <= range.startMs || range.endMs > sequenceRuntime.durationMs) throw new RangeError("نطاق التصدير يجب أن يقع داخل مدة المشروع الكاملة.");
     const plan = planExport(snapshot, { range, quality: integratedQuality.value, fps: project.viewport.fps,
       format: integratedFormat.value, audio: integratedAudio.value, missingAudio: integratedMissingAudio.value }, verified);
@@ -997,9 +1011,10 @@ async function exportIntegratedProject() {
           silence.start();
           decoded = await decodeStudioSequenceAudio(sequenceRuntime.compiled, { audioContext,
             resolveAudio: async assetId => audioFiles.get(assetId)?.file ?? null,
-            audioInfo: snapshot.audioAssetInfo, signal, onProgress });
+            audioInfo: snapshot.audioAssetInfo, signal, onProgress, range, masterVolume: audioMasterVolume });
           engine = sequenceRuntime.createAudio({ audioContext, audioBuffers: decoded.buffers,
-            destination, masterVolume: audioMasterVolume, signal });
+            destination, masterVolume: audioMasterVolume, signal, range,
+            sourceOffsets: decoded.sourceOffsets, loopableAssets: decoded.loopableAssets });
           return { stream: destination.stream,
             schedule: epoch => {
               const session = engine.schedule({ epoch, fromMs: range.startMs, toMs: range.endMs });
@@ -1373,177 +1388,7 @@ function replaceCurrentSceneAndAssets(nextAssets = sequenceEditor.sequence.asset
   const current = currentScenePayload();
   const scenes = old.scenes.map(scene => scene.id === activeSceneId ? current : scene);
   const next = createStudioSequenceV1({ viewport: project.viewport, scenes, assets: nextAssets });
-  sequenceEditor.replaceSequence(next);
-  persistSequenceMetadata();
-  void persistentAssets?.replaceSequence(next).catch(error => {
-    $("assetLibraryMessage").textContent = `تعذر حفظ مراجع الأصول: ${errorText(error)}`;
-  });
-  audioAssets = next.assets.filter(asset => asset.kind === "audio").map(assetMetadataToAudio);
-  renderAssetLibrary();
-  return next;
-}
-async function useLibraryAsset(id) {
-  try {
-    await assetReady;
-    const asset = sequenceEditor.sequence.assets.find(item => item.id === id);
-    const blob = getAssetBlob(id);
-    if (!asset || !blob) throw new Error("الأصل غير مرتبط؛ أعد اختياره من الهاتف.");
-    if (asset.kind === "audio") {
-      let audio = audioFiles.get(id);
-      if (!audio) {
-        const file = new File([blob], asset.name, { type: asset.mimeType });
-        const url = URL.createObjectURL(file);
-        let durationMs = 0; try { durationMs = await readAudioDuration(file); } catch { /* Use the validated duration captured when this asset was recorded/imported. */ }
-        durationMs ||= readAudioDurationHint(id);
-        audio = { file, url, durationMs }; audioFiles.set(id, audio);
-      }
-      activeAudioAssetId = id;
-      $("audioFileName").textContent = `${asset.name} · ${(asset.size / 1024 / 1024).toFixed(2)} MiB`;
-      $("audioTimelineMessage").textContent = `الأصل ${asset.name} جاهز للمسار الحالي.`;
-      renderAudioInspector();
-      return;
-    }
-    if (asset.kind !== "image") throw new TypeError("هذا النوع من الأصول لا يمكن وضعه في المشهد بعد.");
-    const file = new File([blob], asset.name, { type: asset.mimeType });
-    const imageRequestToken = imageRequest.begin();
-    pendingImageRequest = imageRequestToken; refreshExportControls();
-    const bitmap = await decodeImageBitmap(file, { isCurrent: () => imageRequest.isCurrent(imageRequestToken) });
-    try {
-      selectedImageDimensions = { width: bitmap.width, height: bitmap.height };
-      const surface = drawBitmap(bitmap);
-      const nextProject = structuredClone(project);
-      nextProject.layers[0].assetId = id;
-      project = nextProject; selectedImageFile = file; currentFileInfo = { name: asset.name, type: asset.mimeType, size: asset.size };
-      imageSource = surface; sceneImageSources.set(id, surface);
-      compiled = compileProject(projectForRaster(project, previewViewport), imageProvider);
-      replaceCurrentSceneAndAssets();
-      sceneSettings.set(activeSceneId, { aspectPreset, fitMode, image: currentFileInfo });
-      imageName.textContent = `${asset.name} · ${bitmap.width}×${bitmap.height}`;
-      renderAt(currentMs); status.textContent = "تم ربط الصورة بالمشهد";
-    } finally { bitmap.close?.(); }
-  } catch (error) { $("assetLibraryMessage").textContent = errorText(error); }
-  finally { if (pendingImageRequest !== null) pendingImageRequest = null; refreshExportControls(); }
-}
-async function removeLibraryAsset(id) {
-  try {
-    captureCurrentScene();
-    await assetReady;
-    await persistentAssets?.replaceSequence(sequenceEditor.sequence);
-    if (persistentAssets) {
-      await persistentAssets.remove(id);
-      sequenceEditor.replaceSequence(persistentAssets.sequence);
-    } else {
-      if (currentAssetReferences(id).length) throw new Error("لا يمكن حذف أصل تستخدمه المشاهد.");
-      const sequence = sequenceEditor.sequence;
-      const next = createStudioSequenceV1({ viewport: sequence.viewport, scenes: sequence.scenes,
-        assets: sequence.assets.filter(asset => asset.id !== id) });
-      sequenceEditor.replaceSequence(next); localAssetFiles.delete(id);
-    }
-    persistSequenceMetadata();
-    audioAssets = sequenceEditor.sequence.assets.filter(asset => asset.kind === "audio").map(assetMetadataToAudio);
-    const audio = audioFiles.get(id); if (audio?.url) URL.revokeObjectURL(audio.url); audioFiles.delete(id);
-    renderAssetLibrary();
-    $("assetLibraryMessage").textContent = "حُذف الأصل غير المستخدم من هذا الجهاز.";
-  } catch (error) { $("assetLibraryMessage").textContent = errorText(error); }
-}
-function inputNumber(id) { return Number($(id).value); }
-function syncMotionTimeBounds() {
-  const durationSeconds = project.durationMs / 1000;
-  const from = $("motionFromSeconds"); const to = $("motionToSeconds");
-  from.max = String(durationSeconds); to.max = String(durationSeconds);
-  const fromValue = from.value.trim() ? Number(from.value) : NaN;
-  const toValue = to.value.trim() ? Number(to.value) : NaN;
-  if (Number.isFinite(fromValue) && fromValue > durationSeconds) from.value = String(Math.max(0, durationSeconds - 0.1));
-  if (Number.isFinite(toValue) && toValue > durationSeconds) to.value = String(durationSeconds);
-}
-function setEditorSection(section) {
-  if (!["scenes", "motion", "audio", "characters", "effects", "project"].includes(section)) return;
-  activeEditorSection = section;
-  for (const panel of document.querySelectorAll("[data-tool-panel]")) panel.hidden = panel.dataset.toolPanel !== section;
-  for (const button of document.querySelectorAll("[data-editor-section]")) {
-    button.setAttribute("aria-pressed", String(button.dataset.editorSection === section));
-  }
-  studioRoot.dataset.editorSection = section;
-}
-function setEditorMode(mode) {
-  if (!["automatic", "simple", "professional"].includes(mode)) return;
-  studioRoot.dataset.editorMode = mode;
-  for (const button of document.querySelectorAll("[data-editor-mode-button]")) {
-    button.setAttribute("aria-pressed", String(button.dataset.editorModeButton === mode));
-  }
-  for (const panel of document.querySelectorAll("[data-mode-panel]")) panel.hidden = panel.dataset.modePanel !== mode;
-}
-function readMotionSeconds(id, label) {
-  const input = $(id); const text = input.value.trim();
-  if (!text || input.validity.badInput) throw new TypeError(`${label}: أدخل وقتًا بالثواني.`);
-  const value = Number(text);
-  if (!Number.isFinite(value) || value < 0 || value > project.durationMs / 1000) throw new RangeError(`${label}: الوقت خارج مدة المشهد.`);
-  return value;
-}
-function refreshMotionUndoButtons() {
-  const disabled = !quickMotionUndo || Boolean(activeExport);
-  for (const button of [$("undoMotionButton"), $("undoMotionAutomatic")]) button.disabled = disabled;
-  const headerUndo = $("headerUndoButton");
-  if (headerUndo) headerUndo.disabled = disabled;
-}
-function applyQuickMotion(preset, automatic = false) {
-  const fromField = $("motionFromSeconds"); const toField = $("motionToSeconds");
-  fromField.removeAttribute("aria-invalid"); toField.removeAttribute("aria-invalid");
-  try {
-    const fromSeconds = automatic ? 0 : readMotionSeconds("motionFromSeconds", "بداية الحركة");
-    const toSeconds = automatic ? project.durationMs / 1000 : readMotionSeconds("motionToSeconds", "نهاية الحركة");
-    if (fromSeconds >= toSeconds) throw new RangeError("يجب أن تكون نهاية الحركة بعد بدايتها.");
-    const settings = automatic ? { speed: 0.75, strength: 36, focusX: 50, focusY: 50 }
-      : { speed: Number($("motionSpeed").value), strength: Number($("motionStrength").value),
-        focusX: Number($("motionFocusX").value), focusY: Number($("motionFocusY").value) };
-    const nextProject = createCameraMotionProject(project, { preset, fromSeconds, toSeconds, ...settings });
-    const previousProject = structuredClone(project);
-    committingQuickMotion = true;
-    try {
-      commitKeyframeProject(nextProject);
-      timelineEditor?.render();
-      timelineEditor?.selectTime(Math.round(fromSeconds * 1000));
-    } finally { committingQuickMotion = false; }
-    quickMotionUndo = previousProject;
-    refreshMotionUndoButtons();
-    const label = CAMERA_MOTION_PRESETS.find((item) => item.id === preset)?.label ?? "الحركة";
-    $("motionPresetMessage").textContent = automatic
-      ? `طُبّق اقتراح «${label}» على كامل المشهد. يمكنك متابعة التعديل في الوضع الاحترافي.`
-      : `طُبّقت «${label}» من ${fromSeconds} إلى ${toSeconds} ثانية.`;
-  } catch (error) {
-    if (!fromField.value.trim() || fromField.validity.badInput) fromField.setAttribute("aria-invalid", "true");
-    if (!toField.value.trim() || toField.validity.badInput) toField.setAttribute("aria-invalid", "true");
-    $("motionPresetMessage").textContent = errorText(error);
-  }
-}
-function undoQuickMotion() {
-  if (!quickMotionUndo || activeExport) return;
-  const previous = quickMotionUndo;
-  committingQuickMotion = true;
-  try {
-    commitKeyframeProject(previous);
-    timelineEditor?.render();
-    quickMotionUndo = null;
-    $("motionPresetMessage").textContent = "تم التراجع عن آخر حركة جاهزة.";
-  } catch (error) { $("motionPresetMessage").textContent = errorText(error); }
-  finally { committingQuickMotion = false; refreshMotionUndoButtons(); }
-}
-for (const button of document.querySelectorAll("[data-editor-mode-button]")) {
-  button.addEventListener("click", () => setEditorMode(button.dataset.editorModeButton));
-}
-for (const button of document.querySelectorAll("[data-editor-section]")) {
-  button.addEventListener("click", () => {
-    const section = button.dataset.editorSection;
-    setEditorSection(section);
-  });
-}
-$("headerSaveButton").addEventListener("click", () => $("saveProjectButton").click());
-$("headerUndoButton").addEventListener("click", undoQuickMotion);
-$("headerExportButton").addEventListener("click", () => {
-  setEditorSection("project");
-  $("integratedExportButton").focus({ preventScroll: true });
-});
-$("fullscreenPreviewButton").addEventListener("click", async () => {
+  sequ…2428 tokens truncated…enPreviewButton").addEventListener("click", async () => {
   const target = $("studioPreview");
   try {
     if (document.fullscreenElement === target) await document.exitFullscreen();

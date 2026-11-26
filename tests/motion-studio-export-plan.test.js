@@ -40,7 +40,7 @@ test("planning freezes a project snapshot, trims range clips, calculates source 
   assert.ok(Object.isFrozen(result) && Object.isFrozen(result.snapshot.project));
   source.project.viewport.width = 360;
   assert.equal(result.snapshot.project.viewport.width, 720);
-  assert.equal(result.estimatedPcmBytes, (5000 / 1000 * 1 * 48000 * 4) + (10000 / 1000 * 2 * 48000 * 4));
+  assert.equal(result.estimatedPcmBytes, (2500 / 1000 * 1 * 48000 * 4) + (3500 / 1000 * 2 * 48000 * 4));
   assert.ok(result.headroomGain <= 1);
 });
 
