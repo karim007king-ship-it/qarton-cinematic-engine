@@ -443,6 +443,7 @@ body, .studio, .studio-preview, .tool-drawer, .tool-panel { color: #f2eee5; colo
 @media (max-width: 760px) {
   .studio { height: 100dvh; min-height: 0; grid-template-rows: auto minmax(190px, 1.28fr) minmax(112px, .68fr) auto; gap: 5px; padding: max(4px, env(safe-area-inset-top)) max(5px, env(safe-area-inset-right)) max(3px, env(safe-area-inset-bottom)) max(5px, env(safe-area-inset-left)); }
   .editor-mode-nav { margin: 0 0 6px; }
+  .topbar { margin-bottom: 0; }
   .studio-preview { grid-row: 2; }
   .preview-scene-strip { min-height: 48px; }
   .preview-scene-strip .scene-card { flex-basis: 116px; min-width: 116px; }
