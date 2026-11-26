@@ -31,6 +31,10 @@ test("mobile interface exposes portrait preview, image input, camera controls an
   assert.match(html, /value="mp4"/);
   assert.match(html, /value="webm"/);
   assert.match(html, /viewport" content="width=device-width, initial-scale=1/);
+  assert.match(html, /id="buildCommitBadge"/);
+  assert.match(html, /id="runtimeReadiness"/);
+  assert.match(html, /window\.QARTON_DIAGNOSTICS/);
+  assert.match(html, /id="runtimeDiagnostics"/);
 });
 
 test("L11-F2 Android workspace expands the preview and keeps file and scene controls accessible", async () => {
@@ -45,8 +49,10 @@ test("L11-F2 Android workspace expands the preview and keeps file and scene cont
     "the Canvas has no reserved blank strip below the preview title");
   assert.match(css, /\.sr-only\s*\{[^}]*clip-path:\s*inset\(50%\)/,
     "native file inputs use a real screen-reader-only treatment");
-  assert.match(css, /\.studio\[data-image-ready="true"\]\s+#previewImagePicker\s*\{\s*display:\s*none/,
-    "image picker is removed from the preview after media loads");
+  assert.doesNotMatch(css, /\.studio\[data-image-ready="true"\]\s+#previewImagePicker\s*\{\s*display:\s*none/,
+    "image picker remains available for replacing the current image");
+  assert.match(script, /replaceChildren\("تغيير الصورة"\)/,
+    "the visible picker changes its label after an image loads");
   assert.match(html, /id="moveSceneLeftButton"/);
   assert.match(html, /id="moveSceneRightButton"/);
   assert.match(html, /data-motion-preset="zoom-in"[^>]*>[\s\S]*?<svg viewBox="0 0 24 24"/);
@@ -376,4 +382,17 @@ test("video export uses Motion Studio sampling, cancellation, resource cleanup a
   assert.match(source, /presentFrame\(frameIndex\)/);
   assert.match(source, /tryWebmButton\.hidden = !canTryWebm/);
   assert.match(source, /tryWebmButton\.addEventListener\("click"/);
+});
+
+
+test("runtime diagnostics expose build, readiness, cancellation and asset rollback hooks", async () => {
+  const html = await readFile(resolve(root, "examples/motion-studio-lab/index.html"), "utf8");
+  const js = await readFile(resolve(root, "examples/motion-studio-lab/studio.js"), "utf8");
+  assert.match(html, /id="buildCommitBadge"/);
+  assert.match(html, /id="runtimeReadiness"/);
+  assert.match(html, /id="runtimeDiagnostics"/);
+  assert.match(html, /window\.QARTON_DIAGNOSTICS/);
+  assert.match(js, /imageInput\.addEventListener\("cancel"/);
+  assert.match(js, /getUserMediaCalls \+= 1/);
+  assert.match(js, /if \(added\) \{[\s\S]*localAssetFiles\.delete\(asset\.id\)/);
 });

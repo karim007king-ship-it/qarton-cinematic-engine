@@ -3,6 +3,8 @@ import {
   migrateStudioSequenceV1ToV2, sampleStudioSequenceV2,
   createStudioSequenceAudioCrossfadeEngine, EXPORT_LIMITS, ExportError
 } from "@qarton/cinematic-engine/motion-studio";
+import { audioRangePcmBytes, collectAudioSourceRanges, cropAudioBuffer, measureAudioBufferRange } from "../../packages/motion-studio/export/audio-source-ranges.js";
+import { compileCinematicAudioProject } from "../../src/audio/cinematic-audio-core.js";
 
 function releaseBuffer(buffer) {
   if (!buffer || typeof buffer.getChannelData !== "function") return;
@@ -62,41 +64,56 @@ export function createStudioSequenceRuntime(sequence, options = {}) {
 export async function decodeStudioSequenceAudio(compiled, {
   audioContext, resolveAudio, audioInfo = [], signal, onProgress, pcmBudgetBytes = EXPORT_LIMITS.pcmBytes,
   compressedBudgetBytes = 20 * 1024 * 1024, sampleRate = EXPORT_LIMITS.audioSampleRate,
-  channels = EXPORT_LIMITS.audioChannels, timeoutMs = 30_000
+  channels = EXPORT_LIMITS.audioChannels, timeoutMs = 30_000,
+  range = { startMs: 0, endMs: compiled?.durationMs ?? 0 }, masterVolume = 1
 } = {}) {
   if (!audioContext?.decodeAudioData || typeof resolveAudio !== "function") {
     throw new TypeError("Audio decoding requires a shared AudioContext and local asset resolver");
   }
-  const referenced = new Map();
-  for (const scene of compiled.scenes) for (const track of scene.audioTracks ?? []) {
-    if (!(track.volume > 0)) continue;
-    for (const clip of track.clips) if ((clip.volume ?? 1) > 0) referenced.set(clip.asset, true);
+  const sceneRanges = [];
+  let sceneStartMs = 0;
+  for (let index = 0; index < compiled.scenes.length; index++) {
+    if (index > 0) sceneStartMs = compiled.transitionIntervals[index - 1].startMs;
+    const scene = compiled.scenes[index];
+    const sceneEndMs = sceneStartMs + scene.project.durationMs;
+    const audio = compileCinematicAudioProject({ durationMs: scene.project.durationMs, tracks: scene.audioTracks ?? [] });
+    for (const track of audio.tracks) for (const clip of track.clips) {
+      sceneRanges.push({ asset: clip.asset, startMs: sceneStartMs + clip.startMs,
+        endMs: Math.min(sceneEndMs, sceneStartMs + clip.endMs), offsetMs: clip.offsetMs ?? 0,
+        volume: clip.volume, trackVolume: track.volume,
+        loop: clip.loop === true, type: track.type });
+    }
   }
+  const ranges = collectAudioSourceRanges(sceneRanges, audioInfo, { range, masterVolume });
+  const referenced = [...ranges.keys()].sort((left, right) => {
+    const a = metadataValue(audioInfo, left, channels, sampleRate);
+    const b = metadataValue(audioInfo, right, channels, sampleRate);
+    return expectedFullBytes(b) - expectedFullBytes(a);
+  });
   const buffers = new Map();
-  const metadata = new Map(audioInfo.map(item => [item.id, item]));
+  const sourceOffsets = new Map();
+  const loopableAssets = new Set();
   let pcmBytes = 0, compressedBytes = 0;
   const release = () => {
     for (const buffer of buffers.values()) releaseBuffer(buffer);
     buffers.clear();
   };
   try {
-    let reservedPcmBytes = 0;
-    for (const assetId of referenced.keys()) {
-      const info = metadata.get(assetId);
-      if (!info || !Number.isFinite(info.durationMs) || info.durationMs <= 0) {
-        throw new ExportError("DECODE_FAILED", `Audio memory metadata is unavailable: ${assetId}`);
-      }
-      const reservation = Math.ceil(info.durationMs / 1000 * (info.channels ?? channels) *
-        (info.sampleRate ?? sampleRate) * EXPORT_LIMITS.audioBytesPerSample);
-      if (!Number.isSafeInteger(reservation) || reservation < 1 || reservation > pcmBudgetBytes ||
-          reservedPcmBytes > pcmBudgetBytes - reservation) {
-        throw new ExportError("BUDGET_EXCEEDED", "Expected decoded audio exceeds the 32 MiB PCM budget", {
-          assetId, expectedPcmBytes: reservedPcmBytes + reservation, pcmBudgetBytes
+    let expectedRetainedBytes = 0, plannedPeakBytes = 0;
+    for (const assetId of referenced) {
+      const info = metadataValue(audioInfo, assetId, channels, sampleRate);
+      const retained = audioRangePcmBytes(info, ranges.get(assetId));
+      const full = expectedFullBytes(info);
+      expectedRetainedBytes += retained;
+      plannedPeakBytes = Math.max(plannedPeakBytes, expectedRetainedBytes + (ranges.get(assetId).full ? 0 : full));
+      if (!Number.isSafeInteger(expectedRetainedBytes) || expectedRetainedBytes > pcmBudgetBytes ||
+          !Number.isSafeInteger(plannedPeakBytes) || plannedPeakBytes > pcmBudgetBytes) {
+        throw new ExportError("BUDGET_EXCEEDED", "Requested audio ranges and the temporary full-file decoder buffer exceed the 32 MiB PCM working budget. Shorten the selected audio range or export at a lower project duration.", {
+          assetId, expectedRetainedBytes, plannedPeakBytes, pcmBudgetBytes
         });
       }
-      reservedPcmBytes += reservation;
     }
-    for (const assetId of referenced.keys()) {
+    for (const assetId of referenced) {
       if (signal?.aborted) throw signal.reason ?? new DOMException("Audio preparation cancelled", "AbortError");
       const blob = await awaitAudioWork(resolveAudio(assetId, signal), { signal, timeoutMs });
       if (!blob || typeof blob.arrayBuffer !== "function" || !Number.isSafeInteger(blob.size) || blob.size < 1) {
@@ -114,20 +131,42 @@ export async function decodeStudioSequenceAudio(compiled, {
       try {
         encoded = await awaitAudioWork(blob.arrayBuffer(), { signal, timeoutMs });
         const buffer = await awaitAudioWork(audioContext.decodeAudioData(encoded), { signal, timeoutMs, onLateValue: releaseBuffer });
-        const actual = buffer.length * buffer.numberOfChannels * EXPORT_LIMITS.audioBytesPerSample;
-        if (!Number.isSafeInteger(actual) || actual < 1 || actual > pcmBudgetBytes || pcmBytes > pcmBudgetBytes - actual) {
-          releaseBuffer(buffer);
-          throw new ExportError("BUDGET_EXCEEDED", "Decoded audio assets exceed the 32 MiB PCM budget", { assetId, pcmBudgetBytes });
+        const actualSourceBytes = buffer.length * buffer.numberOfChannels * EXPORT_LIMITS.audioBytesPerSample;
+        const measurement = measureAudioBufferRange(buffer, ranges.get(assetId));
+        const peakBytes = pcmBytes + actualSourceBytes + (measurement.full ? 0 : measurement.bytes);
+        if (!Number.isSafeInteger(actualSourceBytes) || actualSourceBytes < 1 ||
+            !Number.isSafeInteger(peakBytes) || peakBytes > pcmBudgetBytes) {
+          throw new ExportError("BUDGET_EXCEEDED", "The source decode and requested audio range exceed the 32 MiB PCM working budget. Shorten the selected audio range or trim the source file.", {
+            assetId, decodedBytes: peakBytes, sourceBytes: actualSourceBytes,
+            retainedBytes: pcmBytes, requestedRangeBytes: measurement.bytes, pcmBudgetBytes
+          });
         }
-        pcmBytes += actual;
-        buffers.set(assetId, buffer);
+        const cropped = cropAudioBuffer(audioContext, buffer, ranges.get(assetId), measurement);
+        if (cropped.buffer !== buffer) releaseBuffer(buffer);
+        pcmBytes += cropped.bytes;
+        buffers.set(assetId, cropped.buffer);
+        sourceOffsets.set(assetId, cropped.startOffsetSeconds);
+        if (cropped.full) loopableAssets.add(assetId);
         onProgress?.(Object.freeze({ phase: "preparing-audio", elapsedMs: 0, targetMs: compiled.durationMs,
-          decodedAssets: buffers.size, totalAssets: referenced.size, decodedBytes: pcmBytes }));
+          decodedAssets: buffers.size, totalAssets: referenced.length, decodedBytes: pcmBytes }));
       } finally { encoded = null; }
     }
-    return Object.freeze({ buffers, decodedBytes: pcmBytes, release });
+    return Object.freeze({ buffers, sourceOffsets, loopableAssets, decodedBytes: pcmBytes, release });
   } catch (error) {
     release();
     throw error;
   }
+}
+
+function metadataValue(audioInfo, assetId, defaultChannels, defaultSampleRate) {
+  const info = audioInfo.find(item => item.id === assetId);
+  if (!info || !Number.isFinite(info.durationMs) || info.durationMs <= 0) {
+    throw new ExportError("DECODE_FAILED", `Audio memory metadata is unavailable: ${assetId}`);
+  }
+  return { id: assetId, durationMs: info.durationMs, channels: info.channels ?? defaultChannels,
+    sampleRate: info.sampleRate ?? defaultSampleRate };
+}
+
+function expectedFullBytes(info) {
+  return Math.ceil(info.durationMs / 1000 * info.channels * info.sampleRate * EXPORT_LIMITS.audioBytesPerSample);
 }

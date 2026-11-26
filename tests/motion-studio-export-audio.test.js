@@ -26,7 +26,7 @@ class FakeAudioContext {
     this.decodeCalls.push(bytes.byteLength);
     return this.makeBuffer();
   }
-  makeBuffer() { return { length: 48_000, numberOfChannels: 2, sampleRate: 48_000, duration: 1, getChannelData: () => ({ fill() {} }) }; }
+  makeBuffer() { return { length: 96_000, numberOfChannels: 2, sampleRate: 48_000, duration: 2, getChannelData: () => ({ fill() {} }) }; }
   createMediaStreamDestination() {
     this.destination = new FakeNode(this, "destination");
     this.audioTrack = { stopped: false, stop() { this.stopped = true; } };
@@ -58,11 +58,11 @@ test("local audio assets decode once and overlapping clips schedule at exact ran
   assert.equal(mixer.stream.getAudioTracks().length, 1);
   const scheduled = mixer.schedule(2.2);
   assert.deepEqual(scheduled.map(item => [item.clipId, item.when, item.endAt, item.offset, item.loop]), [
-    ["loop", 2.2, 7.2, 0, true], ["one-shot", 3.2, 6.2, 0, false], ["hit", 4.7, 5.7, 0, false]
+    ["loop", 2.2, 7.2, 1, true], ["one-shot", 3.2, 6.2, 0, false], ["hit", 4.7, 5.7, 0, false]
   ]);
   assert.equal(context.sources.length, 3);
   assert.deepEqual(context.gains.find(node => node.gain.events.length === 5).gain.events.slice(1, 3), [["set", 0, 2.2], ["ramp", 0.8, 2.205]]);
-  assert.equal(mixer.decodedBytes, 2 * 48_000 * 2 * 4);
+  assert.equal(mixer.decodedBytes, 2 * 96_000 * 2 * 4);
   assert.ok(plan.headroomGain < 1);
   mixer.stop();
   mixer.stop();

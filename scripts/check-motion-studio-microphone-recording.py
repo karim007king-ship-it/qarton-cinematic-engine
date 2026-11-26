@@ -135,11 +135,23 @@ with tempfile.TemporaryDirectory(prefix="qarton-virtual-mic-") as directory:
               Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {configurable:true, value:() => Promise.reject(Object.assign(new Error('permission denied'), {name:'NotAllowedError'}))});
             }""")
             page.locator("#quickRecordAudio").click()
-            page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('لم يُسمح بالميكروفون')")
+            page.wait_for_function("document.querySelector('#audioDiagnosticStatus').textContent.includes('NotAllowedError')")
             assert page.locator(".microphone-record-button").is_enabled(), "permission denial must release the record button"
+            assert page.locator("#microphonePermissionHelp").is_visible(), "denied permission must expose Android recovery steps"
+            assert "NotAllowedError" in page.locator("#audioTimelineMessage").inner_text(), "visible error must retain the browser error name"
+            page.evaluate("""() => {
+              window.__qartonRetryCalls = 0;
+              Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {configurable:true, value:() => {
+                window.__qartonRetryCalls++;
+                return Promise.reject(Object.assign(new Error('permission still denied'), {name:'NotAllowedError'}));
+              }});
+            }""")
+            page.locator("#retryMicrophoneButton").click()
+            page.wait_for_function("window.__qartonRetryCalls === 1")
+            assert page.locator("#microphonePermissionHelp").is_visible(), "retry should re-request permission after Android settings change"
             page.evaluate("Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {configurable:true, value:() => new Promise(() => {})})")
             page.locator("#quickRecordAudio").click()
-            page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('30 ثانية')")
+            page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('لم يصل رد على طلب الميكروفون')")
             assert page.locator(".microphone-record-button").is_enabled(), "microphone timeout must release the record button"
             page.evaluate("window.setTimeout = window.__qartonNativeTimeout; Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {configurable:true, value:window.__qartonNativeGetUserMedia})")
             page.evaluate("""() => {
@@ -226,7 +238,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-virtual-mic-") as directory:
             image = root / "examples/motion-studio-lab/preview-test.png"
             page.locator("#imageInput").set_input_files(str(image))
             page.wait_for_function("document.querySelector('#imageName').textContent.includes('preview-test.png')")
-            page.locator('nav.bottom-dock [data-editor-section="more"]').click()
+            page.locator('nav.bottom-dock [data-editor-section="project"]').click()
             page.locator("#advancedProjectOptions > summary").click()
             page.locator("#duration").press("Home")
             page.wait_for_function("document.querySelector('#integratedTo').value === '3000'")
@@ -237,7 +249,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-virtual-mic-") as directory:
             page.wait_for_function("document.querySelector('#sceneDuration').value === '3'")
 
             # Verify export capability before recording so the busy-state assertion is meaningful.
-            page.locator('nav.bottom-dock [data-editor-section="more"]').click()
+            page.locator('nav.bottom-dock [data-editor-section="project"]').click()
             page.locator(".export-options > summary").click()
             video_format = page.evaluate("""() => {
               if (['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].some(type => MediaRecorder.isTypeSupported(type))) return 'webm';
@@ -301,7 +313,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-virtual-mic-") as directory:
             print(f"Copied diagnostics: Blob={latest['bytes']} bytes; decoded={latest['decodedDurationMs']}ms; RMS={latest['rms']:.4f}; peak={latest['peak']:.4f}; rate={latest['sampleRate']}Hz")
 
             # Persist project metadata and audio bytes, then verify that restored playback has a real signal.
-            page.locator('nav.bottom-dock [data-editor-section="more"]').click()
+            page.locator('nav.bottom-dock [data-editor-section="project"]').click()
             with page.expect_download(timeout=15000) as project_download:
                 page.locator("#saveProjectButton").evaluate("el => el.click()")
             project_path = temp / "qarton-recorded-audio-project.json"
@@ -310,7 +322,9 @@ with tempfile.TemporaryDirectory(prefix="qarton-virtual-mic-") as directory:
             assert "recording-" in saved_text and "audio-clip-" in saved_text, "saved project must include the recorded clip and asset"
             page.reload()
             page.wait_for_function("document.querySelectorAll('#audioTracks .audio-clip').length === 1", timeout=25000)
-            assert "استُعيد" in page.locator("#assetLibraryMessage").inner_text(), page.locator("#assetLibraryMessage").inner_text()
+            page.wait_for_function("document.querySelector('#assetLibraryMessage').textContent.includes('استُعيد') || document.querySelector('#assetLibraryMessage').textContent.includes('استعادة الأصول المحلية')", timeout=10000)
+            restored_message = page.locator("#assetLibraryMessage").text_content() or ""
+            assert "استُعيد" in restored_message or "استعادة الأصول المحلية" in restored_message, restored_message
             page.locator('nav.bottom-dock [data-editor-section="audio"]').click()
             page.locator("#audioTracks .audio-clip").first.click()
             assert "recording-" in page.locator("#audioSelection").inner_text()
@@ -324,7 +338,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-virtual-mic-") as directory:
             print(f"Restored preview signal: RMS={preview_signal['rms']:.4f} tone={preview_signal['frequency']:.1f}Hz")
 
             # Export both scenes, decode the file, and verify the recorded signal is present in its audio stream.
-            page.locator('nav.bottom-dock [data-editor-section="more"]').click()
+            page.locator('nav.bottom-dock [data-editor-section="project"]').click()
             page.locator(".export-options > summary").click()
             page.locator("#integratedFormat").select_option(video_format)
             page.locator("#integratedAudio").select_option("mix")

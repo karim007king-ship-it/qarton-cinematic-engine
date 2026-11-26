@@ -80,3 +80,31 @@ test("audio memory is reserved before decode and late decoder buffers are cleare
   decoded.release();
   runtime.release();
 });
+
+test("long files retain only the requested range and files outside that range are never decoded", async () => {
+  const sound = { id: "long", kind: "audio", name: "long.wav", mimeType: "audio/wav", size: 8 };
+  const audioScene = { ...scene("audio"), audioTracks: [{ id: "music-track", type: "music", volume: 1,
+    clips: [{ id: "music-clip", asset: sound.id, startMs: 0, durationMs: 1000, volume: 1, loop: false }] }] };
+  const unusedScene = { ...scene("unused"), audioTracks: [{ id: "unused-track", type: "sfx", volume: 1,
+    clips: [{ id: "unused-clip", asset: "never", startMs: 0, durationMs: 1000, volume: 1 }] }] };
+  const sequence = createStudioSequenceV2({ viewport, scenes: [audioScene, unusedScene], assets: [image, sound,
+    { id: "never", kind: "audio", name: "never.wav", mimeType: "audio/wav", size: 8 }] });
+  const runtime = createStudioSequenceRuntime(sequence);
+  const decoded = [];
+  const context = {
+    decodeAudioData: async () => ({ length: 2_880_000, numberOfChannels: 2, sampleRate: 48_000, duration: 60,
+      getChannelData: () => new Float32Array(2_880_000) }),
+    createBuffer: (channels, length, sampleRate) => ({ length, numberOfChannels: channels, sampleRate,
+      duration: length / sampleRate, getChannelData: () => new Float32Array(length),
+      copyToChannel: () => {} })
+  };
+  const result = await decodeStudioSequenceAudio(runtime.compiled, { audioContext: context,
+    resolveAudio: async id => { decoded.push(id); return new Blob(["audio"]); },
+    audioInfo: [{ id: "long", durationMs: 60_000, channels: 2, sampleRate: 48_000 },
+      { id: "never", durationMs: 60_000, channels: 2, sampleRate: 48_000 }],
+    range: { startMs: 0, endMs: 500 } });
+  assert.deepEqual(decoded, ["long"]);
+  assert.equal(result.buffers.get("long").length, 24_000);
+  assert.equal(result.decodedBytes, 24_000 * 2 * 4);
+  result.release();
+});

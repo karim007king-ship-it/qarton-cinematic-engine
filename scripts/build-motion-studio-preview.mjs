@@ -34,7 +34,10 @@ const bundled = await build({
   }
 });
 
-const html = inlinePreviewAssets(htmlSource, css, bundled.outputFiles[0].text);
+const buildCommit = process.env.MOTION_STUDIO_BUILD_COMMIT || process.env.GITHUB_SHA || "development";
+if (!/^(?:[0-9a-f]{7,40}|development)$/iu.test(buildCommit)) throw new Error("Invalid Motion Studio build commit");
+const html = inlinePreviewAssets(htmlSource, css, bundled.outputFiles[0].text)
+  .replaceAll("__QARTON_BUILD_COMMIT__", buildCommit.slice(0, 12));
 
 if (html === htmlSource || /<script type="importmap">|type="module" src=\.\/studio\.js/u.test(html) || /from\s+["'](?:\.|@qarton)\//u.test(bundled.outputFiles[0].text)) {
   throw new Error("Could not produce a self-contained Motion Studio preview document.");

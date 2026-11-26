@@ -1,4 +1,5 @@
 import { compileCinematicAudioProject } from "../../../src/audio/cinematic-audio-core.js";
+import { audioRangePcmBytes, collectAudioSourceRanges } from "./audio-source-ranges.js";
 
 export const EXPORT_LIMITS = Object.freeze({
   projectDurationMs: 300_000,
@@ -120,14 +121,16 @@ export function rasterForQuality(viewport, quality) {
 
 function decodedPcmBytes(audioProject, infoById, requestRange, masterVolume) {
   if (masterVolume === 0) return 0;
-  const ids = new Set(audioProject.clips.filter(clip => clip.startMs < requestRange.endMs && clip.endMs > requestRange.startMs &&
-    clip.volume > 0 && clip.trackVolume > 0).map(clip => clip.asset));
+  const active = audioProject.clips.filter(clip => clip.startMs < requestRange.endMs && clip.endMs > requestRange.startMs &&
+    clip.volume > 0 && clip.trackVolume > 0);
+  const info = [...infoById.values()];
+  const sourceRanges = collectAudioSourceRanges(active, info, { range: requestRange, masterVolume });
   let total = 0;
-  for (const id of ids) {
-    const info = infoById.get(id);
-    const bytes = Math.ceil(info.durationMs / 1000 * (info.channels ?? 2) * (info.sampleRate ?? 48_000) * EXPORT_LIMITS.audioBytesPerSample);
+  for (const [id, sourceRange] of sourceRanges) {
+    const assetInfo = infoById.get(id);
+    const bytes = audioRangePcmBytes(assetInfo, sourceRange);
     total += bytes;
-    if (total > EXPORT_LIMITS.pcmBytes) fail("BUDGET_EXCEEDED", "Decoded audio assets exceed the 32 MiB PCM budget", { assetId: id, estimatedPcmBytes: total });
+    if (!Number.isSafeInteger(total) || total > EXPORT_LIMITS.pcmBytes) fail("BUDGET_EXCEEDED", "Audio required for this export range exceeds the 32 MiB PCM budget", { assetId: id, estimatedPcmBytes: total, pcmBudgetBytes: EXPORT_LIMITS.pcmBytes });
   }
   return total;
 }

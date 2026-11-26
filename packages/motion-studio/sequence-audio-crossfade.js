@@ -95,7 +95,7 @@ function safePeakBound(compiled, clips, masterVolume) {
   return Object.freeze({ peakBound, safeHeadroom: combinedPeak > 1 ? 1 / combinedPeak : 1 });
 }
 
-function makeClipRecords(compiled, buffers, masterVolume) {
+function makeClipRecords(compiled, buffers, masterVolume, { range, sourceOffsets = new Map(), loopableAssets = new Set() } = {}) {
   const scenes = makeSceneIntervals(compiled);
   const records = [];
   const peakCache = new WeakMap();
@@ -107,6 +107,12 @@ function makeClipRecords(compiled, buffers, masterVolume) {
     for (const track of audio.tracks) {
       for (const clip of track.clips) {
         if (clip.volume === 0 || track.volume === 0 || masterVolume === 0) continue;
+        const sceneStartMs = interval.startMs;
+        const clipStartMs = sceneStartMs + clip.startMs;
+        const clipEndMs = Math.min(interval.endMs, sceneStartMs + clip.endMs);
+        const startMs = Math.max(clipStartMs, range?.startMs ?? 0);
+        const endMs = Math.min(clipEndMs, range?.endMs ?? compiled.durationMs);
+        if (endMs <= startMs) continue;
         const buffer = audioBufferFor(buffers, clip.asset);
         if (!uniqueBuffers.has(buffer)) {
           uniqueBuffers.add(buffer);
@@ -118,16 +124,15 @@ function makeClipRecords(compiled, buffers, masterVolume) {
           }
           decodedPcmBytes += bytes;
         }
-        const startMs = interval.startMs + clip.startMs;
-        const endMs = Math.min(interval.endMs, interval.startMs + clip.endMs);
-        if (endMs <= startMs) continue;
         const amplitudeBound = peakOf(buffer, peakCache) * clip.volume * track.volume;
         if (amplitudeBound === 0) continue;
         records.push(Object.freeze({ key: `${interval.scene.id}:${track.id}:${clip.id}`,
           sceneId: interval.scene.id, sceneIndex: interval.sceneIndex, trackId: track.id,
           trackType: track.type, clipId: clip.id, asset: clip.asset, buffer,
-          localStartMs: clip.startMs, localEndMs: clip.endMs,
-          startMs, endMs, volume: clip.volume, trackVolume: track.volume, loop: clip.loop, amplitudeBound }));
+          localStartMs: clip.startMs + startMs - clipStartMs, localEndMs: clip.endMs,
+          startMs, endMs, sourceStartMs: (clip.offsetMs ?? 0) + startMs - clipStartMs,
+          assetSourceOffsetSeconds: sourceOffsets.get(clip.asset) ?? 0,
+          loopable: loopableAssets.has(clip.asset), volume: clip.volume, trackVolume: track.volume, loop: clip.loop, amplitudeBound }));
         if (records.length > MAX_SEQUENCE_AUDIO_CLIPS) {
           throw new ExportError("BUDGET_EXCEEDED", `Studio sequence audio supports at most ${MAX_SEQUENCE_AUDIO_CLIPS} active clips`, {
             clipCount: records.length, maxClipCount: MAX_SEQUENCE_AUDIO_CLIPS
@@ -243,7 +248,8 @@ export function createStudioSequenceAudioCrossfadeCore({ sampleStudioSequenceV2 
     throw new TypeError("Studio sequence audio requires the StudioSequenceV2 sampler");
   }
   return function createStudioSequenceAudioCrossfadeEngine(compiled, {
-    audioContext, audioBuffers, destination = audioContext?.destination, masterVolume = 1, signal
+    audioContext, audioBuffers, destination = audioContext?.destination, masterVolume = 1, signal,
+    range, sourceOffsets, loopableAssets
   } = {}) {
   if (!compiled || compiled.kind !== "compiled-studio-sequence-v2" || !Array.isArray(compiled.scenes) ||
       !Array.isArray(compiled.transitionIntervals)) throw new TypeError("A compiled StudioSequenceV2 is required");
@@ -254,7 +260,8 @@ export function createStudioSequenceAudioCrossfadeCore({ sampleStudioSequenceV2 
   requireFinite(masterVolume, "Master volume");
   if (masterVolume < 0 || masterVolume > 1) throw new RangeError("Master volume must be between 0 and 1");
   if (signal?.aborted) throw signal.reason ?? new DOMException("Audio setup was cancelled", "AbortError");
-  const { scenes, clips, peakBound, safeHeadroom, decodedPcmBytes } = makeClipRecords(compiled, audioBuffers, masterVolume);
+  const { scenes, clips, peakBound, safeHeadroom, decodedPcmBytes } = makeClipRecords(compiled, audioBuffers, masterVolume,
+    { range, sourceOffsets, loopableAssets });
   let master, headroom;
   if (clips.length > 0) {
     try {
@@ -333,9 +340,11 @@ export function createStudioSequenceAudioCrossfadeCore({ sampleStudioSequenceV2 
         if (endMs <= startMs) continue;
         // The clip's scene-local start determines when its voice enters the
         // project. Source offset is elapsed playback time from that clip start.
-        const offsetMs = startMs - clip.startMs;
-        const offset = offsetMs / 1000;
-        if (!clip.loop && offset >= clip.buffer.duration) continue;
+        const sourceElapsedSeconds = (clip.sourceStartMs + startMs - clip.startMs) / 1000;
+        let offset = sourceElapsedSeconds - clip.assetSourceOffsetSeconds;
+        const shouldLoop = clip.loop && clip.trackType === "music" && clip.loopable;
+        if (shouldLoop) offset = sourceElapsedSeconds % clip.buffer.duration;
+        if (offset < 0 || (!shouldLoop && offset >= clip.buffer.duration)) continue;
         const routeKey = `${clip.sceneIndex}:${clip.trackId}`;
         let trackNode = trackNodes.get(routeKey);
         if (!trackNode) {
@@ -361,12 +370,12 @@ export function createStudioSequenceAudioCrossfadeCore({ sampleStudioSequenceV2 
           finishSession(session);
         };
         source.buffer = clip.buffer;
-        source.loop = clip.loop && clip.trackType === "music";
+        source.loop = shouldLoop;
         clipNode.connect(trackNode);
         source.connect(clipNode);
         const when = epoch + (startMs - fromMs) / 1000;
         const endAt = epoch + (endMs - fromMs) / 1000;
-        const sourceOffset = source.loop ? offset % clip.buffer.duration : offset;
+        const sourceOffset = offset;
         source.start(when, sourceOffset);
         source.stop(endAt);
         session.scheduled.push(Object.freeze({ sceneId: clip.sceneId, trackId: clip.trackId, clipId: clip.clipId,

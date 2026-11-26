@@ -89,7 +89,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-audio-import-") as directory:
         page.wait_for_function("document.querySelector('#stage')?.width > 0")
         page.locator("#imageInput").set_input_files(str(image))
         page.wait_for_function("document.querySelector('#imageName').textContent.includes('preview-test.png')")
-        page.locator('nav.bottom-dock [data-editor-section="more"]').click()
+        page.locator('nav.bottom-dock [data-editor-section="project"]').click()
         page.locator("#advancedProjectOptions > summary").click()
         page.locator("#duration").press("Home")
         page.wait_for_function("document.querySelector('#integratedTo').value === '3000'")
@@ -100,7 +100,25 @@ with tempfile.TemporaryDirectory(prefix="qarton-audio-import-") as directory:
         page.wait_for_function("document.querySelector('#audioDiagnosticStatus').textContent.includes('نُسخ')")
         diagnostic = page.evaluate("window.__copiedAudioDiagnostics")
         assert '"secureContext"' in diagnostic and '"supportedRecordingFormats"' in diagnostic and '"timelineClipCount"' in diagnostic, diagnostic
-        print("Motion Studio audio diagnostics: environment, permission/capability, asset, and Timeline report copied")
+        report_field = page.locator("#audioDiagnosticReport")
+        assert report_field.input_value() == diagnostic
+        page.evaluate("""() => Object.defineProperty(navigator, 'clipboard', {configurable:true, value:{writeText: async () => {throw new DOMException('Write permission denied', 'NotAllowedError');}}})""")
+        page.locator("#copyAudioDiagnostics").click()
+        page.wait_for_function("document.querySelector('#audioDiagnosticStatus').textContent.includes('تعذر النسخ التلقائي')")
+        selection = report_field.evaluate("el => ({focused:document.activeElement === el, selected:el.selectionStart === 0 && el.selectionEnd === el.value.length})")
+        assert selection == {"focused": True, "selected": True}, selection
+        with page.expect_download(timeout=10000) as txt_download:
+            page.locator("#saveAudioDiagnosticsTxt").click()
+        txt_path = temp / "audio-diagnostics.txt"
+        txt_download.value.save_as(txt_path)
+        assert '"origin"' in txt_path.read_text()
+        with page.expect_download(timeout=10000) as json_download:
+            page.locator("#saveAudioDiagnosticsJson").click()
+        json_path = temp / "audio-diagnostics.json"
+        json_download.value.save_as(json_path)
+        parsed_diagnostic = json.loads(json_path.read_text())
+        assert parsed_diagnostic["origin"] and "microphonePermission" in parsed_diagnostic
+        print("Motion Studio diagnostics: copied, manual selection fallback, and local TXT/JSON downloads passed")
         page.locator(".advanced-audio-drawer > summary").click()
         add_button = page.locator("#addAudioClip")
         page.locator("#quickImportAudio").click()
@@ -186,7 +204,9 @@ with tempfile.TemporaryDirectory(prefix="qarton-audio-import-") as directory:
         assert saved_tracks[1]["clips"][0]["durationMs"] == 2000, saved_tracks
         page.reload()
         page.wait_for_function("document.querySelectorAll('#audioTracks .audio-clip').length === 1", timeout=20000)
-        assert "استُعيد" in page.locator("#assetLibraryMessage").inner_text(), page.locator("#assetLibraryMessage").inner_text()
+        page.wait_for_function("document.querySelector('#assetLibraryMessage').textContent.includes('استُعيد') || document.querySelector('#assetLibraryMessage').textContent.includes('استعادة الأصول المحلية')", timeout=10000)
+        restored_message = page.locator("#assetLibraryMessage").text_content() or ""
+        assert "استُعيد" in restored_message or "استعادة الأصول المحلية" in restored_message, restored_message
         page.locator('nav.bottom-dock [data-editor-section="audio"]').click()
         touch_tap(page, page.locator("#audioTracks .audio-clip"))
         assert page.locator("#audioClipDuration").input_value() == "2000", "the saved clip keeps its 2s remaining range after moving its start to 0"
@@ -199,7 +219,7 @@ with tempfile.TemporaryDirectory(prefix="qarton-audio-import-") as directory:
         }""")
         assert restored_signal["rms"] > 0.015 and abs(restored_signal["frequency"] - 660) < 35, restored_signal
 
-        page.locator('nav.bottom-dock [data-editor-section="more"]').click()
+        page.locator('nav.bottom-dock [data-editor-section="project"]').click()
         page.locator(".export-options > summary").click()
         page.locator("#integratedFormat").select_option("webm")
         page.locator("#integratedAudio").select_option("mix")

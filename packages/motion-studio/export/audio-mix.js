@@ -1,4 +1,5 @@
 import { EXPORT_LIMITS, ExportError } from "./export-plan.js";
+import { audioRangePcmBytes, collectAudioSourceRanges, cropAudioBuffer, measureAudioBufferRange } from "./audio-source-ranges.js";
 
 const MAX_COMPRESSED_AUDIO_BYTES = 20 * 1024 * 1024;
 
@@ -98,22 +99,32 @@ export async function prepareAudioMix(plan, { audioContext, resolveAudio } = {},
   if (audioContext.state !== "running") fail("CAPTURE_FAILED", "AudioContext must be running before export preparation");
 
   const clips = plan.audioClips;
-  const assets = [...new Set(clips.filter(clip => clip.volume > 0 && clip.trackVolume > 0 && plan.audioMasterVolume > 0).map(clip => clip.asset))];
+  const assetInfo = new Map((plan.snapshot?.audioAssetInfo ?? []).map(info => [info.id, info]));
+  const sourceRanges = collectAudioSourceRanges(clips, [...assetInfo.values()], {
+    range: plan.range ?? { startMs: 0, endMs: plan.snapshot.project.durationMs }, masterVolume: plan.audioMasterVolume
+  });
+  const assets = [...sourceRanges.keys()].sort((left, right) =>
+    estimatePcmBytes(assetInfo.get(right)) - estimatePcmBytes(assetInfo.get(left)));
   const buffers = new Map();
+  const sourceOffsets = new Map();
+  const loopableAssets = new Set();
   let decodedBytes = 0;
   let compressedBytes = 0;
-  const assetInfo = new Map((plan.snapshot?.audioAssetInfo ?? []).map(info => [info.id, info]));
   try {
-    // Reserve the full declared PCM footprint before asking the browser to allocate decode output.
-    // The actual AudioBuffer sizes are checked again below because file metadata can be stale.
-    let expectedPcmBytes = 0;
+    // Count only PCM retained for the requested clip spans. Decode one complete
+    // source at a time, including its temporary and cropped buffers in the same cap.
+    let expectedPcmBytes = 0, plannedPeakBytes = 0;
     for (const assetId of assets) {
       const info = assetInfo.get(assetId);
       if (!info) fail("DECODE_FAILED", `Audio memory metadata is unavailable: ${assetId}`);
-      expectedPcmBytes += estimatePcmBytes(info);
-      if (!Number.isSafeInteger(expectedPcmBytes) || expectedPcmBytes > plan.pcmBudgetBytes) {
-        throw new ExportError("BUDGET_EXCEEDED", "Expected decoded audio exceeds the PCM memory budget", {
-          expectedPcmBytes, pcmBudgetBytes: plan.pcmBudgetBytes, assetId
+      expectedPcmBytes += audioRangePcmBytes(info, sourceRanges.get(assetId));
+      const sourceBytes = estimatePcmBytes(info);
+      plannedPeakBytes = Math.max(plannedPeakBytes, expectedPcmBytes +
+        (sourceRanges.get(assetId).full ? 0 : sourceBytes));
+      if (!Number.isSafeInteger(expectedPcmBytes) || expectedPcmBytes > plan.pcmBudgetBytes ||
+          !Number.isSafeInteger(plannedPeakBytes) || plannedPeakBytes > plan.pcmBudgetBytes) {
+        throw new ExportError("BUDGET_EXCEEDED", "The requested audio ranges and temporary source decoder exceed the PCM working budget", {
+          expectedPcmBytes, plannedPeakBytes, pcmBudgetBytes: plan.pcmBudgetBytes, assetId
         });
       }
     }
@@ -164,16 +175,23 @@ export async function prepareAudioMix(plan, { audioContext, resolveAudio } = {},
             !Number.isFinite(buffer.duration) || buffer.duration <= 0) {
           fail("DECODE_FAILED", `Decoded audio asset is invalid: ${assetId}`);
         }
-        const assetPcmBytes = audioBytes(buffer);
-        if (!Number.isSafeInteger(assetPcmBytes) || assetPcmBytes < 1 || decodedBytes > plan.pcmBudgetBytes - assetPcmBytes) {
-          const attemptedBytes = decodedBytes + assetPcmBytes;
-          throw new ExportError("BUDGET_EXCEEDED", "Decoded audio assets exceed the PCM memory budget", {
-            decodedBytes: attemptedBytes, pcmBudgetBytes: plan.pcmBudgetBytes, assetId
+        const decodedAssetBytes = audioBytes(buffer);
+        const measurement = measureAudioBufferRange(buffer, sourceRanges.get(assetId));
+        const peakBytes = decodedBytes + decodedAssetBytes + (measurement.full ? 0 : measurement.bytes);
+        if (!Number.isSafeInteger(decodedAssetBytes) || decodedAssetBytes < 1 ||
+            !Number.isSafeInteger(peakBytes) || peakBytes > plan.pcmBudgetBytes) {
+          throw new ExportError("BUDGET_EXCEEDED", "The source decode and requested audio range exceed the 32 MiB PCM working budget", {
+            decodedBytes: peakBytes, sourceBytes: decodedAssetBytes, retainedBytes: decodedBytes,
+            requestedRangeBytes: measurement.bytes, pcmBudgetBytes: plan.pcmBudgetBytes, assetId
           });
         }
-        decodedBytes += assetPcmBytes;
-        buffers.set(assetId, buffer);
+        const crop = cropAudioBuffer(audioContext, buffer, sourceRanges.get(assetId), measurement);
+        if (crop.buffer !== buffer) releaseAudioBuffer(buffer);
         buffer = null;
+        decodedBytes += crop.bytes;
+        buffers.set(assetId, crop.buffer);
+        sourceOffsets.set(assetId, crop.startOffsetSeconds);
+        if (crop.full) loopableAssets.add(assetId);
       } catch (error) {
         releaseAudioBuffer(buffer);
         throw error;
@@ -251,9 +269,10 @@ export async function prepareAudioMix(plan, { audioContext, resolveAudio } = {},
         const when = epoch + (clip.startMs - plan.range.startMs) / 1000;
         const endAt = epoch + (clip.endMs - plan.range.startMs) / 1000;
         if (endAt <= when) continue;
-        const startOffset = clip.offsetMs / 1000;
-        const shouldLoop = clip.loop === true && clip.type === "music";
-        if (!shouldLoop && startOffset >= buffer.duration) continue;
+        const sourceStartOffset = clip.offsetMs / 1000;
+        const sourceOffset = sourceStartOffset - (sourceOffsets.get(clip.asset) ?? 0);
+        const shouldLoop = clip.loop === true && clip.type === "music" && loopableAssets.has(clip.asset);
+        if (sourceOffset < 0 || (!shouldLoop && sourceOffset >= buffer.duration)) continue;
         const source = audioContext.createBufferSource();
         const clipGain = makeGain(audioContext, 0, Math.max(zeroTime, when));
         rampClipGain(clipGain.gain, clip.volume, when, endAt);
@@ -263,7 +282,7 @@ export async function prepareAudioMix(plan, { audioContext, resolveAudio } = {},
         if (clip.type === "music" && clip.loop !== true) source.loop = false;
         source.connect(clipGain);
         clipGain.connect(trackGain);
-        const offset = source.loop ? startOffset % buffer.duration : startOffset;
+        const offset = source.loop ? sourceStartOffset % buffer.duration : sourceOffset;
         sources.add(source);
         source.onended = () => { sources.delete(source); try { source.disconnect(); } catch {} try { clipGain.disconnect(); } catch {} clipGains.delete(clipGain); };
         source.start(when, offset);

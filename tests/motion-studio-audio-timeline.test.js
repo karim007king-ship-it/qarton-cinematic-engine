@@ -232,6 +232,8 @@ test("phone audio UI exposes three lanes, clip editing, manual visemes, and shar
   assert.match(workflow, /actions\/deploy-pages@v4/, "L12-A2 has its own HTTPS Pages route without merging the source branch");
   assert.match(html, /id="audioDiagnosticsPanel"/);
   assert.match(html, /id="copyAudioDiagnostics"/);
+  for (const id of ["microphonePermissionHelp", "microphonePermissionInstructions", "retryMicrophoneButton", "selectAudioDiagnostics", "saveAudioDiagnosticsTxt", "saveAudioDiagnosticsJson"]) assert.match(html, new RegExp(`id=["']${id}["']`));
+  assert.match(html, /id="audioDiagnosticReport"[^>]*readonly/);
   assert.match(js, /تشغيل مستقل:/, "selected audio playback is separate from scene playback");
   for (const id of ["audioInput", "audioTrackType", "addAudioClip", "deleteAudioClip", "audioClipStart", "audioClipDuration", "audioClipVolume", "audioMasterVolume", "dialogueLanguage", "visemeType", "addViseme", "audioTracks"]) assert.match(html, new RegExp(`id=["']${id}["']`));
   assert.match(js, /createCinematicAudioPlayer/);

@@ -24,10 +24,11 @@ import { createPersistentAssetRegistry } from "../../packages/motion-studio/asse
 import { openAssetStorage } from "../../packages/motion-studio/asset-storage.js";
 import { prepareStudioSequenceExport } from "./studio-sequence-export.js?v=l11e-sequence-export-01";
 import { createStudioSequenceRuntime, decodeStudioSequenceAudio } from "./studio-sequence-runtime.js?v=l11h4-integrated-01";
+import { classifyMicrophoneFailure } from "./microphone-permission.js";
 
 const $ = (id) => document.getElementById(id);
 const studioRoot = document.querySelector(".studio");
-let activeEditorSection = "motion";
+let activeEditorSection = "scenes";
 
 function mountCompactWorkspace() {
   const workspace = studioRoot.querySelector(".workspace");
@@ -59,18 +60,34 @@ function mountCompactWorkspace() {
   const audioTimelinePanel = $("audioToolsSection");
   const effectsTimelinePanel = $("effectsToolsSection");
   const motionPanel = panel("motion");
-  const morePanel = panel("more");
+  const characterPanel = panel("characters");
+  const projectPanel = panel("project");
+  const modeNav = document.querySelector(".editor-mode-nav");
   const advancedMotion = $("professionalMotionControls");
   const advancedMotionContent = $("advancedMotionContent");
   motionPanel.append($("automaticMotionPanel"), $("simpleMotionPanel"), advancedMotion);
   if (camTimeline) advancedMotionContent.append(camTimeline);
-  if (characterTimeline) advancedMotionContent.append(characterTimeline);
+  if (characterTimeline) characterPanel.append(characterTimeline);
   const cards = [...controls.querySelectorAll(":scope > .control-card")];
   const [dimensionsCard, durationCard, cameraCard, legacyExportCard, integratedExportCard] = cards.slice(1);
   if (sceneSection) panel("scenes").append(sceneSection);
+  $("studioPreview").append(imagePicker);
+  const sceneStrip = $("previewSceneStrip");
+  const sceneCards = $("sceneThumbnails");
+  if (sceneStrip && sceneCards) {
+    const addScene = document.createElement("button");
+    addScene.id = "previewAddSceneButton";
+    addScene.type = "button";
+    addScene.className = "preview-add-scene";
+    addScene.setAttribute("aria-label", "إضافة مشهد");
+    addScene.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>＋ مشهد</span>';
+    addScene.addEventListener("click", () => $("addSceneButton").click());
+    sceneStrip.append(sceneCards, addScene);
+  }
   if (audioTimelinePanel) panel("audio").append(audioTimelinePanel);
   if (effectsTimelinePanel) panel("effects").append(effectsTimelinePanel);
-  if (projectCard) morePanel.append(projectCard);
+  if (modeNav) projectPanel.prepend(modeNav);
+  if (projectCard) projectPanel.append(projectCard);
   const advancedProject = document.createElement("details");
   advancedProject.id = "advancedProjectOptions";
   advancedProject.className = "advanced-options project-options";
@@ -96,9 +113,9 @@ function mountCompactWorkspace() {
       details.append(options);
       integratedExportCard.insertBefore(details, integratedExportCard.querySelector(".export-actions"));
     }
-    morePanel.append(integratedExportCard);
+    projectPanel.append(integratedExportCard);
   }
-  morePanel.append(advancedProject);
+  projectPanel.append(advancedProject);
   controls.remove();
   workspace.remove();
   sceneSection.querySelector(".asset-library")?.removeAttribute("open");
@@ -349,8 +366,9 @@ function sequenceAssetFromFile(file, id = makeLocalId("asset")) {
   if (kind === "audio") mimeType = validateAudioFile(file).mime;
   return { id, kind, name: file.name.slice(0, 255), mimeType, size: file.size };
 }
-async function registerAssetFile(file) {
+async function registerAssetFile(file, isCurrent = () => true) {
   await assetReady;
+  if (!isCurrent()) return null;
   const registry = persistentAssets;
   const candidate = sequenceAssetFromFile(file);
   // Matching metadata alone does not establish identical asset contents.
@@ -375,18 +393,28 @@ async function registerAssetFile(file) {
   }
   const asset = found ?? candidate;
   const linkedFile = (file.type || "").toLowerCase() === candidate.mimeType ? file : new File([file], file.name, { type: candidate.mimeType });
-  if (!found) {
-    const oldSequence = sequenceEditor.sequence;
-    const next = createStudioSequenceV1({ viewport: oldSequence.viewport, scenes: oldSequence.scenes,
-      assets: [...oldSequence.assets, asset] });
-    sequenceEditor.replaceSequence(next);
-    await registry?.replaceSequence(next);
+  const oldSequence = sequenceEditor.sequence, added = !found;
+  try {
+    if (!isCurrent()) return null;
+    if (added) {
+      const next = createStudioSequenceV1({ viewport: oldSequence.viewport, scenes: oldSequence.scenes,
+        assets: [...oldSequence.assets, asset] });
+      sequenceEditor.replaceSequence(next);
+      await registry?.replaceSequence(next);
+    }
+    localAssetFiles.set(asset.id, linkedFile);
+    if (registry && !registry.get(asset.id)) await registry.relink(asset.id, linkedFile);
+    if (!isCurrent()) throw new DOMException("أُلغي استيراد الصورة بعد فك ترميزها.", "AbortError");
+    renderAssetLibrary(); persistSequenceMetadata();
+    return asset;
+  } catch (error) {
+    if (added) {
+      localAssetFiles.delete(asset.id);
+      sequenceEditor.replaceSequence(oldSequence);
+      try { await registry?.replaceSequence(oldSequence); } catch { /* Preserve the original error. */ }
+    }
+    throw error;
   }
-  localAssetFiles.set(asset.id, linkedFile);
-  if (registry && !registry.get(asset.id)) await registry.relink(asset.id, linkedFile);
-  renderAssetLibrary();
-  persistSequenceMetadata();
-  return asset;
 }
 function getAssetBlob(id) { return persistentAssets?.get(id) ?? localAssetFiles.get(id) ?? null; }
 function assetMetadataToAudio(asset) {
@@ -834,9 +862,21 @@ async function prepareSequenceExportImages(sequence, viewport, signal) {
     throw error;
   }
 }
-async function prepareSequenceAudioInfo(sequence, signal) {
+async function prepareSequenceAudioInfo(sequence, signal, range, masterVolume = 1) {
   await assetReady;
-  const referencedIds = new Set(sequence.scenes.flatMap(scene => scene.audioTracks.flatMap(track => track.clips.map(clip => clip.asset))));
+  if (masterVolume <= 0) return [];
+  const referencedIds = new Set();
+  let sceneStartMs = 0;
+  for (const scene of sequence.scenes) {
+    const sceneEndMs = sceneStartMs + scene.project.durationMs;
+    for (const track of scene.audioTracks) for (const clip of track.clips) {
+      const startMs = sceneStartMs + clip.startMs;
+      const clipEndMs = clip.endMs ?? clip.startMs + clip.durationMs;
+      const endMs = Math.min(sceneEndMs, sceneStartMs + clipEndMs);
+      if ((track.volume ?? 1) > 0 && (clip.volume ?? 1) > 0 && startMs < range.endMs && endMs > range.startMs) referencedIds.add(clip.asset);
+    }
+    sceneStartMs = sceneEndMs;
+  }
   const info = [];
   for (const id of referencedIds) {
     if (signal?.aborted) throw signal.reason ?? new DOMException("تم إلغاء التصدير.", "AbortError");
@@ -940,9 +980,11 @@ async function exportIntegratedProject() {
     stopPlayback();
     captureCurrentScene();
     await persistentAssets?.replaceSequence(sequenceEditor.sequence);
+    const range = { startMs: readRequiredMilliseconds(integratedFrom, "البداية"),
+      endMs: readRequiredMilliseconds(integratedTo, "النهاية") };
     const prepared = prepareStudioSequenceExport(sequenceEditor.sequence, {
       audioAssetInfo: integratedAudio.value === "mix"
-        ? await prepareSequenceAudioInfo(sequenceEditor.sequence, controller.signal) : [], audioMasterVolume
+        ? await prepareSequenceAudioInfo(sequenceEditor.sequence, controller.signal, range, audioMasterVolume) : [], audioMasterVolume
     });
     const snapshot = prepared.snapshot;
     // Older V1 projects migrate to V2 with zero-duration Cut transitions.
@@ -950,8 +992,6 @@ async function exportIntegratedProject() {
     sequenceRuntime = createStudioSequenceRuntime(sequenceEditor.sequence, {
       createSurface: (width, height) => Object.assign(document.createElement("canvas"), { width, height })
     });
-    const range = { startMs: readRequiredMilliseconds(integratedFrom, "البداية"),
-      endMs: readRequiredMilliseconds(integratedTo, "النهاية") };
     if (range.endMs <= range.startMs || range.endMs > sequenceRuntime.durationMs) throw new RangeError("نطاق التصدير يجب أن يقع داخل مدة المشروع الكاملة.");
     const plan = planExport(snapshot, { range, quality: integratedQuality.value, fps: project.viewport.fps,
       format: integratedFormat.value, audio: integratedAudio.value, missingAudio: integratedMissingAudio.value }, verified);
@@ -982,9 +1022,10 @@ async function exportIntegratedProject() {
           silence.start();
           decoded = await decodeStudioSequenceAudio(sequenceRuntime.compiled, { audioContext,
             resolveAudio: async assetId => audioFiles.get(assetId)?.file ?? null,
-            audioInfo: snapshot.audioAssetInfo, signal, onProgress });
+            audioInfo: snapshot.audioAssetInfo, signal, onProgress, range, masterVolume: audioMasterVolume });
           engine = sequenceRuntime.createAudio({ audioContext, audioBuffers: decoded.buffers,
-            destination, masterVolume: audioMasterVolume, signal });
+            destination, masterVolume: audioMasterVolume, signal, range,
+            sourceOffsets: decoded.sourceOffsets, loopableAssets: decoded.loopableAssets });
           return { stream: destination.stream,
             schedule: epoch => {
               const session = engine.schedule({ epoch, fromMs: range.startMs, toMs: range.endMs });
@@ -1442,7 +1483,7 @@ function syncMotionTimeBounds() {
   if (Number.isFinite(toValue) && toValue > durationSeconds) to.value = String(durationSeconds);
 }
 function setEditorSection(section) {
-  if (!["scenes", "motion", "audio", "effects", "more"].includes(section)) return;
+  if (!["scenes", "motion", "audio", "characters", "effects", "project"].includes(section)) return;
   activeEditorSection = section;
   for (const panel of document.querySelectorAll("[data-tool-panel]")) panel.hidden = panel.dataset.toolPanel !== section;
   for (const button of document.querySelectorAll("[data-editor-section]")) {
@@ -1519,15 +1560,13 @@ for (const button of document.querySelectorAll("[data-editor-mode-button]")) {
 for (const button of document.querySelectorAll("[data-editor-section]")) {
   button.addEventListener("click", () => {
     const section = button.dataset.editorSection;
-    if (["audio", "effects", "more"].includes(section)) setEditorMode("professional");
     setEditorSection(section);
   });
 }
 $("headerSaveButton").addEventListener("click", () => $("saveProjectButton").click());
 $("headerUndoButton").addEventListener("click", undoQuickMotion);
 $("headerExportButton").addEventListener("click", () => {
-  setEditorMode("professional");
-  setEditorSection("more");
+  setEditorSection("project");
   $("integratedExportButton").focus({ preventScroll: true });
 });
 $("fullscreenPreviewButton").addEventListener("click", async () => {
@@ -2262,9 +2301,10 @@ microphoneButton.textContent = "سجّل صوتك";
 microphoneButton.setAttribute("aria-label", "بدء التسجيل بالميكروفون");
 const microphoneHelp = document.createElement("p");
 microphoneHelp.className = "hint microphone-record-help";
-microphoneHelp.textContent = "التسجيل يحتاج إذن الميكروفون واتصالًا آمنًا مثل HTTPS. اختيار ملف من الهاتف، بما فيه content://، يبقى عبر منتقي Android. الصيغ المدعومة يحددها المتصفح؛ AMR غير متاح قياسيًا في Chromium.";
+microphoneHelp.textContent = "يعتمد إذن التسجيل على Android والمتصفح. قد يظهر content:// كسياق آمن على بعض الأجهزة؛ راجع secureContext وحالة الإذن في التشخيص. عند الرفض، فعّل إذن الميكروفون ثم أعد المحاولة.";
 $("microphoneButtonHost").append(microphoneButton);
 $("microphoneButtonHost").parentElement.after(microphoneHelp);
+$("retryMicrophoneButton").addEventListener("click", () => microphoneButton.click());
 $("quickImportAudio").addEventListener("click", () => openAudioPicker("dialogue", true));
 $("quickAddMusic").addEventListener("click", () => openAudioPicker("music", true));
 $("playSelectedAudio").addEventListener("click", () => { void playSelectedAudioIndependently(); });
@@ -2297,14 +2337,17 @@ function addRecordedAudioToTimeline(imported, capture) {
   $("audioTimelineMessage").textContent = `تم التحقق وإضافة التسجيل إلى مسار ${track.type === "music" ? "الموسيقى" : track.type === "sfx" ? "المؤثرات" : "الحوار"} عند ${formatTime(startMs)} لمدة ${formatTime(durationMs)}.`;
 }
 async function audioDiagnosticReport() {
-  let permission = "غير متاح";
+  let permission = "unknown";
+  let permissionQueryError = null;
   try {
     const result = await Promise.race([
       navigator.permissions?.query({ name: "microphone" }) ?? Promise.reject(new Error("Permissions API unavailable")),
       new Promise((_, reject) => setTimeout(() => reject(new Error("permission query timeout")), 1200))
     ]);
     permission = result.state;
-  } catch { /* Android WebView may not expose the microphone Permissions descriptor. */ }
+  } catch (error) {
+    permissionQueryError = { name: error?.name ?? "Error", message: errorText(error) };
+  }
   const supported = typeof MediaRecorder === "function"
     ? MICROPHONE_MIME_TYPES.filter(({ mime }) => { try { return MediaRecorder.isTypeSupported(mime); } catch { return false; } }).map(({ mime }) => mime)
     : [];
@@ -2312,7 +2355,8 @@ async function audioDiagnosticReport() {
   const clips = audioTracks.flatMap(track => track.clips.map(clip => ({ track: track.type, id: clip.id, asset: clip.asset })));
   const report = {
     capturedAt: new Date().toISOString(), origin: location.origin, secureContext: isSecureContext,
-    microphonePermission: permission, getUserMedia: Boolean(navigator.mediaDevices?.getUserMedia),
+    microphonePermission: permission, microphonePermissionQueryError: permissionQueryError,
+    microphonePolicyAllows: microphonePolicyAllows(), getUserMedia: Boolean(navigator.mediaDevices?.getUserMedia),
     mediaRecorder: typeof MediaRecorder === "function", supportedRecordingFormats: supported,
     audioContextState: liveSession?.meterContext?.state ?? lastMicrophoneDiagnostic.audioContextState ?? "not active",
     latestRecording: { ...lastMicrophoneDiagnostic, liveSignal: liveSession?.signal ?? null, meterError: liveSession?.meterError ?? lastMicrophoneDiagnostic.meterError ?? null },
@@ -2321,24 +2365,77 @@ async function audioDiagnosticReport() {
   };
   return JSON.stringify(report, null, 2);
 }
+async function queryMicrophonePermission() {
+  try { return (await navigator.permissions?.query({ name: "microphone" }))?.state ?? "unknown"; }
+  catch { return "unknown"; }
+}
+function microphonePolicyAllows() {
+  try {
+    const policy = document.permissionsPolicy ?? document.featurePolicy;
+    return typeof policy?.allowsFeature === "function" ? policy.allowsFeature("microphone") : null;
+  } catch { return null; }
+}
+function setAudioDiagnosticText(text) {
+  $("audioDiagnosticReport").value = text;
+  return text;
+}
+async function refreshAudioDiagnosticText() {
+  return setAudioDiagnosticText(await audioDiagnosticReport());
+}
+function selectAudioDiagnosticText() {
+  const field = $("audioDiagnosticReport");
+  field.focus(); field.select(); field.setSelectionRange(0, field.value.length);
+  return field.value;
+}
+function downloadAudioDiagnosticReport(format) {
+  const field = $("audioDiagnosticReport");
+  if (!field.value || field.value === "لم يُنشأ تقرير بعد.") return false;
+  const mime = format === "json" ? "application/json;charset=utf-8" : "text/plain;charset=utf-8";
+  const blob = new Blob([field.value], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url; link.download = `qarton-audio-diagnostics-${Date.now()}.${format}`;
+  link.hidden = true; document.body.append(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return true;
+}
 $("copyAudioDiagnostics").addEventListener("click", async () => {
   try {
-    const report = await audioDiagnosticReport();
-    $("audioDiagnosticReport").textContent = report;
-    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(report);
-    else {
-      const copy = document.createElement("textarea"); copy.value = report; copy.setAttribute("readonly", "");
-      copy.style.position = "fixed"; copy.style.opacity = "0"; document.body.append(copy); copy.select();
-      const copied = document.execCommand("copy"); copy.remove();
-      if (!copied) throw new Error("المتصفح لا يتيح نسخ التقرير تلقائيًا.");
+    const report = await refreshAudioDiagnosticText();
+    try {
+      if (!navigator.clipboard?.writeText) throw new DOMException("Clipboard API unavailable", "NotAllowedError");
+      await navigator.clipboard.writeText(report);
+      $("audioDiagnosticStatus").textContent = "نُسخ التقرير إلى الحافظة. لا يُرسل تلقائيًا.";
+    } catch (error) {
+      selectAudioDiagnosticText();
+      $("audioDiagnosticStatus").textContent = `تعذر النسخ التلقائي (${error?.name ?? "Error"}). حُدد النص؛ انسخه يدويًا أو احفظه TXT/JSON.`;
     }
-    $("audioDiagnosticStatus").textContent = "نُسخ تقرير الصوت. أرسله للمراجعة عند الحاجة.";
-  } catch (error) { $("audioDiagnosticStatus").textContent = `تعذر نسخ التقرير: ${errorText(error)}`; }
+  } catch (error) { $("audioDiagnosticStatus").textContent = `تعذر إنشاء التقرير: ${errorText(error)}`; }
 });
+$("selectAudioDiagnostics").addEventListener("click", async () => {
+  try { await refreshAudioDiagnosticText(); selectAudioDiagnosticText(); $("audioDiagnosticStatus").textContent = "حُدد التقرير. انسخه من لوحة المفاتيح، أو احفظه TXT/JSON."; }
+  catch (error) { $("audioDiagnosticStatus").textContent = `تعذر إنشاء التقرير: ${errorText(error)}`; }
+});
+for (const [id, format] of [["saveAudioDiagnosticsTxt", "txt"], ["saveAudioDiagnosticsJson", "json"]]) {
+  $(id).addEventListener("click", async () => {
+    try {
+      await refreshAudioDiagnosticText();
+      if (!downloadAudioDiagnosticReport(format)) throw new Error("لم يُنشأ تقرير للحفظ بعد.");
+      $("audioDiagnosticStatus").textContent = `حُفظ التقرير بصيغة ${format.toUpperCase()} على الجهاز. لم يُرسل إلى خادم.`;
+    } catch (error) { $("audioDiagnosticStatus").textContent = `تعذر حفظ التقرير: ${errorText(error)}`; }
+  });
+}
 function requestMicrophoneWithTimeout(timeoutMs = 30000, signal = undefined) {
+  const diagnostics = window.QARTON_DIAGNOSTICS?.state?.microphone;
+  if (diagnostics) {
+    diagnostics.getUserMediaCalls += 1; diagnostics.stage = "getUserMedia-called"; diagnostics.lastRequestAt = new Date().toISOString();
+    const policy = document.permissionsPolicy || document.featurePolicy;
+    diagnostics.policyAllows = policy?.allowsFeature?.("microphone") ?? null;
+  }
   let expired = false;
   let timer;
   const request = navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+    if (diagnostics) diagnostics.stage = "stream-acquired";
     if (expired || signal?.aborted || microphonePageHiding) {
       stream.getTracks().forEach(track => track.stop());
       throw new DOMException("أُلغي طلب الميكروفون قبل بدء التسجيل.", "AbortError");
@@ -2418,6 +2515,8 @@ async function startMicrophoneMeter(session) {
   }
 }
 microphoneButton.addEventListener("click", async () => {
+  const runtimeMic = window.QARTON_DIAGNOSTICS?.state?.microphone;
+  if (runtimeMic) { runtimeMic.clickCount += 1; runtimeMic.stage = "record-button-clicked"; runtimeMic.lastClickAt = new Date().toISOString(); }
   if (microphoneSession) {
     if (microphoneSession.recorder.state === "recording") {
       microphoneSession.stopRequestedAt = performance.now();
@@ -2434,7 +2533,14 @@ microphoneButton.addEventListener("click", async () => {
   microphonePageHiding = false;
   const startupController = new AbortController();
   microphoneStartupController = startupController;
-  lastMicrophoneDiagnostic = { state: "طلب إذن الميكروفون", startedAt: new Date().toISOString() };
+  lastMicrophoneDiagnostic = {
+    state: "طلب إذن الميكروفون", requestStage: "preflight", startedAt: new Date().toISOString(),
+    requestContext: {
+      origin: location.origin, secureContext: isSecureContext, topLevel: window.top === window.self,
+      getUserMedia: Boolean(navigator.mediaDevices?.getUserMedia), mediaRecorder: typeof MediaRecorder === "function",
+      microphonePolicyAllows: microphonePolicyAllows()
+    }
+  };
   stopPlayback();
   refreshMicrophoneBusyControls();
   let stream;
@@ -2446,8 +2552,11 @@ microphoneButton.addEventListener("click", async () => {
     }
     // Request capture immediately inside the user gesture. AudioContext is optional
     // metering and must never gate microphone capture or asset insertion.
+    lastMicrophoneDiagnostic.requestStage = "getUserMedia";
     stream = await requestMicrophoneWithTimeout(30000, startupController.signal);
+    lastMicrophoneDiagnostic.requestStage = "stream-acquired";
     microphoneStartupController = null;
+    $("microphonePermissionHelp").hidden = true;
     if (microphonePageHiding) throw new DOMException("أُغلقت الصفحة أثناء طلب الميكروفون.", "AbortError");
     if (activeExport || pendingAudioRequest !== null) throw new Error("انتظر انتهاء العملية الحالية قبل التسجيل.");
     const supported = microphoneRecordingMime(MediaRecorder);
@@ -2538,15 +2647,25 @@ microphoneButton.addEventListener("click", async () => {
     stream?.getTracks().forEach(mediaTrack => mediaTrack.stop());
     if (microphoneSession?.recorder === recorder) microphoneSession = null;
     $("microphoneRecordingStatus").hidden = true;
-    let message = errorText(error);
-    if (error?.name === "NotAllowedError" || error?.name === "SecurityError") message = "لم يُسمح بالميكروفون. اسمح للموقع باستخدامه وافتح Motion Studio عبر HTTPS أو WebView آمن.";
-    else if (error?.name === "TimeoutError") message = "لم يصل رد من Android على طلب الميكروفون خلال 30 ثانية. تحقق من إذن الميكروفون للنظام والتطبيق ثم أعد المحاولة.";
-    else if (error?.name === "NotFoundError" || error?.name === "DevicesNotFoundError") message = "لم يعثر Android على ميكروفون متاح.";
-    else if (error?.name === "NotReadableError" || error?.name === "TrackStartError") message = "الميكروفون مشغول أو رفض Android بدء الالتقاط.";
+    const permissionState = await queryMicrophonePermission();
+    const classification = classifyMicrophoneFailure(error, {
+      permissionState, secureContext: isSecureContext,
+      apiAvailable: Boolean(navigator.mediaDevices?.getUserMedia && typeof MediaRecorder === "function"),
+      policyAllowed: microphonePolicyAllows()
+    });
+    const message = classification.message;
     if (!microphonePageHiding) {
-      $("audioTimelineMessage").textContent = message;
-      lastMicrophoneDiagnostic = { state: "فشل بدء التسجيل", error: message };
-      $("audioDiagnosticStatus").textContent = message;
+      $("audioTimelineMessage").textContent = `${message} (${classification.errorName})`;
+      lastMicrophoneDiagnostic = {
+        state: "فشل بدء التسجيل", requestStage: lastMicrophoneDiagnostic.requestStage,
+        requestContext: lastMicrophoneDiagnostic.requestContext, ...classification
+      };
+      const help = $("microphonePermissionHelp");
+      $("microphonePermissionInstructions").textContent = classification.category === "permission_denied"
+        ? "Android: الإعدادات ← التطبيقات ← التطبيق أو المتصفح الذي فتح Motion Studio ← الأذونات ← الميكروفون ← سماح. إذا فُتح داخل متصفح: معلومات الموقع/أذونات الموقع ← الميكروفون ← سماح. ارجع إلى Motion Studio ثم اضغط أعد المحاولة."
+        : "افتح Motion Studio مباشرة في المتصفح، اسمح بطلب الميكروفون في نافذة الإذن، وتحقق من إذن الميكروفون للتطبيق في إعدادات Android. ثم اضغط أعد المحاولة.";
+      help.hidden = classification.category !== "permission_denied" && classification.category !== "permission_or_policy_blocked" && classification.category !== "source_policy_blocked" && classification.category !== "source_security_blocked";
+      $("audioDiagnosticStatus").textContent = `${message} ( ${classification.errorName}: ${classification.errorMessage} )`;
     }
   } finally {
     if (microphoneStartupController === startupController) microphoneStartupController = null;
@@ -2724,25 +2843,30 @@ fitSelect.addEventListener("change", () => {
   refreshSelectedImage();
 });
 
+imageInput.addEventListener("cancel", () => {
+  imageInput.value = "";
+  status.textContent = "أُلغي اختيار الصورة؛ بقيت المعاينة الحالية كما هي.";
+});
 imageInput.addEventListener("change", async () => {
+  const file = imageInput.files?.[0];
+  if (!file) {
+    status.textContent = "لم يتم اختيار صورة؛ بقيت المعاينة الحالية كما هي.";
+    imageInput.value = "";
+    return;
+  }
   invalidateExport("اختيرت صورة جديدة.");
   const requestToken = imageRequest.begin();
   pendingImageRequest = requestToken;
   clearFailure();
-  const file = imageInput.files?.[0];
-  if (!file) return;
-  selectedImageFile = file;
-  selectedImageDimensions = null;
-  currentFileInfo = null;
-  imageSource = placeholder;
   refreshExportControls();
-  renderAt(currentMs);
-  status.textContent = "جارٍ تحميل الصورة…";
+  status.textContent = "جارٍ تحميل الصورة الجديدة؛ بقيت الصورة الحالية ظاهرة حتى نجاحها.";
   try {
-    const asset = await registerAssetFile(file);
-    if (!imageRequest.isCurrent(requestToken)) return;
     const prepared = await loadImageSurface(file, requestToken);
     if (!prepared || !imageRequest.isCurrent(requestToken)) return;
+    const asset = await registerAssetFile(file, () => imageRequest.isCurrent(requestToken));
+    if (!asset || !imageRequest.isCurrent(requestToken)) return;
+    selectedImageFile = file;
+    selectedImageDimensions = prepared.dimensions;
     imageSource = prepared.surface;
     sceneImageSources.set(asset.id, imageSource);
     project = { ...project, layers: project.layers.map((layer, index) => index === 0 ? { ...layer, assetId: asset.id } : layer) };
@@ -2752,6 +2876,7 @@ imageInput.addEventListener("change", async () => {
     captureCurrentScene({ refresh: true });
     await persistentAssets?.replaceSequence(sequenceEditor.sequence);
     imageName.textContent = `${currentFileInfo.name} · ${prepared.dimensions.width}×${prepared.dimensions.height}`;
+    imageInput.labels?.[0]?.querySelector("strong")?.replaceChildren("تغيير الصورة");
     renderAt(currentMs);
     makeThumbnail();
     renderSequenceOverview({ rebuildAssets: false });
@@ -2881,7 +3006,7 @@ projectInput.addEventListener("change", async () => {
 });
 
 setEditorMode("simple");
-setEditorSection("motion");
+setEditorSection("scenes");
 syncMotionTimeBounds();
 refreshMotionUndoButtons();
 updateProject({ viewport: project.viewport });
@@ -2931,3 +3056,7 @@ window.addEventListener("pagehide", () => {
   if (integratedVideoUrl) URL.revokeObjectURL(integratedVideoUrl);
   integratedVideoUrl = null;
 });
+
+window.QARTON_DIAGNOSTICS?.markReady([
+  "#imageInput", "#saveProjectButton", "#addSceneButton", "#playPauseButton", "#headerExportButton", "#quickRecordAudio"
+]);
