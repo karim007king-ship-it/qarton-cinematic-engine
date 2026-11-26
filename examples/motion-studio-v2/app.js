@@ -72,6 +72,7 @@ import { createStudioV2Engine } from "./engine-adapter.js";
     byId("#motionSpeedValue").textContent = `${Number(state.motion.speed).toFixed(1).replace(/\.0$/u, "")}×`;
     byId("#motionStrength").value = String(state.motion.strength);
     byId("#motionStrengthValue").textContent = `${state.motion.strength}٪`;
+    canvas.dataset.motionPreset = state.motion.preset;
     byId("#deleteImageButton").disabled = !state.hasImage;
     byId("#demoReady").textContent = "جاهز";
     byId("#engineReady").textContent = "متصل";

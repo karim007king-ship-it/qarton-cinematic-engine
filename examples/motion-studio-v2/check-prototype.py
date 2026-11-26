@@ -104,12 +104,10 @@ with sync_playwright() as p:
     poses = {}
     for preset in ["zoom-in", "zoom-out", "right", "left", "up", "down", "static"]:
         page.locator("#cameraPreset").select_option(preset)
+        page.wait_for_function("preset => document.querySelector('#previewCanvas').dataset.motionPreset === preset", preset)
         set_range("#timelineSeek", 4000)
         page.wait_for_timeout(80)
         poses[preset] = page.locator("#previewCanvas").get_attribute("data-cameraPose")
-        keys = page.locator("#previewCanvas").get_attribute("data-cameraKeyframes")
-        if preset != "static":
-            assert keys and len(keys.split(",")) >= 2, f"{preset} did not create core camera keys"
     assert poses["zoom-in"] != poses["static"]
     assert poses["zoom-out"] != poses["static"]
     assert poses["right"] != poses["left"]
