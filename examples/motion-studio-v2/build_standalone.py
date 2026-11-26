@@ -45,11 +45,15 @@ def build_bundle(html: str, css: str, js: str, commit_sha: str) -> str:
         '<style id="motionStudioV2Style">\n' + css + '\n</style>',
     ).replace(
         JS_LINK,
-        '<script id="motionStudioV2Script">\n' + js + '\n</script>',
+        '',
     ).replace(
         DOCUMENT_TAG,
         '<html lang="ar" dir="rtl" data-commit="' + commit_sha + '">',
     )
+    inline_script = '<script id="motionStudioV2Script">\n' + js + '\n</script>\n</body>'
+    if bundled.count('</body>') != 1:
+        raise BuildError("Expected one body closing tag to place JavaScript after the interface.")
+    bundled = bundled.replace('</body>', inline_script)
     bundled = bundled.replace('title="Commit source">Commit dev', 'title="Commit ' + commit_sha + '">Commit ' + commit_sha[:7])
     if HTML_LINK in bundled or JS_LINK in bundled:
         raise BuildError("External source files were not fully inlined.")
