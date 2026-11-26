@@ -94,7 +94,7 @@ with sync_playwright() as p:
             page.locator("#addSceneButton").click()
             assert page.locator(".scene-card").count() == 2
             page.locator(".scene-card").nth(1).click()
-            assert page.locator(".scene-card").nth(1).get_attribute("aria-pressed") == "true"
+            assert "selected" in page.locator(".scene-card").nth(1).get_attribute("class")
             for section in SECTIONS:
                 page.locator(f'[data-section="{section}"]').click()
                 page.locator(f'.panel-body[data-panel="{section}"]').wait_for(state="visible")
