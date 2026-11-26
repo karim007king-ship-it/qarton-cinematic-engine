@@ -104,7 +104,7 @@ with sync_playwright() as p:
     poses = {}
     for preset in ["zoom-in", "zoom-out", "right", "left", "up", "down", "static"]:
         page.locator("#cameraPreset").select_option(preset)
-        page.wait_for_function("preset => document.querySelector('#previewCanvas').dataset.motionPreset === preset", preset)
+        page.wait_for_function("preset => document.querySelector('#previewCanvas').dataset.motionPreset === preset", arg=preset)
         set_range("#timelineSeek", 4000)
         page.wait_for_timeout(80)
         poses[preset] = page.locator("#previewCanvas").get_attribute("data-cameraPose")
