@@ -90,8 +90,37 @@ def browser_checks(args):
                 page.locator('[data-editor-section="scenes"]').click()
                 page.locator("#addSceneButton").click()
                 assert page.locator(".scene-card").count() >= 2, "Add Scene failed on the published app"
+                page.locator("#duplicateSceneButton").click()
+                assert page.locator(".scene-card").count() >= 3, "Duplicate Scene failed on the published app"
+                page.locator("#deleteSceneButton").click()
+                assert page.locator(".scene-card").count() >= 2, "Delete Scene failed on the published app"
                 page.locator('[data-editor-section="motion"]').click()
-                assert page.locator("#cameraStartZoom").is_visible(), "Motion tab failed on the published app"
+                assert page.locator("#motionStrength").is_visible(), "Motion tab failed on the published app"
+                page.locator("#motionStrength").fill("65")
+                page.locator('[data-editor-section="effects"]').click()
+                page.locator("#visualEffectType").select_option("fade")
+                page.locator("#addVisualEffect").click()
+                assert page.locator(".visual-effect-clip").count() == 1, "Effects timeline failed on the published app"
+                with page.expect_download(timeout=10000) as project_download:
+                    page.locator("#saveProjectButton").click()
+                assert project_download.value.suggested_filename.endswith(".json"), "project save did not produce JSON"
+                page.locator("#headerExportButton").click()
+                probe = page.locator("#integratedProbeButton")
+                assert probe.is_visible(), "Export tab failed on the published app"
+                probe.click()
+                page.wait_for_function(
+                    "document.querySelector('#integratedStatus').textContent && !document.querySelector('#integratedStatus').textContent.startsWith('جارٍ فحص')",
+                    timeout=45000,
+                )
+                export_status = page.locator("#integratedStatus").inner_text()
+                assert export_status, "published app returned no export capability result"
+                export_button = page.locator("#integratedExportButton")
+                if not export_button.is_disabled():
+                    export_button.click()
+                    page.wait_for_function("!document.querySelector('#integratedDownload').hidden", timeout=90000)
+                    page.wait_for_function("document.querySelector('#integratedVideo').readyState >= 1", timeout=30000)
+                print(json.dumps({"target": "studio-export-probe", "status": export_status,
+                                  "exportEnabled": not export_button.is_disabled()}))
                 page.locator('[data-editor-section="audio"]').click()
                 record = page.locator("#quickRecordAudio")
                 assert record.is_visible(), "Audio tab did not reveal recording control"
