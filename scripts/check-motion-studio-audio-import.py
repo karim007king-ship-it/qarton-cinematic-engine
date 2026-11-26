@@ -100,7 +100,25 @@ with tempfile.TemporaryDirectory(prefix="qarton-audio-import-") as directory:
         page.wait_for_function("document.querySelector('#audioDiagnosticStatus').textContent.includes('نُسخ')")
         diagnostic = page.evaluate("window.__copiedAudioDiagnostics")
         assert '"secureContext"' in diagnostic and '"supportedRecordingFormats"' in diagnostic and '"timelineClipCount"' in diagnostic, diagnostic
-        print("Motion Studio audio diagnostics: environment, permission/capability, asset, and Timeline report copied")
+        report_field = page.locator("#audioDiagnosticReport")
+        assert report_field.input_value() == diagnostic
+        page.evaluate("""() => Object.defineProperty(navigator, 'clipboard', {configurable:true, value:{writeText: async () => {throw new DOMException('Write permission denied', 'NotAllowedError');}}})""")
+        page.locator("#copyAudioDiagnostics").click()
+        page.wait_for_function("document.querySelector('#audioDiagnosticStatus').textContent.includes('تعذر النسخ التلقائي')")
+        selection = report_field.evaluate("el => ({focused:document.activeElement === el, selected:el.selectionStart === 0 && el.selectionEnd === el.value.length})")
+        assert selection == {"focused": True, "selected": True}, selection
+        with page.expect_download(timeout=10000) as txt_download:
+            page.locator("#saveAudioDiagnosticsTxt").click()
+        txt_path = temp / "audio-diagnostics.txt"
+        txt_download.value.save_as(txt_path)
+        assert '"origin"' in txt_path.read_text()
+        with page.expect_download(timeout=10000) as json_download:
+            page.locator("#saveAudioDiagnosticsJson").click()
+        json_path = temp / "audio-diagnostics.json"
+        json_download.value.save_as(json_path)
+        parsed_diagnostic = json.loads(json_path.read_text())
+        assert parsed_diagnostic["origin"] and "microphonePermission" in parsed_diagnostic
+        print("Motion Studio diagnostics: copied, manual selection fallback, and local TXT/JSON downloads passed")
         page.locator(".advanced-audio-drawer > summary").click()
         add_button = page.locator("#addAudioClip")
         page.locator("#quickImportAudio").click()

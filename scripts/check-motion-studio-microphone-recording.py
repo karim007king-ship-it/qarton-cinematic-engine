@@ -135,8 +135,20 @@ with tempfile.TemporaryDirectory(prefix="qarton-virtual-mic-") as directory:
               Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {configurable:true, value:() => Promise.reject(Object.assign(new Error('permission denied'), {name:'NotAllowedError'}))});
             }""")
             page.locator("#quickRecordAudio").click()
-            page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('لم يُسمح بالميكروفون')")
+            page.wait_for_function("document.querySelector('#audioDiagnosticStatus').textContent.includes('NotAllowedError')")
             assert page.locator(".microphone-record-button").is_enabled(), "permission denial must release the record button"
+            assert page.locator("#microphonePermissionHelp").is_visible(), "denied permission must expose Android recovery steps"
+            assert "NotAllowedError" in page.locator("#audioDiagnosticStatus").inner_text(), "diagnostics must preserve the browser error name"
+            page.evaluate("""() => {
+              window.__qartonRetryCalls = 0;
+              Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {configurable:true, value:() => {
+                window.__qartonRetryCalls++;
+                return Promise.reject(Object.assign(new Error('permission still denied'), {name:'NotAllowedError'}));
+              }});
+            }""")
+            page.locator("#retryMicrophoneButton").click()
+            page.wait_for_function("window.__qartonRetryCalls === 1")
+            assert page.locator("#microphonePermissionHelp").is_visible(), "retry should re-request permission after Android settings change"
             page.evaluate("Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {configurable:true, value:() => new Promise(() => {})})")
             page.locator("#quickRecordAudio").click()
             page.wait_for_function("document.querySelector('#audioTimelineMessage').textContent.includes('30 ثانية')")

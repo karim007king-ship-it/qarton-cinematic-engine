@@ -24,6 +24,7 @@ import { createPersistentAssetRegistry } from "../../packages/motion-studio/asse
 import { openAssetStorage } from "../../packages/motion-studio/asset-storage.js";
 import { prepareStudioSequenceExport } from "./studio-sequence-export.js?v=l11e-sequence-export-01";
 import { createStudioSequenceRuntime, decodeStudioSequenceAudio } from "./studio-sequence-runtime.js?v=l11h4-integrated-01";
+import { classifyMicrophoneFailure } from "./microphone-permission.js";
 
 const $ = (id) => document.getElementById(id);
 const studioRoot = document.querySelector(".studio");
@@ -2288,9 +2289,10 @@ microphoneButton.textContent = "سجّل صوتك";
 microphoneButton.setAttribute("aria-label", "بدء التسجيل بالميكروفون");
 const microphoneHelp = document.createElement("p");
 microphoneHelp.className = "hint microphone-record-help";
-microphoneHelp.textContent = "التسجيل يحتاج إذن الميكروفون واتصالًا آمنًا مثل HTTPS. اختيار ملف من الهاتف، بما فيه content://، يبقى عبر منتقي Android. الصيغ المدعومة يحددها المتصفح؛ AMR غير متاح قياسيًا في Chromium.";
+microphoneHelp.textContent = "يعتمد إذن التسجيل على Android والمتصفح. قد يظهر content:// كسياق آمن على بعض الأجهزة؛ راجع secureContext وحالة الإذن في التشخيص. عند الرفض، فعّل إذن الميكروفون ثم أعد المحاولة.";
 $("microphoneButtonHost").append(microphoneButton);
 $("microphoneButtonHost").parentElement.after(microphoneHelp);
+$("retryMicrophoneButton").addEventListener("click", () => microphoneButton.click());
 $("quickImportAudio").addEventListener("click", () => openAudioPicker("dialogue", true));
 $("quickAddMusic").addEventListener("click", () => openAudioPicker("music", true));
 $("playSelectedAudio").addEventListener("click", () => { void playSelectedAudioIndependently(); });
@@ -2323,14 +2325,17 @@ function addRecordedAudioToTimeline(imported, capture) {
   $("audioTimelineMessage").textContent = `تم التحقق وإضافة التسجيل إلى مسار ${track.type === "music" ? "الموسيقى" : track.type === "sfx" ? "المؤثرات" : "الحوار"} عند ${formatTime(startMs)} لمدة ${formatTime(durationMs)}.`;
 }
 async function audioDiagnosticReport() {
-  let permission = "غير متاح";
+  let permission = "unknown";
+  let permissionQueryError = null;
   try {
     const result = await Promise.race([
       navigator.permissions?.query({ name: "microphone" }) ?? Promise.reject(new Error("Permissions API unavailable")),
       new Promise((_, reject) => setTimeout(() => reject(new Error("permission query timeout")), 1200))
     ]);
     permission = result.state;
-  } catch { /* Android WebView may not expose the microphone Permissions descriptor. */ }
+  } catch (error) {
+    permissionQueryError = { name: error?.name ?? "Error", message: errorText(error) };
+  }
   const supported = typeof MediaRecorder === "function"
     ? MICROPHONE_MIME_TYPES.filter(({ mime }) => { try { return MediaRecorder.isTypeSupported(mime); } catch { return false; } }).map(({ mime }) => mime)
     : [];
@@ -2338,7 +2343,8 @@ async function audioDiagnosticReport() {
   const clips = audioTracks.flatMap(track => track.clips.map(clip => ({ track: track.type, id: clip.id, asset: clip.asset })));
   const report = {
     capturedAt: new Date().toISOString(), origin: location.origin, secureContext: isSecureContext,
-    microphonePermission: permission, getUserMedia: Boolean(navigator.mediaDevices?.getUserMedia),
+    microphonePermission: permission, microphonePermissionQueryError: permissionQueryError,
+    microphonePolicyAllows: microphonePolicyAllows(), getUserMedia: Boolean(navigator.mediaDevices?.getUserMedia),
     mediaRecorder: typeof MediaRecorder === "function", supportedRecordingFormats: supported,
     audioContextState: liveSession?.meterContext?.state ?? lastMicrophoneDiagnostic.audioContextState ?? "not active",
     latestRecording: { ...lastMicrophoneDiagnostic, liveSignal: liveSession?.signal ?? null, meterError: liveSession?.meterError ?? lastMicrophoneDiagnostic.meterError ?? null },
@@ -2347,20 +2353,66 @@ async function audioDiagnosticReport() {
   };
   return JSON.stringify(report, null, 2);
 }
+async function queryMicrophonePermission() {
+  try { return (await navigator.permissions?.query({ name: "microphone" }))?.state ?? "unknown"; }
+  catch { return "unknown"; }
+}
+function microphonePolicyAllows() {
+  try {
+    const policy = document.permissionsPolicy ?? document.featurePolicy;
+    return typeof policy?.allowsFeature === "function" ? policy.allowsFeature("microphone") : null;
+  } catch { return null; }
+}
+function setAudioDiagnosticText(text) {
+  $("audioDiagnosticReport").value = text;
+  return text;
+}
+async function refreshAudioDiagnosticText() {
+  return setAudioDiagnosticText(await audioDiagnosticReport());
+}
+function selectAudioDiagnosticText() {
+  const field = $("audioDiagnosticReport");
+  field.focus(); field.select(); field.setSelectionRange(0, field.value.length);
+  return field.value;
+}
+function downloadAudioDiagnosticReport(format) {
+  const field = $("audioDiagnosticReport");
+  if (!field.value || field.value === "لم يُنشأ تقرير بعد.") return false;
+  const mime = format === "json" ? "application/json;charset=utf-8" : "text/plain;charset=utf-8";
+  const blob = new Blob([field.value], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url; link.download = `qarton-audio-diagnostics-${Date.now()}.${format}`;
+  link.hidden = true; document.body.append(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return true;
+}
 $("copyAudioDiagnostics").addEventListener("click", async () => {
   try {
-    const report = await audioDiagnosticReport();
-    $("audioDiagnosticReport").textContent = report;
-    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(report);
-    else {
-      const copy = document.createElement("textarea"); copy.value = report; copy.setAttribute("readonly", "");
-      copy.style.position = "fixed"; copy.style.opacity = "0"; document.body.append(copy); copy.select();
-      const copied = document.execCommand("copy"); copy.remove();
-      if (!copied) throw new Error("المتصفح لا يتيح نسخ التقرير تلقائيًا.");
+    const report = await refreshAudioDiagnosticText();
+    try {
+      if (!navigator.clipboard?.writeText) throw new DOMException("Clipboard API unavailable", "NotAllowedError");
+      await navigator.clipboard.writeText(report);
+      $("audioDiagnosticStatus").textContent = "نُسخ التقرير إلى الحافظة. لا يُرسل تلقائيًا.";
+    } catch (error) {
+      selectAudioDiagnosticText();
+      $("audioDiagnosticStatus").textContent = `تعذر النسخ التلقائي (${error?.name ?? "Error"}). حُدد النص؛ انسخه يدويًا أو احفظه TXT/JSON.`;
     }
-    $("audioDiagnosticStatus").textContent = "نُسخ تقرير الصوت. أرسله للمراجعة عند الحاجة.";
-  } catch (error) { $("audioDiagnosticStatus").textContent = `تعذر نسخ التقرير: ${errorText(error)}`; }
+  } catch (error) { $("audioDiagnosticStatus").textContent = `تعذر إنشاء التقرير: ${errorText(error)}`; }
 });
+$("selectAudioDiagnostics").addEventListener("click", async () => {
+  try { await refreshAudioDiagnosticText(); selectAudioDiagnosticText(); $("audioDiagnosticStatus").textContent = "حُدد التقرير. انسخه من لوحة المفاتيح، أو احفظه TXT/JSON."; }
+  catch (error) { $("audioDiagnosticStatus").textContent = `تعذر إنشاء التقرير: ${errorText(error)}`; }
+});
+for (const [id, format] of [["saveAudioDiagnosticsTxt", "txt"], ["saveAudioDiagnosticsJson", "json"]]) {
+  $(id).addEventListener("click", async () => {
+    try {
+      await refreshAudioDiagnosticText();
+      if (!downloadAudioDiagnosticReport(format)) throw new Error("لم يُنشأ تقرير للحفظ بعد.");
+      $("audioDiagnosticStatus").textContent = `حُفظ التقرير بصيغة ${format.toUpperCase()} على الجهاز. لم يُرسل إلى خادم.`;
+    } catch (error) { $("audioDiagnosticStatus").textContent = `تعذر حفظ التقرير: ${errorText(error)}`; }
+  });
+}
 function requestMicrophoneWithTimeout(timeoutMs = 30000, signal = undefined) {
   let expired = false;
   let timer;
@@ -2474,6 +2526,7 @@ microphoneButton.addEventListener("click", async () => {
     // metering and must never gate microphone capture or asset insertion.
     stream = await requestMicrophoneWithTimeout(30000, startupController.signal);
     microphoneStartupController = null;
+    $("microphonePermissionHelp").hidden = true;
     if (microphonePageHiding) throw new DOMException("أُغلقت الصفحة أثناء طلب الميكروفون.", "AbortError");
     if (activeExport || pendingAudioRequest !== null) throw new Error("انتظر انتهاء العملية الحالية قبل التسجيل.");
     const supported = microphoneRecordingMime(MediaRecorder);
@@ -2564,15 +2617,22 @@ microphoneButton.addEventListener("click", async () => {
     stream?.getTracks().forEach(mediaTrack => mediaTrack.stop());
     if (microphoneSession?.recorder === recorder) microphoneSession = null;
     $("microphoneRecordingStatus").hidden = true;
-    let message = errorText(error);
-    if (error?.name === "NotAllowedError" || error?.name === "SecurityError") message = "لم يُسمح بالميكروفون. اسمح للموقع باستخدامه وافتح Motion Studio عبر HTTPS أو WebView آمن.";
-    else if (error?.name === "TimeoutError") message = "لم يصل رد من Android على طلب الميكروفون خلال 30 ثانية. تحقق من إذن الميكروفون للنظام والتطبيق ثم أعد المحاولة.";
-    else if (error?.name === "NotFoundError" || error?.name === "DevicesNotFoundError") message = "لم يعثر Android على ميكروفون متاح.";
-    else if (error?.name === "NotReadableError" || error?.name === "TrackStartError") message = "الميكروفون مشغول أو رفض Android بدء الالتقاط.";
+    const permissionState = await queryMicrophonePermission();
+    const classification = classifyMicrophoneFailure(error, {
+      permissionState, secureContext: isSecureContext,
+      apiAvailable: Boolean(navigator.mediaDevices?.getUserMedia && typeof MediaRecorder === "function"),
+      policyAllowed: microphonePolicyAllows()
+    });
+    const message = classification.message;
     if (!microphonePageHiding) {
       $("audioTimelineMessage").textContent = message;
-      lastMicrophoneDiagnostic = { state: "فشل بدء التسجيل", error: message };
-      $("audioDiagnosticStatus").textContent = message;
+      lastMicrophoneDiagnostic = { state: "فشل بدء التسجيل", ...classification };
+      const help = $("microphonePermissionHelp");
+      $("microphonePermissionInstructions").textContent = classification.category === "permission_denied"
+        ? "Android: الإعدادات ← التطبيقات ← التطبيق أو المتصفح الذي فتح Motion Studio ← الأذونات ← الميكروفون ← سماح. إذا فُتح داخل متصفح: معلومات الموقع/أذونات الموقع ← الميكروفون ← سماح. ارجع إلى Motion Studio ثم اضغط أعد المحاولة."
+        : "افتح Motion Studio مباشرة في المتصفح، اسمح بطلب الميكروفون في نافذة الإذن، وتحقق من إذن الميكروفون للتطبيق في إعدادات Android. ثم اضغط أعد المحاولة.";
+      help.hidden = classification.category !== "permission_denied" && classification.category !== "permission_prompt_denied" && classification.category !== "source_policy_blocked" && classification.category !== "source_security_blocked";
+      $("audioDiagnosticStatus").textContent = `${message} ( ${classification.errorName}: ${classification.errorMessage} )`;
     }
   } finally {
     if (microphoneStartupController === startupController) microphoneStartupController = null;

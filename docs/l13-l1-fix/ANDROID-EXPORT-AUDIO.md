@@ -2,7 +2,11 @@
 
 ## Microphone access
 
-Motion Studio requests the microphone through `navigator.mediaDevices.getUserMedia` from the record button. Android's `content://` document picker is not a secure web origin, so the browser may omit `getUserMedia` entirely even when Android's microphone permission is granted. Imported files continue to work through the picker. Direct recording needs an HTTPS origin (or an app WebView that explicitly exposes secure media capture); granting the OS permission alone does not change the origin's secure-context status.
+Motion Studio requests the microphone through `navigator.mediaDevices.getUserMedia` directly from the record-button gesture. Do not infer security from the `content://` scheme alone: the HONOR 400 Pro report for `content://com.hihonor.filemanager.share.fileprovider` recorded `secureContext: true`, `getUserMedia: true`, and `mediaRecorder: true`. Its concrete failure was `microphonePermission: denied`; that is an Android/browser permission denial, with a separate `AudioContext` state of `not active`. The UI now distinguishes denied permission, prompt denial, source policy/security restrictions, timeout, missing hardware, and capture-busy errors, and retains the original DOMException name and message in the on-device report.
+
+After a permission denial, open Android Settings → Apps → the app/browser that opened Motion Studio → Permissions → Microphone → Allow. If the editor is running in a browser tab, also open the site's permissions and allow Microphone. Return to Motion Studio and use **أعد المحاولة**. If permission is denied by a parent frame or WebView policy, open the HTTPS editor directly in the browser or enable microphone access in the host app's WebView permission handler. A report with `secureContext: true` and `getUserMedia: true` does not itself grant microphone access.
+
+The diagnostic report stays on the device: it is not uploaded or sent to a server. Clipboard denial now selects the report text for manual copy; the user can also save it locally as TXT or JSON. A separate HTTPS origin is used for the full editor rather than the shared project Pages origin.
 
 ## PCM working budget
 

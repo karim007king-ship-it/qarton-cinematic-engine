@@ -184,6 +184,10 @@
             <button id="quickImportAudio" type="button" class="secondary-button">استورد صوتًا</button>
             <button id="quickAddMusic" type="button" class="secondary-button">أضف موسيقى</button>
           </div>
+          <div id="microphonePermissionHelp" class="microphone-permission-help" hidden>
+            <p id="microphonePermissionInstructions" class="timeline-message" role="status" aria-live="polite"></p>
+            <button id="retryMicrophoneButton" type="button" class="secondary-button">أعد المحاولة</button>
+          </div>
           <div id="microphoneRecordingStatus" class="microphone-recording-status" role="status" aria-live="polite" hidden>
             <span id="microphoneElapsed">00:00</span><meter id="microphoneLevel" min="0" max="1" value="0" aria-label="قوة صوت الميكروفون"></meter><span>مستوى الصوت</span>
           </div>
@@ -218,10 +222,15 @@
           <div class="audio-selected-actions"><button id="playSelectedAudio" type="button" class="secondary-button" disabled>▶ تشغيل المحدد</button><button id="deleteSelectedAudio" type="button" class="secondary-button" disabled>حذف المحدد</button></div>
           <details id="audioDiagnosticsPanel" class="audio-diagnostics-panel">
             <summary>تشخيص الصوت والميكروفون</summary>
-            <p class="hint">يجمع حالة الإذن والصيغة وآخر تسجيل وأصول Timeline. انسخ التقرير عند إرسال مشكلة.</p>
-            <button id="copyAudioDiagnostics" class="secondary-button" type="button">نسخ تقرير التشخيص</button>
+            <p class="hint">يُنشأ التقرير على الجهاز ولا يُرسل تلقائيًا. يمكنك نسخه أو تحديده أو تنزيله.</p>
+            <div class="audio-diagnostic-actions">
+              <button id="copyAudioDiagnostics" class="secondary-button" type="button">نسخ التقرير</button>
+              <button id="selectAudioDiagnostics" class="secondary-button" type="button">تحديد النص يدويًا</button>
+              <button id="saveAudioDiagnosticsTxt" class="secondary-button" type="button">حفظ TXT</button>
+              <button id="saveAudioDiagnosticsJson" class="secondary-button" type="button">حفظ JSON</button>
+            </div>
             <p id="audioDiagnosticStatus" class="timeline-message" role="status" aria-live="polite">لم يُنشأ تقرير بعد.</p>
-            <pre id="audioDiagnosticReport" aria-label="تقرير تشخيص الصوت">لم يُنشأ تقرير بعد.</pre>
+            <textarea id="audioDiagnosticReport" aria-label="تقرير تشخيص الصوت" readonly spellcheck="false">لم يُنشأ تقرير بعد.</textarea>
           </details>
           <p id="audioTimelineMessage" class="timeline-message" role="status" aria-live="polite">الصوت والحركة يستخدمان ساعة المشهد نفسها. دقة الجدولة تعتمد على المتصفح والجهاز.</p>
         </section>
