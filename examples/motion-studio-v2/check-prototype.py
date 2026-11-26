@@ -39,7 +39,7 @@ with sync_playwright() as p:
       scripts: [...document.scripts].map(script => ({type:script.type, src:script.src, chars:script.textContent.length, start:script.textContent.slice(0,100)})),
       tail: document.body.innerHTML.slice(-180)
     })""")
-    assert page.evaluate("document.documentElement.dataset.engineReady") == "true", json.dumps(boot, ensure_ascii=False)
+    assert page.evaluate("document.documentElement.dataset.engineReady") == "true", json.dumps({**boot, "browserErrors": console_errors}, ensure_ascii=False)
     assert page.locator("#demoReady").inner_text() == "جاهز"
     assert page.locator("#engineReady").inner_text() == "متصل"
     assert page.locator("#previewCanvas").get_attribute("data-ready") == "true"
