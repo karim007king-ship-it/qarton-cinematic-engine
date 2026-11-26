@@ -70,7 +70,7 @@ function mountCompactWorkspace() {
   if (characterTimeline) characterPanel.append(characterTimeline);
   const cards = [...controls.querySelectorAll(":scope > .control-card")];
   const [dimensionsCard, durationCard, cameraCard, legacyExportCard, integratedExportCard] = cards.slice(1);
-  if (sceneSection) panel("scenes").append(sceneSection);
+  if (sceneSection) panel("scenes").append(sceneSection, imagePicker);
   const sceneStrip = $("previewSceneStrip");
   const sceneCards = $("sceneThumbnails");
   if (sceneStrip && sceneCards) {
