@@ -141,9 +141,14 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
   const importedCharacters = new Map();
   const artReady = Promise.all(Object.entries(demoAssets).map(async ([id, url]) => {
     try {
-      const response = await fetch(url);
-      const bitmap = await createImageBitmap(await response.blob());
-      characterArt.set(id, bitmap);
+      // Keep bundled demo sprites as decoded HTMLImageElements. This path also
+      // works for the data URLs embedded in the standalone file on file:// and
+      // avoids a blank ImageBitmap surface in a few Android/Chromium WebViews.
+      const image = new Image();
+      image.decoding = "async";
+      image.src = url;
+      await image.decode();
+      characterArt.set(id, image);
     } catch (error) { onError(error); }
   }));
   let textScene = compileTextScene(TEXT_SCENE_DEMOS[selectedDemoIndex], { language: TEXT_SCENE_DEMOS[selectedDemoIndex].language, speed: dialogueSpeed });
