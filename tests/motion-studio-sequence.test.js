@@ -162,8 +162,10 @@ test("asset references, descriptors, total durations, and record-count budgets a
   assert.throws(() => sequence([scene("scene-a", 150_000), scene("scene-b", 150_001)]), /duration/iu);
   assert.equal(sequence([scene("scene-a", 150_000), scene("scene-b", 150_000)]).scenes.length, 2);
 
-  const tooManyScenes = Array.from({ length: 33 }, (_, index) => scene(`scene-${index}`, 1));
-  assert.throws(() => sequence(tooManyScenes), /32 scenes/iu);
+  const fiftyScenes = Array.from({ length: 50 }, (_, index) => scene(`perf-${index}`, 1));
+  assert.equal(sequence(fiftyScenes).scenes.length, 50);
+  const tooManyScenes = Array.from({ length: 65 }, (_, index) => scene(`scene-${index}`, 1));
+  assert.throws(() => sequence(tooManyScenes), /64 scenes/iu);
   const tooManyAssets = Array.from({ length: 257 }, (_, index) => ({ ...image, id: `image-${index}` }));
   assert.throws(() => sequence([scene("scene-a")], tooManyAssets), /256 records/iu);
 });

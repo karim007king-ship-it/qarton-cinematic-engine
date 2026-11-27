@@ -5,7 +5,7 @@ export function createStudioSequenceV2Core({ createStudioSequenceV1, validateStu
   if (typeof createStudioSequenceV1 !== "function" || typeof validateStudioSequenceV1 !== "function") {
     throw new TypeError("StudioSequenceV2 requires the StudioSequenceV1 constructors and validators");
   }
-  const SEQUENCE_LIMITS = Object.freeze({ scenes: 64, assets: 256, durationMs: 300_000 });
+  const SEQUENCE_LIMITS = Object.freeze({ scenes: 32, assets: 256, durationMs: 300_000 });
   const MAX_SEQUENCE_V2_JSON_BYTES = 2 * 1024 * 1024;
   const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u;
   const compiledStudioSequencesV2 = new WeakMap();
