@@ -19,6 +19,11 @@ def set_range(page, selector, value):
     page.locator(selector).evaluate("(el, value) => { el.value=String(value); el.dispatchEvent(new Event('input', {bubbles:true})); }", value)
 
 
+def capture_canvas(page, name):
+    data_url = page.evaluate("document.querySelector('#previewCanvas').toDataURL('image/png')")
+    (SHOTS / name).write_bytes(base64.b64decode(data_url.split(",", 1)[1]))
+
+
 def visual_regression(page):
     page.set_viewport_size({"width": 390, "height": 844})
     page.goto(HTML.as_uri() + "?testVisual=1", wait_until="load")
@@ -31,7 +36,7 @@ def visual_regression(page):
     page.locator('[data-section="characters"]').click()
     page.locator("#closeSheetButton").click()
     page.evaluate("window.__QARTON_TEST_API.setDialogueReveal(true)")
-    page.locator("#previewCanvas").screenshot(path=str(SHOTS / "family-two-character.png"))
+    capture_canvas(page, "family-two-character.png")
     portrait = ROOT / "examples/motion-studio-v2/assets/characters/layla.webp"
     page.locator("#characterImageInput").set_input_files(str(portrait))
     page.wait_for_function("window.__QARTON_TEST_API.state().importedPortraitCount === 1")
@@ -59,7 +64,7 @@ def visual_regression(page):
     ids = canvas.get_attribute("data-rendered-character-ids").split(",")
     assert set(ids) == {"layla", "youssef", "salim"} and len(ids) == len(set(ids)), ids
     page.evaluate("window.__QARTON_TEST_API.setDialogueReveal(true)")
-    page.locator("#previewCanvas").screenshot(path=str(SHOTS / "confrontation-three-character.png"))
+    capture_canvas(page, "confrontation-three-character.png")
 
     page.evaluate("window.__QARTON_TEST_API.loadDemo(2)")
     page.wait_for_function("document.querySelectorAll('#characterSelect option').length === 2")
@@ -67,13 +72,13 @@ def visual_regression(page):
     ids = canvas.get_attribute("data-rendered-character-ids").split(",")
     assert set(ids) == {"nour", "youssef"} and len(ids) == len(set(ids)), ids
     page.evaluate("window.__QARTON_TEST_API.setDialogueReveal(true)")
-    page.locator("#previewCanvas").screenshot(path=str(SHOTS / "emotional-two-character.png"))
+    capture_canvas(page, "emotional-two-character.png")
     page.evaluate("window.__QARTON_TEST_API.setTextScene({id:'mirror-face',title:'اختبار انعكاس الوجه',language:'tn',theme:'family',characters:[{id:'right-facing',name:'ليلى',spriteKey:'layla',x:.3,y:.82,scale:.72,z:0,face:{x:.55,y:.113,skin:'#d99a78'},facing:'right'},{id:'left-facing',name:'يوسف',spriteKey:'youssef',x:.7,y:.82,scale:.72,z:1,face:{x:.55,y:.109,skin:'#dca47e'},facing:'left'}],dialogue:[{id:'mirror-line',speakerId:'left-facing',expression:'surprised',text:'بُ، فِي قرطاج؟'}]})")
     page.evaluate("window.__QARTON_TEST_API.setDialogueReveal(true)")
     mirror_events = page.evaluate("window.__QARTON_TEST_API.visemes(0)")
     mirror_event = next(item for item in mirror_events["events"] if item["viseme"] == "round")
     page.evaluate("time => window.__QARTON_TEST_API.seek(time)", mirror_events["startMs"] + mirror_event["offsetMs"] + 30)
-    page.locator("#previewCanvas").screenshot(path=str(SHOTS / "mirrored-face-rig.png"))
+    capture_canvas(page, "mirrored-face-rig.png")
     reports = []
     sprite_keys = ["layla", "youssef", "nour", "salim"]
     for count in (4, 8):
@@ -84,7 +89,7 @@ def visual_regression(page):
         ids = canvas.get_attribute("data-rendered-character-ids").split(",")
         assert len(ids) == count and len(ids) == len(set(ids)), ids
         if count == 8:
-            page.locator("#previewCanvas").screenshot(path=str(SHOTS / "eight-character-scene.png"))
+            capture_canvas(page, "eight-character-scene.png")
         reports.append({"characters": count, "uniqueCharacterIds": True})
     pose_reports = []
     pose_hashes = set()
@@ -98,7 +103,7 @@ def visual_regression(page):
         timestamp = timeline["startMs"] + event["offsetMs"] + max(1, event["durationMs"] // 2)
         page.evaluate("time => window.__QARTON_TEST_API.seek(time)", timestamp)
         assert canvas.get_attribute("data-active-viseme") == viseme, {"wanted": viseme, "got": canvas.get_attribute("data-active-viseme")}
-        page.locator("#previewCanvas").screenshot(path=str(SHOTS / f"mouth-{viseme}.png"))
+        capture_canvas(page, f"mouth-{viseme}.png")
         region = page.evaluate("""() => {
           const c=document.querySelector('#previewCanvas');
           const x=Math.round(c.width*.546)-20, y=Math.round(c.height*.317)-15;
@@ -121,7 +126,9 @@ def visual_regression(page):
         transition = page.locator("#previewCanvas").get_attribute("data-cinematic-transition")
         mood = page.locator("#previewCanvas").get_attribute("data-cinematic-mood")
         assert page.locator("#previewCanvas").get_attribute("data-rendered-scene") == current["id"]
-        page.locator("#previewCanvas").screenshot(path=str(SHOTS / f"cinematic-{name}.png"))
+        capture_canvas(page, f"cinematic-transition-{name}.png")
+        page.evaluate("time => window.__QARTON_TEST_API.seek(time)", start + 1350)
+        capture_canvas(page, f"cinematic-{name}.png")
         cinematic_reports.append({"scene": name, "mood": mood, "transition": transition, "characters": len(page.locator("#previewCanvas").get_attribute("data-rendered-character-ids").split(","))})
         cinematic_shots.append(f"cinematic-{name}.png")
     page.evaluate("window.__QARTON_TEST_API.setMood('emotional')")
@@ -131,7 +138,7 @@ def visual_regression(page):
     assert page.locator("#previewCanvas").get_attribute("data-cinematic-transition") == "focus"
     return {"scenes": 4, "uniqueCharacterIds": True, "renderCounts": reports, "mouthPoseCaptures": pose_reports,
       "visuallyDistinctMouthRegions": len(pose_hashes), "cinematicScenes": cinematic_reports,
-      "screenshots": ["family-two-character.png", "confrontation-three-character.png", "emotional-two-character.png", "eight-character-scene.png", "mirrored-face-rig.png", *cinematic_shots]}
+      "screenshots": ["family-two-character.png", "confrontation-three-character.png", "emotional-two-character.png", "eight-character-scene.png", "mirrored-face-rig.png", *[f"cinematic-transition-{name}.png" for name in ("family-home", "night-mystery", "three-character-confrontation", "smoke-danger")], *cinematic_shots]}
 
 
 def exercise(page, width, height):
