@@ -69,9 +69,24 @@
         <p class="sheet-note">تُطبّق الحركة على كاميرا المحرك ومعاينته الفعلية.</p>
       </div>
       <div class="panel-body" data-panel="audio" hidden>
-        <div class="audio-actions"><button class="gold-button" id="chooseAudioButton" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l12-2v13M9 11l12-2M6 21a3 2 0 1 0 0-4 3 2 0 0 0 0 4Zm12-3a3 2 0 1 0 0-4 3 2 0 0 0 0 4Z"/></svg>اختر صوتًا</button><button class="secondary-button" id="demoRecordButton" type="button">تجربة التسجيل</button><input id="audioInput" class="visually-hidden" type="file" accept="audio/*"></div>
-        <div class="audio-selection" id="audioSelection"><span class="audio-wave" aria-hidden="true">▁ ▃ ▅ ▂ ▆</span><span>لا يوجد ملف صوتي محدد</span></div>
-        <p class="sheet-note">اختيار الملف يعرض اسمه فقط. التسجيل والدمج الصوتي غير مفعّلين في هذا النموذج.</p>
+        <div class="audio-actions">
+          <button class="gold-button" id="chooseAudioButton" data-audio-type="dialogue" type="button">إضافة صوت</button>
+          <button class="secondary-button" id="demoRecordButton" type="button">تسجيل صوت</button>
+          <button class="secondary-button" id="addMusicButton" data-audio-type="music" type="button">إضافة موسيقى</button>
+          <button class="secondary-button" id="addSfxButton" data-audio-type="sfx" type="button">إضافة مؤثر</button>
+          <input id="audioInput" class="visually-hidden" type="file" accept="audio/*,.amr">
+        </div>
+        <label class="audio-scope-row" for="audioScope"><span>ربط الصوت</span><select id="audioScope"><option value="scene">بالمشهد</option><option value="project">بكامل المشروع</option></select><button id="audioDeleteButton" class="secondary-button" type="button" disabled>حذف المقطع</button></label>
+        <div class="audio-selection" id="audioSelection"><span>اختر ملفًا أو سجّل صوتًا</span></div>
+        <canvas id="audioWaveform" class="audio-waveform" width="440" height="42" aria-label="الموجة الصوتية"></canvas>
+        <div class="audio-ruler" id="audioRuler" aria-hidden="true"></div>
+        <div class="audio-timeline" id="audioTimeline" aria-label="مسارات الصوت"></div>
+        <div class="audio-clip-edit">
+          <label>بداية القص <input id="audioTrimStart" type="number" min="0" step="0.1" value="0" aria-label="بداية القص بالثواني"></label>
+          <label>المدة <input id="audioTrimDuration" type="number" min="0.1" step="0.1" value="1" aria-label="مدة المقطع بالثواني"></label>
+          <button id="audioApplyTrim" class="secondary-button" type="button" disabled>تطبيق القص</button>
+        </div>
+        <p class="sheet-note" id="audioStatus">تُضاف المقاطع بعد فك الترميز والتحقق من الإشارة.</p>
       </div>
       <div class="panel-body" data-panel="effects" hidden>
         <div class="effect-grid" role="group" aria-label="مظهر تجريبي"><button class="effect-chip active" type="button" data-effect="none">أصلي</button><button class="effect-chip" type="button" data-effect="warm">دافئ</button><button class="effect-chip" type="button" data-effect="mono">أبيض وأسود</button><button class="effect-chip" type="button" data-effect="soft">ناعم</button></div>
@@ -81,6 +96,7 @@
       <div class="panel-body more-panel" data-panel="more" hidden>
         <details class="disclosure"><summary><span>أبعاد المعاينة</span><span class="disclosure-mark">＋</span></summary><div class="advanced-grid"><label>نسبة الفيديو<select id="aspectRatio"><option value="original">Original</option><option value="9:16" selected>9:16</option><option value="16:9">16:9</option><option value="1:1">1:1</option><option value="4:5">4:5</option><option value="4:3">4:3</option><option value="3:4">3:4</option></select></label><label>عرض الصورة<select id="fitMode"><option value="fit">Fit · احتواء</option><option value="fill" selected>Fill · ملء</option></select></label></div><p class="sheet-note">تُطبّق الأبعاد وFit/Fill داخل رسم المحرك.</p></details>
         <details class="disclosure"><summary><span>تشخيص الواجهة</span><span class="disclosure-mark">＋</span></summary><p class="diagnostic-line">JavaScript: <strong id="demoReady">جارٍ التهيئة</strong></p><p class="diagnostic-line">اتصال المحرك: <strong id="engineReady">جارٍ التهيئة</strong></p><p class="diagnostic-line">صور المشروع: <strong id="imageAssetCount">0</strong></p></details>
+        <details class="disclosure"><summary><span>تشخيص الصوت والميكروفون</span><span class="disclosure-mark">＋</span></summary><p class="diagnostic-line">الميكروفون: <strong id="micReady">غير مفحوص</strong></p><p class="diagnostic-line">سياسة الميكروفون: <strong id="micPolicy">غير متاحة</strong></p><p class="diagnostic-line">المصدر الآمن: <strong id="audioSecure">—</strong></p><p class="diagnostic-line">AudioContext: <strong id="audioContextReady">لم يُنشأ</strong></p><p class="diagnostic-line">صيغة الصوت: <strong id="audioFormat">—</strong></p><p class="diagnostic-line">المدة المفكوكة: <strong id="audioDuration">—</strong></p><p class="diagnostic-line">RMS / Peak: <strong id="audioSignal">—</strong></p><p class="diagnostic-line">PCM المحفوظ: <strong id="audioMemory">0 MiB</strong></p><p class="diagnostic-line">الحالة: <strong id="audioError">جاهز</strong></p></details>
         <p class="sheet-note">هذا نموذج مستقل لا يغيّر المشاريع أو الحفظ.</p>
       </div>
     </section>

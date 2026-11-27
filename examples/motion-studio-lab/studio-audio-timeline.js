@@ -3,7 +3,7 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
 /** Touch-first audio track view; clip edits are committed by the host model. */
 export function createStudioAudioTimeline({
-  root, ruler, getTracks, getDuration, getCurrentTime, isBusy, onSelect, onMove, onVolume, onDragEnd,
+  root, ruler, getTracks, getDuration, getCurrentTime, isBusy, onSelect, onMove, onVolume, onMute, isMuted = () => false, onDragEnd,
   documentRef = document, formatTime = (ms) => `${(ms / 1000).toFixed(2)}s`
 }) {
   let selected = null;
@@ -41,7 +41,13 @@ export function createStudioAudioTimeline({
       volume.value = String(track.volume); volume.setAttribute("aria-label", `مستوى مسار ${title.textContent}`);
       volume.disabled = locked;
       volume.addEventListener("input", () => onVolume(track.id, Number(volume.value)));
-      volumeLabel.append(volume); heading.append(title, volumeLabel); row.append(heading);
+      volumeLabel.append(volume);
+      const mute = documentRef.createElement("button");
+      mute.type = "button"; mute.className = "audio-mute"; mute.textContent = isMuted(track.id) ? "مكتوم" : "صوت";
+      mute.setAttribute("aria-label", isMuted(track.id) ? `إلغاء كتم ${title.textContent}` : `كتم ${title.textContent}`);
+      mute.setAttribute("aria-pressed", String(isMuted(track.id))); mute.disabled = locked;
+      mute.addEventListener("click", () => onMute?.(track.id));
+      heading.append(title, volumeLabel, mute); row.append(heading);
       const lane = documentRef.createElement("div");
       lane.className = "audio-track-lane";
       lane.dataset.trackId = track.id;
@@ -118,3 +124,4 @@ export function createStudioAudioTimeline({
     select(value) { selected = value; render(); }, clearSelection() { selected = null; render(); },
     isDragging: () => drag !== null });
 }
+

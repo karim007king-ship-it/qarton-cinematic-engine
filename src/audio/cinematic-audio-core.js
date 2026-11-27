@@ -55,7 +55,7 @@ export function compileCinematicAudioProject({ durationMs, tracks = [] } = {}) {
       if (typeof clip.asset !== "string" || !clip.asset.trim()) {
         throw new TypeError(`Audio clip "${clip.id}" requires an asset key`);
       }
-      if (!Number.isSafeInteger(clip.startMs) || clip.startMs < 0 || clip.startMs >= durationMs ||
+      if (!Number.isSafeInteger(clip.sourceStartMs ?? 0) || (clip.sourceStartMs ?? 0) < 0 || !Number.isSafeInteger(clip.startMs) || clip.startMs < 0 || clip.startMs >= durationMs ||
           !Number.isSafeInteger(clip.durationMs) || clip.durationMs < 1 || clip.startMs + clip.durationMs > durationMs) {
         throw new RangeError(`Audio clip "${clip.id}" must fit inside the scene duration`);
       }
@@ -95,7 +95,7 @@ export function compileCinematicAudioProject({ durationMs, tracks = [] } = {}) {
       }
       clipIds.add(clip.id);
       return Object.freeze({
-        id: clip.id, asset: clip.asset.trim(), startMs: clip.startMs, durationMs: clip.durationMs,
+        id: clip.id, asset: clip.asset.trim(), startMs: clip.startMs, durationMs: clip.durationMs, sourceStartMs: clip.sourceStartMs ?? 0,
         endMs: clip.startMs + clip.durationMs, volume: clipVolume, loop, language, visemes,
         trackId: track.id, type: track.type, trackVolume
       });
@@ -158,7 +158,7 @@ export function compileCinematicAudioProject({ durationMs, tracks = [] } = {}) {
 /** Scene-clock transport. Adapters own decoding and platform audio resources. */
 export function createCinematicAudioPlayer(project, {
   play, stop = () => {}, setVolume = () => {}, masterVolume = 1,
-  now = () => performance.now()
+  now = () => performance.now(), clock: sharedClock = null
 } = {}) {
   if (!project || typeof project.sample !== "function" || !Number.isFinite(project.durationMs)) {
     throw new TypeError("A compiled cinematic audio project is required");
@@ -167,7 +167,8 @@ export function createCinematicAudioPlayer(project, {
     throw new TypeError("Audio play, stop and setVolume adapters must be functions");
   }
   volume(masterVolume, "Master");
-  const clock = createSceneClock({ durationMs: project.durationMs, now });
+  const clock = sharedClock ?? createSceneClock({ durationMs: project.durationMs, now });
+  if (!clock || typeof clock.time !== "function" || typeof clock.pause !== "function" || typeof clock.resume !== "function" || typeof clock.seek !== "function") throw new TypeError("Audio shared clock must provide time, pause, resume and seek");
   let master = masterVolume;
   let state = "paused";
   let destroyed = false;
@@ -208,7 +209,7 @@ export function createCinematicAudioPlayer(project, {
       if (voices.has(clip.id)) continue;
       const voice = play(clip.asset, Object.freeze({
         id: clip.id, trackId: clip.trackId, channel: clip.type, type: clip.type,
-        loop: clip.loop, offsetMs: timeMs - clip.startMs, volume: effectiveVolume(clip)
+        loop: clip.loop, offsetMs: clip.sourceStartMs + timeMs - clip.startMs, volume: effectiveVolume(clip)
       }));
       if (voice == null || (typeof voice === "object" && typeof voice.then === "function")) {
         throw new TypeError(`Audio adapter play() must return a synchronous voice handle for "${clip.id}"`);
@@ -372,3 +373,4 @@ export function createCinematicAudioPlayer(project, {
     get error() { return lastError; }
   });
 }
+

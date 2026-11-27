@@ -1,4 +1,5 @@
 import { createStudioV2Engine } from "./engine-adapter.js";
+import { createStudioAudioTimeline } from "../motion-studio-lab/studio-audio-timeline.js";
 
 (() => {
   "use strict";
@@ -24,6 +25,10 @@ import { createStudioV2Engine } from "./engine-adapter.js";
   let updatingSeek = false;
   let renderedScenes = null;
   let renderedSelection = "";
+  let audioState = { tracks: [], revision: -1, mutedTracks: [] };
+  let audioType = "dialogue";
+  let recordingBusy = false;
+  let audioTimeline;
 
   if (commitChip) {
     commitChip.textContent = "Commit " + commitId.slice(0, 7);
@@ -89,6 +94,48 @@ import { createStudioV2Engine } from "./engine-adapter.js";
       byId(".scene-card.selected", byId("#sceneList"))?.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
     updateSceneActions(state);
+    if (engine?.getAudioState) updateAudio(engine.getAudioState(), false);
+  }
+  function drawWaveform(values) {
+    const wave = byId("#audioWaveform"), ctx = wave?.getContext("2d");
+    if (!ctx) return;
+    const ratio = Math.max(1, window.devicePixelRatio || 1);
+    if (wave.width !== Math.round(wave.clientWidth * ratio)) wave.width = Math.round(wave.clientWidth * ratio);
+    ctx.clearRect(0, 0, wave.width, wave.height);
+    ctx.strokeStyle = "#d5ae61"; ctx.lineWidth = Math.max(1, ratio);
+    const mid = wave.height / 2, step = wave.width / Math.max(1, values.length);
+    ctx.beginPath();
+    values.forEach((value, index) => { const h = Math.max(1, value * mid * .92), x = (index + .5) * step; ctx.moveTo(x, mid - h); ctx.lineTo(x, mid + h); });
+    ctx.stroke();
+  }
+  function updateAudio(state, force = true) {
+    if (!state) return;
+    const previousRevision = audioState.revision;
+    audioState = state;
+    document.documentElement.dataset.audioPlayerState = state.playerState || "paused";
+    document.documentElement.dataset.audioActiveVoices = String(state.activeVoices || 0);
+    byId("#micReady").textContent = state.micState || "غير مفحوص";
+    byId("#micPolicy").textContent = state.micPolicyAllowed === null ? "غير متاحة" : state.micPolicyAllowed ? "مسموح" : "محظور";
+    byId("#audioSecure").textContent = state.secureContext ? "آمن" : (location.protocol === "content:" ? "content:// آمن من WebView" : "غير آمن");
+    byId("#audioContextReady").textContent = state.audioContextState;
+    byId("#audioFormat").textContent = state.format || "—";
+    byId("#audioDuration").textContent = state.durationMs ? (state.durationMs / 1000).toFixed(2) + " ث (مفكوك)" : "—";
+    byId("#audioSignal").textContent = state.durationMs ? state.rms.toFixed(4) + " / " + state.peak.toFixed(4) : "—";
+    byId("#audioMemory").textContent = (state.pcmBytes / 1048576).toFixed(1) + " MiB / 32 MiB";
+    byId("#audioError").textContent = state.error || state.playerState || "جاهز";
+    byId("#audioStatus").textContent = state.selectedClip ? state.selectedClip.name + " · " + (Math.round(state.selectedClip.durationMs / 100) / 10) + " ث" : "تُضاف المقاطع بعد فك الترميز والتحقق من الإشارة.";
+    byId("#audioDeleteButton").disabled = !state.selectedClip;
+    byId("#audioApplyTrim").disabled = !state.selectedClip;
+    if (state.selectedClip) {
+      byId("#audioTrimStart").value = (state.selectedClip.sourceStartMs / 1000).toFixed(1);
+      byId("#audioTrimDuration").value = (state.selectedClip.durationMs / 1000).toFixed(1);
+    }
+    byId("#demoRecordButton").textContent = state.recording ? "إيقاف التسجيل" : "تسجيل صوت";
+    byId("#demoRecordButton").setAttribute("aria-pressed", String(state.recording));
+    if (state.revision !== previousRevision) {
+      drawWaveform(state.waveform || []);
+      if (force && audioTimeline) audioTimeline.render();
+    }
   }
   function renderSceneCards(state) {
     const list = byId("#sceneList");
@@ -100,6 +147,7 @@ import { createStudioV2Engine } from "./engine-adapter.js";
       card.dataset.sceneId = scene.id;
       card.setAttribute("aria-label", `المشهد ${scene.index + 1}${scene.id === state.selectedSceneId ? " المحدد" : ""}`);
       card.setAttribute("aria-current", scene.id === state.selectedSceneId ? "true" : "false");
+      card.disabled = recordingBusy;
       const thumb = document.createElement("span");
       thumb.className = "scene-thumb thumb-one";
       if (scene.thumbnailUrl) {
@@ -126,21 +174,40 @@ import { createStudioV2Engine } from "./engine-adapter.js";
   }
   function updateSceneActions(state) {
     const disabled = {
-      duplicate: false,
+      duplicate: recordingBusy,
       delete: !state.canDelete,
       "move-right": !state.canMoveRight,
       "move-left": !state.canMoveLeft
     };
     all('[data-scene-action]').forEach(button => { button.disabled = disabled[button.dataset.sceneAction]; });
+    byId("#addSceneButton").disabled = recordingBusy;
   }
+  audioTimeline = createStudioAudioTimeline({
+    root: byId("#audioTimeline"), ruler: byId("#audioRuler"), getTracks: () => audioState.tracks || [],
+    getDuration: () => Math.max(1, engine?.getState().totalDurationMs || 8000),
+    getCurrentTime: () => engine?.getState().timeMs || 0,
+    isBusy: () => recordingBusy,
+    onSelect: value => engine?.selectAudioClip(value),
+    onMove: (trackId, clipId, startMs) => engine?.moveAudioClip(trackId, clipId, startMs),
+    onVolume: (trackId, value) => engine?.setAudioTrackVolume(trackId, value),
+    onMute: trackId => engine?.toggleAudioTrackMute(trackId),
+    isMuted: trackId => audioState.mutedTracks?.includes(trackId)
+  });
   function openImagePicker() { imageInput.click(); }
 
   try {
-    engine = createStudioV2Engine({ canvas, onState: updateState, onError: error => {
+    engine = createStudioV2Engine({ canvas, onState: updateState, onAudioState: state => updateAudio(state), onBusy: busy => {
+      recordingBusy = busy;
+      byId("#playButton").disabled = busy;
+      seek.disabled = busy;
+      if (engine) updateSceneActions(engine.getState());
+      audioTimeline.setBusy(busy);
+    }, onError: error => {
       document.documentElement.dataset.engineError = error?.message || String(error);
       byId("#engineReady").textContent = "تعذر العرض";
     } });
     canvas.dataset.ready = "true";
+    engine.refreshMicrophonePermission().catch(() => {});
   } catch (error) {
     document.documentElement.dataset.prototypeReady = "false";
     document.documentElement.dataset.engineReady = "false";
@@ -235,22 +302,35 @@ import { createStudioV2Engine } from "./engine-adapter.js";
     byId("#effectAmountValue").textContent = event.target.value + "٪";
     canvas.style.opacity = String(.65 + Number(event.target.value) / 100 * .35);
   });
-  byId("#chooseAudioButton").addEventListener("click", () => byId("#audioInput").click());
-  byId("#audioInput").addEventListener("change", () => {
+  function chooseAudio(type) { audioType = type; byId("#audioInput").click(); }
+  byId("#chooseAudioButton").addEventListener("click", () => chooseAudio("dialogue"));
+  byId("#addMusicButton").addEventListener("click", () => chooseAudio("music"));
+  byId("#addSfxButton").addEventListener("click", () => chooseAudio("sfx"));
+  byId("#audioInput").addEventListener("change", async () => {
     const file = byId("#audioInput").files?.[0];
-    if (file) {
-      const label = document.createElement("span");
-      label.textContent = file.name + " · معاينة اسم فقط";
-      const wave = document.createElement("span");
-      wave.className = "audio-wave";
-      wave.setAttribute("aria-hidden", "true");
-      wave.textContent = "▁ ▃ ▅ ▂ ▆";
-      byId("#audioSelection").replaceChildren(wave, label);
-      showToast("ربط الصوت بالمحرك مؤجل لهذه المرحلة.");
-    }
-    byId("#audioInput").value = "";
+    if (file && engine) {
+      try {
+        const result = await engine.addAudio(file, audioType);
+        showToast("أُضيف الصوت بعد فك الترميز · " + result.durationMs / 1000 + " ث");
+      } catch (error) { showToast(error.message || "تعذر فك ترميز الصوت؛ المقاطع السابقة محفوظة."); }
+      finally { byId("#audioInput").value = ""; }
+    } else byId("#audioInput").value = "";
   });
-  byId("#demoRecordButton").addEventListener("click", () => showToast("التسجيل غير مفعّل في هذه المرحلة."));
+  byId("#demoRecordButton").addEventListener("click", async () => {
+    try {
+      if (engine?.getAudioState().recording) await engine.stopAudioRecording();
+      else await engine?.startAudioRecording();
+    } catch (error) { showToast(error.message || "تعذر الوصول إلى الميكروفون."); }
+  });
+  byId("#audioDeleteButton").addEventListener("click", () => {
+    if (engine?.removeAudioClip()) showToast("حُذف المقطع وتنظّف الأصل غير المستخدم.");
+  });
+  byId("#audioApplyTrim").addEventListener("click", () => {
+    const selected = audioState.selected;
+    if (!selected || !engine) return;
+    try { engine.trimAudioClip(selected.trackId, selected.clipId, Math.round(Number(byId("#audioTrimStart").value) * 1000), Math.round(Number(byId("#audioTrimDuration").value) * 1000)); showToast("طُبّق قص المقطع."); }
+    catch (error) { showToast(error.message || "قيم القص غير صالحة."); }
+  });
   byId("#undoButton").addEventListener("click", () => showToast("التراجع غير متاح في هذه المرحلة."));
   byId("#saveButton").addEventListener("click", () => showToast("الحفظ غير متاح في هذه المرحلة."));
   byId("#exportButton").addEventListener("click", () => showToast("التصدير غير مفعّل في هذه المرحلة."));
@@ -262,6 +342,7 @@ import { createStudioV2Engine } from "./engine-adapter.js";
     document.documentElement.dataset.jsError = event.reason?.message || String(event.reason || "Unhandled rejection");
     byId("#demoReady").textContent = "خطأ JavaScript";
   });
-  window.addEventListener("pagehide", () => engine?.dispose());
+  const audioUiTimer = setInterval(() => audioTimeline.renderPlayhead(), 80);
+  window.addEventListener("pagehide", () => { clearInterval(audioUiTimer); engine?.dispose(); });
   document.documentElement.dataset.prototypeReady = engine ? "true" : "false";
 })();

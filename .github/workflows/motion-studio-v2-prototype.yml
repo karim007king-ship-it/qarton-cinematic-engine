@@ -5,10 +5,15 @@ on:
       - 'examples/motion-studio-v2/**'
       - 'packages/motion-studio/**'
       - 'src/motion/scene-clock.js'
+      - 'src/audio/cinematic-audio-core.js'
       - 'examples/motion-studio-lab/studio-image.js'
       - 'examples/motion-studio-lab/studio-motion-presets.js'
+      - 'examples/motion-studio-lab/studio-audio-model.js'
+      - 'examples/motion-studio-lab/studio-audio-timeline.js'
+      - 'examples/motion-studio-lab/microphone-permission.js'
       - 'scripts/build-motion-studio-v2-preview.mjs'
       - 'tests/motion-studio-v2-standalone.test.mjs'
+      - 'tests/motion-studio-v2-audio.test.mjs'
       - 'tests/motion-studio-v2-performance.py'
       - '.github/workflows/motion-studio-v2-prototype.yml'
   workflow_dispatch:
@@ -32,9 +37,11 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Guard standalone CSS and engine bundle
         run: node --test tests/motion-studio-v2-standalone.test.mjs
+      - name: Run audio core and V2 clock tests
+        run: node --test tests/cinematic-audio-core.test.js tests/motion-studio-audio-timeline.test.js tests/motion-studio-microphone-permission.test.js tests/motion-studio-v2-audio.test.mjs
       - name: Build single-file offline preview
         env:
-          L14B_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          L14C1_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
         run: node scripts/build-motion-studio-v2-preview.mjs
       - name: Check out performance baseline
         uses: actions/checkout@v4
@@ -50,20 +57,20 @@ jobs:
       - name: Chromium functional and responsive tests
         run: python examples/motion-studio-v2/check-prototype.py
       - name: Compare performance at 10, 20 and 50 scenes
-        run: python tests/motion-studio-v2-performance.py baseline-source/dist/motion-studio-v2-l14b-android-preview/index.html dist/motion-studio-v2-l14b-android-preview/index.html | tee dist/motion-studio-v2-l14b-android-preview/performance-results.json
+        run: python tests/motion-studio-v2-performance.py baseline-source/dist/motion-studio-v2-l14b-android-preview/index.html dist/motion-studio-v2-l14c1-android-preview/index.html | tee dist/motion-studio-v2-l14c1-android-preview/performance-results.json
       - name: Package Android preview ZIP
         run: |
-          cd dist/motion-studio-v2-l14b-android-preview
-          zip -j ../qarton-motion-studio-v2-l14b-android-preview.zip index.html qarton-motion-studio-v2.html README.txt
+          cd dist/motion-studio-v2-l14c1-android-preview
+          zip -j ../qarton-motion-studio-v2-l14c1-android-preview.zip index.html qarton-motion-studio-v2.html README.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: qarton-motion-studio-v2-l14b-android-preview
+          name: qarton-motion-studio-v2-l14c1-android-preview
           path: |
-            dist/qarton-motion-studio-v2-l14b-android-preview.zip
-            dist/motion-studio-v2-l14b-android-preview/index.html
-            dist/motion-studio-v2-l14b-android-preview/qarton-motion-studio-v2.html
-            dist/motion-studio-v2-l14b-android-preview/README.txt
-            dist/motion-studio-v2-l14b-android-preview/performance-results.json
-            dist/motion-studio-v2-l14b-android-preview/screenshots/**
+            dist/qarton-motion-studio-v2-l14c1-android-preview.zip
+            dist/motion-studio-v2-l14c1-android-preview/index.html
+            dist/motion-studio-v2-l14c1-android-preview/qarton-motion-studio-v2.html
+            dist/motion-studio-v2-l14c1-android-preview/README.txt
+            dist/motion-studio-v2-l14c1-android-preview/performance-results.json
+            dist/motion-studio-v2-l14c1-android-preview/screenshots/**
           if-no-files-found: error
           retention-days: 14

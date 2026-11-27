@@ -2,6 +2,9 @@ from pathlib import Path
 from struct import pack
 from zlib import crc32, compress
 import json
+import math
+import tempfile
+import wave
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -16,6 +19,12 @@ def png(width, height, rgba):
     raw = row * height
     return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", pack(">2I5B", width, height, 8, 6, 0, 0, 0)) + chunk(b"IDAT", compress(raw)) + chunk(b"IEND", b"")
 
+def tone_wav(path, seconds=5.7, frequency=660):
+    rate = 48000
+    with wave.open(str(path), "wb") as output:
+        output.setparams((1, 2, rate, 0, "NONE", "not compressed"))
+        output.writeframes(b"".join(pack("<h", int(10000 * math.sin(2 * math.pi * frequency * n / rate))) for n in range(int(rate * seconds))))
+
 assert HTML.exists(), f"missing standalone preview: {HTML}"
 source = HTML.read_text(encoding="utf-8")
 assert '<style>' in source and 'createStudioV2Engine' in source and 'createSceneClock' in source
@@ -24,9 +33,12 @@ assert './app.css' not in source and './app.js' not in source
 assert 'href="http' not in source and 'src="http' not in source
 console_errors = []
 external_requests = []
+fake_mic = Path(tempfile.gettempdir()) / "qarton-motion-studio-fake-mic.wav"
+tone_wav(fake_mic)
 with sync_playwright() as p:
-    browser = p.chromium.launch(headless=True, args=["--allow-file-access-from-files"])
+    browser = p.chromium.launch(headless=True, args=["--allow-file-access-from-files", "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", f"--use-file-for-fake-audio-capture={fake_mic}"])
     context = browser.new_context(viewport={"width": 390, "height": 844}, device_scale_factor=1, is_mobile=True, has_touch=True)
+    context.grant_permissions(["microphone"])
     page = context.new_page()
     page.on("pageerror", lambda error: console_errors.append(str(error)))
     page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
@@ -173,6 +185,63 @@ with sync_playwright() as p:
     page.wait_for_timeout(250)
     assert int(page.locator("#timelineSeek").input_value()) == paused_at
     page.locator("#stopButton").click()
+
+    # Audio import is decoded and signal-checked before commit; project audio spans scene boundaries.
+    page.locator(".scene-card").first.click()
+    set_range("#sceneDuration", 3)
+    page.locator(".scene-card").nth(1).click()
+    set_range("#sceneDuration", 3)
+    assert page.locator("#totalTime").inner_text() == "00:06"
+    page.locator('[data-section="audio"]').click()
+    page.locator("#audioScope").select_option("project")
+    set_range("#timelineSeek", 0)
+    page.locator("#chooseAudioButton").click()
+    page.locator("#audioInput").set_input_files({"name": "music.wav", "mimeType": "audio/wav", "buffer": fake_mic.read_bytes()})
+    page.wait_for_function("document.querySelectorAll('.audio-clip').length === 1")
+    assert page.locator("#audioFormat").inner_text() == "audio/wav"
+    assert "(مفكوك)" in page.locator("#audioDuration").inner_text()
+    prior_rms = float(page.locator("#audioSignal").inner_text().split(" / ")[0])
+    assert prior_rms > 0.03, f"decoded import unexpectedly silent: RMS={prior_rms}"
+    page.locator(".audio-mute").first.click()
+    assert page.locator(".audio-mute").first.get_attribute("aria-pressed") == "true"
+    page.locator(".audio-mute").first.click()
+    page.locator("#audioApplyTrim").click()
+    page.locator("#timelineSeek").evaluate("(el) => { el.value='0'; el.dispatchEvent(new Event('input',{bubbles:true})); }")
+    page.locator("#playButton").click()
+    page.wait_for_timeout(3400)
+    assert page.locator(".scene-card.selected").get_attribute("data-scene-id") == page.locator(".scene-card").nth(1).get_attribute("data-scene-id")
+    assert page.evaluate("Number(document.documentElement.dataset.audioActiveVoices)") > 0, "cross-scene audio stopped at the scene boundary"
+    page.locator("#stopButton").click()
+    prior_clips = page.locator(".audio-clip").count()
+    page.locator("#audioInput").set_input_files({"name": "broken.wav", "mimeType": "audio/wav", "buffer": b"not audio"})
+    page.wait_for_function("document.querySelector('#toast').textContent.includes('تعذر فك ترميز')")
+    assert page.locator(".audio-clip").count() == prior_clips, "failed decode changed existing clips"
+
+    # Real Chromium fake-device recording: recorded encoded bytes are decoded again,
+    # analyzed for non-zero RMS/Peak, then inserted only after verification.
+    page.locator("#demoRecordButton").click()
+    page.wait_for_function("document.documentElement.dataset.audioContextState === 'running' || document.querySelector('#micReady').textContent === 'granted'", timeout=5000)
+    page.wait_for_timeout(10000)
+    page.locator("#demoRecordButton").click()
+    page.wait_for_function("document.querySelectorAll('.audio-clip').length === 2", timeout=10000)
+    recorded_rms = float(page.locator("#audioSignal").inner_text().split(" / ")[0])
+    recorded_peak = float(page.locator("#audioSignal").inner_text().split(" / ")[1])
+    assert recorded_rms > 0.03 and recorded_peak > 0.05, f"MediaRecorder output did not contain the fake microphone tone: RMS={recorded_rms}, Peak={recorded_peak}"
+    assert page.locator("#micReady").inner_text() == "granted"
+    assert page.locator("#audioDuration").inner_text().endswith("(مفكوك)")
+    assert float(page.locator("#audioDuration").inner_text().split(" ")[0]) >= 8, "long microphone recording duration did not come from decoded samples"
+    # Repeated play/pause/seek leaves the same clips and bounded decoded memory.
+    for _ in range(5):
+        set_range("#timelineSeek", 300)
+        page.locator("#playButton").click()
+        page.wait_for_timeout(120)
+        page.locator("#playButton").click()
+    assert page.locator(".audio-clip").count() == 2
+    pcm_mib = float(page.locator("#audioMemory").inner_text().split(" MiB")[0])
+    assert 0 < pcm_mib <= 32, f"PCM retention exceeded its existing 32 MiB budget: {pcm_mib}"
+    page.locator("#audioDeleteButton").click()
+    assert page.locator(".audio-clip").count() == 1
+    page.locator("#closeSheetButton").click()
     assert page.locator("#timelineSeek").input_value() == "0"
     page.locator("#playButton").click()
     assert page.locator("#studio").get_attribute("data-playing") == "true"
@@ -211,4 +280,4 @@ with sync_playwright() as p:
     assert not external_requests, f"offline test made network requests: {external_requests}"
     assert not console_errors, f"browser errors: {console_errors}"
     browser.close()
-print(json.dumps({"ok": True, "portraitWidths": [320,360,390,412,480], "landscape": ["640x360", "800x400"], "offline": True, "imageImportReplaceCancelCorruptDelete": True, "sceneSequence": True, "cameraPresets": 7, "aspectRatios": ["Original","9:16","16:9","1:1","4:5","4:3","3:4"], "raceImportSwitchDelete": True, "thumbnailStableDuringPlayback": True, "sceneCounts": [10,20,50], "transport": True}, ensure_ascii=False))
+print(json.dumps({"ok": True, "portraitWidths": [320,360,390,412,480], "landscape": ["640x360", "800x400"], "offline": True, "imageImportReplaceCancelCorruptDelete": True, "sceneSequence": True, "cameraPresets": 7, "aspectRatios": ["Original","9:16","16:9","1:1","4:5","4:3","3:4"], "raceImportSwitchDelete": True, "thumbnailStableDuringPlayback": True, "sceneCounts": [10,20,50], "transport": True, "audioImportAndSignal": True, "microphoneFakeDeviceRmsPeak": True, "crossSceneAudio": True, "recordingFailurePreservesClips": True, "repeatedPlayback": 5}, ensure_ascii=False))
