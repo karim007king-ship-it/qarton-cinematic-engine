@@ -100,7 +100,7 @@ import { DEMO_CHARACTER_ART } from "./demo-character-art.js";
   }
   if (engine) syncCharacters(true);
   if (engine && new URLSearchParams(location.search).has("testVisual")) {
-    window.__QARTON_TEST_API = Object.freeze({ state: () => engine.getTextState(), seek: value => engine.seek(value), setDialogue: (value, expression) => engine.setDialogue(value, expression), loadDemo: index => engine.loadTextDemo(index), setTextScene: value => engine.setTextScene(value), visemes: index => engine.getDialogueVisemes(index) });
+    window.__QARTON_TEST_API = Object.freeze({ state: () => engine.getTextState(), seek: value => engine.seek(value), setDialogue: (value, expression) => engine.setDialogue(value, expression), loadDemo: index => engine.loadTextDemo(index), setTextScene: value => engine.setTextScene(value), setDialogueReveal: value => engine.setDialogueReveal(value), visemes: index => engine.getDialogueVisemes(index) });
   }
   all("[data-section]").forEach(button => button.addEventListener("click", () => setSection(button.dataset.section)));
   one("#closeSheetButton").addEventListener("click", () => setSection(activeSection));

@@ -28,6 +28,8 @@ def visual_regression(page):
     ids = canvas.get_attribute("data-rendered-character-ids").split(",")
     assert set(ids) == {"layla", "youssef"} and len(ids) == len(set(ids)), ids
     page.locator('[data-section="characters"]').click()
+    page.locator("#closeSheetButton").click()
+    page.evaluate("window.__QARTON_TEST_API.setDialogueReveal(true)")
     page.locator("#previewCanvas").screenshot(path=str(SHOTS / "family-two-character.png"))
     portrait = ROOT / "examples/motion-studio-v2/assets/characters/layla.webp"
     page.locator("#characterImageInput").set_input_files(str(portrait))
@@ -50,6 +52,7 @@ def visual_regression(page):
     page.evaluate("window.__QARTON_TEST_API.seek(800)")
     ids = canvas.get_attribute("data-rendered-character-ids").split(",")
     assert set(ids) == {"layla", "youssef", "salim"} and len(ids) == len(set(ids)), ids
+    page.evaluate("window.__QARTON_TEST_API.setDialogueReveal(true)")
     page.locator("#previewCanvas").screenshot(path=str(SHOTS / "confrontation-three-character.png"))
 
     page.evaluate("window.__QARTON_TEST_API.loadDemo(2)")
@@ -57,6 +60,7 @@ def visual_regression(page):
     page.evaluate("window.__QARTON_TEST_API.seek(1300)")
     ids = canvas.get_attribute("data-rendered-character-ids").split(",")
     assert set(ids) == {"nour", "youssef"} and len(ids) == len(set(ids)), ids
+    page.evaluate("window.__QARTON_TEST_API.setDialogueReveal(true)")
     page.locator("#previewCanvas").screenshot(path=str(SHOTS / "emotional-two-character.png"))
     reports = []
     sprite_keys = ["layla", "youssef", "nour", "salim"]
@@ -70,17 +74,19 @@ def visual_regression(page):
         if count == 8:
             page.locator("#previewCanvas").screenshot(path=str(SHOTS / "eight-character-scene.png"))
         reports.append({"characters": count, "uniqueCharacterIds": True})
-    page.evaluate("window.__QARTON_TEST_API.setTextScene({id:'mouth-poses',title:'أوضاع الفم',language:'tn',theme:'family',characters:[{id:'layla',name:'ليلى',spriteKey:'layla',x:.31,y:.82,scale:.72,z:0}],dialogue:[{id:'visemes',speakerId:'layla',expression:'neutral',text:'بْ بُو يِ ف س عَ'}]})")
-    timeline = page.evaluate("window.__QARTON_TEST_API.visemes(0)")
     pose_reports = []
     pose_hashes = set()
-    for viseme in ("closed", "round", "wide", "teeth", "open"):
+    pose_texts = {"closed": "بْ", "round": "بُ", "wide": "بِ", "teeth": "ف", "open": "عَ"}
+    for viseme, text in pose_texts.items():
+        page.evaluate("text => window.__QARTON_TEST_API.setTextScene({id:'mouth-poses',title:'أوضاع الفم',language:'tn',theme:'family',characters:[{id:'layla',name:'ليلى',spriteKey:'layla',x:.5,y:1,scale:1.4,z:0}],dialogue:[{id:'visemes',speakerId:'layla',expression:'neutral',text}]})", text)
+        page.evaluate("window.__QARTON_TEST_API.setDialogueReveal(true)")
+        timeline = page.evaluate("window.__QARTON_TEST_API.visemes(0)")
         event = next(item for item in timeline["events"] if item["viseme"] == viseme)
         timestamp = timeline["startMs"] + event["offsetMs"] + max(1, event["durationMs"] // 2)
         page.evaluate("time => window.__QARTON_TEST_API.seek(time)", timestamp)
         assert canvas.get_attribute("data-active-viseme") == viseme, {"wanted": viseme, "got": canvas.get_attribute("data-active-viseme")}
         page.locator("#previewCanvas").screenshot(path=str(SHOTS / f"mouth-{viseme}.png"))
-        region = page.evaluate("() => { const c=document.querySelector('#previewCanvas'); const d=c.getContext('2d').getImageData(234,469,22,18).data; let h=2166136261; for(let i=0;i<d.length;i+=4){h=Math.imul(h^d[i],16777619);h=Math.imul(h^d[i+1],16777619);h=Math.imul(h^d[i+2],16777619);} return String(h>>>0); }")
+        region = page.evaluate("() => { const c=document.querySelector('#previewCanvas'); const d=c.getContext('2d').getImageData(386,158,28,20).data; let h=2166136261; for(let i=0;i<d.length;i+=4){h=Math.imul(h^d[i],16777619);h=Math.imul(h^d[i+1],16777619);h=Math.imul(h^d[i+2],16777619);} return String(h>>>0); }")
         pose_hashes.add(region)
         pose_reports.append({"viseme": viseme, "capture": f"mouth-{viseme}.png"})
     assert len(pose_hashes) >= 4, "Viseme ROI did not produce visibly distinct render samples"
