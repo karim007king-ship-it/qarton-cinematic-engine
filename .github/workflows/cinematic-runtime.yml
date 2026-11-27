@@ -1,7 +1,8 @@
 name: Cinematic Runtime
 on:
+  push:
+    branches: [feature/motion-studio-v2-l14a]
   pull_request:
-    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
