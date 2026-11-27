@@ -14,7 +14,7 @@ import { createAssetRegistry } from "../../packages/motion-studio/asset-registry
 import { createSceneClock } from "../../src/motion/scene-clock.js";
 import { createCameraMotionProject } from "../motion-studio-lab/studio-motion-presets.js";
 import { decodeImageBitmap } from "../motion-studio-lab/studio-image.js";
-import { createV2AudioController } from "./audio-controller.js";
+import { drawTextCinematicScene, TEXT_SCENE_DEMOS, compileTextScene } from "../../src/character/text-cinematic-scene.js";
 
 const DEFAULT_VIEWPORT = Object.freeze({ width: 720, height: 1280, fps: 24 });
 const ASPECTS = Object.freeze({ "9:16": [720, 1280], "16:9": [1280, 720], "1:1": [1080, 1080], "4:5": [864, 1080], "4:3": [960, 720], "3:4": [720, 960] });
@@ -83,7 +83,7 @@ function formatTime(ms) {
   return String(Math.floor(seconds / 60)).padStart(2, "0") + ":" + String(seconds % 60).padStart(2, "0");
 }
 
-export function createStudioV2Engine({ canvas, onState = () => {}, onAudioState = () => {}, onBusy = () => {}, onError = () => {}, decodeImage = decodeImageBitmap } = {}) {
+export function createStudioV2Engine({ canvas, onState = () => {}, onError = () => {}, decodeImage = decodeImageBitmap } = {}) {
   const context = canvas?.getContext?.("2d", { alpha: false, desynchronized: true });
   if (!context) throw new Error("تعذر إنشاء معاينة المحرك في هذا المتصفح.");
   let viewport = DEFAULT_VIEWPORT;
@@ -126,30 +126,27 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onAudioState 
   let sceneStateSequence = null;
   let sceneStateCache = null;
   const renderImages = new Map();
-  const audioController = createV2AudioController({
-    getClock: () => clock,
-    getSequence: () => assetRegistry.sequence,
-    getSelectedScene: selectedScene,
-    onState: onAudioState,
-    onBusy,
-    onError,
-    onAsset(event) {
-      if (event.action === "add") {
-        assetRegistry.add(event.asset);
-        try { assetRegistry.relink(event.asset.id, event.blob); }
-        catch (error) { try { assetRegistry.remove(event.asset.id); } catch {} throw error; }
-      } else if (event.action === "remove" && assetRegistry.sequence.assets.some(asset => asset.id === event.id)) {
-        try { assetRegistry.remove(event.id); } catch (error) { onError(error); }
-      }
-    }
-  });
+  let selectedDemoIndex = 0;
+  let selectedCharacterIndex = 0;
+  let dialogueSpeed = 1;
+  let textScene = compileTextScene(TEXT_SCENE_DEMOS[selectedDemoIndex].dialogue, { language: TEXT_SCENE_DEMOS[selectedDemoIndex].language, speed: dialogueSpeed });
+
+  function textSnapshot() { return Object.freeze({ demoIndex: selectedDemoIndex, title: TEXT_SCENE_DEMOS[selectedDemoIndex].title, language: TEXT_SCENE_DEMOS[selectedDemoIndex].language, turns: textScene.turns.map(({ speaker, text, expression, x, color }) => ({ speaker, text, expression, x, color })), selectedCharacterIndex, speed: dialogueSpeed, durationMs: textScene.durationMs }); }
 
   function selectedScene() {
     return assetRegistry.sequence.scenes.find(scene => scene.id === currentSceneId) ?? assetRegistry.sequence.scenes[0];
   }
 
-  function assertNotRecording() {
-    if (audioController?.getState().recording) throw new Error("أوقف التسجيل قبل تغيير المشهد أو ترتيبه.");
+  function durationForDialogue() { return Math.max(DEFAULT_DURATION_MS, Math.ceil(textScene.durationMs / 1000) * 1000); }
+
+  function ensureDialogueFits() {
+    const scene = selectedScene();
+    const durationMs = durationForDialogue();
+    if (scene.project.durationMs >= durationMs) return false;
+    const project = { ...scene.project, durationMs };
+    const motion = motionSettings.get(scene.id) ?? DEFAULT_MOTION;
+    refreshSceneProject(scene.id, sceneProjectForMotion({ ...scene, project }, motion), motion);
+    return true;
   }
 
   function sceneStartMs(sceneId) {
@@ -243,7 +240,9 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onAudioState 
       imageAssetCount: assetRegistry.sequence.assets.filter(asset => asset.kind === "image" && asset.id !== PLACEHOLDER_ID).length,
       canDelete: scenes.length > 1,
       canMoveRight: sceneIndex > 0,
-      canMoveLeft: sceneIndex >= 0 && sceneIndex < scenes.length - 1
+      canMoveLeft: sceneIndex >= 0 && sceneIndex < scenes.length - 1,
+      activeSpeaker: textScene.turns.find(turn => sample.sceneTimeMs >= turn.startMs && sample.sceneTimeMs < turn.endMs)?.speaker ?? "",
+      activeViseme: textScene.turns.find(turn => sample.sceneTimeMs >= turn.startMs && sample.sceneTimeMs < turn.endMs)?.animation.sample(sample.sceneTimeMs - (textScene.turns.find(turn => sample.sceneTimeMs >= turn.startMs && sample.sceneTimeMs < turn.endMs)?.startMs ?? 0)).viseme ?? "rest"
     });
   }
 
@@ -251,11 +250,13 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onAudioState 
     if (disposed) return;
     try {
       const timeMs = clock.time();
-      audioController.tick();
-      const sample = sampleStudioSequence(compiledSequence, timeMs);
+        const sample = sampleStudioSequence(compiledSequence, timeMs);
       currentSceneId = sample.sceneId;
       const frame = sampleFrame(compiledProject(sample.scene.project), sample.sceneTimeMs);
       drawFrame(context, frame);
+      const textState = drawTextCinematicScene(context, textScene, sample.sceneTimeMs, { background: TEXT_SCENE_DEMOS[selectedDemoIndex].background, transparent: true });
+      canvas.dataset.activeSpeaker = textState.activeSpeaker;
+      canvas.dataset.activeViseme = textState.viseme;
       canvas.dataset.renderedScene = sample.sceneId;
       canvas.dataset.cameraPose = [
         frame.camera.x, frame.camera.y, frame.camera.zoom, frame.camera.rotation
@@ -288,12 +289,10 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onAudioState 
   }
 
   function editSequence(nextSequence, { sceneId = currentSceneId, seekToStart = true } = {}) {
-    assertNotRecording();
     const wasPlaying = playing;
     const oldTime = clock.time();
     stopAnimationFrame();
     playing = false;
-    audioController.pause();
     clock.pause();
     assetRegistry.replaceSequence(nextSequence);
     sequence = assetRegistry.sequence;
@@ -303,8 +302,7 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onAudioState 
     currentSceneId = nextSelected;
     clock = createSceneClock({ durationMs: compiledSequence.durationMs });
     clock.seek(seekToStart ? sceneStartMs(nextSelected) : Math.min(oldTime, compiledSequence.durationMs));
-    audioController.syncLayout();
-    if (wasPlaying && !seekToStart) { playing = true; clock.resume(); audioController.play(); }
+    if (wasPlaying && !seekToStart) { playing = true; clock.resume(); }
     render();
     if (playing) scheduleFrame();
   }
@@ -364,7 +362,7 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onAudioState 
   function addScene() {
     sceneCounter += 1;
     const id = makeSceneId(sceneCounter);
-    const blank = makeScene(id, PLACEHOLDER_ID, MIN_DURATION_MS, DEFAULT_MOTION);
+    const blank = makeScene(id, PLACEHOLDER_ID, durationForDialogue(), DEFAULT_MOTION);
     const scene = { ...blank, project: { ...blank.project, viewport } };
     const next = addStudioSequenceScene(assetRegistry.sequence, scene);
     motionSettings.set(id, { ...DEFAULT_MOTION });
@@ -383,7 +381,6 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onAudioState 
   }
 
   function deleteScene() {
-    assertNotRecording();
     const scenes = assetRegistry.sequence.scenes;
     if (scenes.length <= 1) throw new Error("يجب إبقاء مشهد واحد على الأقل.");
     const index = scenes.findIndex(scene => scene.id === currentSceneId);
@@ -481,10 +478,8 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onAudioState 
   }
 
   function selectScene(id) {
-    assertNotRecording();
     if (!assetRegistry.sequence.scenes.some(scene => scene.id === id)) return;
     stopAnimationFrame();
-    audioController.pause();
     playing = false;
     clock.pause();
     currentSceneId = id;
@@ -493,17 +488,14 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onAudioState 
   }
 
   function play() {
-    assertNotRecording();
     if (clock.time() >= compiledSequence.durationMs) clock.seek(0);
     playing = true;
     clock.resume();
-    audioController.play();
     render();
     scheduleFrame();
   }
 
   function pause() {
-    audioController.pause();
     clock.pause();
     playing = false;
     stopAnimationFrame();
@@ -513,14 +505,11 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onAudioState 
   function stop() {
     pause();
     clock.seek(0);
-    audioController.seek(0);
     render();
   }
 
   function seek(timeMs) {
-    assertNotRecording();
     clock.seek(timeMs);
-    audioController.seek(timeMs);
     render();
   }
 
@@ -554,7 +543,6 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onAudioState 
     disposed = true;
     playing = false;
     stopAnimationFrame();
-    audioController.dispose();
     for (const bitmap of decodedImages.values()) bitmap?.close?.();
     for (const url of objectUrls.values()) URL.revokeObjectURL(url);
     decodedImages.clear();
@@ -562,12 +550,11 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onAudioState 
     objectUrls.clear();
   }
 
+  ensureDialogueFits();
   render();
   return Object.freeze({
     addImage,
     addScene,
-    addAudio(file, type = "dialogue") { return audioController.decodeAndCommit(file, type); },
-    activateAudio() { return audioController.activate(); },
     deleteImage,
     deleteScene,
     dispose,
@@ -576,16 +563,26 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onAudioState 
       return makeState(sampleStudioSequence(compiledSequence, clock.time()));
     },
     moveScene,
-    moveAudioClip: audioController.move,
-    selectAudioClip: audioController.select,
-    removeAudioClip: audioController.removeSelected,
-    setAudioTrackVolume: audioController.setVolume,
-    toggleAudioTrackMute: audioController.toggleMute,
-    trimAudioClip: audioController.trim,
-    startAudioRecording() { if (playing) pause(); return audioController.startRecording(); },
-    stopAudioRecording: audioController.stopRecording,
-    refreshMicrophonePermission: audioController.refreshMicPermission,
-    getAudioState: audioController.getState,
+    getTextState: textSnapshot,
+    loadTextDemo(index) {
+      if (!Number.isInteger(index) || index < 0 || index >= TEXT_SCENE_DEMOS.length) throw new RangeError("اختر مشهدًا تجريبيًا من 1 إلى 3.");
+      selectedDemoIndex = index; selectedCharacterIndex = 0; dialogueSpeed = 1;
+      const demo = TEXT_SCENE_DEMOS[index]; textScene = compileTextScene(demo.dialogue, { language: demo.language, speed: dialogueSpeed });
+      ensureDialogueFits(); render(); return Object.freeze({ demoIndex: selectedDemoIndex, title: TEXT_SCENE_DEMOS[selectedDemoIndex].title, language: demo.language, turns: textScene.turns.map(({ speaker, text, expression, x, color }) => ({ speaker, text, expression, x, color })), selectedCharacterIndex, speed: dialogueSpeed, durationMs: textScene.durationMs });
+    },
+    selectTextCharacter(index) {
+      if (!Number.isInteger(index) || index < 0 || index >= textScene.turns.length) throw new RangeError("الشخصية غير موجودة في المشهد.");
+      selectedCharacterIndex = index; return textSnapshot();
+    },
+    setDialogue(text, expression = textScene.turns[selectedCharacterIndex].expression) {
+      const demo = TEXT_SCENE_DEMOS[selectedDemoIndex];
+      const lines = textScene.turns.map(({ animation, startMs, endMs, ...line }, index) => index === selectedCharacterIndex ? { ...line, text, expression } : line);
+      textScene = compileTextScene(lines, { language: demo.language, speed: dialogueSpeed }); ensureDialogueFits(); render(); return textSnapshot();
+    },
+    setDialogueSpeed(speed) {
+      if (!Number.isFinite(speed) || speed < 0.5 || speed > 2) throw new RangeError("سرعة الحوار بين 0.5× و2×.");
+      dialogueSpeed = speed; textScene = compileTextScene(textScene.turns.map(({ animation, startMs, endMs, ...line }) => line), { language: TEXT_SCENE_DEMOS[selectedDemoIndex].language, speed }); ensureDialogueFits(); render(); return textSnapshot();
+    },
     pause,
     play,
     seek,

@@ -1,15 +1,19 @@
-# QARTON Motion Studio V2 — L14-C1
+# QARTON Motion Studio V2 — L14-C2 Text Animation
 
-Mobile-first Arabic RTL interface integrated with the existing Motion Studio sequence, camera and rendering core.
+The mobile-first RTL editor reuses `StudioSequenceV1`, `createSceneClock`, the existing asset registry, the current image decoder, camera-motion helper, `drawFrame`, and the character animation core. Its active runtime imports no audio controller or audio decoder and does not request a microphone.
 
-- The preview uses `StudioSequenceV1`, the shared `createSceneClock`, the existing asset registry, image and audio decoders, camera-motion helper and `drawFrame` renderer.
-- Images can be added, replaced and removed per scene. Decode happens before updating the sequence, so a failed replacement leaves the previous image in place.
-- Add creates a blank 3-second scene; duplicate copies the current scene. Delete and reorder use the existing sequence functions. Image imports capture a scene ID before decode and abort safely if that scene is removed; unused image assets are cleaned.
-- Camera presets cover static, zoom in/out and four directions. Scene duration, speed, strength, playback, stop/restart and global seek use the engine project and unified clock.
-- The build bundles CSS and JavaScript into `dist/motion-studio-v2-l14c1-android-preview/index.html` and rejects missing CSS, missing engine JavaScript or remaining external resources.
-- Dialogue, music and SFX tracks include microphone recording, decoded waveform, volume/mute, move, trim and delete. Clips can attach to one scene or span the project timeline. All timing follows the existing unified scene clock.
-- Import uses the browser's real `AudioContext.decodeAudioData` implementation and commits only after decoding and a non-silent PCM signal check. MP3, WAV, AAC/M4A, OGG and WebM availability depends on the browser decoder. AMR is probed locally by the same decoder; unavailable AMR is rejected without changing existing clips. Decoded PCM remains within the existing 32 MiB limit.
-- Microphone permission is requested only after the user taps Record. HTTPS is preferred; a device WebView may grant microphone access to a local `content://` document. More shows source security, microphone permission, AudioContext, format, decoded duration, RMS/Peak and retained PCM.
-- Changes and media remain in memory; project persistence and video export are outside this phase.
+## Character and dialogue flow
 
-Run `node scripts/build-motion-studio-v2-preview.mjs` with `L14C1_COMMIT=<full-commit-sha>`, then `python examples/motion-studio-v2/check-prototype.py`. GitHub Actions packages the standalone Android Preview ZIP, runs the existing core tests and exercises real Chromium fake-microphone recording and audio across scenes. It also checks 320, 360, 390, 412 and 480px layouts plus landscape. The CI performance comparison remains against reference commit 9918fae and the new build at 10, 20 and 50 scenes.
+- `src/character/text-viseme.js` compiles Tunisian Arabic and Modern Standard Arabic text into timed mouth-shape events without speech audio. It handles punctuation holds, diacritics, spaces, configurable speed, expression labels, deterministic seek sampling, and a closed-mouth rest after the line.
+- `src/character/text-cinematic-scene.js` composes several speakers on one canvas. Layered vector characters animate head, torso, hands, gaze, blink, breathing, listening reactions, expressions, and mouth shapes; no external character image is required.
+- Three editable scene demonstrations cover Tunisian Arabic and MSA. The character panel edits a speaker's text and dramatic expression, selects among the scene cast, and changes speech speed.
+- Character sampling reads the same scene-local time supplied by the Motion Studio sequence clock. Play, pause, resume, stop/replay, and seek therefore sample the same deterministic pose.
+- Still images are optional backgrounds. The preview works from the local procedural scene with no files, microphone permission, AudioContext, or audio decoding.
+
+The audio controller and recording UI from L14-C1 remain in the L14-C1 snapshot on branch `archive/audio-l14c1-675ec53`. The audio implementation files remain in the source tree for recovery, but the L14-C2 runtime entry points do not import them.
+
+## Validation
+
+Run all Node tests with `node --test`, build the offline HTML with `L14C2_COMMIT=<full-commit-sha> node scripts/build-motion-studio-v2-preview.mjs`, and run `python examples/motion-studio-v2/check-text-prototype.py` after installing Chromium Playwright. The GitHub Actions workflow runs those checks, compares 10/20/50-scene performance, and packages Android Preview ZIP plus Standalone HTML and validation reports.
+
+The output is a preview: project persistence and video export are not enabled. Browser and CI validation do not replace a physical Android device check.
