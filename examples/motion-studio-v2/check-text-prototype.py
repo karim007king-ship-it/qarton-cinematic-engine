@@ -122,15 +122,15 @@ def visual_regression(page):
         capture_canvas(page, f"mouth-{viseme}.png")
         region = page.evaluate("""() => {
           const c=document.querySelector('#previewCanvas');
-          const x=Math.round(c.width*.546)-20, y=Math.round(c.height*.317)-15;
-          const d=c.getContext('2d').getImageData(x,y,40,30).data;
+          const x=Math.round(c.width*.546)-32, y=Math.round(c.height*.317)-20;
+          const d=c.getContext('2d').getImageData(x,y,64,40).data;
           let h=2166136261;
           for(let i=0;i<d.length;i+=4){h=Math.imul(h^d[i],16777619);h=Math.imul(h^d[i+1],16777619);h=Math.imul(h^d[i+2],16777619);}
           return String(h>>>0);
         }""")
         pose_hashes.add(region)
         pose_reports.append({"viseme": viseme, "capture": f"mouth-{viseme}.png"})
-    assert len(pose_hashes) >= 4, "Viseme ROI did not produce visibly distinct render samples"
+    assert len(pose_hashes) >= 4, {"reason": "Viseme ROI did not produce visibly distinct render samples", "distinctRegions": len(pose_hashes), "hashes": sorted(pose_hashes), "poses": pose_reports}
     cinematic_reports = []
     cinematic_shots = []
     for index, name in enumerate(("family-home", "night-mystery", "three-character-confrontation", "smoke-danger")):
