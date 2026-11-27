@@ -32,7 +32,11 @@ with sync_playwright() as p:
  page.wait_for_timeout(180);page.screenshot(path=str(ARTIFACTS/'cinematic-runtime-focus-transition.png'),full_page=True)
  transition_result=page.evaluate('''async()=>({count:window.qartonCinematicRenderer.metrics.transitionCount,focus:await window.__focusTransition,scene:window.qartonCinematicRuntime.getState().sceneId})''')
  assert transition_result['count']>=4 and transition_result['focus'] and transition_result['scene']=='finale',transition_result
- page.goto(base+'layered-character-test.html',wait_until='networkidle');page.wait_for_function('window.qartonLayeredVisualTest')
+ page.goto(base+'layered-character-test.html',wait_until='networkidle')
+ try: page.wait_for_function('window.qartonLayeredVisualTest',timeout=5000)
+ except Exception as error:
+  state=page.evaluate('''()=>({title:document.title,body:document.body.innerText,canvas:document.querySelector('#test-stage')?.toDataURL().slice(0,80),ready:document.readyState})''')
+  raise AssertionError(f'layered visual fixture did not initialize; pageErrors={errors}; state={state}') from error
  mouth_hashes=[]
  for pose in ['closed','open','round','wide','teeth']:
   page.locator(f'[data-pose="{pose}"]').click();page.wait_for_timeout(30)
