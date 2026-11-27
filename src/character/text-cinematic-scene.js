@@ -221,8 +221,11 @@ function drawFaceRig(ctx, character, x, top, spriteW, spriteH, pose, expression,
   ctx.save();
   // A small skin patch hides the original painted mouth before the live mouth pose is drawn.
   ctx.fillStyle = face.skin; ctx.beginPath(); ctx.ellipse(fx, fy, width * .56, width * .34, -.08, 0, Math.PI * 2); ctx.fill();
-  const mouthW = width * (.46 + (viseme === "wide" || viseme === "teeth" ? .22 : 0));
-  const open = Math.max(1.2 * scale, (viseme === "round" ? width * .55 : viseme === "wide" ? width * .18 : viseme === "teeth" ? width * .34 : mouthOpen * width * .5));
+  const mouthW = width * (viseme === "round" ? .48 : viseme === "wide" ? .86 : viseme === "teeth" ? .72 : viseme === "open" ? .62 : .46);
+  // Keep each timed pose legible at phone-preview scale: closed is a line, round is
+  // nearly circular, wide is a flattened oval, teeth exposes a bright bar, and open
+  // is a taller oval. The previous wide/open heights collapsed to about two pixels.
+  const open = Math.max(1.2 * scale, viseme === "round" ? width * .52 : viseme === "wide" ? width * .34 : viseme === "teeth" ? width * .46 : viseme === "open" ? width * .78 : mouthOpen * width * .5);
   ctx.fillStyle = "#54232c";
   if (viseme === "round" && speaking) { ctx.beginPath(); ctx.ellipse(fx, fy, width * .23, width * .3, 0, 0, Math.PI * 2); ctx.fill(); }
   else if (speaking && viseme !== "closed" && viseme !== "rest") { ctx.beginPath(); ctx.ellipse(fx, fy, mouthW, Math.max(open, 2), 0, 0, Math.PI * 2); ctx.fill(); }

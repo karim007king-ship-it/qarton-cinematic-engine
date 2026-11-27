@@ -99,7 +99,14 @@ def visual_regression(page):
         page.evaluate("time => window.__QARTON_TEST_API.seek(time)", timestamp)
         assert canvas.get_attribute("data-active-viseme") == viseme, {"wanted": viseme, "got": canvas.get_attribute("data-active-viseme")}
         page.locator("#previewCanvas").screenshot(path=str(SHOTS / f"mouth-{viseme}.png"))
-        region = page.evaluate("() => { const c=document.querySelector('#previewCanvas'); const d=c.getContext('2d').getImageData(379,395,26,20).data; let h=2166136261; for(let i=0;i<d.length;i+=4){h=Math.imul(h^d[i],16777619);h=Math.imul(h^d[i+1],16777619);h=Math.imul(h^d[i+2],16777619);} return String(h>>>0); }")
+        region = page.evaluate("""() => {
+          const c=document.querySelector('#previewCanvas');
+          const x=Math.round(c.width*.546)-20, y=Math.round(c.height*.317)-15;
+          const d=c.getContext('2d').getImageData(x,y,40,30).data;
+          let h=2166136261;
+          for(let i=0;i<d.length;i+=4){h=Math.imul(h^d[i],16777619);h=Math.imul(h^d[i+1],16777619);h=Math.imul(h^d[i+2],16777619);}
+          return String(h>>>0);
+        }""")
         pose_hashes.add(region)
         pose_reports.append({"viseme": viseme, "capture": f"mouth-{viseme}.png"})
     assert len(pose_hashes) >= 4, "Viseme ROI did not produce visibly distinct render samples"
