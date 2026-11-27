@@ -319,7 +319,7 @@ import { createStudioAudioTimeline } from "../motion-studio-lab/studio-audio-tim
       try {
         const result = await engine.addAudio(file, audioType);
         showToast("أُضيف الصوت بعد فك الترميز · " + result.durationMs / 1000 + " ث");
-      } catch (error) { showToast(error.message || "تعذر فك ترميز الصوت؛ المقاطع السابقة محفوظة."); }
+      } catch (error) { showToast("تعذر فك ترميز الصوت أو التحقق منه؛ بقيت المقاطع السابقة كما هي. " + (error.message || "")); }
       finally { byId("#audioInput").value = ""; }
     } else byId("#audioInput").value = "";
   });
