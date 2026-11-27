@@ -305,7 +305,7 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
         const sceneText = textScenes.get(scene.id) ?? textScene;
         const turn = sceneText.turns.find(item => localTimeMs >= item.startMs && localTimeMs < item.endMs);
         const focusDelta = turn ? (.5 - turn.character.x) * viewport.width * .08 : 0;
-        const parallaxLayers = direction.effects.layers;
+        const parallaxLayers = direction.parallaxLayers;
         const parallaxDelta = parallaxLayers.length > 1 ? (parallaxLayers.at(-1).x - parallaxLayers[0].x) * .12 : 0;
         const camera = Object.freeze({ ...frame.camera,
           x: frame.camera.x + direction.effects.camera.x + focusDelta + parallaxDelta,

@@ -8,6 +8,8 @@ test("cinematic moods provide reusable direction, shot sizes and transition choi
   assert.deepEqual(CINEMATIC_TRANSITIONS, ["cut", "crossfade", "through-black", "through-light", "focus"]);
   const direction = compileTextCinematicDirection({ durationMs: 8000, mood: "siege", shot: "close", timeOfDay: "night", seed: 7 });
   const sample = sampleCinematicDirector(direction, 1200);
+  assert.equal(sample.effects.layers.length, 0, "director metadata must not become opaque full-frame overlays");
+  assert.equal(sample.parallaxLayers.length, 2);
   assert.equal(sample.transition, "through-light");
   assert.equal(sample.shotScale, 1.14);
   assert.ok(sample.fields.some(field => field.kind === "smoke"));
@@ -21,6 +23,8 @@ test("cinematic effects are deterministic at absolute time across seek and repla
   const first = sampleCinematicDirector(direction, 3250);
   sampleCinematicDirector(direction, 6500);
   assert.deepEqual(sampleCinematicDirector(direction, 3250), first);
+  assert.deepEqual(first.parallaxLayers, sampleCinematicDirector(direction, 3250).parallaxLayers);
+  assert.notDeepEqual(first.parallaxLayers, sampleCinematicDirector(direction, 6500).parallaxLayers);
   assert.ok(first.fog.density > 0);
   assert.ok(first.fields.some(field => field.particles.some(particle => particle.opacity > 0)));
 });

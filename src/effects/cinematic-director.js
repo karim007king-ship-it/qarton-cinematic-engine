@@ -68,13 +68,12 @@ export function compileTextCinematicDirection({ durationMs = 8000, mood = "calm"
       clips.push(effectClip("time-of-day", "tint", durationMs, { strength: 0, color }, { strength: (timeOfDay === "night" ? 0.18 : 0.1) * amount, color }));
     }
   }
+  // Effect-core layers are composited as full-frame overlays. Keep parallax as
+  // camera metadata so it cannot cover the scene with opaque layer colors.
   const compiled = compileCinematicEffects({ version: "CinematicEffectsV1", width: 720, height: 1280, durationMs, seed,
-    camera: [{ atMs: 0 }], layers: amount ? [
-      { id: "director-far", depth: .18, speedX: -preset.parallax * amount * .08, speedY: .15, z: 0 },
-      { id: "director-near", depth: .82, speedX: preset.parallax * amount * .08, speedY: -.15, z: 1 }
-    ] : [], clips });
+    camera: [{ atMs: 0 }], layers: [], clips });
   const profile = Object.freeze({ mood, shot, timeOfDay, transition: enabled ? preset.transition : "cut", shotScale: enabled ? CINEMATIC_SHOTS[shot] : 1,
-    focusX: 0.5, enabled, strength: amount });
+    focusX: 0.5, parallax: preset.parallax * amount, enabled, strength: amount });
   const fields = [];
   const budget = amount ? 28 : 0;
   const addParticles = (kind, intensity, color, options = {}) => {
@@ -102,9 +101,14 @@ export function sampleCinematicDirector(director, timeMs) {
   const at = clamp(timeMs, 0, director.durationMs);
   const effects = sampleCinematicEffects(director.compiledEffects, at);
   const atmosphere = PRIVATE.get(director);
+  const parallaxAmount = director.profile.parallax;
+  const parallaxLayers = Object.freeze(parallaxAmount ? [
+    Object.freeze({ id: "director-far", depth: .18, x: Math.sin(at * .00018) * -parallaxAmount * .08, y: Math.cos(at * .00014) * .15 }),
+    Object.freeze({ id: "director-near", depth: .82, x: Math.sin(at * .00018) * parallaxAmount * .08, y: Math.cos(at * .00014) * -.15 })
+  ] : []);
   const fog = atmosphere.fog ? sampleFog({ timeMs: at, density: atmosphere.fog, driftX: 14, driftY: -2, speed: 0.012, profile: { tier: "low" } }) : null;
   const fields = atmosphere.fields.map(layer => Object.freeze({ ...layer, particles: layer.field.sample(at) }));
-  return Object.freeze({ timeMs: at, effects, fog, fields: Object.freeze(fields), fire: atmosphere.fire,
+  return Object.freeze({ timeMs: at, effects, parallaxLayers, fog, fields: Object.freeze(fields), fire: atmosphere.fire,
     rays: atmosphere.rays, shadows: atmosphere.shadows, blur: atmosphere.blur, fogColor: atmosphere.fogColor,
     shot: director.profile.shot, shotScale: director.profile.shotScale, focusX: director.profile.focusX,
     transition: director.profile.transition, enabled: director.profile.enabled });
