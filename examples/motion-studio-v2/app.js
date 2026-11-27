@@ -124,6 +124,7 @@ import { createStudioAudioTimeline } from "../motion-studio-lab/studio-audio-tim
     byId("#audioMemory").textContent = (state.pcmBytes / 1048576).toFixed(1) + " MiB / 32 MiB";
     byId("#audioError").textContent = state.error || state.playerState || "جاهز";
     byId("#audioStatus").textContent = state.selectedClip ? state.selectedClip.name + " · " + (Math.round(state.selectedClip.durationMs / 100) / 10) + " ث" : "تُضاف المقاطع بعد فك الترميز والتحقق من الإشارة.";
+    byId("#audioSelection").textContent = state.selectedClip ? state.selectedClip.name : "اختر ملفًا أو سجّل صوتًا";
     byId("#audioDeleteButton").disabled = !state.selectedClip;
     byId("#audioApplyTrim").disabled = !state.selectedClip;
     if (state.selectedClip) {
@@ -241,7 +242,8 @@ import { createStudioAudioTimeline } from "../motion-studio-lab/studio-audio-tim
   byId("#playButton").addEventListener("click", async () => {
     try {
       if (engine?.getState().playing) engine.pause();
-      else { await engine?.activateAudio(); engine?.play(); }
+      else if (engine?.getAudioState().pcmBytes) { await engine.activateAudio(); engine.play(); }
+      else engine?.play();
     } catch (error) { showToast(error.message || "تعذر تفعيل تشغيل الصوت."); }
   });
   byId("#stopButton").addEventListener("click", () => engine?.stop());

@@ -193,9 +193,11 @@ export function createV2AudioController({
       recorder.start(500);
       return true;
     } catch (error) {
+      if (recording?.stream === stream) recording = null;
       stream?.getTracks().forEach(track => track.stop());
+      onBusy(false);
       const report = classifyMicrophoneFailure(error, { permissionState: micState, secureContext: globalThis.isSecureContext || globalThis.location?.protocol === "content:", apiAvailable: Boolean(mediaDevices?.getUserMedia), policyAllowed: microphonePolicyAllowed() });
-      micState = report.category; lastError = report.message; onError(error); emit(); throw new Error(report.message);
+      micState = report.category; lastError = report.message; emit(); throw new Error(report.message);
     }
   }
   async function stopRecording() {
@@ -236,7 +238,7 @@ export function createV2AudioController({
   function setVolume(trackId, value) {
     tracks = setAudioTrackVolume(tracks, durationMs, trackId, value);
     muted.delete(trackId);
-    audioPlayer?.setTrackVolume(trackId, value);
+    try { audioPlayer?.setTrackVolume(trackId, value); } catch (error) { lastError = error.message || String(error); }
     emit();
   }
   function toggleMute(trackId) {
@@ -279,7 +281,7 @@ export function createV2AudioController({
   function play() { if (!audioPlayer) return; audioPlayer.play(); }
   function pause() { try { audioPlayer?.pause(); } catch (error) { lastError = error.message || String(error); } }
   function seek(ms) { try { audioPlayer?.seek(ms); } catch (error) { lastError = error.message || String(error); } }
-  function tick() { try { audioPlayer?.tick(); } catch (error) { lastError = error.message || String(error); onError(error); } }
+  function tick() { try { audioPlayer?.tick(); } catch (error) { lastError = error.message || String(error); } }
   function select(value) { selection = value; emit(); }
   function dispose() {
     if (disposed) return; disposed = true;
