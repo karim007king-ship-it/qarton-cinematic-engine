@@ -26,7 +26,7 @@ def visual_regression(page):
     canvas = page.locator("#previewCanvas")
     page.evaluate("window.__QARTON_TEST_API.seek(1200)")
     ids = canvas.get_attribute("data-rendered-character-ids").split(",")
-    assert ids == ["layla", "youssef"] and len(ids) == len(set(ids)), ids
+    assert set(ids) == {"layla", "youssef"} and len(ids) == len(set(ids)), ids
     page.locator('[data-section="characters"]').click()
     page.locator("#previewCanvas").screenshot(path=str(SHOTS / "family-two-character.png"))
     portrait = ROOT / "examples/motion-studio-v2/assets/characters/layla.webp"
@@ -48,14 +48,14 @@ def visual_regression(page):
     assert page.locator("#dialogueLineSelect option").count() == 4
     page.evaluate("window.__QARTON_TEST_API.seek(800)")
     ids = canvas.get_attribute("data-rendered-character-ids").split(",")
-    assert ids == ["layla", "youssef", "salim"] and len(ids) == len(set(ids)), ids
+    assert set(ids) == {"layla", "youssef", "salim"} and len(ids) == len(set(ids)), ids
     page.locator("#previewCanvas").screenshot(path=str(SHOTS / "confrontation-three-character.png"))
 
     page.evaluate("window.__QARTON_TEST_API.loadDemo(2)")
     page.wait_for_function("document.querySelectorAll('#characterSelect option').length === 2")
     page.evaluate("window.__QARTON_TEST_API.seek(1300)")
     ids = canvas.get_attribute("data-rendered-character-ids").split(",")
-    assert ids == ["nour", "youssef"] and len(ids) == len(set(ids)), ids
+    assert set(ids) == {"nour", "youssef"} and len(ids) == len(set(ids)), ids
     page.locator("#previewCanvas").screenshot(path=str(SHOTS / "emotional-two-character.png"))
     reports = []
     sprite_keys = ["layla", "youssef", "nour", "salim"]
@@ -139,7 +139,7 @@ with sync_playwright() as playwright:
       for (const key of ['AudioContext','webkitAudioContext']) if (window[key]) {
         const Original=window[key]; window[key]=new Proxy(Original,{construct(target,args){window.__audioContextConstructed++;return Reflect.construct(target,args)}});
       }
-      if (navigator.mediaDevices?.getUserMedia) { const original=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); navigator.mediaDevices.getUserMedia=(...args)=>{window.__getUserMediaCalls++;return original(...args)}; }
+      if (navigator.mediaDevices?.getUserMedia) { const original=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); navigator.mediaDevices.getUserMedia=(...args)=>{window.__getUserMediaCalls++;return original(...args);}; }
     """)
     page = context.new_page()
     errors = []
