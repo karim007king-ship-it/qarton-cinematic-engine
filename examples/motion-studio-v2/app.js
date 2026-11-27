@@ -1,4 +1,5 @@
 import { createStudioV2Engine } from "./engine-adapter.js";
+import { DEMO_CHARACTER_ART } from "./demo-character-art.js";
 
 (() => {
   "use strict";
@@ -27,19 +28,29 @@ import { createStudioV2Engine } from "./engine-adapter.js";
       all("[data-demo]").forEach(button => button.classList.toggle("active", Number(button.dataset.demo) === demoIndex));
     }
     const selector = one("#characterSelect");
-    if (force || demoChanged || selector.options.length !== state.turns.length) {
-      selector.replaceChildren(...state.turns.map((turn, index) => { const option = document.createElement("option"); option.value = String(index); option.textContent = `${turn.speaker} · ${index + 1}`; return option; }));
+    if (force || demoChanged || selector.options.length !== state.characters.length) {
+      selector.replaceChildren(...state.characters.map((character, index) => { const option = document.createElement("option"); option.value = String(index); option.textContent = `${character.name} · ${character.id}`; return option; }));
     }
+    const dialogueSelect = one("#dialogueLineSelect");
+    if (force || demoChanged || dialogueSelect.options.length !== state.turns.length || state.turns.some((turn, index) => dialogueSelect.options[index]?.dataset.speakerId !== turn.speakerId)) {
+      dialogueSelect.replaceChildren(...state.turns.map((turn, index) => { const option = document.createElement("option"); option.value = String(index); option.dataset.speakerId = turn.speakerId; option.textContent = `${turn.speaker} · ${index + 1}`; return option; }));
+    }
+    dialogueSelect.value = String(state.selectedDialogueIndex);
     if (force || state.selectedCharacterIndex !== characterIndex) {
       characterIndex = state.selectedCharacterIndex;
       selector.value = String(characterIndex);
-      const turn = state.turns[characterIndex];
+      const turn = state.turns[state.selectedDialogueIndex];
       if (document.activeElement !== one("#dialogueText")) one("#dialogueText").value = turn.text;
       one("#expressionSelect").value = turn.expression;
+      one("#characterX").value = String(Math.round((state.characters[characterIndex]?.x ?? .5) * 100));
+      one("#characterScale").value = String(Math.round((state.characters[characterIndex]?.scale ?? .6) * 100));
     }
     one("#dialogueSpeed").value = String(state.speed);
     one("#dialogueSpeedValue").textContent = Number(state.speed).toFixed(1).replace(/\.0$/u, "") + "×";
-    one("#characterStatus").textContent = `${state.title} · ${state.language === "tn" ? "تونسي" : "فصحى"} · ${state.turns.length} شخصيات · حركة نصية بلا صوت`;
+    one("#characterXValue").textContent = `${one("#characterX").value}٪`;
+    one("#characterScaleValue").textContent = `${one("#characterScale").value}٪`;
+    one("#characterAssetStatus").textContent = state.importedLayerCount ? `${state.importedLayerCount} طبقة مستوردة` : "أصول أنيمي أصلية · بلا صوت";
+    one("#characterStatus").textContent = `${state.title} · ${state.language === "tn" ? "تونسي" : "فصحى"} · ${state.characters.length} شخصيات ثابتة · ${state.turns.length} أدوار حوار`;
   }
   function renderSceneCards(state) {
     sceneList.replaceChildren();
@@ -56,6 +67,7 @@ import { createStudioV2Engine } from "./engine-adapter.js";
   function updateState(state) {
     if (!state) return;
     document.documentElement.dataset.prototypeReady = "true"; document.documentElement.dataset.engineReady = "true";
+    document.documentElement.dataset.artReady = String(state.demoArtReady);
     canvas.hidden = false; one("#emptyState").hidden = true; one("#replaceImageButton").hidden = !state.hasImage;
     studio.dataset.playing = String(state.playing); one("#playIcon").hidden = state.playing; one("#pauseIcon").hidden = !state.playing;
     one("#playButton").setAttribute("aria-label", state.playing ? "إيقاف مؤقت" : "تشغيل المعاينة");
@@ -80,13 +92,16 @@ import { createStudioV2Engine } from "./engine-adapter.js";
   function fail(error) { notify(error?.message || "تعذر تنفيذ العملية."); }
 
   try {
-    engine = createStudioV2Engine({ canvas, onState: updateState, onError(error) { document.documentElement.dataset.engineError = error?.message || String(error); one("#engineReady").textContent = "تعذر العرض"; } });
+    engine = createStudioV2Engine({ canvas, demoAssets: DEMO_CHARACTER_ART, onState: updateState, onError(error) { document.documentElement.dataset.engineError = error?.message || String(error); one("#engineReady").textContent = "تعذر العرض"; } });
     canvas.dataset.ready = "true";
   } catch (error) {
     document.documentElement.dataset.prototypeReady = "false"; document.documentElement.dataset.engineReady = "false";
     document.documentElement.dataset.engineError = error?.message || String(error); one("#demoReady").textContent = "تعذر التهيئة"; fail(error);
   }
   if (engine) syncCharacters(true);
+  if (engine && new URLSearchParams(location.search).has("testVisual")) {
+    window.__QARTON_TEST_API = Object.freeze({ state: () => engine.getTextState(), seek: value => engine.seek(value), setDialogue: (value, expression) => engine.setDialogue(value, expression), loadDemo: index => engine.loadTextDemo(index), setTextScene: value => engine.setTextScene(value), visemes: index => engine.getDialogueVisemes(index) });
+  }
   all("[data-section]").forEach(button => button.addEventListener("click", () => setSection(button.dataset.section)));
   one("#closeSheetButton").addEventListener("click", () => setSection(activeSection));
   one("#chooseImageButton").addEventListener("click", openImagePicker); one("#panelChooseImage").addEventListener("click", openImagePicker); one("#replaceImageButton").addEventListener("click", openImagePicker);
@@ -113,10 +128,19 @@ import { createStudioV2Engine } from "./engine-adapter.js";
   one("#motionSpeed").addEventListener("input", event => { one("#motionSpeedValue").textContent = Number(event.target.value).toFixed(1).replace(/\.0$/u, "") + "×"; try { engine?.setMotionSpeed(Number(event.target.value)); } catch (error) { fail(error); } });
   one("#motionStrength").addEventListener("input", event => { one("#motionStrengthValue").textContent = event.target.value + "٪"; try { engine?.setMotionStrength(Number(event.target.value)); } catch (error) { fail(error); } });
   all("[data-demo]").forEach(button => button.addEventListener("click", () => { try { engine.loadTextDemo(Number(button.dataset.demo)); syncCharacters(true); } catch (error) { fail(error); } }));
-  one("#characterSelect").addEventListener("change", event => { try { engine.selectTextCharacter(Number(event.target.value)); syncCharacters(true); } catch (error) { fail(error); } });
+  one("#characterSelect").addEventListener("change", event => { try { const character = engine.getTextState().characters[Number(event.target.value)]; engine.assignDialogueSpeaker(character.id); syncCharacters(true); } catch (error) { fail(error); } });
+  one("#dialogueLineSelect").addEventListener("change", event => { try { engine.selectDialogue(Number(event.target.value)); syncCharacters(true); } catch (error) { fail(error); } });
+  one("#importCharacterButton").addEventListener("click", () => one("#characterImageInput").click());
+  one("#characterImageInput").addEventListener("change", async event => {
+    try { const result = await engine.importCharacterAssets(event.target.files, engine.getTextState().characters[characterIndex]?.id); notify(result.mode === "portrait" ? "استوردنا صورة الشخصية وحافظنا على هويتها." : `استوردنا ${result.layerCount} طبقات للشخصية.`); syncCharacters(true); }
+    catch (error) { fail(error); } finally { event.target.value = ""; }
+  });
   function updateDialogue() { try { engine.setDialogue(one("#dialogueText").value, one("#expressionSelect").value); } catch (error) { fail(error); } }
   one("#dialogueText").addEventListener("input", updateDialogue); one("#expressionSelect").addEventListener("change", updateDialogue);
   one("#dialogueSpeed").addEventListener("input", event => { one("#dialogueSpeedValue").textContent = Number(event.target.value).toFixed(1).replace(/\.0$/u, "") + "×"; try { engine.setDialogueSpeed(Number(event.target.value)); syncCharacters(); } catch (error) { fail(error); } });
+  one("#characterX").addEventListener("input", event => { one("#characterXValue").textContent = event.target.value + "٪"; try { engine.setCharacterPlacement(engine.getTextState().characters[characterIndex].id, { x: Number(event.target.value) / 100 }); } catch (error) { fail(error); } });
+  one("#characterScale").addEventListener("input", event => { one("#characterScaleValue").textContent = event.target.value + "٪"; try { engine.setCharacterPlacement(engine.getTextState().characters[characterIndex].id, { scale: Number(event.target.value) / 100 }); } catch (error) { fail(error); } });
+  one("#showAllTextButton").addEventListener("click", event => { const show = event.currentTarget.getAttribute("aria-pressed") !== "true"; event.currentTarget.setAttribute("aria-pressed", String(show)); event.currentTarget.textContent = show ? "متابعة حركة الكتابة" : "إظهار النص كاملًا"; try { engine.setDialogueReveal(show); } catch (error) { fail(error); } });
   all("[data-effect]").forEach(button => button.addEventListener("click", () => { all("[data-effect]").forEach(item => item.classList.toggle("active", item === button)); studio.dataset.effect = button.dataset.effect; }));
   one("#effectAmount").addEventListener("input", event => { one("#effectAmountValue").textContent = event.target.value + "٪"; canvas.style.opacity = String(.65 + Number(event.target.value) / 100 * .35); });
   one("#undoButton").addEventListener("click", () => notify("التراجع غير متاح في هذه المرحلة."));

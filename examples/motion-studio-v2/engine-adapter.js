@@ -15,6 +15,7 @@ import { createSceneClock } from "../../src/motion/scene-clock.js";
 import { createCameraMotionProject } from "../motion-studio-lab/studio-motion-presets.js";
 import { decodeImageBitmap } from "../motion-studio-lab/studio-image.js";
 import { drawTextCinematicScene, TEXT_SCENE_DEMOS, compileTextScene } from "../../src/character/text-cinematic-scene.js";
+import { parseCharacterLayerFilename, normalizeCharacterLayer, countCharacterPixels, MAX_IMPORTED_CHARACTER_PIXELS } from "../../src/character/sprite-character.js";
 
 const DEFAULT_VIEWPORT = Object.freeze({ width: 720, height: 1280, fps: 24 });
 const ASPECTS = Object.freeze({ "9:16": [720, 1280], "16:9": [1280, 720], "1:1": [1080, 1080], "4:5": [864, 1080], "4:3": [960, 720], "3:4": [720, 960] });
@@ -83,7 +84,7 @@ function formatTime(ms) {
   return String(Math.floor(seconds / 60)).padStart(2, "0") + ":" + String(seconds % 60).padStart(2, "0");
 }
 
-export function createStudioV2Engine({ canvas, onState = () => {}, onError = () => {}, decodeImage = decodeImageBitmap } = {}) {
+export function createStudioV2Engine({ canvas, onState = () => {}, onError = () => {}, decodeImage = decodeImageBitmap, demoAssets = {} } = {}) {
   const context = canvas?.getContext?.("2d", { alpha: false, desynchronized: true });
   if (!context) throw new Error("تعذر إنشاء معاينة المحرك في هذا المتصفح.");
   let viewport = DEFAULT_VIEWPORT;
@@ -128,10 +129,21 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
   const renderImages = new Map();
   let selectedDemoIndex = 0;
   let selectedCharacterIndex = 0;
+  let selectedDialogueIndex = 0;
   let dialogueSpeed = 1;
-  let textScene = compileTextScene(TEXT_SCENE_DEMOS[selectedDemoIndex].dialogue, { language: TEXT_SCENE_DEMOS[selectedDemoIndex].language, speed: dialogueSpeed });
+  let showAllDialogue = false;
+  const characterArt = new Map();
+  const importedCharacters = new Map();
+  const artReady = Promise.all(Object.entries(demoAssets).map(async ([id, url]) => {
+    try {
+      const response = await fetch(url);
+      const bitmap = await createImageBitmap(await response.blob());
+      characterArt.set(id, bitmap);
+    } catch (error) { onError(error); }
+  }));
+  let textScene = compileTextScene(TEXT_SCENE_DEMOS[selectedDemoIndex], { language: TEXT_SCENE_DEMOS[selectedDemoIndex].language, speed: dialogueSpeed });
 
-  function textSnapshot() { return Object.freeze({ demoIndex: selectedDemoIndex, title: TEXT_SCENE_DEMOS[selectedDemoIndex].title, language: TEXT_SCENE_DEMOS[selectedDemoIndex].language, turns: textScene.turns.map(({ speaker, text, expression, x, color }) => ({ speaker, text, expression, x, color })), selectedCharacterIndex, speed: dialogueSpeed, durationMs: textScene.durationMs }); }
+  function textSnapshot() { return Object.freeze({ demoIndex: selectedDemoIndex, title: textScene.title, language: textScene.language, characters: textScene.characters.map(({ id, name, speed, x, scale }) => ({ id, name, speed: speed ?? dialogueSpeed, x, scale })), turns: textScene.turns.map(({ id, speakerId, speaker, text, expression }) => ({ id, speakerId, speaker, text, expression })), selectedCharacterIndex, selectedDialogueIndex, speed: textScene.characters[selectedCharacterIndex]?.speed ?? dialogueSpeed, durationMs: textScene.durationMs, artReady: characterArt.size === Object.keys(demoAssets).length, importedLayerCount: [...importedCharacters.values()].reduce((sum, entry) => sum + (entry.layers?.length ?? 0), 0), importedPortraitCount: [...importedCharacters.values()].filter(entry => entry.portrait).length }); }
 
   function selectedScene() {
     return assetRegistry.sequence.scenes.find(scene => scene.id === currentSceneId) ?? assetRegistry.sequence.scenes[0];
@@ -242,7 +254,9 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
       canMoveRight: sceneIndex > 0,
       canMoveLeft: sceneIndex >= 0 && sceneIndex < scenes.length - 1,
       activeSpeaker: textScene.turns.find(turn => sample.sceneTimeMs >= turn.startMs && sample.sceneTimeMs < turn.endMs)?.speaker ?? "",
-      activeViseme: textScene.turns.find(turn => sample.sceneTimeMs >= turn.startMs && sample.sceneTimeMs < turn.endMs)?.animation.sample(sample.sceneTimeMs - (textScene.turns.find(turn => sample.sceneTimeMs >= turn.startMs && sample.sceneTimeMs < turn.endMs)?.startMs ?? 0)).viseme ?? "rest"
+      activeCharacterId: textScene.turns.find(turn => sample.sceneTimeMs >= turn.startMs && sample.sceneTimeMs < turn.endMs)?.speakerId ?? "",
+      activeViseme: textScene.turns.find(turn => sample.sceneTimeMs >= turn.startMs && sample.sceneTimeMs < turn.endMs)?.animation.sample(sample.sceneTimeMs - (textScene.turns.find(turn => sample.sceneTimeMs >= turn.startMs && sample.sceneTimeMs < turn.endMs)?.startMs ?? 0)).viseme ?? "rest",
+      demoArtReady: characterArt.size === Object.keys(demoAssets).length
     });
   }
 
@@ -254,9 +268,15 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
       currentSceneId = sample.sceneId;
       const frame = sampleFrame(compiledProject(sample.scene.project), sample.sceneTimeMs);
       drawFrame(context, frame);
-      const textState = drawTextCinematicScene(context, textScene, sample.sceneTimeMs, { background: TEXT_SCENE_DEMOS[selectedDemoIndex].background, transparent: true });
+      const selectedAssetId = sample.scene.project.layers[0]?.assetId ?? PLACEHOLDER_ID;
+      const hasCustomBackground = selectedAssetId !== PLACEHOLDER_ID;
+      const art = new Map(characterArt);
+      for (const [id, entry] of importedCharacters) if (entry.portrait || entry.layers?.length) art.set(id, entry);
+      const textState = drawTextCinematicScene(context, textScene, sample.sceneTimeMs, { transparent: hasCustomBackground, assets: art, showAll: showAllDialogue });
       canvas.dataset.activeSpeaker = textState.activeSpeaker;
+      canvas.dataset.activeCharacterId = textState.activeCharacterId;
       canvas.dataset.activeViseme = textState.viseme;
+      canvas.dataset.renderedCharacterIds = textState.renderedCharacterIds.join(",");
       canvas.dataset.renderedScene = sample.sceneId;
       canvas.dataset.cameraPose = [
         frame.camera.x, frame.camera.y, frame.camera.zoom, frame.camera.rotation
@@ -461,6 +481,85 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
     }
   }
 
+  async function importCharacterAssets(files, characterId = textScene.characters[selectedCharacterIndex]?.id) {
+    const input = [...(files ?? [])];
+    if (!input.length || input.length > 18) throw new RangeError("اختر من صورة واحدة إلى 18 صورة للطبقات.");
+    if (!textScene.characters.some(character => character.id === characterId)) throw new RangeError("معرّف الشخصية غير موجود في هذا المشهد.");
+    const manifests = input.filter(file => /\.json$/iu.test(file.name));
+    const images = input.filter(file => !/\.json$/iu.test(file.name));
+    if (!images.length || manifests.length > 1) throw new TypeError("اختر صور PNG أو WebP وملف manifest واحدًا كحد أقصى.");
+    let manifest = {};
+    if (manifests[0]) {
+      if (manifests[0].size > 256_000) throw new RangeError("ملف تعريف الطبقات أكبر من الحد المسموح.");
+      manifest = JSON.parse(await manifests[0].text());
+      if (manifest.characterId && manifest.characterId !== characterId) throw new TypeError("معرّف characterId في manifest لا يطابق الشخصية المختارة.");
+    }
+    if (images.some(file => !["image/png", "image/webp"].includes(file.type) || file.size > 16 * 1024 * 1024)) throw new TypeError("تُقبل صور PNG وWebP حتى 16MB للصورة.");
+    const layers = [], decoded = [];
+    let portrait = null;
+    try {
+      for (const file of images) {
+        const info = parseCharacterLayerFilename(file.name, characterId);
+        if (info.characterId !== characterId) throw new TypeError(`الملف ${file.name} يحمل معرّفًا مختلفًا عن الشخصية المختارة.`);
+        const bitmap = await decodeImage(file, { isCurrent: () => !disposed });
+        if (bitmap.width > 8192 || bitmap.height > 8192 || bitmap.width * bitmap.height > 40_000_000) { bitmap.close?.(); throw new RangeError(`أبعاد الصورة ${file.name} تتجاوز الحد الآمن.`); }
+        decoded.push(bitmap);
+        if (images.length === 1 && info.role === "full") { portrait = bitmap; continue; }
+        if (info.role === "full") throw new TypeError("عند استيراد أكثر من صورة، استعمل أسماء مثل layla__body.png وlayla__head.png.");
+        const layout = manifest.layers?.[file.name] ?? manifest.layers?.[info.role] ?? {};
+        layers.push(normalizeCharacterLayer({ role: info.role, variant: info.variant, image: bitmap, layout, z: layout.z }));
+      }
+      const prior = importedCharacters.get(characterId);
+      const next = portrait ? { portrait, layers: [] } : { portrait: prior?.portrait ?? null, layers: [...(prior?.layers ?? []).filter(old => !layers.some(layer => layer.role === old.role && layer.variant === old.variant)), ...layers].sort((a, b) => a.z - b.z) };
+      const retainedPixelCount = [...importedCharacters.entries()].reduce((sum, [id, entry]) => sum + (id === characterId ? 0 : countCharacterPixels(entry)), countCharacterPixels(next));
+      if (retainedPixelCount > MAX_IMPORTED_CHARACTER_PIXELS) throw new RangeError("مجموع صور وطبقات الشخصيات يتجاوز حد الذاكرة الآمن (12 مليون بكسل).");
+      importedCharacters.set(characterId, next);
+      const retained = new Set([next.portrait, ...next.layers.map(layer => layer.image)].filter(Boolean));
+      for (const bitmap of new Set([...(prior?.layers ?? []).map(layer => layer.image), prior?.portrait].filter(Boolean))) if (!retained.has(bitmap)) bitmap.close?.();
+      const characters = textScene.characters.map(item => item.id === characterId ? { ...item, face: manifest.face ?? item.face, facing: manifest.facing ?? item.facing, pose: manifest.pose ?? item.pose } : item);
+      textScene = compileTextScene({ characters, dialogue: textScene.dialogue }, { language: textScene.language, speed: dialogueSpeed });
+      render();
+      return Object.freeze({ characterId, mode: portrait ? "portrait" : "layers", layerCount: next.layers.length, imageCount: images.length });
+    } catch (error) {
+      const prior = importedCharacters.get(characterId);
+      for (const bitmap of decoded) if (bitmap !== prior?.portrait && !prior?.layers?.some(layer => layer.image === bitmap)) bitmap.close?.();
+      throw error;
+    }
+  }
+
+  function selectDialogue(index) {
+    if (!Number.isInteger(index) || index < 0 || index >= textScene.turns.length) throw new RangeError("سطر الحوار غير موجود.");
+    selectedDialogueIndex = index;
+    selectedCharacterIndex = textScene.characters.findIndex(character => character.id === textScene.turns[index].speakerId);
+    return textSnapshot();
+  }
+
+  function getDialogueVisemes(index = selectedDialogueIndex) {
+    const turn = textScene.turns[index];
+    if (!turn) throw new RangeError("سطر الحوار غير موجود.");
+    return Object.freeze({ speakerId: turn.speakerId, text: turn.text, startMs: turn.startMs, durationMs: turn.animation.durationMs, events: Object.freeze(turn.animation.events.map(event => Object.freeze({ ...event, offsetMs: event.atMs - turn.startMs }))) });
+  }
+
+  function assignDialogueSpeaker(characterId) {
+    if (!textScene.characters.some(character => character.id === characterId)) throw new RangeError("الشخصية غير موجودة.");
+    const dialogue = textScene.dialogue.map((line, index) => index === selectedDialogueIndex ? { ...line, speakerId: characterId } : line);
+    textScene = compileTextScene({ characters: textScene.characters, dialogue }, { language: textScene.language, speed: dialogueSpeed });
+    selectedCharacterIndex = textScene.characters.findIndex(character => character.id === characterId);
+    ensureDialogueFits(); render(); return textSnapshot();
+  }
+
+  function setCharacterPlacement(characterId, patch) {
+    const characters = textScene.characters.map(character => character.id === characterId ? { ...character, ...patch } : character);
+    textScene = compileTextScene({ characters, dialogue: textScene.dialogue }, { language: textScene.language, speed: dialogueSpeed });
+    render(); return textSnapshot();
+  }
+
+  function setTextScene(definition) {
+    textScene = compileTextScene(definition, { language: definition?.language ?? "tn", speed: dialogueSpeed });
+    selectedDemoIndex = -1; selectedCharacterIndex = 0; selectedDialogueIndex = 0; showAllDialogue = false;
+    ensureDialogueFits(); render(); return textSnapshot();
+  }
+
   function deleteImage() {
     const scene = selectedScene();
     const oldAssetId = scene.project.layers[0]?.assetId ?? PLACEHOLDER_ID;
@@ -544,16 +643,21 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
     playing = false;
     stopAnimationFrame();
     for (const bitmap of decodedImages.values()) bitmap?.close?.();
+    for (const bitmap of characterArt.values()) bitmap?.close?.();
+    for (const entry of importedCharacters.values()) { entry.portrait?.close?.(); for (const layer of entry.layers ?? []) layer.image?.close?.(); }
     for (const url of objectUrls.values()) URL.revokeObjectURL(url);
     decodedImages.clear();
+    characterArt.clear(); importedCharacters.clear();
     renderImages.clear();
     objectUrls.clear();
   }
 
   ensureDialogueFits();
   render();
+  artReady.then(() => { if (!disposed) render(); });
   return Object.freeze({
     addImage,
+    importCharacterAssets,
     addScene,
     deleteImage,
     deleteScene,
@@ -564,24 +668,38 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
     },
     moveScene,
     getTextState: textSnapshot,
+    getDialogueVisemes,
     loadTextDemo(index) {
       if (!Number.isInteger(index) || index < 0 || index >= TEXT_SCENE_DEMOS.length) throw new RangeError("اختر مشهدًا تجريبيًا من 1 إلى 3.");
-      selectedDemoIndex = index; selectedCharacterIndex = 0; dialogueSpeed = 1;
-      const demo = TEXT_SCENE_DEMOS[index]; textScene = compileTextScene(demo.dialogue, { language: demo.language, speed: dialogueSpeed });
-      ensureDialogueFits(); render(); return Object.freeze({ demoIndex: selectedDemoIndex, title: TEXT_SCENE_DEMOS[selectedDemoIndex].title, language: demo.language, turns: textScene.turns.map(({ speaker, text, expression, x, color }) => ({ speaker, text, expression, x, color })), selectedCharacterIndex, speed: dialogueSpeed, durationMs: textScene.durationMs });
+      selectedDemoIndex = index; selectedCharacterIndex = 0; selectedDialogueIndex = 0; dialogueSpeed = 1; showAllDialogue = false;
+      const demo = TEXT_SCENE_DEMOS[index]; textScene = compileTextScene(demo, { language: demo.language, speed: dialogueSpeed });
+      ensureDialogueFits(); render(); return textSnapshot();
     },
+    setTextScene,
     selectTextCharacter(index) {
-      if (!Number.isInteger(index) || index < 0 || index >= textScene.turns.length) throw new RangeError("الشخصية غير موجودة في المشهد.");
-      selectedCharacterIndex = index; return textSnapshot();
+      if (!Number.isInteger(index) || index < 0 || index >= textScene.characters.length) throw new RangeError("الشخصية غير موجودة في المشهد.");
+      selectedCharacterIndex = index;
+      const lineIndex = textScene.turns.findIndex(turn => turn.speakerId === textScene.characters[index].id);
+      if (lineIndex >= 0) selectedDialogueIndex = lineIndex;
+      return textSnapshot();
     },
-    setDialogue(text, expression = textScene.turns[selectedCharacterIndex].expression) {
-      const demo = TEXT_SCENE_DEMOS[selectedDemoIndex];
-      const lines = textScene.turns.map(({ animation, startMs, endMs, ...line }, index) => index === selectedCharacterIndex ? { ...line, text, expression } : line);
-      textScene = compileTextScene(lines, { language: demo.language, speed: dialogueSpeed }); ensureDialogueFits(); render(); return textSnapshot();
+    selectDialogue,
+    assignDialogueSpeaker,
+    setDialogue(text, expression = textScene.turns[selectedDialogueIndex].expression) {
+      const dialogue = textScene.dialogue.map((line, index) => index === selectedDialogueIndex ? { ...line, text, expression } : line);
+      textScene = compileTextScene({ characters: textScene.characters, dialogue }, { language: textScene.language, speed: dialogueSpeed }); ensureDialogueFits(); render(); return textSnapshot();
+    },
+    setDialogueReveal(showAll) { showAllDialogue = Boolean(showAll); render(); return showAllDialogue; },
+    setCharacterPlacement,
+    setCharacterSpeed(characterId, speed) {
+      if (!Number.isFinite(speed) || speed < 0.5 || speed > 2) throw new RangeError("سرعة الكلام بين 0.5× و2×.");
+      const characters = textScene.characters.map(character => character.id === characterId ? { ...character, speed } : character);
+      textScene = compileTextScene({ characters, dialogue: textScene.dialogue }, { language: textScene.language, speed: dialogueSpeed });
+      ensureDialogueFits(); render(); return textSnapshot();
     },
     setDialogueSpeed(speed) {
-      if (!Number.isFinite(speed) || speed < 0.5 || speed > 2) throw new RangeError("سرعة الحوار بين 0.5× و2×.");
-      dialogueSpeed = speed; textScene = compileTextScene(textScene.turns.map(({ animation, startMs, endMs, ...line }) => line), { language: TEXT_SCENE_DEMOS[selectedDemoIndex].language, speed }); ensureDialogueFits(); render(); return textSnapshot();
+      const characterId = textScene.characters[selectedCharacterIndex]?.id;
+      return characterId ? this.setCharacterSpeed(characterId, speed) : textSnapshot();
     },
     pause,
     play,

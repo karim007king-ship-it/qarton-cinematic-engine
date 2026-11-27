@@ -37,7 +37,8 @@
         </div>
         <div class="preview-overlay" aria-hidden="true"><span class="live-dot"></span><span id="previewLabel">معاينة المحرك</span><span class="commit-chip" id="commitIndicator" dir="ltr" title="Commit source">Commit dev</span><span class="resolution-chip" id="resolutionChip">9:16</span></div>
         <button class="replace-image" id="replaceImageButton" type="button" aria-label="تغيير الصورة" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7"/></svg><span>تغيير</span></button>
-        <input id="imageInput" class="visually-hidden" type="file" accept="image/*">
+        <input id="imageInput" class="visually-hidden" type="file" accept="image/png,image/webp">
+        <input id="characterImageInput" class="visually-hidden" type="file" accept="image/png,image/webp,application/json,.json" multiple>
       </div>
     </section>
 
@@ -75,10 +76,16 @@
           <button type="button" class="secondary-button" data-demo="2">قرار المواجهة</button>
         </div>
         <label class="range-row select-row" for="characterSelect"><span>الشخصية</span><select id="characterSelect"></select></label>
-        <label class="dialogue-editor" for="dialogueText"><span>نص الحوار</span><textarea id="dialogueText" rows="3" maxlength="500" dir="auto"></textarea></label>
+        <label class="range-row select-row" for="dialogueLineSelect"><span>دور الحوار</span><select id="dialogueLineSelect"></select></label>
+        <div class="character-import-row"><button class="secondary-button" id="importCharacterButton" type="button">استيراد PNG / WebP</button><span id="characterAssetStatus">أصول أنيمي أصلية</span></div>
+        <p class="sheet-note">صورة كاملة: اختر ملفًا واحدًا. الطبقات: layla__body.png، layla__head.png، layla__mouth__open.webp مع ملف تعريف اختياري layla.character.json.</p>
+        <label class="dialogue-editor" for="dialogueText"><span>نص الحوار (حتى 5000 حرف)</span><textarea id="dialogueText" rows="3" maxlength="5000" dir="auto"></textarea></label>
+        <button class="secondary-button full-text-button" id="showAllTextButton" type="button" aria-pressed="false">إظهار النص كاملًا</button>
         <div class="dialogue-controls">
           <label class="range-row select-row" for="expressionSelect"><span>التعبير</span><select id="expressionSelect"><option value="neutral">طبيعي</option><option value="happy">فرح</option><option value="sad">حزن</option><option value="angry">غضب</option><option value="afraid">خوف</option><option value="surprised">دهشة</option><option value="thinking">تفكير</option><option value="determined">عزيمة</option></select></label>
           <label class="range-row" for="dialogueSpeed"><span>سرعة الكلام</span><output id="dialogueSpeedValue">1×</output><input id="dialogueSpeed" type="range" min="0.5" max="2" step="0.1" value="1"></label>
+          <label class="range-row" for="characterX"><span>موضع الشخصية</span><output id="characterXValue">50٪</output><input id="characterX" type="range" min="8" max="92" value="50"></label>
+          <label class="range-row" for="characterScale"><span>حجم الشخصية</span><output id="characterScaleValue">60٪</output><input id="characterScale" type="range" min="20" max="95" value="60"></label>
         </div>
         <p class="sheet-note" id="characterStatus" aria-live="polite">تحريك الفم والحوار يعتمدان على النص وموضع التشغيل؛ لا يوجد صوت بشري.</p>
       </div>

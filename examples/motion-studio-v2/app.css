@@ -108,4 +108,10 @@ body { color:var(--text); } button,input,select { font:inherit; } button { -webk
 .dialogue-editor textarea:focus,.character-panel select:focus { border-color:#d5ae6180; box-shadow:0 0 0 2px #d5ae6118; }
 .dialogue-controls { display:grid; gap:5px; }
 .character-panel .sheet-note { margin:0; }
+.character-import-row { display:flex; align-items:center; gap:8px; min-height:44px; }
+.character-import-row .secondary-button { flex:0 0 auto; min-height:44px; padding-inline:12px; }
+.character-import-row span { color:#c9b98f; font-size:10px; }
+.full-text-button { width:100%; min-height:44px; }
+.full-text-button[aria-pressed="true"] { border-color:var(--gold); color:var(--gold-bright); background:#d5ae611a; }
+.character-panel .dialogue-editor textarea { min-height:96px; }
 @media(max-width:390px) { .demo-scenes { grid-template-columns:1fr; } .demo-scenes .secondary-button { min-height:38px; } }

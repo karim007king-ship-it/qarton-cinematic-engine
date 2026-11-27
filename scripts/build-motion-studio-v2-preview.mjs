@@ -19,6 +19,7 @@ const bundled = await build({
   platform: "browser",
   target: ["chrome100"],
   legalComments: "none",
+  loader: { ".png": "dataurl", ".webp": "dataurl" },
   outfile: "qarton-motion-studio-v2.js",
   alias: {
     "@qarton/cinematic-engine/motion-studio": resolve(root, "packages/motion-studio/index.js"),
