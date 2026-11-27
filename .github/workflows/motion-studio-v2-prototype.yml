@@ -54,7 +54,9 @@ jobs:
           cd baseline-source
           L14B_COMMIT=9918fae5799222b960b342051cff5d3b8c41838c node scripts/build-motion-studio-v2-preview.mjs
       - name: Compare 10, 20 and 50 scenes
-        run: python tests/motion-studio-v2-performance.py baseline-source/dist/motion-studio-v2-l14b-android-preview/index.html dist/motion-studio-v2-l14c2-android-preview/index.html | tee dist/motion-studio-v2-l14c2-android-preview/performance-results.json
+        run: |
+          set -o pipefail
+          python tests/motion-studio-v2-performance.py baseline-source/dist/motion-studio-v2-l14b-android-preview/index.html dist/motion-studio-v2-l14c2-android-preview/index.html | tee dist/motion-studio-v2-l14c2-android-preview/performance-results.json
       - name: Package Android preview ZIP
         run: |
           cd dist/motion-studio-v2-l14c2-android-preview

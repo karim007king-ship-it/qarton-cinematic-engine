@@ -362,7 +362,7 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
   function addScene() {
     sceneCounter += 1;
     const id = makeSceneId(sceneCounter);
-    const blank = makeScene(id, PLACEHOLDER_ID, durationForDialogue(), DEFAULT_MOTION);
+    const blank = makeScene(id, PLACEHOLDER_ID, Math.max(MIN_DURATION_MS, selectedScene().project.durationMs), DEFAULT_MOTION);
     const scene = { ...blank, project: { ...blank.project, viewport } };
     const next = addStudioSequenceScene(assetRegistry.sequence, scene);
     motionSettings.set(id, { ...DEFAULT_MOTION });
