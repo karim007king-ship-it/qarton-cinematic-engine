@@ -118,7 +118,7 @@ def exercise(page, width, height):
     page.locator("#timelineSeek").evaluate("el => { el.value='1600'; el.dispatchEvent(new Event('input', {bubbles:true})); }")
     assert page.locator("#currentTime").inner_text() != "00:00"
     state = page.evaluate("window.__QARTON_TEST_API.state()")
-    assert state.turns[1]["text"].startswith("مَبْسُوط")
+    assert state["turns"][1]["text"].startswith("مَبْسُوط")
     page.locator("#stopButton").click()
     assert page.locator("#currentTime").inner_text() == "00:00"
     page.locator("#playButton").click()
@@ -139,7 +139,7 @@ with sync_playwright() as playwright:
       for (const key of ['AudioContext','webkitAudioContext']) if (window[key]) {
         const Original=window[key]; window[key]=new Proxy(Original,{construct(target,args){window.__audioContextConstructed++;return Reflect.construct(target,args)}});
       }
-      if (navigator.mediaDevices?.getUserMedia) { const original=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); navigator.mediaDevices.getUserMedia=(...args)=>{window.__getUserMediaCalls++;return original(...args);}; }
+      if (navigator.mediaDevices?.getUserMedia) { const original=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); navigator.mediaDevices.getUserMedia=(...args)=>{window.__getUserMediaCalls++;return original(...args)}; }
     """)
     page = context.new_page()
     errors = []
