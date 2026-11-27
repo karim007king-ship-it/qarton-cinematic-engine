@@ -206,12 +206,14 @@ with sync_playwright() as p:
     assert page.locator(".audio-mute").first.get_attribute("aria-pressed") == "true"
     page.locator(".audio-mute").first.click()
     page.locator("#audioApplyTrim").click()
+    page.locator("#closeSheetButton").click()
     page.locator("#timelineSeek").evaluate("(el) => { el.value='0'; el.dispatchEvent(new Event('input',{bubbles:true})); }")
     page.locator("#playButton").click()
     page.wait_for_timeout(3400)
     assert page.locator(".scene-card.selected").get_attribute("data-scene-id") == page.locator(".scene-card").nth(1).get_attribute("data-scene-id")
     assert page.evaluate("Number(document.documentElement.dataset.audioActiveVoices)") > 0, "cross-scene audio stopped at the scene boundary"
     page.locator("#stopButton").click()
+    page.locator('[data-section="audio"]').click()
     prior_clips = page.locator(".audio-clip").count()
     page.locator("#audioInput").set_input_files({"name": "broken.wav", "mimeType": "audio/wav", "buffer": b"not audio"})
     page.wait_for_function("document.querySelector('#toast').textContent.includes('تعذر فك ترميز')")
