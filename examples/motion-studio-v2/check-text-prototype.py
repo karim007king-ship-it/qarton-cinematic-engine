@@ -34,7 +34,6 @@ def visual_regression(page):
     portrait = ROOT / "examples/motion-studio-v2/assets/characters/layla.webp"
     page.locator("#characterImageInput").set_input_files(str(portrait))
     page.wait_for_function("window.__QARTON_TEST_API.state().importedPortraitCount === 1")
-    page.locator("#closeSheetButton").click()
     with tempfile.TemporaryDirectory(prefix="qarton-layer-fixture-") as folder:
         body = Path(folder) / "layla__body.webp"
         head = Path(folder) / "layla__head.webp"
