@@ -36,7 +36,7 @@ with sync_playwright() as p:
  mouth_hashes=[]
  for pose in ['closed','open','round','wide','teeth']:
   page.locator(f'[data-pose="{pose}"]').click();page.wait_for_timeout(30)
-  mouth_hashes.append(page.locator('#test-stage').evaluate('c=>{const d=c.getContext("2d").getImageData(326,660,68,72).data;let h=2166136261;for(let i=0;i<d.length;i+=4){h^=d[i];h=Math.imul(h,16777619);h^=d[i+1];h=Math.imul(h,16777619);h^=d[i+2];h=Math.imul(h,16777619)}return h>>>0}'))
+  mouth_hashes.append(page.locator('#test-stage').evaluate('c=>{const d=c.getContext("2d").getImageData(326,570,68,72).data;let h=2166136261;for(let i=0;i<d.length;i+=4){h^=d[i];h=Math.imul(h,16777619);h^=d[i+1];h=Math.imul(h,16777619);h^=d[i+2];h=Math.imul(h,16777619)}return h>>>0}'))
  assert len(set(mouth_hashes))==5,{'mouthHashes':mouth_hashes}
  page.screenshot(path=str(ARTIFACTS/'cinematic-runtime-mouth-poses.png'),full_page=True)
  page.goto(base,wait_until='networkidle');page.wait_for_function('window.qartonCinematicRuntime')
