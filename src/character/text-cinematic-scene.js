@@ -298,10 +298,11 @@ export function drawTextCinematicScene(ctx, scene, timeMs, { background, transpa
   const mostRecent = new Map();
   for (const turn of scene.turns) { if (turn.startMs <= timeMs) mostRecent.set(turn.speakerId, turn); }
   const actors = scene.characters.slice().sort((a, b) => a.z - b.z);
+  const drawnCharacterIds = [];
   for (const character of actors) {
     const turn = active?.speakerId === character.id ? active : mostRecent.get(character.id);
     const elapsed = active?.speakerId === character.id ? Math.max(0, timeMs - active.startMs) : turn ? Math.min(turn.animation.durationMs, timeMs - turn.startMs) : 0;
-    drawCharacter(ctx, character, assets, turn, elapsed, timeMs, active?.speakerId === character.id, active?.character.x ?? .5);
+    if (drawCharacter(ctx, character, assets, turn, elapsed, timeMs, active?.speakerId === character.id, active?.character.x ?? .5)) drawnCharacterIds.push(character.id);
   }
   ctx.restore();
   if (typeof drawSceneOverlay === "function") drawSceneOverlay(ctx);
@@ -312,5 +313,5 @@ export function drawTextCinematicScene(ctx, scene, timeMs, { background, transpa
     const progress = showAll ? 1 : Math.min(1, elapsed / Math.max(1, active.animation.durationMs));
     drawTextBox(ctx, visible, active.speaker, active.expression, progress, showAll);
   }
-  return Object.freeze({ activeSpeaker: active?.speaker ?? "", activeCharacterId: active?.speakerId ?? "", viseme: active ? active.animation.sample(timeMs - active.startMs).viseme : "rest", expression: active?.expression ?? "neutral", speechActive: Boolean(active), renderedCharacterIds: Object.freeze(actors.map(item => item.id)) });
+  return Object.freeze({ activeSpeaker: active?.speaker ?? "", activeCharacterId: active?.speakerId ?? "", viseme: active ? active.animation.sample(timeMs - active.startMs).viseme : "rest", expression: active?.expression ?? "neutral", speechActive: Boolean(active), renderedCharacterIds: Object.freeze(actors.map(item => item.id)), drawnCharacterIds: Object.freeze(drawnCharacterIds) });
 }

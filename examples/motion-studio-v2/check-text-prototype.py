@@ -33,6 +33,8 @@ def visual_regression(page):
     page.evaluate("window.__QARTON_TEST_API.seek(1200)")
     ids = canvas.get_attribute("data-rendered-character-ids").split(",")
     assert set(ids) == {"layla", "youssef"} and len(ids) == len(set(ids)), ids
+    drawn_ids = canvas.get_attribute("data-drawn-character-ids").split(",")
+    assert set(drawn_ids) == set(ids), {"expected visible portraits": ids, "actually drawn": drawn_ids}
     page.locator('[data-section="characters"]').click()
     page.locator("#closeSheetButton").click()
     page.evaluate("window.__QARTON_TEST_API.setDialogueReveal(true)")
@@ -63,6 +65,7 @@ def visual_regression(page):
     page.evaluate("window.__QARTON_TEST_API.seek(800)")
     ids = canvas.get_attribute("data-rendered-character-ids").split(",")
     assert set(ids) == {"layla", "youssef", "salim"} and len(ids) == len(set(ids)), ids
+    assert set(canvas.get_attribute("data-drawn-character-ids").split(",")) == set(ids)
     page.evaluate("window.__QARTON_TEST_API.setDialogueReveal(true)")
     capture_canvas(page, "confrontation-three-character.png")
 
@@ -71,6 +74,7 @@ def visual_regression(page):
     page.evaluate("window.__QARTON_TEST_API.seek(1300)")
     ids = canvas.get_attribute("data-rendered-character-ids").split(",")
     assert set(ids) == {"nour", "youssef"} and len(ids) == len(set(ids)), ids
+    assert set(canvas.get_attribute("data-drawn-character-ids").split(",")) == set(ids)
     page.evaluate("window.__QARTON_TEST_API.setDialogueReveal(true)")
     capture_canvas(page, "emotional-two-character.png")
     page.evaluate("window.__QARTON_TEST_API.setTextScene({id:'mirror-face',title:'اختبار انعكاس الوجه',language:'tn',theme:'family',characters:[{id:'right-facing',name:'ليلى',spriteKey:'layla',x:.3,y:.82,scale:.72,z:0,face:{x:.55,y:.113,skin:'#d99a78'},facing:'right'},{id:'left-facing',name:'يوسف',spriteKey:'youssef',x:.7,y:.82,scale:.72,z:1,face:{x:.55,y:.109,skin:'#dca47e'},facing:'left'}],dialogue:[{id:'mirror-line',speakerId:'left-facing',expression:'surprised',text:'بُ، فِي قرطاج؟'}]})")
@@ -88,6 +92,7 @@ def visual_regression(page):
         page.evaluate("window.__QARTON_TEST_API.seek(1400)")
         ids = canvas.get_attribute("data-rendered-character-ids").split(",")
         assert len(ids) == count and len(ids) == len(set(ids)), ids
+        assert set(canvas.get_attribute("data-drawn-character-ids").split(",")) == set(ids)
         if count == 8:
             capture_canvas(page, "eight-character-scene.png")
         reports.append({"characters": count, "uniqueCharacterIds": True})

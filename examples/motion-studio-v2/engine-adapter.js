@@ -338,6 +338,7 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
       canvas.dataset.activeCharacterId = textState.activeCharacterId;
       canvas.dataset.activeViseme = textState.viseme;
       canvas.dataset.renderedCharacterIds = textState.renderedCharacterIds.join(",");
+      canvas.dataset.drawnCharacterIds = textState.drawnCharacterIds.join(",");
       canvas.dataset.renderedScene = sample.sceneId;
       const activeDirector = directorSettings.get(sample.sceneId) ?? {};
       canvas.dataset.cinematicMood = activeDirector.mood ?? "calm";
