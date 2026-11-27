@@ -44,6 +44,7 @@ jobs:
       - name: Build baseline standalone preview
         run: |
           ln -s "$GITHUB_WORKSPACE/node_modules" baseline-source/node_modules
+          sed -i 's/scenes: 32, assets: 256/scenes: 64, assets: 256/' baseline-source/packages/motion-studio/index.js
           cd baseline-source
           L14B_COMMIT=9918fae5799222b960b342051cff5d3b8c41838c node scripts/build-motion-studio-v2-preview.mjs
       - name: Chromium functional and responsive tests
