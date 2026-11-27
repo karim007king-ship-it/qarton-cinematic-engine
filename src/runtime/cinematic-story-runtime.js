@@ -169,12 +169,14 @@ export function createCinematicStoryRuntime({ scenes, render, decodeAsset = deco
     const timeMs = activeClock?.time() ?? currentTime;
     const turns = currentScene.textScene.turns;
     const dialogueIndex = turns.findIndex(turn => timeMs < turn.endMs);
-    const turn = dialogueIndex >= 0 ? turns[dialogueIndex] : turns.at(-1);
-    const localMs = turn ? Math.max(0, Math.min(turn.animation.durationMs, timeMs - turn.startMs)) : 0;
+    const candidate = dialogueIndex >= 0 ? turns[dialogueIndex] : turns.at(-1);
+    const turn = candidate && timeMs >= candidate.startMs && timeMs < candidate.endMs ? candidate : null;
+    const line = candidate;
+    const localMs = line ? Math.max(0, Math.min(line.animation.durationMs, timeMs - line.startMs)) : 0;
     return Object.freeze({ storyId: story.id, sceneId: currentScene.id, chapterId: currentScene.chapterId, timeMs,
       transport: state, dialogueMode: dialogueMode ?? (currentScene.manualDialogue ? "manual" : "auto"),
-      dialogueIndex, dialogueId: turn?.id ?? null, activeSpeakerId: turn?.speakerId ?? null,
-      visibleText: turn ? sampleVisibleDialogueText(turn.animation, localMs) : "",
+      dialogueIndex, dialogueId: line?.id ?? null, activeSpeakerId: turn?.speakerId ?? null,
+      visibleText: line ? sampleVisibleDialogueText(line.animation, localMs) : "",
       viseme: turn?.animation.sample(localMs).viseme ?? "rest", pendingChoiceId: choiceWaitId,
       choices: Object.freeze(Object.fromEntries([...selectedChoices].map(([sceneId, values]) => [sceneId, Object.freeze(Object.fromEntries(values))]))),
       endingId });
@@ -218,6 +220,23 @@ export function createCinematicStoryRuntime({ scenes, render, decodeAsset = deco
       : rawDirection.effects.camera;
     const pose = composeCameraPose(camera, rawDirection.effects.shake);
     const currentHandle = transitions.current;
+    const playback = snapshot();
+    const activeTurn = playback.activeSpeakerId ? currentScene.textScene.turns[playback.dialogueIndex] ?? null : null;
+    const activeElapsed = activeTurn ? Math.max(0, Math.min(activeTurn.animation.durationMs, currentTime - activeTurn.startMs)) : 0;
+    const activeMouth = activeTurn?.animation.sample(activeElapsed) ?? null;
+    const activeDialogue = activeTurn ? Object.freeze({ id: activeTurn.id, speakerId: activeTurn.speakerId,
+      text: activeTurn.text, textId: activeTurn.textId ?? null, expression: activeTurn.expression ?? "neutral",
+      visibleText: playback.visibleText, startMs: activeTurn.startMs, endMs: activeTurn.endMs,
+      progress: activeTurn.animation.durationMs ? activeElapsed / activeTurn.animation.durationMs : 1,
+      viseme: activeMouth?.viseme ?? "rest", motions: activeTurn.motions ?? Object.freeze({}) }) : null;
+    const characterStates = Object.freeze(Object.fromEntries(currentScene.characters.map(character => {
+      const speaking = activeTurn?.speakerId === character.id;
+      return [character.id, Object.freeze({ characterId: character.id, isSpeaking: speaking,
+        expression: speaking ? activeTurn.expression ?? "neutral" : "listening",
+        viseme: speaking ? activeMouth?.viseme ?? "rest" : "rest",
+        motions: speaking ? activeTurn.motions ?? Object.freeze({}) : Object.freeze({}),
+        focused: Boolean(speaking && character.focus) })];
+    })));
     const characterAssets = new Map();
     for (const character of currentScene.characters) {
       if (character.assetId) characterAssets.set(character.id, currentAssets.get(character.assetId));
@@ -225,7 +244,9 @@ export function createCinematicStoryRuntime({ scenes, render, decodeAsset = deco
     }
     await render(Object.freeze({ scene: currentScene, timeMs: currentTime, transport,
       assets: currentAssets, characterAssets, camera: Object.freeze({ ...pose, zoom: pose.zoom * rawDirection.shotScale }),
-      direction: rawDirection, choice: choiceWaitId ? currentScene.choices.find(item => item.id === choiceWaitId) ?? null : null,
+      direction: rawDirection, dialogue: activeDialogue, characterStates,
+      focusCharacterId: activeDialogue && currentScene.camera.mode === "auto" && currentScene.characters.find(character => character.id === activeDialogue.speakerId)?.focus !== false ? activeDialogue.speakerId : null,
+      choice: choiceWaitId ? currentScene.choices.find(item => item.id === choiceWaitId) ?? null : null,
       endingId, transitionHandle: currentHandle }));
     notifyState();
   }

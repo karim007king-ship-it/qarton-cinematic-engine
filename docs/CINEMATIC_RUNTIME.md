@@ -36,7 +36,7 @@ await runtime.play();
 | `exportState`, `restoreState` | JSON-only Runtime checkpoint with scene, time, choices, transport, dialogue mode, ending, and event ledger. |
 | `dispose` | Stops playback and releases scene/preload leases and decoded bitmap resources. |
 
-Required host adapters: `render(frame)` draws a frame; `decodeAsset(url, descriptor)` resolves a drawable browser image; optional `releaseAsset(resource, descriptor)` frees it (defaults to `close()`); `transition(payload)` runs host visual transition. `game.emit(event)` and `game.evaluateCondition(expression,state)` bridge story events/conditions; `music.setScene(intent)` and `music.stop(intent)` bridge music intent; `language.resolve({textId,language,fallback})` resolves text. The Lab uses bounded `Image` objects and generated local backdrops. Shared asset IDs must always map to the same source URL. Runtime state does not include decoded image bytes or game state.
+Required host adapters: `render(frame)` draws a frame and receives the active timed dialogue, per-character expression/viseme/motion state, and focused speaker ID; `decodeAsset(url, descriptor)` resolves a drawable browser image; optional `releaseAsset(resource, descriptor)` frees it (defaults to `close()`); `transition(payload)` runs host visual transition. `game.emit(event)` and `game.evaluateCondition(expression,state)` bridge story events/conditions; `music.setScene(intent)` and `music.stop(intent)` bridge music intent; `language.resolve({textId,language,fallback})` resolves text. The Lab uses bounded `Image` objects and generated local backdrops. Shared asset IDs must always map to the same source URL. Runtime state does not include decoded image bytes or game state.
 
 ### Clock, events and save semantics
 

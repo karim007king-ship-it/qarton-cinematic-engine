@@ -33,7 +33,7 @@ function makeHarness(scenes, options = {}) {
       return { width: 64, height: 64, key: descriptor.id };
     },
     releaseAsset: resource => { released.push(resource.key); },
-    render: frame => { rendered.push({ scene: frame.scene.id, timeMs: frame.timeMs, transport: frame.transport, viseme: frame.direction.effects.timeMs, assets: frame.assets.size }); },
+    render: frame => { rendered.push({ scene: frame.scene.id, timeMs: frame.timeMs, transport: frame.transport, viseme: frame.direction.effects.timeMs, activeSpeakerId: frame.dialogue?.speakerId ?? null, expression: frame.dialogue?.expression ?? null, characterViseme: frame.characterStates?.layla?.viseme ?? null, focusCharacterId: frame.focusCharacterId, motions: frame.dialogue?.motions ?? null, assets: frame.assets.size }); },
     transition: payload => { transitions.push([payload.from?.scene.id ?? null, payload.to.scene.id, payload.durationMs]); return true; },
     game: { emit: event => { events.push(event); }, evaluateCondition: expression => expression === "always-false" ? conditionValue : false },
     music: { setScene: value => musicCalls.push(value.sceneId), stop() {} },
@@ -73,8 +73,17 @@ test("story validation checks cross-scene references and language fallback contr
 });
 
 test("runtime shares one clock for dialogue, effects, and camera and seeks without replaying story events", async () => {
-  const h = makeHarness([scene("only")]);
+  const only = scene("only");
+  only.dialogue[0].motions = { headRotation: 12, eyeX: 0.25, gesture: "raise-hand" };
+  only.events[0].atMs = 950;
+  const h = makeHarness([only]);
   await h.runtime.loadScene("only");
+  await h.runtime.seek(900);
+  assert.equal(h.rendered.at(-1).activeSpeakerId, "layla");
+  assert.equal(h.rendered.at(-1).expression, "thinking");
+  assert.equal(h.rendered.at(-1).focusCharacterId, "layla");
+  assert.equal(h.rendered.at(-1).motions.headRotation, 12);
+  assert.equal(h.rendered.at(-1).characterViseme, h.runtime.getState().viseme);
   await h.runtime.play();
   await h.step(700);
   assert.equal(h.runtime.getState().transport, "playing");

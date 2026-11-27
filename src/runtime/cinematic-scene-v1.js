@@ -233,7 +233,8 @@ export function compileCinematicSceneV1(input, { resolveText } = {}) {
     const translated = languageAdapter(line, data.language);
     const resolved = typeof translated === "string" && translated.trim() ? translated.normalize("NFC") : line.translations[data.language] ?? line.text;
     if (!resolved) throw new TypeError(`No text is available for dialogue ${line.id} in ${data.language}`);
-    return Object.freeze({ id: line.id, speakerId: line.speakerId, text: resolved, expression: line.expression, ...(line.speed === undefined ? {} : { speed: line.speed }) });
+    return Object.freeze({ id: line.id, speakerId: line.speakerId, text: resolved, expression: line.expression,
+      ...(line.textId ? { textId: line.textId } : {}), ...(line.speed === undefined ? {} : { speed: line.speed }), ...(line.motions ? { motions: line.motions } : {}) });
   });
   const compilerLanguage = data.language === "tn" || data.language === "ar" ? data.language : "ar";
   const compiledText = compileTextScene({ id: sceneId, title, language: compilerLanguage, theme: directionSettings.mood === "siege" ? "siege" : directionSettings.mood === "mystery" ? "mystery" : directionSettings.mood === "sad" ? "ruins" : "family", characters, dialogue: resolvedDialogue });
