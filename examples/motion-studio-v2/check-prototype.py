@@ -94,7 +94,7 @@ with sync_playwright() as p:
     page.evaluate("window.__releaseDecode()")
     page.wait_for_timeout(250)
     assert page.locator("#imageAssetCount").inner_text() == "1", "deleted-scene import left an orphan asset"
-    page.evaluate("window.createImageBitmap = window.__nativeCreateImageBitmap")
+    page.evaluate("() => { window.createImageBitmap = window.__nativeCreateImageBitmap; }")
 
     # Exercise image removal and verified recovery from the empty state.
     page.locator(".scene-card").first.click()
