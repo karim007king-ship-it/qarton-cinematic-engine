@@ -35,6 +35,16 @@ def visual_regression(page):
     assert set(ids) == {"layla", "youssef"} and len(ids) == len(set(ids)), ids
     drawn_ids = canvas.get_attribute("data-drawn-character-ids").split(",")
     assert set(drawn_ids) == set(ids), {"expected visible portraits": ids, "actually drawn": drawn_ids}
+    portrait_pixels = page.evaluate("""() => {
+      const c=document.querySelector('#previewCanvas'), w=c.width, h=Math.floor(c.height*.70);
+      const pixels=c.getContext('2d').getImageData(0,0,w,h).data; let warm=0, nonBackdrop=0;
+      for(let i=0;i<pixels.length;i+=4){const r=pixels[i],g=pixels[i+1],b=pixels[i+2];
+        if(r>70 && r>g*1.22 && r>b*1.18) warm++;
+        if(Math.abs(r-25)+Math.abs(g-38)+Math.abs(b-53)>35) nonBackdrop++;
+      }
+      return {warm,nonBackdrop};
+    }""")
+    assert portrait_pixels["warm"] > 500 and portrait_pixels["nonBackdrop"] > 5000, {"portrait pixels missing above dialogue panel": portrait_pixels}
     page.locator('[data-section="characters"]').click()
     page.locator("#closeSheetButton").click()
     page.evaluate("window.__QARTON_TEST_API.setDialogueReveal(true)")
