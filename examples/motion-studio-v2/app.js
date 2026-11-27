@@ -176,11 +176,12 @@ import { createStudioAudioTimeline } from "../motion-studio-lab/studio-audio-tim
   function updateSceneActions(state) {
     const disabled = {
       duplicate: recordingBusy,
-      delete: !state.canDelete,
-      "move-right": !state.canMoveRight,
-      "move-left": !state.canMoveLeft
+      delete: recordingBusy || !state.canDelete,
+      "move-right": recordingBusy || !state.canMoveRight,
+      "move-left": recordingBusy || !state.canMoveLeft
     };
     all('[data-scene-action]').forEach(button => { button.disabled = disabled[button.dataset.sceneAction]; });
+    all(".scene-card", byId("#sceneList")).forEach(button => { button.disabled = recordingBusy; });
     byId("#addSceneButton").disabled = recordingBusy;
   }
   audioTimeline = createStudioAudioTimeline({
