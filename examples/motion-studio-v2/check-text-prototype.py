@@ -44,7 +44,8 @@ def visual_regression(page):
       }
       return {warm,nonBackdrop};
     }""")
-    assert portrait_pixels["warm"] > 500 and portrait_pixels["nonBackdrop"] > 5000, {"portrait pixels missing above dialogue panel": portrait_pixels}
+    art_diagnostics = page.evaluate("window.__QARTON_TEST_API.artDiagnostics()")
+    assert portrait_pixels["warm"] > 500 and portrait_pixels["nonBackdrop"] > 5000, {"portrait pixels missing above dialogue panel": portrait_pixels, "decoded art": art_diagnostics, "camera": page.evaluate("window.__QARTON_TEST_API.sequenceState().camera")}
     page.locator('[data-section="characters"]').click()
     page.locator("#closeSheetButton").click()
     page.evaluate("window.__QARTON_TEST_API.setDialogueReveal(true)")

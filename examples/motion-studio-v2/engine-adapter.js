@@ -762,6 +762,19 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
     moveScene,
     getTextState: textSnapshot,
     getDialogueVisemes,
+    getDemoArtDiagnostics() {
+      return Object.freeze([...characterArt].map(([id, image]) => {
+        const probe = document.createElement("canvas"); probe.width = 64; probe.height = 96;
+        const ctx = probe.getContext("2d", { willReadFrequently: true }); ctx.drawImage(image, 0, 0, probe.width, probe.height);
+        const pixels = ctx.getImageData(0, 0, probe.width, probe.height).data; let visible = 0, warm = 0;
+        for (let index = 0; index < pixels.length; index += 4) {
+          const r = pixels[index], g = pixels[index + 1], b = pixels[index + 2], a = pixels[index + 3];
+          if (a > 8) visible += 1;
+          if (a > 8 && r > 70 && r > g * 1.22 && r > b * 1.18) warm += 1;
+        }
+        return Object.freeze({ id, width: image.naturalWidth ?? image.width, height: image.naturalHeight ?? image.height, visible, warm });
+      }));
+    },
     addCinematicDemo(index) {
       if (!Number.isInteger(index) || index < 0 || index >= TEXT_SCENE_DEMOS.length) throw new RangeError("رقم المشهد السينمائي غير صالح.");
       const id = addScene();
