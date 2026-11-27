@@ -48,10 +48,10 @@ export function createV2AudioController({
   function currentTime() { return Math.max(0, Math.round(getClock().time())); }
   function pcmBytes(buffer) { return buffer.length * buffer.numberOfChannels * 4; }
   function retainedBytes() { let size = 0; for (const asset of assets.values()) size += pcmBytes(asset.buffer); return size; }
-  async function ensureContext() {
+  async function ensureContext({ resume = true } = {}) {
     if (!AudioContextClass) throw new Error("فك الصوت غير متاح في هذا المتصفح.");
     if (!context || context.state === "closed") context = new AudioContextClass();
-    if (context.state === "suspended") await context.resume();
+    if (resume && context.state === "suspended") await context.resume();
     return context;
   }
   function trackList() { return tracks.map(track => ({ ...track, volume: muted.has(track.id) ? 0 : track.volume, clips: track.clips.map(clip => ({ ...clip })) })); }
@@ -107,7 +107,7 @@ export function createV2AudioController({
     const metadata = validateAudioFile(file);
     const targetSequence = getSequence(), targetScene = getSelectedScene();
     const targetTime = currentTime(), targetScope = document.querySelector("#audioScope")?.value ?? "scene";
-    const ctx = await ensureContext();
+    const ctx = await ensureContext({ resume: false });
     const encoded = await file.arrayBuffer();
     const buffer = await ctx.decodeAudioData(encoded.slice(0));
     if (!Number.isFinite(buffer.duration) || buffer.duration <= 0 || buffer.duration > 3600) throw new Error("مدة الصوت المفكوك غير صالحة.");
@@ -182,7 +182,7 @@ export function createV2AudioController({
       const request = mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
       stream = await request;
       micState = "granted";
-      await ensureContext();
+      await ensureContext({ resume: false });
       const mimeType = MIMES.find(mime => MediaRecorderClass.isTypeSupported?.(mime)) || "";
       const recorder = new MediaRecorderClass(stream, mimeType ? { mimeType } : undefined);
       const chunks = [];
@@ -271,6 +271,11 @@ export function createV2AudioController({
     for (const [assetId, asset] of assets) if (!live.has(assetId)) { assets.delete(assetId); onAsset({ action: "remove", id: assetId }); }
     stopPlayer({ keepPlaying: true }); emit(); return true;
   }
+  async function activate() {
+    if (!assets.size) return false;
+    await ensureContext({ resume: true });
+    return true;
+  }
   function play() { if (!audioPlayer) return; audioPlayer.play(); }
   function pause() { try { audioPlayer?.pause(); } catch (error) { lastError = error.message || String(error); } }
   function seek(ms) { try { audioPlayer?.seek(ms); } catch (error) { lastError = error.message || String(error); } }
@@ -283,5 +288,5 @@ export function createV2AudioController({
     for (const assetId of assets.keys()) onAsset({ action: "remove", id: assetId });
     assets.clear(); context?.close?.().catch?.(() => {});
   }
-  return Object.freeze({ decodeAndCommit, dispose, getState, isMuted: trackId => muted.has(trackId), move, pause, play, refreshMicPermission, removeSelected, seek, select, setVolume, startRecording, stopRecording, syncLayout, tick, toggleMute, trim });
+  return Object.freeze({ activate, decodeAndCommit, dispose, getState, isMuted: trackId => muted.has(trackId), move, pause, play, refreshMicPermission, removeSelected, seek, select, setVolume, startRecording, stopRecording, syncLayout, tick, toggleMute, trim });
 }

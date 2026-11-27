@@ -567,6 +567,7 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onAudioState 
     addImage,
     addScene,
     addAudio(file, type = "dialogue") { return audioController.decodeAndCommit(file, type); },
+    activateAudio() { return audioController.activate(); },
     deleteImage,
     deleteScene,
     dispose,

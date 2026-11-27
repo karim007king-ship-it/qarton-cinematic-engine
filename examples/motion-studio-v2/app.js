@@ -238,7 +238,12 @@ import { createStudioAudioTimeline } from "../motion-studio-lab/studio-audio-tim
   byId("#deleteImageButton").addEventListener("click", () => {
     if (engine?.deleteImage()) showToast("حُذفت صورة هذا المشهد.");
   });
-  byId("#playButton").addEventListener("click", () => engine?.togglePlayback());
+  byId("#playButton").addEventListener("click", async () => {
+    try {
+      if (engine?.getState().playing) engine.pause();
+      else { await engine?.activateAudio(); engine?.play(); }
+    } catch (error) { showToast(error.message || "تعذر تفعيل تشغيل الصوت."); }
+  });
   byId("#stopButton").addEventListener("click", () => engine?.stop());
   seek.addEventListener("input", event => { if (!updatingSeek) engine?.seek(Number(event.target.value)); });
   byId("#fullscreenButton").addEventListener("click", async () => {
