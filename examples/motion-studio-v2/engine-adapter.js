@@ -341,7 +341,7 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
     const blank = makeScene(id, PLACEHOLDER_ID, MIN_DURATION_MS, DEFAULT_MOTION);
     const scene = { ...blank, project: { ...blank.project, viewport } };
     const next = addStudioSequenceScene(assetRegistry.sequence, scene);
-    motionSettings.set(id, motion);
+    motionSettings.set(id, { ...DEFAULT_MOTION });
     editSequence(next, { sceneId: id, seekToStart: true });
     return id;
   }
