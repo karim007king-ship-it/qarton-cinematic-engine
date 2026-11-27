@@ -13,6 +13,8 @@ on:
       - 'tests/motion-studio-v2-standalone.test.mjs'
       - 'tests/text-viseme.test.js'
       - 'tests/motion-studio-v2-performance.py'
+      - 'tests/run-cinematic-stability-performance.py'
+      - 'tests/cinematic-stability-performance.html'
       - '.github/workflows/motion-studio-v2-prototype.yml'
   workflow_dispatch:
 permissions:
@@ -58,6 +60,8 @@ jobs:
         run: |
           set -o pipefail
           python tests/motion-studio-v2-performance.py baseline-source/dist/motion-studio-v2-l14b-android-preview/index.html dist/motion-studio-v2-l14c3-android-preview/index.html | tee dist/motion-studio-v2-l14c3-android-preview/performance-results.json
+      - name: Stress cinematic rendering for 30 seconds and 5 minutes
+        run: python tests/run-cinematic-stability-performance.py
       - name: Package Android preview ZIP
         run: |
           cd dist/motion-studio-v2-l14c3-android-preview
@@ -71,6 +75,7 @@ jobs:
             dist/motion-studio-v2-l14c3-android-preview/qarton-motion-studio-v2.html
             dist/motion-studio-v2-l14c3-android-preview/README.txt
             dist/motion-studio-v2-l14c3-android-preview/performance-results.json
+            dist/motion-studio-v2-l14c3-android-preview/cinematic-stability-performance.json
             dist/motion-studio-v2-l14c3-android-preview/text-animation-check-results.json
             dist/motion-studio-v2-l14c3-android-preview/screenshots/**
           if-no-files-found: error
