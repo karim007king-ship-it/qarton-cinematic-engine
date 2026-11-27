@@ -82,7 +82,7 @@ with sync_playwright() as p:
     page.evaluate("window.__releaseDecode()")
     page.wait_for_timeout(250)
     page.locator(".scene-card").first.click()
-    assert page.locator("#previewLabel").inner_text() == "scene-image.png", "switching scenes changed the original target image"
+    assert page.locator("#previewLabel").inner_text() == "replacement.png", "switching scenes changed the original target image"
     page.locator(".scene-card").nth(1).click()
     assert page.locator("#previewCanvas").is_visible() and page.locator("#previewLabel").inner_text() == "race-switch.png", "image import followed selection instead of captured target scene"
     # Deleting the captured scene during decode aborts import and leaves no orphan.
