@@ -223,6 +223,9 @@ with sync_playwright() as p:
     # analyzed for non-zero RMS/Peak, then inserted only after verification.
     page.locator("#demoRecordButton").click()
     page.wait_for_function("document.documentElement.dataset.audioContextState === 'running' || document.querySelector('#micReady').textContent === 'granted'", timeout=5000)
+    assert page.locator(".scene-card").first.is_disabled(), "scene selection remained available during microphone capture"
+    assert page.locator("#addSceneButton").is_disabled(), "scene creation remained available during microphone capture"
+    assert page.locator("#playButton").is_disabled(), "playback remained available during microphone capture"
     page.wait_for_timeout(10000)
     page.locator("#demoRecordButton").click()
     page.wait_for_function("document.querySelectorAll('.audio-clip').length === 2", timeout=10000)
@@ -233,6 +236,7 @@ with sync_playwright() as p:
     assert page.locator("#audioDuration").inner_text().endswith("(مفكوك)")
     assert float(page.locator("#audioDuration").inner_text().split(" ")[0]) >= 8, "long microphone recording duration did not come from decoded samples"
     # Repeated play/pause/seek leaves the same clips and bounded decoded memory.
+    page.locator("#closeSheetButton").click()
     for _ in range(5):
         set_range("#timelineSeek", 300)
         page.locator("#playButton").click()
@@ -241,9 +245,11 @@ with sync_playwright() as p:
     assert page.locator(".audio-clip").count() == 2
     pcm_mib = float(page.locator("#audioMemory").inner_text().split(" MiB")[0])
     assert 0 < pcm_mib <= 32, f"PCM retention exceeded its existing 32 MiB budget: {pcm_mib}"
+    page.locator('[data-section="audio"]').click()
     page.locator("#audioDeleteButton").click()
     assert page.locator(".audio-clip").count() == 1
     page.locator("#closeSheetButton").click()
+    page.locator("#stopButton").click()
     assert page.locator("#timelineSeek").input_value() == "0"
     page.locator("#playButton").click()
     assert page.locator("#studio").get_attribute("data-playing") == "true"
