@@ -83,3 +83,5 @@ body { color:var(--text); } button,input,select { font:inherit; } button { -webk
   .tool-sheet { max-height:min(52dvh,250px); bottom:calc(var(--nav-height) + var(--safe-bottom) + 5px); }
   .panel-body { max-height:calc(min(52dvh,250px) - 65px); }
 }
+
+.preview-canvas { inset:auto; inset-inline-start:50%; top:50%; width:auto; height:auto; max-width:100%; max-height:100%; transform:translate(-50%,-50%); object-fit:contain; }

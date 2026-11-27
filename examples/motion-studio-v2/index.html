@@ -35,7 +35,7 @@
           <button class="gold-button choose-button" id="chooseImageButton" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>اختر صورة</button>
           <p class="local-note">تُعرض على جهازك فقط · نموذج واجهة</p>
         </div>
-        <div class="preview-overlay" aria-hidden="true"><span class="live-dot"></span><span id="previewLabel">معاينة المحرك</span><span class="commit-chip" id="commitIndicator" dir="ltr" title="Commit source">Commit dev</span><span class="resolution-chip">9:16</span></div>
+        <div class="preview-overlay" aria-hidden="true"><span class="live-dot"></span><span id="previewLabel">معاينة المحرك</span><span class="commit-chip" id="commitIndicator" dir="ltr" title="Commit source">Commit dev</span><span class="resolution-chip" id="resolutionChip">9:16</span></div>
         <button class="replace-image" id="replaceImageButton" type="button" aria-label="تغيير الصورة" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7"/></svg><span>تغيير</span></button>
         <input id="imageInput" class="visually-hidden" type="file" accept="image/*">
       </div>
@@ -79,7 +79,7 @@
         <p class="sheet-note">هذه مرشّحات بصرية مؤقتة للمعاينة ولا تُحفظ في الفيديو.</p>
       </div>
       <div class="panel-body more-panel" data-panel="more" hidden>
-        <details class="disclosure"><summary><span>إعدادات احترافية تجريبية</span><span class="disclosure-mark">＋</span></summary><div class="advanced-grid"><label>المقاس<select disabled><option>عمودي 9:16</option><option>مربع 1:1</option></select></label><label>الجودة<select disabled><option>عالية</option><option>متوسطة</option></select></label></div><p class="sheet-note">إعدادات العرض والتصدير غير مرتبطة بالمحرك.</p></details>
+        <details class="disclosure"><summary><span>أبعاد المعاينة</span><span class="disclosure-mark">＋</span></summary><div class="advanced-grid"><label>نسبة الفيديو<select id="aspectRatio"><option value="original">Original</option><option value="9:16" selected>9:16</option><option value="16:9">16:9</option><option value="1:1">1:1</option><option value="4:5">4:5</option><option value="4:3">4:3</option><option value="3:4">3:4</option></select></label><label>عرض الصورة<select id="fitMode"><option value="fit">Fit · احتواء</option><option value="fill" selected>Fill · ملء</option></select></label></div><p class="sheet-note">تُطبّق الأبعاد وFit/Fill داخل رسم المحرك.</p></details>
         <details class="disclosure"><summary><span>تشخيص الواجهة</span><span class="disclosure-mark">＋</span></summary><p class="diagnostic-line">JavaScript: <strong id="demoReady">جارٍ التهيئة</strong></p><p class="diagnostic-line">اتصال المحرك: <strong id="engineReady">جارٍ التهيئة</strong></p><p class="diagnostic-line">صور المشروع: <strong id="imageAssetCount">0</strong></p></details>
         <p class="sheet-note">هذا نموذج مستقل لا يغيّر المشاريع أو الحفظ.</p>
       </div>

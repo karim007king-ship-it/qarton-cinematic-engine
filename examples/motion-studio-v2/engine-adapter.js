@@ -15,7 +15,8 @@ import { createSceneClock } from "../../src/motion/scene-clock.js";
 import { createCameraMotionProject } from "../motion-studio-lab/studio-motion-presets.js";
 import { decodeImageBitmap } from "../motion-studio-lab/studio-image.js";
 
-const VIEWPORT = Object.freeze({ width: 720, height: 1280, fps: 24 });
+const DEFAULT_VIEWPORT = Object.freeze({ width: 720, height: 1280, fps: 24 });
+const ASPECTS = Object.freeze({ "9:16": [720, 1280], "16:9": [1280, 720], "1:1": [1080, 1080], "4:5": [864, 1080], "4:3": [960, 720], "3:4": [720, 960] });
 const PLACEHOLDER_ID = "placeholder-image";
 const MIN_DURATION_MS = 3000;
 const MAX_DURATION_MS = 60000;
@@ -62,7 +63,7 @@ function makeProject(sceneId, assetId, durationMs, settings) {
   const base = {
     version: 1,
     durationMs,
-    viewport: VIEWPORT,
+    viewport: DEFAULT_VIEWPORT,
     layers: [{ id: safeId("layer", sceneId), assetId, z: 0 }]
   };
   return applyCameraMotion(base, settings);
@@ -81,29 +82,32 @@ function formatTime(ms) {
   return String(Math.floor(seconds / 60)).padStart(2, "0") + ":" + String(seconds % 60).padStart(2, "0");
 }
 
-export function createStudioV2Engine({ canvas, onState = () => {}, onError = () => {} } = {}) {
+export function createStudioV2Engine({ canvas, onState = () => {}, onError = () => {}, decodeImage = decodeImageBitmap } = {}) {
   const context = canvas?.getContext?.("2d", { alpha: false, desynchronized: true });
   if (!context) throw new Error("تعذر إنشاء معاينة المحرك في هذا المتصفح.");
-  canvas.width = VIEWPORT.width;
-  canvas.height = VIEWPORT.height;
+  let viewport = DEFAULT_VIEWPORT;
+  let fitMode = "fill";
+  let aspectRatio = "9:16";
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
 
   const placeholderSurface = document.createElement("canvas");
-  placeholderSurface.width = VIEWPORT.width;
-  placeholderSurface.height = VIEWPORT.height;
+  placeholderSurface.width = viewport.width;
+  placeholderSurface.height = viewport.height;
   const placeholderContext = placeholderSurface.getContext("2d", { alpha: false });
-  const gradient = placeholderContext.createLinearGradient(0, 0, VIEWPORT.width, VIEWPORT.height);
+  const gradient = placeholderContext.createLinearGradient(0, 0, viewport.width, viewport.height);
   gradient.addColorStop(0, "#15171d");
   gradient.addColorStop(0.55, "#28221a");
   gradient.addColorStop(1, "#0a0b0e");
   placeholderContext.fillStyle = gradient;
-  placeholderContext.fillRect(0, 0, VIEWPORT.width, VIEWPORT.height);
+  placeholderContext.fillRect(0, 0, viewport.width, viewport.height);
 
   let sceneCounter = 1;
   let assetCounter = 0;
-  let selectionGeneration = 0;
+  const importVersions = new Map();
   let currentSceneId = makeSceneId(sceneCounter);
   let sequence = createStudioSequenceV1({
-    viewport: VIEWPORT,
+    viewport,
     scenes: [makeScene(currentSceneId)],
     assets: [{ id: PLACEHOLDER_ID, kind: "image", name: "بدون صورة", mimeType: "image/png", size: 0 }]
   });
@@ -118,6 +122,9 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
   let rafId = 0;
   let lastSceneId = "";
   let disposed = false;
+  let sceneStateSequence = null;
+  let sceneStateCache = null;
+  const renderImages = new Map();
 
   function selectedScene() {
     return assetRegistry.sequence.scenes.find(scene => scene.id === currentSceneId) ?? assetRegistry.sequence.scenes[0];
@@ -137,7 +144,7 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
     if (!compiled) {
       compiled = compileProject(project, {
         get(id) {
-          const image = decodedImages.get(id);
+          const image = renderImage(id);
           if (!image) throw new Error("تعذر العثور على الصورة المحلية للمشهد.");
           return image;
         }
@@ -145,6 +152,28 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
       compiledProjects.set(project, compiled);
     }
     return compiled;
+  }
+
+  function renderImage(id) {
+    const source = decodedImages.get(id);
+    if (!source) return null;
+    const key = `${id}:${viewport.width}x${viewport.height}:${fitMode}`;
+    if (renderImages.has(key)) return renderImages.get(key);
+    const surface = document.createElement("canvas");
+    surface.width = viewport.width;
+    surface.height = viewport.height;
+    const ctx = surface.getContext("2d", { alpha: false });
+    const sw = source.width || source.videoWidth || viewport.width;
+    const sh = source.height || source.videoHeight || viewport.height;
+    const scale = fitMode === "fit" ? Math.min(viewport.width / sw, viewport.height / sh) : Math.max(viewport.width / sw, viewport.height / sh);
+    const w = sw * scale, h = sh * scale;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.fillStyle = "#08090d";
+    ctx.fillRect(0, 0, viewport.width, viewport.height);
+    ctx.drawImage(source, (viewport.width - w) / 2, (viewport.height - h) / 2, w, h);
+    renderImages.set(key, surface);
+    return surface;
   }
 
   function stopAnimationFrame() {
@@ -160,24 +189,23 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
     const metadata = assetRegistry.sequence.assets.find(asset => asset.id === assetId);
     const motion = motionSettings.get(scene.id) ?? { ...DEFAULT_MOTION };
     const keyframes = scene.project.camera ?? [];
+    if (sceneStateSequence !== assetRegistry.sequence) {
+      sceneStateCache = Object.freeze(scenes.map((item, index) => {
+        const id = item.project.layers[0]?.assetId ?? PLACEHOLDER_ID;
+        const asset = assetRegistry.sequence.assets.find(entry => entry.id === id);
+        return Object.freeze({ id: item.id, index, hasImage: id !== PLACEHOLDER_ID, name: asset?.name ?? "", thumbnailUrl: objectUrls.get(id) ?? "", durationMs: item.project.durationMs });
+      }));
+      sceneStateSequence = assetRegistry.sequence;
+    }
     return Object.freeze({
       engineReady: true,
+      aspectRatio,
+      fitMode,
       playing,
       selectedSceneId: scene.id,
       selectedIndex: sceneIndex,
       sceneCount: scenes.length,
-      scenes: scenes.map((item, index) => {
-        const id = item.project.layers[0]?.assetId ?? PLACEHOLDER_ID;
-        const asset = assetRegistry.sequence.assets.find(entry => entry.id === id);
-        return Object.freeze({
-          id: item.id,
-          index,
-          hasImage: id !== PLACEHOLDER_ID,
-          name: asset?.name ?? "",
-          thumbnailUrl: objectUrls.get(id) ?? "",
-          durationMs: item.project.durationMs
-        });
-      }),
+      scenes: sceneStateCache,
       hasImage: assetId !== PLACEHOLDER_ID,
       imageName: assetId === PLACEHOLDER_ID ? "" : (metadata?.name ?? ""),
       assetId,
@@ -268,6 +296,7 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
 
   function cleanAsset(id) {
     if (!id || id === PLACEHOLDER_ID || assetRegistry.references(id).length) return;
+    for (const key of renderImages.keys()) if (key.startsWith(`${id}:`)) renderImages.delete(key);
     if (assetRegistry.sequence.assets.some(asset => asset.id === id)) {
       try { assetRegistry.remove(id); } catch (error) { onError(error); return; }
     }
@@ -307,12 +336,10 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
   }
 
   function addScene() {
-    const source = selectedScene();
     sceneCounter += 1;
     const id = makeSceneId(sceneCounter);
-    const assetId = source.project.layers[0]?.assetId ?? PLACEHOLDER_ID;
-    const motion = { ...(motionSettings.get(source.id) ?? DEFAULT_MOTION) };
-    const scene = makeScene(id, assetId, source.project.durationMs, motion);
+    const blank = makeScene(id, PLACEHOLDER_ID, MIN_DURATION_MS, DEFAULT_MOTION);
+    const scene = { ...blank, project: { ...blank.project, viewport } };
     const next = addStudioSequenceScene(assetRegistry.sequence, scene);
     motionSettings.set(id, motion);
     editSequence(next, { sceneId: id, seekToStart: true });
@@ -354,14 +381,19 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
   }
 
   async function addImage(file) {
-    const generation = ++selectionGeneration;
+    const targetSceneId = currentSceneId;
+    if (!assetRegistry.sequence.scenes.some(scene => scene.id === targetSceneId)) throw new DOMException("Target scene no longer exists", "AbortError");
+    const generation = (importVersions.get(targetSceneId) ?? 0) + 1;
+    importVersions.set(targetSceneId, generation);
     let bitmap = null;
     let assetId = "";
     let linked = false;
     let url = "";
     try {
-      bitmap = await decodeImageBitmap(file, { isCurrent: () => generation === selectionGeneration });
-      if (generation !== selectionGeneration) throw new DOMException("Image selection was superseded", "AbortError");
+      bitmap = await decodeImage(file, { isCurrent: () => !disposed && importVersions.get(targetSceneId) === generation && assetRegistry.sequence.scenes.some(item => item.id === targetSceneId) });
+      if (disposed || importVersions.get(targetSceneId) !== generation) throw new DOMException("Image selection was superseded", "AbortError");
+      const scene = assetRegistry.sequence.scenes.find(item => item.id === targetSceneId);
+      if (!scene) throw new DOMException("Target scene was deleted during import", "AbortError");
       assetCounter += 1;
       assetId = safeId("image", assetCounter);
       const asset = {
@@ -377,7 +409,6 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
       url = URL.createObjectURL(file);
       decodedImages.set(assetId, bitmap);
       objectUrls.set(assetId, url);
-      const scene = selectedScene();
       const oldAssetId = scene.project.layers[0]?.assetId ?? PLACEHOLDER_ID;
       const project = {
         ...scene.project,
@@ -399,6 +430,7 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
         try { assetRegistry.remove(assetId); } catch {}
       }
       if (assetId) decodedImages.delete(assetId);
+      for (const key of renderImages.keys()) if (key.startsWith(`${assetId}:`)) renderImages.delete(key);
       if (url) URL.revokeObjectURL(url);
       bitmap?.close?.();
       throw error;
@@ -458,7 +490,29 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
   }
 
   function setFit(fit) {
-    canvas.style.objectFit = fit;
+    if (fit !== "fit" && fit !== "fill") throw new RangeError("اختر احتواء أو ملء.");
+    fitMode = fit;
+    renderImages.clear();
+    compiledProjects = new WeakMap();
+    render();
+  }
+
+  function setAspectRatio(value) {
+    const dims = value === "original" ? null : ASPECTS[value];
+    if (value !== "original" && !dims) throw new RangeError("نسبة أبعاد غير معروفة.");
+    const firstImage = [...decodedImages.entries()].find(([id]) => id !== PLACEHOLDER_ID)?.[1];
+    aspectRatio = value;
+    const width = dims?.[0] ?? Math.max(1, firstImage?.width ?? viewport.width);
+    const height = dims?.[1] ?? Math.max(1, firstImage?.height ?? viewport.height);
+    const scale = Math.min(1, 2048 / Math.max(width, height));
+    const nextViewport = Object.freeze({ width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)), fps: viewport.fps });
+    const scenes = assetRegistry.sequence.scenes.map(scene => ({ ...scene, project: { ...scene.project, viewport: nextViewport } }));
+    viewport = nextViewport;
+    canvas.width = viewport.width; canvas.height = viewport.height;
+    placeholderSurface.width = viewport.width; placeholderSurface.height = viewport.height;
+    const next = createStudioSequenceV1({ viewport, scenes, assets: assetRegistry.sequence.assets });
+    editSequence(next, { sceneId: currentSceneId, seekToStart: false });
+    renderImages.clear();
   }
 
   function dispose() {
@@ -468,6 +522,7 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
     for (const bitmap of decodedImages.values()) bitmap?.close?.();
     for (const url of objectUrls.values()) URL.revokeObjectURL(url);
     decodedImages.clear();
+    renderImages.clear();
     objectUrls.clear();
   }
 
@@ -499,6 +554,8 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
     setMotionPreset(preset) { updateMotion({ preset }); },
     setMotionSpeed(speed) { updateMotion({ speed: Number(speed) }); },
     setMotionStrength(strength) { updateMotion({ strength: Number(strength) }); },
+    setFit,
+    setAspectRatio,
     stop,
     togglePlayback() { playing ? pause() : play(); }
   });

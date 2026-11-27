@@ -9,6 +9,7 @@ on:
       - 'examples/motion-studio-lab/studio-motion-presets.js'
       - 'scripts/build-motion-studio-v2-preview.mjs'
       - 'tests/motion-studio-v2-standalone.test.mjs'
+      - 'tests/motion-studio-v2-performance.py'
       - '.github/workflows/motion-studio-v2-prototype.yml'
   workflow_dispatch:
 permissions:
@@ -35,8 +36,20 @@ jobs:
         env:
           L14B_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
         run: node scripts/build-motion-studio-v2-preview.mjs
+      - name: Check out performance baseline
+        uses: actions/checkout@v4
+        with:
+          ref: 9918fae5799222b960b342051cff5d3b8c41838c
+          path: baseline-source
+      - name: Build baseline standalone preview
+        run: |
+          ln -s "$GITHUB_WORKSPACE/node_modules" baseline-source/node_modules
+          cd baseline-source
+          L14B_COMMIT=9918fae5799222b960b342051cff5d3b8c41838c node scripts/build-motion-studio-v2-preview.mjs
       - name: Chromium functional and responsive tests
         run: python examples/motion-studio-v2/check-prototype.py
+      - name: Compare performance at 10, 20 and 50 scenes
+        run: python tests/motion-studio-v2-performance.py baseline-source/dist/motion-studio-v2-l14b-android-preview/index.html dist/motion-studio-v2-l14b-android-preview/index.html | tee dist/motion-studio-v2-l14b-android-preview/performance-results.json
       - name: Package Android preview ZIP
         run: |
           cd dist/motion-studio-v2-l14b-android-preview
@@ -49,6 +62,7 @@ jobs:
             dist/motion-studio-v2-l14b-android-preview/index.html
             dist/motion-studio-v2-l14b-android-preview/qarton-motion-studio-v2.html
             dist/motion-studio-v2-l14b-android-preview/README.txt
+            dist/motion-studio-v2-l14b-android-preview/performance-results.json
             dist/motion-studio-v2-l14b-android-preview/screenshots/**
           if-no-files-found: error
           retention-days: 14

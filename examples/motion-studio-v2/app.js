@@ -22,6 +22,8 @@ import { createStudioV2Engine } from "./engine-adapter.js";
   let toastTimer = 0;
   let engine;
   let updatingSeek = false;
+  let renderedScenes = null;
+  let renderedSelection = "";
 
   if (commitChip) {
     commitChip.textContent = "Commit " + commitId.slice(0, 7);
@@ -58,6 +60,9 @@ import { createStudioV2Engine } from "./engine-adapter.js";
     byId("#pauseIcon").hidden = !state.playing;
     byId("#playButton").setAttribute("aria-label", state.playing ? "إيقاف مؤقت" : "تشغيل المعاينة");
     byId("#previewLabel").textContent = state.hasImage ? state.imageName : "معاينة المحرك";
+    byId("#resolutionChip").textContent = state.aspectRatio;
+    byId("#aspectRatio").value = state.aspectRatio;
+    byId("#fitMode").value = state.fitMode;
     byId("#currentTime").textContent = state.formattedTime;
     byId("#totalTime").textContent = state.formattedTotal;
     updatingSeek = true;
@@ -77,7 +82,12 @@ import { createStudioV2Engine } from "./engine-adapter.js";
     byId("#demoReady").textContent = "جاهز";
     byId("#engineReady").textContent = "متصل";
     byId("#imageAssetCount").textContent = String(state.imageAssetCount);
-    renderSceneCards(state);
+    if (renderedScenes !== state.scenes) { renderSceneCards(state); renderedScenes = state.scenes; renderedSelection = state.selectedSceneId; }
+    else if (renderedSelection !== state.selectedSceneId) {
+      all(".scene-card", byId("#sceneList")).forEach(card => { const selected = card.dataset.sceneId === state.selectedSceneId; card.classList.toggle("selected", selected); card.setAttribute("aria-current", String(selected)); });
+      renderedSelection = state.selectedSceneId;
+      byId(".scene-card.selected", byId("#sceneList"))?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
     updateSceneActions(state);
   }
   function renderSceneCards(state) {
@@ -197,6 +207,8 @@ import { createStudioV2Engine } from "./engine-adapter.js";
       menuToggle.setAttribute("aria-expanded", "false");
     }
   });
+  byId("#aspectRatio").addEventListener("change", event => { try { engine?.setAspectRatio(event.target.value); } catch (error) { showToast(error.message); } });
+  byId("#fitMode").addEventListener("change", event => { try { engine?.setFit(event.target.value); } catch (error) { showToast(error.message); } });
   byId("#cameraPreset").addEventListener("change", event => {
     try { engine?.setMotionPreset(event.target.value); }
     catch (error) { showToast(error.message || "تعذر تغيير الحركة."); }

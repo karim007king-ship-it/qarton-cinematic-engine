@@ -71,6 +71,31 @@ with sync_playwright() as p:
     page.locator("#imageInput").evaluate("input => { input.value = ''; input.dispatchEvent(new Event('change', {bubbles:true})); }")
     assert page.locator("#previewLabel").inner_text() == "replacement.png"
 
+    # A slow decode must remain attached to the scene captured at import start.
+    page.evaluate("""() => { const decode = createImageBitmap.bind(window); window.__nativeCreateImageBitmap = decode; let release; window.__decodeStarted = false; window.__releaseDecode = () => release?.(); window.createImageBitmap = async (...args) => { if (!window.__decodeStarted) { window.__decodeStarted = true; await new Promise(resolve => { release = resolve; }); } return decode(...args); }; }""")
+    page.locator("#addSceneButton").click()
+    assert page.locator(".scene-card").count() == 2
+    assert page.locator("#previewCanvas").is_hidden(), "Add scene must create an empty scene"
+    choose_file(page.locator("#imageInput"), "race-switch.png", img_b)
+    page.wait_for_function("window.__decodeStarted === true")
+    page.locator(".scene-card").first.click()
+    page.evaluate("window.__releaseDecode()")
+    page.wait_for_timeout(250)
+    page.locator(".scene-card").first.click()
+    assert page.locator("#previewLabel").inner_text() == "scene-image.png", "switching scenes changed the original target image"
+    page.locator(".scene-card").nth(1).click()
+    assert page.locator("#previewCanvas").is_visible() and page.locator("#previewLabel").inner_text() == "race-switch.png", "image import followed selection instead of captured target scene"
+    # Deleting the captured scene during decode aborts import and leaves no orphan.
+    page.evaluate("window.__decodeStarted = false")
+    choose_file(page.locator("#imageInput"), "race-delete.png", img_b)
+    page.wait_for_function("window.__decodeStarted === true")
+    page.locator("#sceneMenuToggle").click()
+    page.locator('[data-scene-action="delete"]').click()
+    page.evaluate("window.__releaseDecode()")
+    page.wait_for_timeout(250)
+    assert page.locator("#imageAssetCount").inner_text() == "1", "deleted-scene import left an orphan asset"
+    page.evaluate("window.createImageBitmap = window.__nativeCreateImageBitmap")
+
     # Exercise image removal and verified recovery from the empty state.
     page.locator('[data-section="photos"]').click()
     page.locator("#deleteImageButton").click()
@@ -96,6 +121,21 @@ with sync_playwright() as p:
     assert page.locator(".scene-card").count() == 2
     page.locator(".scene-card").first.click()
     assert page.locator("#previewCanvas").get_attribute("data-rendered-scene") == page.locator(".scene-card.selected").get_attribute("data-scene-id")
+
+    # Aspect ratios and Fit/Fill change the engine canvas backing store, not only CSS.
+    page.locator('[data-section="more"]').click()
+    ratios = {"9:16":720/1280, "16:9":1280/720, "1:1":1, "4:5":864/1080, "4:3":960/720, "3:4":720/960}
+    for ratio, expected in ratios.items():
+        page.locator("#aspectRatio").select_option(ratio)
+        actual = page.locator("#previewCanvas").evaluate("c => c.width / c.height")
+        assert abs(actual - expected) < .002, f"incorrect backing ratio for {ratio}: {actual}"
+    assert page.locator("#resolutionChip").inner_text() == "3:4"
+    page.locator("#aspectRatio").select_option("16:9")
+    page.locator("#fitMode").select_option("fit")
+    assert page.locator("#previewCanvas").get_attribute("data-rendered-scene")
+    page.locator("#aspectRatio").select_option("original")
+    page.locator("#fitMode").select_option("fill")
+    page.locator("#closeSheetButton").click()
 
     # Duration, camera directions and the core camera track all affect the rendered preview.
     page.locator('[data-section="motion"]').click()
@@ -136,6 +176,16 @@ with sync_playwright() as p:
     assert page.locator("#studio").get_attribute("data-playing") == "true"
     page.locator("#stopButton").click()
 
+    # Playback must preserve scene-card nodes between frames; also exercise 50 scenes.
+    page.evaluate("window.__sceneCard = document.querySelector('.scene-card')")
+    page.locator("#playButton").click()
+    page.wait_for_timeout(300)
+    assert page.evaluate("window.__sceneCard === document.querySelector('.scene-card') && window.__sceneCard.isConnected"), "scene thumbnail DOM rebuilt during playback"
+    page.locator("#stopButton").click()
+    while page.locator(".scene-card").count() < 50:
+        page.locator("#addSceneButton").click()
+    assert page.locator(".scene-card").count() == 50
+
     # Portrait sizes requested for phone and compact landscape.
     for width in [320, 360, 390, 412, 480]:
         page.set_viewport_size({"width": width, "height": 844})
@@ -159,4 +209,4 @@ with sync_playwright() as p:
     assert not external_requests, f"offline test made network requests: {external_requests}"
     assert not console_errors, f"browser errors: {console_errors}"
     browser.close()
-print(json.dumps({"ok": True, "portraitWidths": [320,360,390,412,480], "landscape": ["640x360", "800x400"], "offline": True, "imageImportReplaceCancelCorruptDelete": True, "sceneSequence": True, "cameraPresets": 7, "transport": True}, ensure_ascii=False))
+print(json.dumps({"ok": True, "portraitWidths": [320,360,390,412,480], "landscape": ["640x360", "800x400"], "offline": True, "imageImportReplaceCancelCorruptDelete": True, "sceneSequence": True, "cameraPresets": 7, "aspectRatios": ["Original","9:16","16:9","1:1","4:5","4:3","3:4"], "raceImportSwitchDelete": True, "thumbnailStableDuringPlayback": True, "sceneCounts": [10,20,50], "transport": True}, ensure_ascii=False))
