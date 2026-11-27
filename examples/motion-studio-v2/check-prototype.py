@@ -125,6 +125,7 @@ with sync_playwright() as p:
 
     # Aspect ratios and Fit/Fill change the engine canvas backing store, not only CSS.
     page.locator('[data-section="more"]').click()
+    page.locator(".more-panel .disclosure summary").first.click()
     ratios = {"9:16":720/1280, "16:9":1280/720, "1:1":1, "4:5":864/1080, "4:3":960/720, "3:4":720/960}
     for ratio, expected in ratios.items():
         page.locator("#aspectRatio").select_option(ratio)
