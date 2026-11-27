@@ -76,8 +76,9 @@ def visual_regression(page):
     pose_reports = []
     pose_hashes = set()
     pose_texts = {"closed": "بْ", "round": "بُ", "wide": "بِ", "teeth": "ف", "open": "عَ"}
+    page.set_viewport_size({"width": 720, "height": 1280})
     for viseme, text in pose_texts.items():
-        page.evaluate("text => window.__QARTON_TEST_API.setTextScene({id:'mouth-poses',title:'أوضاع الفم',language:'tn',theme:'family',characters:[{id:'layla',name:'ليلى',spriteKey:'layla',x:.5,y:1,scale:1.4,z:0}],dialogue:[{id:'visemes',speakerId:'layla',expression:'neutral',text}]})", text)
+        page.evaluate("text => window.__QARTON_TEST_API.setTextScene({id:'mouth-poses',title:'أوضاع الفم',language:'tn',theme:'family',characters:[{id:'layla',name:'ليلى',spriteKey:'layla',x:.5,y:1,scale:1.1,z:0}],dialogue:[{id:'visemes',speakerId:'layla',expression:'neutral',text}]})", text)
         page.evaluate("window.__QARTON_TEST_API.setDialogueReveal(true)")
         timeline = page.evaluate("window.__QARTON_TEST_API.visemes(0)")
         event = next(item for item in timeline["events"] if item["viseme"] == viseme)
@@ -85,7 +86,7 @@ def visual_regression(page):
         page.evaluate("time => window.__QARTON_TEST_API.seek(time)", timestamp)
         assert canvas.get_attribute("data-active-viseme") == viseme, {"wanted": viseme, "got": canvas.get_attribute("data-active-viseme")}
         page.locator("#previewCanvas").screenshot(path=str(SHOTS / f"mouth-{viseme}.png"))
-        region = page.evaluate("() => { const c=document.querySelector('#previewCanvas'); const d=c.getContext('2d').getImageData(386,158,28,20).data; let h=2166136261; for(let i=0;i<d.length;i+=4){h=Math.imul(h^d[i],16777619);h=Math.imul(h^d[i+1],16777619);h=Math.imul(h^d[i+2],16777619);} return String(h>>>0); }")
+        region = page.evaluate("() => { const c=document.querySelector('#previewCanvas'); const d=c.getContext('2d').getImageData(379,395,26,20).data; let h=2166136261; for(let i=0;i<d.length;i+=4){h=Math.imul(h^d[i],16777619);h=Math.imul(h^d[i+1],16777619);h=Math.imul(h^d[i+2],16777619);} return String(h>>>0); }")
         pose_hashes.add(region)
         pose_reports.append({"viseme": viseme, "capture": f"mouth-{viseme}.png"})
     assert len(pose_hashes) >= 4, "Viseme ROI did not produce visibly distinct render samples"
