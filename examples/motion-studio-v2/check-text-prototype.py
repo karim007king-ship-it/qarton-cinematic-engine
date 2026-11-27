@@ -78,7 +78,7 @@ def visual_regression(page):
     pose_texts = {"closed": "بْ", "round": "بُ", "wide": "بِ", "teeth": "ف", "open": "عَ"}
     page.set_viewport_size({"width": 720, "height": 1280})
     for viseme, text in pose_texts.items():
-        page.evaluate("text => window.__QARTON_TEST_API.setTextScene({id:'mouth-poses',title:'أوضاع الفم',language:'tn',theme:'family',characters:[{id:'layla',name:'ليلى',spriteKey:'layla',x:.5,y:1,scale:1.1,z:0}],dialogue:[{id:'visemes',speakerId:'layla',expression:'neutral',text}]})", text)
+        page.evaluate("text => window.__QARTON_TEST_API.setTextScene({id:'mouth-poses',title:'أوضاع الفم',language:'tn',theme:'family',characters:[{id:'layla',name:'ليلى',spriteKey:'layla',x:.5,y:1,scale:1.1,z:0,face:{x:.55,y:.113,skin:'#d99a78'}}],dialogue:[{id:'visemes',speakerId:'layla',expression:'neutral',text}]})", text)
         page.evaluate("window.__QARTON_TEST_API.setDialogueReveal(true)")
         timeline = page.evaluate("window.__QARTON_TEST_API.visemes(0)")
         event = next(item for item in timeline["events"] if item["viseme"] == viseme)
