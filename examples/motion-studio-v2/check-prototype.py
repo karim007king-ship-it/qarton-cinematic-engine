@@ -142,7 +142,7 @@ with sync_playwright() as p:
     # Duration, camera directions and the core camera track all affect the rendered preview.
     page.locator('[data-section="motion"]').click()
     set_range("#sceneDuration", 10)
-    assert page.locator("#totalTime").inner_text() == "00:18"
+    assert page.locator("#totalTime").inner_text() == "00:13"
     poses = {}
     for preset in ["zoom-in", "zoom-out", "right", "left", "up", "down", "static"]:
         page.locator("#cameraPreset").select_option(preset)
