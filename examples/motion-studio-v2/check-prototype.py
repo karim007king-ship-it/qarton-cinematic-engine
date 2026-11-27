@@ -222,7 +222,7 @@ with sync_playwright() as p:
     # Real Chromium fake-device recording: recorded encoded bytes are decoded again,
     # analyzed for non-zero RMS/Peak, then inserted only after verification.
     page.locator("#demoRecordButton").click()
-    page.wait_for_function("document.documentElement.dataset.audioContextState === 'running' || document.querySelector('#micReady').textContent === 'granted'", timeout=5000)
+    page.wait_for_function("document.documentElement.dataset.audioRecording === 'true'", timeout=5000)
     assert page.locator(".scene-card").first.is_disabled(), "scene selection remained available during microphone capture"
     assert page.locator("#addSceneButton").is_disabled(), "scene creation remained available during microphone capture"
     assert page.locator("#playButton").is_disabled(), "playback remained available during microphone capture"

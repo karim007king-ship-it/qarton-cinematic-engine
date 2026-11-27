@@ -112,6 +112,7 @@ import { createStudioAudioTimeline } from "../motion-studio-lab/studio-audio-tim
     if (!state) return;
     const previousRevision = audioState.revision;
     audioState = state;
+    document.documentElement.dataset.audioRecording = String(state.recording);
     document.documentElement.dataset.audioPlayerState = state.playerState || "paused";
     document.documentElement.dataset.audioActiveVoices = String(state.activeVoices || 0);
     byId("#micReady").textContent = state.micState || "غير مفحوص";
