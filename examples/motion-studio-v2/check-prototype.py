@@ -74,7 +74,7 @@ with sync_playwright() as p:
     # A slow decode must remain attached to the scene captured at import start.
     page.evaluate("""() => { const decode = createImageBitmap.bind(window); window.__nativeCreateImageBitmap = decode; let release; window.__decodeStarted = false; window.__releaseDecode = () => release?.(); window.createImageBitmap = async (...args) => { if (!window.__decodeStarted) { window.__decodeStarted = true; await new Promise(resolve => { release = resolve; }); } return decode(...args); }; }""")
     page.locator("#addSceneButton").click()
-    assert page.locator(".scene-card").count() == 2
+    assert page.locator(".scene-card").count() == 3
     assert page.locator("#previewCanvas").is_hidden(), "Add scene must create an empty scene"
     choose_file(page.locator("#imageInput"), "race-switch.png", img_b)
     page.wait_for_function("window.__decodeStarted === true")
@@ -83,7 +83,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(250)
     page.locator(".scene-card").first.click()
     assert page.locator("#previewLabel").inner_text() == "scene-image.png", "switching scenes changed the original target image"
-    page.locator(".scene-card").nth(1).click()
+    page.locator(".scene-card").nth(2).click()
     assert page.locator("#previewCanvas").is_visible() and page.locator("#previewLabel").inner_text() == "race-switch.png", "image import followed selection instead of captured target scene"
     # Deleting the captured scene during decode aborts import and leaves no orphan.
     page.evaluate("window.__decodeStarted = false")
@@ -97,6 +97,7 @@ with sync_playwright() as p:
     page.evaluate("window.createImageBitmap = window.__nativeCreateImageBitmap")
 
     # Exercise image removal and verified recovery from the empty state.
+    page.locator(".scene-card").first.click()
     page.locator('[data-section="photos"]').click()
     page.locator("#deleteImageButton").click()
     page.wait_for_function("document.querySelector('#previewCanvas').hidden === true")
