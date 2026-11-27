@@ -160,9 +160,11 @@ test("failed image decoding rolls back candidate scene assets and preserves the 
   await assert.rejects(h.runtime.loadScene("bad"), /decode bad-bg failed/u);
   assert.equal(h.runtime.getState().sceneId, "good");
   assert.equal(h.runtime.assetCount, 2);
+  assert.equal(h.runtime.decodedAssetBytes, 2 * 64 * 64 * 4);
   assert.equal(h.runtime.assetLeaseCount, 1);
   await h.runtime.dispose();
   assert.equal(h.runtime.assetCount, 0);
+  assert.equal(h.runtime.decodedAssetBytes, 0);
   assert.equal(h.runtime.assetLeaseCount, 0);
 });
 

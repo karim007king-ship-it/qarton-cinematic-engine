@@ -106,7 +106,9 @@ function createDecodedAssetPool({ assetById, decodeAsset, releaseAsset }) {
     pending.clear();
   }
 
-  return Object.freeze({ acquire, release, dispose, get count() { return decoded.size; }, get leaseCount() { return leaseAssets.size; } });
+  return Object.freeze({ acquire, release, dispose, get count() { return decoded.size; },
+    get decodedBytes() { return [...decoded.values()].reduce((total, resource) => total + Number(resource.width ?? resource.naturalWidth) * Number(resource.height ?? resource.naturalHeight) * 4, 0); },
+    get leaseCount() { return leaseAssets.size; } });
 }
 
 /**
@@ -471,5 +473,5 @@ export function createCinematicStoryRuntime({ scenes, render, decodeAsset = deco
 
   return Object.freeze({ loadScene, preloadAssets, play, pause, resume, stop, seek, replay: () => run(replayInternal),
     skipDialogue, advanceDialogue, selectChoice, getState, exportState, restoreState, dispose, subscribe,
-    get story() { return story; }, get assetCount() { return assets.count; }, get assetLeaseCount() { return assets.leaseCount; } });
+    get story() { return story; }, get assetCount() { return assets.count; }, get decodedAssetBytes() { return assets.decodedBytes; }, get assetLeaseCount() { return assets.leaseCount; } });
 }
