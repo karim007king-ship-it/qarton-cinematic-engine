@@ -15,4 +15,4 @@ No external stock images, font files, runtime image API, model download, paid as
 
 Each generated bundled sprite has one portrait layer. The renderer supports independently imported face/body/hand/hair layers and expression/viseme variants; these preview portraits do not contain separated artwork parts. For production skeletal motion, an artist must supply correctly segmented and pivot-aligned transparent layers or alternate poses.
 
-The Chromium multi-layer regression derives distinct body/head crops from the bundled Layla WebP at test time so it exercises the importer and layer renderer with real anime pixels without pretending the full portrait is two separate production layers. It is test-only and is not included as an authored animation asset.
+The isolated `layered-character-test.html` page uses original transparent SVG body, head, rear/front hair, eye, brow, hand and five mouth layers authored in this repository. No external source artwork or third-party font is embedded in that fixture. These shapes test renderer alignment and variant selection; they are not final licensed production character art.

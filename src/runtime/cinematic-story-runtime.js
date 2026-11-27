@@ -143,7 +143,8 @@ export function createCinematicStoryRuntime({ scenes, render, decodeAsset = deco
   const assets = createDecodedAssetPool({ assetById, decodeAsset, releaseAsset });
   let state = "empty", activeClock = null, activeToken = null, currentScene = null, currentAssets = new Map();
   let currentTime = 0, eventCursor = -1, frameHandle = null, choiceWaitId = null, endingId = null;
-  let dialogueMode = null, disposalPromise = null, loadSequence = 0, preloadToken = null;
+  let dialogueMode = null, disposalPromise = null, loadSequence = 0, preloadToken = null, sceneGeneration = 0;
+  let renderQueue = Promise.resolve();
   let commandQueue = Promise.resolve();
   const eventLedger = new Set(), selectedChoices = new Map(), busyEvents = new Set();
   const stateCallbacks = new Set([onState]);
@@ -153,7 +154,7 @@ export function createCinematicStoryRuntime({ scenes, render, decodeAsset = deco
       const imageAssets = await assets.acquire(token, scene.assets.map(item => item.id));
       return Object.freeze({ scene, token, assets: imageAssets });
     },
-    crossfade: payload => transition ? transition({ ...payload, durationMs: payload.duration }) : true,
+    crossfade: payload => transition ? transition({ ...payload, type: payload.to?.scene?.transition?.type ?? "cut", durationMs: payload.duration }) : true,
     unmount: handle => assets.release(handle.token),
     duration: 350
   });
@@ -213,6 +214,7 @@ export function createCinematicStoryRuntime({ scenes, render, decodeAsset = deco
   }
   async function drawAt(timeMs, transport = state) {
     if (!currentScene) return;
+    const renderScene = currentScene, generation = sceneGeneration;
     updateCurrentTime(timeMs);
     const rawDirection = sampleCinematicDirector(currentScene.direction, currentTime);
     const camera = currentScene.camera.mode === "manual" && currentScene.camera.keyframes
@@ -242,12 +244,20 @@ export function createCinematicStoryRuntime({ scenes, render, decodeAsset = deco
       if (character.assetId) characterAssets.set(character.id, currentAssets.get(character.assetId));
       else characterAssets.set(character.id, { layers: character.layers.map(layer => ({ role: layer.role, variant: layer.variant, z: layer.z, ...(layer.layout ? { layout: layer.layout } : {}), image: currentAssets.get(layer.assetId) })) });
     }
-    await render(Object.freeze({ scene: currentScene, timeMs: currentTime, transport,
+    const renderFrame = Object.freeze({ scene: renderScene, timeMs: currentTime, transport,
       assets: currentAssets, characterAssets, camera: Object.freeze({ ...pose, zoom: pose.zoom * rawDirection.shotScale }),
       direction: rawDirection, dialogue: activeDialogue, characterStates,
       focusCharacterId: activeDialogue && currentScene.camera.mode === "auto" && currentScene.characters.find(character => character.id === activeDialogue.speakerId)?.focus !== false ? activeDialogue.speakerId : null,
       choice: choiceWaitId ? currentScene.choices.find(item => item.id === choiceWaitId) ?? null : null,
-      endingId, transitionHandle: currentHandle }));
+      endingId, transitionHandle: currentHandle,
+      isCurrent: () => !disposalPromise && generation === sceneGeneration && currentScene === renderScene });
+    const task = renderQueue.then(() => {
+      if (disposalPromise || generation !== sceneGeneration || currentScene !== renderScene) return false;
+      return render(renderFrame);
+    });
+    renderQueue = task.catch(() => {});
+    const rendered = await task;
+    if (rendered === false || disposalPromise || generation !== sceneGeneration || currentScene !== renderScene) return;
     notifyState();
   }
   async function moveForward(timeMs, { dispatch = true } = {}) {
@@ -273,10 +283,12 @@ export function createCinematicStoryRuntime({ scenes, render, decodeAsset = deco
     return preloadAssetsInternal(targetId);
   }
   async function enterScene(scene, { restore = false, autoplay = false } = {}) {
+    sceneGeneration += 1;
     cancelScheduledFrame();
     const previousState = state;
     state = "loading"; notifyState();
     try {
+      await renderQueue;
       const result = await transitions.transitionTo(scene, null, { duration: scene.transition.durationMs });
       if (!result) { state = previousState; notifyState(); return false; }
       const handle = transitions.current;
@@ -350,6 +362,7 @@ export function createCinematicStoryRuntime({ scenes, render, decodeAsset = deco
   async function frame() {
     frameHandle = null;
     if (state !== "playing" || !currentScene) return;
+    const generation = sceneGeneration;
     try {
       let timeMs = activeClock.time();
       const barrier = currentScene.choices.filter(choice => !isChoiceSelected(currentScene, choice))
@@ -358,14 +371,18 @@ export function createCinematicStoryRuntime({ scenes, render, decodeAsset = deco
         .filter(endMs => endMs > currentTime && endMs <= timeMs).sort((a, b) => a - b)[0];
       if (barrier !== undefined) timeMs = barrier;
       await fireEventsUntil(timeMs);
+      if (generation !== sceneGeneration || state !== "playing") return;
       if (await processBoundary(timeMs)) return;
       await drawAt(timeMs, state);
-      schedule();
-    } catch (error) { state = "paused"; activeClock?.pause(); reportError(error); notifyState(); }
+      if (generation === sceneGeneration && state === "playing") schedule();
+    } catch (error) {
+      if (generation !== sceneGeneration || disposalPromise) return;
+      state = "paused"; activeClock?.pause(); reportError(error); notifyState();
+    }
   }
   function schedule() {
     cancelScheduledFrame();
-    if (state === "playing") frameHandle = requestFrame(() => { void frame(); });
+    if (state === "playing") frameHandle = requestFrame(() => { void run(frame).catch(error => { if (!disposalPromise) reportError(error); }); });
   }
   async function replayInternal() {
     if (!currentScene) throw new Error("No scene is loaded");
@@ -426,7 +443,10 @@ export function createCinematicStoryRuntime({ scenes, render, decodeAsset = deco
     if (choice) { choiceWaitId = choice.id; state = "waitingForChoice"; activeClock.pause(); await drawAt(currentTime, state); return true; }
     const next = currentScene.textScene.turns[currentIndex + 1];
     if (!next) { await moveForward(currentScene.durationMs); await finishScene(); return true; }
-    currentTime = next.startMs; activeClock.seek(next.startMs); eventCursor = Math.max(eventCursor, next.startMs); state = "paused"; await drawAt(next.startMs, state); return true;
+    // Manual advance crosses the inter-dialogue pause too: story events placed
+    // between two lines must not disappear when the player advances directly.
+    await fireEventsUntil(next.startMs);
+    currentTime = next.startMs; activeClock.seek(next.startMs); state = "paused"; await drawAt(next.startMs, state); return true;
   }); }
   function selectChoice(choiceId) { return run(async () => {
     if (state !== "waitingForChoice" || !choiceWaitId || !currentScene) throw new Error("No choice is currently awaiting selection");
@@ -436,14 +456,21 @@ export function createCinematicStoryRuntime({ scenes, render, decodeAsset = deco
     if (option.condition && !(await game.evaluateCondition?.(option.condition, snapshot()))) throw new Error(`Choice option ${option.id} is not eligible`);
     if (isChoiceSelected(currentScene, choice)) throw new Error(`Choice ${choice.id} has already been committed`);
     const event = { id: `choice-selected:${choice.id}`, type: "choice:selected", sceneId: currentScene.id, chapterId: currentScene.chapterId, atMs: currentTime, payload: { choiceId: choice.id, optionId: option.id, targetSceneId: option.targetSceneId, endingId: option.endingId } };
+    // eventKey makes a retry idempotent for external adapters. Keep the choice
+    // pending until the target mount/transition succeeds so a failed mount can
+    // be retried without losing the selection point.
     await emit(event);
-    let selections = selectedChoices.get(currentScene.id);
-    if (!selections) { selections = new Map(); selectedChoices.set(currentScene.id, selections); }
-    selections.set(choice.id, option.id);
-    choiceWaitId = null;
-    if (option.endingId) { endingId = option.endingId; await finishScene(); return Object.freeze({ endingId }); }
+    const sourceSceneId = currentScene.id;
+    const commitChoice = () => {
+      let selections = selectedChoices.get(sourceSceneId);
+      if (!selections) { selections = new Map(); selectedChoices.set(sourceSceneId, selections); }
+      selections.set(choice.id, option.id); choiceWaitId = null;
+    };
+    if (option.endingId) { commitChoice(); endingId = option.endingId; await finishScene(); return Object.freeze({ endingId }); }
     const target = option.targetSceneId;
-    await enterScene(story.byId.get(target), { autoplay: true });
+    const entered = await enterScene(story.byId.get(target), { autoplay: true });
+    if (!entered) throw new Error(`Choice ${choice.id} target scene ${target} could not be mounted; retry the same option`);
+    commitChoice();
     return Object.freeze({ sceneId: target });
   }); }
   function getState() { return snapshot(); }
@@ -458,12 +485,17 @@ export function createCinematicStoryRuntime({ scenes, render, decodeAsset = deco
   function restoreState(serialized) { return run(async () => {
     const raw = typeof serialized === "string" ? JSON.parse(serialized) : serialized;
     const restored = validateCinematicRuntimeState(raw, story);
-    selectedChoices.clear(); eventLedger.clear();
-    for (const [sceneId, values] of Object.entries(restored.choices)) selectedChoices.set(sceneId, new Map(Object.entries(values)));
-    for (const key of restored.eventLedger) eventLedger.add(key);
-    endingId = restored.endingId ?? null; dialogueMode = restored.dialogueMode;
-    const loaded = await enterScene(story.byId.get(restored.sceneId), { restore: true });
-    if (!loaded) return false;
+    const candidateChoices = new Map(Object.entries(restored.choices).map(([sceneId, values]) => [sceneId, new Map(Object.entries(values))]));
+    const candidateEvents = new Set(restored.eventLedger);
+    const previousEnding = endingId, previousMode = dialogueMode;
+    dialogueMode = restored.dialogueMode;
+    let loaded;
+    try { loaded = await enterScene(story.byId.get(restored.sceneId), { restore: true }); }
+    catch (error) { dialogueMode = previousMode; endingId = previousEnding; throw error; }
+    if (!loaded) { dialogueMode = previousMode; endingId = previousEnding; return false; }
+    selectedChoices.clear(); for (const [sceneId, values] of candidateChoices) selectedChoices.set(sceneId, values);
+    eventLedger.clear(); for (const key of candidateEvents) eventLedger.add(key);
+    endingId = restored.endingId ?? null;
     activeClock.seek(restored.timeMs); currentTime = restored.timeMs; eventCursor = restored.timeMs;
     state = restored.transport;
     choiceWaitId = restored.choiceId ?? null;
@@ -475,8 +507,10 @@ export function createCinematicStoryRuntime({ scenes, render, decodeAsset = deco
   }); }
   async function dispose() {
     if (disposalPromise) return disposalPromise;
+    sceneGeneration += 1;
     disposalPromise = (async () => {
       cancelScheduledFrame(); activeClock?.pause(); state = "disposed"; notifyState();
+      await renderQueue;
       const problems = [];
       for (const cleanup of [() => transitions.destroy(), () => preloadToken && assets.release(preloadToken), () => assets.dispose(), () => music.stop?.({ sceneId: currentScene?.id })]) {
         try { await cleanup(); } catch (error) { problems.push(error); }

@@ -30,4 +30,5 @@ export { createScenePackage } from "./scene/scene-package.js";
 export { createSceneClock } from "./motion/scene-clock.js";
 export { createCinematicPlayback } from "./runtime/cinematic-playback.js";
 export { createCinematicStoryRuntime } from "./runtime/cinematic-story-runtime.js";
+export { CinematicRenderer, CINEMATIC_RENDER_QUALITY } from "./runtime/cinematic-renderer.js";
 export { CINEMATIC_SCENE_VERSION, CINEMATIC_STORY_VERSION, CINEMATIC_RUNTIME_STATE_VERSION, compileCinematicSceneV1, compileCinematicStoryV1, validateCinematicRuntimeState } from "./runtime/cinematic-scene-v1.js";

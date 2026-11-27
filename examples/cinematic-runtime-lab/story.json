@@ -27,6 +27,10 @@
         {
           "id": "bg-home",
           "src": "assets/backgrounds/day.svg"
+        },
+        {
+          "id": "bg-home-foreground",
+          "src": "assets/backgrounds/day-foreground.svg"
         }
       ],
       "backgrounds": [
@@ -36,6 +40,14 @@
           "role": "background",
           "z": 0,
           "depth": 0.2
+        },
+        {
+          "id": "home-arch-foreground",
+          "assetId": "bg-home-foreground",
+          "role": "foreground",
+          "z": 1,
+          "opacity": 0.72,
+          "depth": 0.82
         }
       ],
       "characters": [

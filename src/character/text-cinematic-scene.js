@@ -208,8 +208,10 @@ function drawTextBox(ctx, text, speaker, expression, progress, showAll) {
 }
 
 function drawFaceRig(ctx, character, x, top, spriteW, spriteH, pose, expression, speaking, expressionWeight, activeSpeakerX) {
-  const face = character.face;
-  if (!face) return;
+  // Full-body anime portraits need a usable mouth/eye rig even when an author
+  // has not supplied a bespoke anchor. Prefer explicit anchors for production
+  // art; the fallback is calibrated for the local transparent full-body demo.
+  const face = character.face ?? { x: 0.53, y: 0.125, skin: "#cf967c" };
   const mirrored = character.facing === "left";
   ctx.save();
   if (mirrored) { ctx.translate(x * 2, 0); ctx.scale(-1, 1); }
@@ -250,7 +252,12 @@ function drawFaceRig(ctx, character, x, top, spriteW, spriteH, pose, expression,
 
 function drawCharacter(ctx, character, art, turn, localMs, sceneMs, active, activeSpeakerX) {
   const { width, height } = ctx.canvas;
-  const sampledPose = turn?.animation.sample(localMs) ?? { headRotation: 0, eyeX: 0, blink: 0, mouthOpen: 0, viseme: "rest" };
+  const sampledPose = { ...(turn?.animation.sample(localMs) ?? { headRotation: 0, eyeX: 0, eyeY: 0, blink: 0, mouthOpen: 0, viseme: "rest" }) };
+  if (turn?.motions) {
+    sampledPose.headRotation += turn.motions.headRotation ?? 0;
+    sampledPose.eyeX = turn.motions.eyeX ?? sampledPose.eyeX;
+    sampledPose.eyeY = turn.motions.eyeY ?? sampledPose.eyeY;
+  }
   const blinkPhase = (sceneMs + character.x * 930) % 4100;
   const naturalBlink = blinkPhase < 155 ? Math.sin(Math.PI * blinkPhase / 155) : 0;
   const pose = { ...sampledPose, blink: Math.max(sampledPose.blink ?? 0, naturalBlink) };
@@ -261,7 +268,11 @@ function drawCharacter(ctx, character, art, turn, localMs, sceneMs, active, acti
     const spriteW = spriteH * .64;
     const x = width * character.x, top = height * character.y - spriteH + Math.sin(sceneMs / 720 + character.x * 8) * 2.6;
     ctx.save(); ctx.globalAlpha = active ? 1 : .82;
-    drawLayeredCharacter(ctx, image.layers, { x, top, width: spriteW, height: spriteH, headRotation: (pose.headRotation + Math.sin(sceneMs / 2300 + character.x) * 2.2) * Math.PI / 180, armMotion: active ? Math.sin(localMs / 390) * .18 : Math.sin(sceneMs / 1900 + character.x) * .035, expression, pose: character.pose ?? "front", viseme: pose.viseme, blink: pose.blink > .62, facing: character.facing ?? "right" });
+    drawLayeredCharacter(ctx, image.layers, { x, top, width: spriteW, height: spriteH,
+      headRotation: (pose.headRotation + Math.sin(sceneMs / 2300 + character.x) * 2.2) * Math.PI / 180,
+      armMotion: active ? Math.sin(localMs / 390) * (turn?.motions?.gesture ? .28 : .18) : Math.sin(sceneMs / 1900 + character.x) * .035,
+      bodySway: Math.sin(sceneMs / 2700 + character.x) * .012, eyeX: pose.eyeX ?? 0, eyeY: pose.eyeY ?? 0,
+      expression, pose: character.pose ?? "front", viseme: pose.viseme, blink: pose.blink > .62, facing: character.facing ?? "right" });
     ctx.restore();
     return { x, pose, expression, top, spriteW, spriteH };
   }
@@ -284,7 +295,7 @@ function drawCharacter(ctx, character, art, turn, localMs, sceneMs, active, acti
   return { x, pose, expression, top, spriteW, spriteH };
 }
 
-export function drawTextCinematicScene(ctx, scene, timeMs, { background, transparent = false, assets = new Map(), showAll = false, camera = null, drawSceneOverlay = null } = {}) {
+export function drawTextCinematicScene(ctx, scene, timeMs, { background, transparent = false, assets = new Map(), showAll = false, camera = null, drawSceneOverlay = null, drawDialogue = true } = {}) {
   if (!ctx || !scene || !Number.isFinite(timeMs)) throw new TypeError("Canvas context, compiled scene, and time are required");
   const { width, height } = ctx.canvas;
   const cameraPose = camera ?? { x: 0, y: 0, zoom: 1, rotation: 0 };
@@ -306,7 +317,7 @@ export function drawTextCinematicScene(ctx, scene, timeMs, { background, transpa
   }
   ctx.restore();
   if (typeof drawSceneOverlay === "function") drawSceneOverlay(ctx);
-  if (active) {
+  if (drawDialogue && active) {
     const elapsed = Math.max(0, timeMs - active.startMs);
     const fullText = active.text;
     const visible = showAll ? fullText : sampleVisibleDialogueText(active.animation, elapsed);

@@ -1,0 +1,14 @@
+import { CinematicRenderer, compileTextScene, compileTextCinematicDirection } from "../../src/index.js";
+const canvas=document.querySelector("#test-stage"),renderer=new CinematicRenderer(canvas,{quality:"high"}),assets=new Map();
+const roles={body:["body"],head:["head"],hair_back:["hair-back"],hair_front:["hair-front"],eyes:["eyes","eyes-closed"],brows:["brows"],hand_left:["hand-left"],hand_right:["hand-right"],mouth:["mouth-closed","mouth-open","mouth-round","mouth-wide","mouth-teeth"]};
+const sources={"body":"body.svg","head":"head.svg","hair-back":"hair-back.svg","hair-front":"hair-front.svg","eyes":"eyes.svg","eyes-closed":"eyes-closed.svg","brows":"brows.svg","hand-left":"hand.svg","hand-right":"hand.svg","mouth-closed":"mouth-closed.svg","mouth-open":"mouth-open.svg","mouth-round":"mouth-round.svg","mouth-wide":"mouth-wide.svg","mouth-teeth":"mouth-teeth.svg"};
+await Promise.all(Object.entries(sources).map(async([id,src])=>{const img=new Image();img.src=`assets/layered-test/${src}`;await img.decode();assets.set(id,img)}));
+const layers=[];for(const [role,ids] of Object.entries(roles))for(const id of ids){const variant=id==='eyes-closed'?'closed':id.startsWith('mouth-')?id.slice(6):'neutral';layers.push({role,assetId:id,variant,z:undefined})}
+const character={id:"mira",name:"ميرا",x:.5,y:.92,scale:.82,z:0,facing:"right",pose:"front",layers:layers.map((layer,index)=>({...layer,z:index}))};
+const textScene=compileTextScene({id:"layered-visual",title:"اختبار الطبقات",language:"ar",theme:"ruins",characters:[character],dialogue:[{id:"line",speakerId:"mira",expression:"determined",text:"بَتْث واو إي ب"}]});
+const scene={id:"layered-visual",textScene,characters:[character],backgrounds:[{id:"test-bg",assetId:"bg",role:"background",z:0,depth:.2}],camera:{mode:"auto",keyframes:null},direction:compileTextCinematicDirection({durationMs:textScene.durationMs,mood:"calm",shot:"medium"}),lighting:{intensity:.18,tint:"#D5AE61"}};
+const allAssets=new Map(assets);const bg=new Image();bg.src="assets/backgrounds/day.svg";await bg.decode();allAssets.set("bg",bg);
+const characterLayers=layers.map(layer=>({...layer,image:assets.get(layer.assetId)}));
+function paint(pose){const times=textScene.turns[0].animation.events.filter(event=>event.viseme===pose).map(event=>event.atMs+8);const time=times[0]??textScene.turns[0].startMs;const drawStats=renderer.renderEndpoint(scene,allAssets,undefined,time);document.querySelector("#mouth-state").textContent=`الفم: ${pose} • الوقت: ${Math.round(time)} ms • الطبقات: ${characterLayers.length}`;globalThis.qartonLayeredVisualTest.lastDraw=drawStats;return time}
+for(const button of document.querySelectorAll("[data-pose]"))button.onclick=()=>paint(button.dataset.pose);
+paint("closed");document.querySelector("#commit").textContent=`Commit: ${globalThis.__QARTON_COMMIT__??"local preview"}`;globalThis.qartonLayeredVisualTest={paint,renderer,assets,characterLayers};

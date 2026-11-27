@@ -1,5 +1,27 @@
 # QARTON Cinematic Runtime
 
+## Production Canvas renderer
+
+`CinematicRenderer` (`src/runtime/cinematic-renderer.js`) is the reusable Canvas host for `CinematicSceneV1` frames. It composes the existing `drawTextCinematicScene` and `drawLayeredCharacter` implementations, the shared camera sampler, and the existing cinematic director/effects compositor. It is not an editor dependency; the host passes a Canvas, a Runtime frame and decoded local assets.
+
+```js
+import { CinematicRenderer, createCinematicStoryRuntime } from "@qarton/cinematic-engine";
+const renderer = new CinematicRenderer(canvas, { quality: "medium" });
+const runtime = createCinematicStoryRuntime({ scenes, render: frame => renderer.render(frame), transition: p => renderer.transition(p) });
+```
+
+The renderer draws background layers in authored z order with aspect-preserving `cover` or `contain`, then uses the existing text-scene character path. `characterAssets` from Runtime provide decoded full images or role/variant layers. The same normalized camera pose is applied to backgrounds and actors. Director effects and lighting are composited after the scene art; HTML hosts can draw dialogue above the Canvas. The Canvas retains its authored backing resolution because the existing effect samples use that coordinate system. `quality` controls image smoothing (`low`, `medium`, `high`); hosts can choose a smaller canvas only when their effect coordinates match it.
+
+`renderer.transition({from,to,type,durationMs})` renders transition endpoints with the same scene renderer and supports `cut`, `crossfade`, `through-black`, `through-light`, and `focus`. `dispose()` cancels active transition frames and rejects subsequent draws. The Runtime provides `frame.isCurrent()` so asynchronous hosts can ignore superseded frames.
+
+Full-body art without a face anchor uses a centered fallback face anchor calibrated for the included preview portraits. Production images should set `characters[].face` to authored normalized mouth/eye coordinates or provide actual transparent face layers. The layered visual test page includes locally authored transparent SVG parts and five selectable mouth variants; these are visual-test assets, not final character art.
+
+## Rendering and event guarantees
+
+Runtime `render()` calls are serialized. A scene-generation token prevents old frames from notifying state or being submitted after a scene change, and every submitted frame has an `isCurrent()` guard. Hosts should check that guard after their own asynchronous work. Event adapters receive a stable `eventKey` (`sceneId:eventId`); external side effects must persist this key idempotently if they need safe retry across process restarts. Story seek/replay changes visual time and does not replay story events. A confirmed choice emits its idempotency key before the transition; if its target mount fails, the choice remains pending and can be retried with the same key.
+
+Restore validates the complete candidate state before loading and only installs saved choices and event ledger after the target scene assets and transition succeed. A failed asset load leaves the prior scene/save state active. Adapters should treat scene/music synchronization as idempotent by scene ID because external adapter failure cannot be rolled back by a local JSON save.
+
 ## Scope and architecture
 
 `createCinematicStoryRuntime` is a host-independent playback service. It reuses `compileTextScene` and the text-viseme compiler, `createSceneClock`, camera sampling, `sampleCinematicDirector`, `SceneTransitionManager`, the existing `AssetManager` URL cache, and the existing timeline event ordering. Motion Studio is only one possible authoring environment; the Runtime takes plain JSON plus host adapters and never queries Studio DOM nodes. The example host is `examples/cinematic-runtime-lab/` and all of its assets are local.

@@ -72,7 +72,7 @@ export function selectCharacterLayers(layers, { expression = "neutral", pose = "
   }).sort((a, b) => a.z - b.z);
 }
 
-export function drawLayeredCharacter(ctx, layers, { x, top, width, height, headRotation = 0, armMotion = 0, expression = "neutral", pose = "front", viseme = "rest", blink = false, facing = "right" } = {}) {
+export function drawLayeredCharacter(ctx, layers, { x, top, width, height, headRotation = 0, armMotion = 0, bodySway = 0, eyeX = 0, eyeY = 0, expression = "neutral", pose = "front", viseme = "rest", blink = false, facing = "right" } = {}) {
   if (!ctx || !Array.isArray(layers) || ![x, top, width, height].every(Number.isFinite) || width <= 0 || height <= 0) throw new TypeError("Canvas, character layers, and finite character bounds are required");
   if (!["left", "right"].includes(facing)) throw new TypeError("Character facing must be left or right");
   const selected = selectCharacterLayers(layers, { expression, pose, viseme, blink });
@@ -81,9 +81,12 @@ export function drawLayeredCharacter(ctx, layers, { x, top, width, height, headR
     if (!layer.image) continue;
     const w = width * layer.width, h = height * layer.height;
     const mirrored = facing === "left";
-    const px = x - width / 2 + width * (mirrored ? 1 - layer.x : layer.x), py = top + height * layer.y;
+    const eyeLayer = layer.role === "eyes";
+    const px = x - width / 2 + width * (mirrored ? 1 - layer.x : layer.x) + (eyeLayer ? eyeX * width * 0.025 * (mirrored ? -1 : 1) : 0);
+    const py = top + height * layer.y + (eyeLayer ? eyeY * height * 0.012 : 0);
     let rotation = 0;
     if (layer.role === "head") rotation = headRotation * (mirrored ? -1 : 1);
+    if (layer.role === "body") rotation = bodySway * (mirrored ? -1 : 1);
     if (layer.role === "hand_left") rotation = (mirrored ? 1 : -1) * armMotion;
     if (layer.role === "hand_right") rotation = (mirrored ? -1 : 1) * armMotion;
     ctx.save(); ctx.translate(px, py); if (mirrored) ctx.scale(-1, 1); ctx.rotate(rotation);
