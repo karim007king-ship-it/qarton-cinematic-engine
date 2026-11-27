@@ -20,6 +20,7 @@ export { compileCinematicEffects, sampleCinematicEffects, drawCinematicEffects, 
 export { createCameraTrack, sampleCameraTrack, composeCameraPose, toCameraCSS } from "./camera/camera-track.js";
 export { createParticleField } from "./effects/particle-field.js";
 export { resolveLighting, sampleFog } from "./effects/atmosphere.js";
+export { CINEMATIC_MOODS, CINEMATIC_SHOTS, CINEMATIC_TRANSITIONS, compileTextCinematicDirection, drawCinematicAtmosphere, sampleCinematicDirector } from "./effects/cinematic-director.js";
 export { createAudioCueController } from "./audio/audio-cue-controller.js";
 export { createAdaptivePerformanceMonitor, createRuntimeActivityGate } from "./runtime/adaptive-performance.js";
 export { createCinematicRuntime } from "./runtime/cinematic-runtime.js";

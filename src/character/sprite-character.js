@@ -72,19 +72,21 @@ export function selectCharacterLayers(layers, { expression = "neutral", pose = "
   }).sort((a, b) => a.z - b.z);
 }
 
-export function drawLayeredCharacter(ctx, layers, { x, top, width, height, headRotation = 0, armMotion = 0, expression = "neutral", pose = "front", viseme = "rest", blink = false } = {}) {
+export function drawLayeredCharacter(ctx, layers, { x, top, width, height, headRotation = 0, armMotion = 0, expression = "neutral", pose = "front", viseme = "rest", blink = false, facing = "right" } = {}) {
   if (!ctx || !Array.isArray(layers) || ![x, top, width, height].every(Number.isFinite) || width <= 0 || height <= 0) throw new TypeError("Canvas, character layers, and finite character bounds are required");
+  if (!["left", "right"].includes(facing)) throw new TypeError("Character facing must be left or right");
   const selected = selectCharacterLayers(layers, { expression, pose, viseme, blink });
   const drawn = [];
   for (const layer of selected) {
     if (!layer.image) continue;
     const w = width * layer.width, h = height * layer.height;
-    const px = x - width / 2 + width * layer.x, py = top + height * layer.y;
+    const mirrored = facing === "left";
+    const px = x - width / 2 + width * (mirrored ? 1 - layer.x : layer.x), py = top + height * layer.y;
     let rotation = 0;
-    if (layer.role === "head") rotation = headRotation;
-    if (layer.role === "hand_left") rotation = -armMotion;
-    if (layer.role === "hand_right") rotation = armMotion;
-    ctx.save(); ctx.translate(px, py); ctx.rotate(rotation);
+    if (layer.role === "head") rotation = headRotation * (mirrored ? -1 : 1);
+    if (layer.role === "hand_left") rotation = (mirrored ? 1 : -1) * armMotion;
+    if (layer.role === "hand_right") rotation = (mirrored ? -1 : 1) * armMotion;
+    ctx.save(); ctx.translate(px, py); if (mirrored) ctx.scale(-1, 1); ctx.rotate(rotation);
     ctx.drawImage(layer.image, -w * layer.pivotX, -h * layer.pivotY, w, h);
     ctx.restore(); drawn.push(layer.role + (layer.variant === "neutral" ? "" : `:${layer.variant}`));
   }

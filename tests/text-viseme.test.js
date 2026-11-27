@@ -62,13 +62,13 @@ test("rejects invalid speed, language, expression, and overlong dialogue", () =>
   assert.throws(() => compileTextVisemes("x".repeat(5001)), TypeError);
 });
 
-test("all three demo scenes contain multiple timed speakers in Tunisian and MSA", () => {
-  assert.equal(TEXT_SCENE_DEMOS.length, 3);
+test("all four demo scenes contain multiple timed speakers in Tunisian and MSA", () => {
+  assert.equal(TEXT_SCENE_DEMOS.length, 4);
   const scenes = TEXT_SCENE_DEMOS.map(demo => compileTextScene(demo, { language: demo.language }));
   assert.equal(scenes[0].language, "tn");
   assert.equal(scenes[1].language, "ar");
   assert.equal(scenes[2].turns.length, 4);
-  assert.deepEqual(scenes.map(scene => scene.characters.length), [2, 3, 2]);
+  assert.deepEqual(scenes.map(scene => scene.characters.length), [2, 3, 2, 3]);
   for (const scene of scenes) {
     assert.ok(scene.turns.length >= 2);
     assert.ok(scene.turns.every((turn, index) => !index || turn.startMs >= scene.turns[index - 1].endMs));

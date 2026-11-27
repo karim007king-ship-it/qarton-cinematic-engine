@@ -50,3 +50,16 @@ test("layer renderer sorts z-order and applies the authored pivot and movement",
   assert.deepEqual(events.filter(item => item[0] === "draw").map(item => item[1]), ["body", "head"]);
   assert.ok(events.some(item => item[0] === "rotate" && item[1] === .2));
 });
+
+test("left-facing layered characters mirror sprite anchors, art, and rotation", () => {
+  const events = [];
+  const ctx = {
+    save() {}, restore() {}, translate(...args) { events.push(["translate", ...args]); }, scale(...args) { events.push(["scale", ...args]); },
+    rotate(value) { events.push(["rotate", value]); }, drawImage(image) { events.push(["draw", image.id]); }
+  };
+  drawLayeredCharacter(ctx, [{ role: "head", image: { id: "head" }, layout: { x: .3, y: .25, width: .4, height: .3, pivotX: .5, pivotY: .8, z: 1 } }],
+    { x: 200, top: 100, width: 100, height: 300, headRotation: .2, facing: "left" });
+  assert.ok(events.some(event => event[0] === "translate" && event[1] === 220), "the authored x anchor is reflected around the character center");
+  assert.ok(events.some(event => event[0] === "scale" && event[1] === -1 && event[2] === 1));
+  assert.ok(events.some(event => event[0] === "rotate" && event[1] === -.2));
+});

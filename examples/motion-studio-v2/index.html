@@ -74,6 +74,7 @@
           <button type="button" class="secondary-button active" data-demo="0">وعد في قرطاج</button>
           <button type="button" class="secondary-button" data-demo="1">رسالة من المدينة</button>
           <button type="button" class="secondary-button" data-demo="2">قرار المواجهة</button>
+          <button type="button" class="secondary-button" data-demo="3">دخان فوق قرطاج</button>
         </div>
         <label class="range-row select-row" for="characterSelect"><span>الشخصية</span><select id="characterSelect"></select></label>
         <label class="range-row select-row" for="dialogueLineSelect"><span>دور الحوار</span><select id="dialogueLineSelect"></select></label>
@@ -90,9 +91,26 @@
         <p class="sheet-note" id="characterStatus" aria-live="polite">تحريك الفم والحوار يعتمدان على النص وموضع التشغيل؛ لا يوجد صوت بشري.</p>
       </div>
       <div class="panel-body" data-panel="effects" hidden>
-        <div class="effect-grid" role="group" aria-label="مظهر تجريبي"><button class="effect-chip active" type="button" data-effect="none">أصلي</button><button class="effect-chip" type="button" data-effect="warm">دافئ</button><button class="effect-chip" type="button" data-effect="mono">أبيض وأسود</button><button class="effect-chip" type="button" data-effect="soft">ناعم</button></div>
-        <label class="range-row" for="effectAmount"><span>قوة المظهر</span><output id="effectAmountValue">50٪</output><input id="effectAmount" type="range" min="0" max="100" value="50"></label>
-        <p class="sheet-note">هذه مرشّحات بصرية مؤقتة للمعاينة ولا تُحفظ في الفيديو.</p>
+        <div class="cinematic-demo-grid" role="group" aria-label="مشاهد سينمائية صامتة">
+          <button class="secondary-button" type="button" data-cinematic-demo="0">منزل قرطاج</button><button class="secondary-button" type="button" data-cinematic-demo="1">غموض ليلي</button>
+          <button class="secondary-button" type="button" data-cinematic-demo="2">مواجهة</button><button class="secondary-button" type="button" data-cinematic-demo="3">خطر ودخان</button>
+        </div>
+        <div class="cinematic-mood-grid" role="group" aria-label="إخراج درامي">
+          <button class="effect-chip active" type="button" data-mood="calm">هادئ</button><button class="effect-chip" type="button" data-mood="emotional">عاطفي</button>
+          <button class="effect-chip" type="button" data-mood="mystery">غموض</button><button class="effect-chip" type="button" data-mood="fear">خوف</button>
+          <button class="effect-chip" type="button" data-mood="confrontation">مواجهة</button><button class="effect-chip" type="button" data-mood="sad">حزين</button>
+          <button class="effect-chip" type="button" data-mood="heroic">بطولي</button><button class="effect-chip" type="button" data-mood="siege">حصار</button>
+        </div>
+        <label class="range-row" for="cinematicStrength"><span>شدة الإخراج</span><output id="cinematicStrengthValue">78٪</output><input id="cinematicStrength" type="range" min="0" max="100" value="78"></label>
+        <details class="disclosure"><summary><span>إعدادات اللقطة والانتقال</span><span class="disclosure-mark">＋</span></summary>
+          <div class="cinematic-advanced-grid">
+            <label>حجم اللقطة<select id="cinematicShot"><option value="wide">عامة</option><option value="medium" selected>متوسطة</option><option value="close">قريبة</option></select></label>
+            <label>وقت المشهد<select id="cinematicTimeOfDay"><option value="day">نهار</option><option value="dusk">غروب</option><option value="night">ليل</option></select></label>
+            <label>الانتقال<select id="cinematicTransition"><option value="cut">قطع</option><option value="crossfade">تدريجي</option><option value="through-black">عبر السواد</option><option value="through-light">عبر الضوء</option><option value="focus">تركيز الشخصية</option></select></label>
+          </div>
+          <label class="cinematic-toggle"><input id="cinematicEnabled" type="checkbox" checked><span>تفعيل المؤثرات السينمائية</span></label>
+        </details>
+        <p class="sheet-note">المؤثرات مرتبطة بساعة المشهد وتُعاد بنفس النتيجة عند البحث أو الإعادة.</p>
       </div>
       <div class="panel-body more-panel" data-panel="more" hidden>
         <details class="disclosure"><summary><span>أبعاد المعاينة</span><span class="disclosure-mark">＋</span></summary><div class="advanced-grid"><label>نسبة الفيديو<select id="aspectRatio"><option value="original">Original</option><option value="9:16" selected>9:16</option><option value="16:9">16:9</option><option value="1:1">1:1</option><option value="4:5">4:5</option><option value="4:3">4:3</option><option value="3:4">3:4</option></select></label><label>عرض الصورة<select id="fitMode"><option value="fit">Fit · احتواء</option><option value="fill" selected>Fill · ملء</option></select></label></div><p class="sheet-note">تُطبّق الأبعاد وFit/Fill داخل رسم المحرك.</p></details>

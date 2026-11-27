@@ -85,7 +85,8 @@ export function createStudioSequenceCompositor({ createSurface = defaultSurface 
         renderScene(context, width, height, sample.scene, sample.sceneTimeMs, drawScene, signal);
         return;
       }
-      if (sample?.kind !== "transition" || !["fade", "dissolve"].includes(sample.transition?.type) ||
+      const transitionType = sample?.transition?.type;
+      if (sample?.kind !== "transition" || !["fade", "dissolve", "crossfade", "through-black", "through-light", "focus"].includes(transitionType) ||
           !Number.isFinite(sample.progress) || sample.progress < 0 || sample.progress > 1 ||
           !sample.outgoing?.scene || !sample.incoming?.scene) {
         throw new TypeError("Expected a valid StudioSequenceV2 scene or transition sample");
@@ -95,8 +96,8 @@ export function createStudioSequenceCompositor({ createSurface = defaultSurface 
       try {
         resetContext(context);
         context.clearRect(0, 0, width, height);
-        if (sample.transition.type === "fade") {
-          context.fillStyle = "#000";
+        if (["fade", "through-black", "through-light"].includes(sample.transition.type)) {
+          context.fillStyle = sample.transition.type === "through-light" ? (sample.transition.color ?? "#fff") : (sample.transition.color ?? "#000");
           context.fillRect(0, 0, width, height);
           const visible = sample.outgoing.opacity > 0 ? sample.outgoing : sample.incoming;
           const opacity = sample.outgoing.opacity > 0 ? sample.outgoing.opacity : sample.incoming.opacity;
@@ -107,6 +108,22 @@ export function createStudioSequenceCompositor({ createSurface = defaultSurface 
             context.globalAlpha = opacity;
             context.drawImage(scratch, 0, 0, width, height);
           }
+          return;
+        }
+
+        if (sample.transition.type === "focus") {
+          renderScene(context, width, height, sample.outgoing.scene, sample.outgoing.sceneTimeMs, drawScene, signal);
+          const overlay = ensureScratch(width, height, context.canvas);
+          renderScene(overlay, width, height, sample.incoming.scene, sample.incoming.sceneTimeMs, drawScene, signal);
+          throwIfAborted(signal);
+          const focusX = Number.isFinite(sample.transition.focusX) ? Math.max(0, Math.min(1, sample.transition.focusX)) * width : width / 2;
+          const focusY = Number.isFinite(sample.transition.focusY) ? Math.max(0, Math.min(1, sample.transition.focusY)) * height : height / 2;
+          const radius = Math.hypot(width, height) * sample.progress;
+          context.save();
+          try {
+            context.beginPath(); context.arc(focusX, focusY, radius, 0, Math.PI * 2); context.clip();
+            context.drawImage(scratch, 0, 0, width, height);
+          } finally { context.restore(); }
           return;
         }
 

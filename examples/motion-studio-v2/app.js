@@ -80,6 +80,15 @@ import { DEMO_CHARACTER_ART } from "./demo-character-art.js";
     one("#cameraPreset").value = state.motion.preset; one("#motionSpeed").value = String(state.motion.speed);
     one("#motionSpeedValue").textContent = Number(state.motion.speed).toFixed(1).replace(/\.0$/u, "") + "×";
     one("#motionStrength").value = String(state.motion.strength); one("#motionStrengthValue").textContent = `${state.motion.strength}٪`;
+    if (state.cinematic) {
+      one("#cinematicShot").value = state.cinematic.shot;
+      one("#cinematicTimeOfDay").value = state.cinematic.timeOfDay;
+      one("#cinematicTransition").value = state.cinematic.transition;
+      one("#cinematicEnabled").checked = state.cinematic.enabled;
+      one("#cinematicStrength").value = String(Math.round(state.cinematic.strength * 100));
+      one("#cinematicStrengthValue").textContent = `${Math.round(state.cinematic.strength * 100)}٪`;
+      all("[data-mood]").forEach(button => button.classList.toggle("active", button.dataset.mood === state.cinematic.mood));
+    }
     canvas.dataset.motionPreset = state.motion.preset; one("#deleteImageButton").disabled = !state.hasImage;
     one("#demoReady").textContent = "جاهز"; one("#engineReady").textContent = "متصل دون صوت"; one("#imageAssetCount").textContent = String(state.imageAssetCount);
     if (sceneRef !== state.scenes || selectedScene !== state.selectedSceneId) { renderSceneCards(state); sceneRef = state.scenes; selectedScene = state.selectedSceneId; }
@@ -100,7 +109,7 @@ import { DEMO_CHARACTER_ART } from "./demo-character-art.js";
   }
   if (engine) syncCharacters(true);
   if (engine && new URLSearchParams(location.search).has("testVisual")) {
-    window.__QARTON_TEST_API = Object.freeze({ state: () => engine.getTextState(), seek: value => engine.seek(value), setDialogue: (value, expression) => engine.setDialogue(value, expression), loadDemo: index => engine.loadTextDemo(index), setTextScene: value => engine.setTextScene(value), setDialogueReveal: value => engine.setDialogueReveal(value), visemes: index => engine.getDialogueVisemes(index) });
+    window.__QARTON_TEST_API = Object.freeze({ state: () => engine.getTextState(), sequenceState: () => engine.getState(), seek: value => engine.seek(value), setDialogue: (value, expression) => engine.setDialogue(value, expression), loadDemo: index => engine.loadTextDemo(index), addCinematicDemo: index => engine.addCinematicDemo(index), setTextScene: value => engine.setTextScene(value), setMood: value => engine.setCinematicMood(value), setTransition: value => engine.setTransitionPreset(value), setShot: value => engine.setShotSize(value), setTimeOfDay: value => engine.setTimeOfDay(value), setDialogueReveal: value => engine.setDialogueReveal(value), visemes: index => engine.getDialogueVisemes(index) });
   }
   all("[data-section]").forEach(button => button.addEventListener("click", () => setSection(button.dataset.section)));
   one("#closeSheetButton").addEventListener("click", () => setSection(activeSection));
@@ -141,8 +150,13 @@ import { DEMO_CHARACTER_ART } from "./demo-character-art.js";
   one("#characterX").addEventListener("input", event => { one("#characterXValue").textContent = event.target.value + "٪"; try { engine.setCharacterPlacement(engine.getTextState().characters[characterIndex].id, { x: Number(event.target.value) / 100 }); } catch (error) { fail(error); } });
   one("#characterScale").addEventListener("input", event => { one("#characterScaleValue").textContent = event.target.value + "٪"; try { engine.setCharacterPlacement(engine.getTextState().characters[characterIndex].id, { scale: Number(event.target.value) / 100 }); } catch (error) { fail(error); } });
   one("#showAllTextButton").addEventListener("click", event => { const show = event.currentTarget.getAttribute("aria-pressed") !== "true"; event.currentTarget.setAttribute("aria-pressed", String(show)); event.currentTarget.textContent = show ? "متابعة حركة الكتابة" : "إظهار النص كاملًا"; try { engine.setDialogueReveal(show); } catch (error) { fail(error); } });
-  all("[data-effect]").forEach(button => button.addEventListener("click", () => { all("[data-effect]").forEach(item => item.classList.toggle("active", item === button)); studio.dataset.effect = button.dataset.effect; }));
-  one("#effectAmount").addEventListener("input", event => { one("#effectAmountValue").textContent = event.target.value + "٪"; canvas.style.opacity = String(.65 + Number(event.target.value) / 100 * .35); });
+  all("[data-mood]").forEach(button => button.addEventListener("click", () => { try { engine.setCinematicMood(button.dataset.mood); } catch (error) { fail(error); } }));
+  all("[data-cinematic-demo]").forEach(button => button.addEventListener("click", () => { try { engine.addCinematicDemo(Number(button.dataset.cinematicDemo)); syncCharacters(true); notify("أُضيف المشهد السينمائي الصامت إلى الشريط."); } catch (error) { fail(error); } }));
+  one("#cinematicStrength").addEventListener("input", event => { one("#cinematicStrengthValue").textContent = event.target.value + "٪"; try { engine.setEffectStrength(Number(event.target.value)); } catch (error) { fail(error); } });
+  one("#cinematicShot").addEventListener("change", event => { try { engine.setShotSize(event.target.value); } catch (error) { fail(error); } });
+  one("#cinematicTimeOfDay").addEventListener("change", event => { try { engine.setTimeOfDay(event.target.value); } catch (error) { fail(error); } });
+  one("#cinematicTransition").addEventListener("change", event => { try { engine.setTransitionPreset(event.target.value); } catch (error) { fail(error); } });
+  one("#cinematicEnabled").addEventListener("change", event => { try { engine.setEffectsEnabled(event.target.checked); } catch (error) { fail(error); } });
   one("#undoButton").addEventListener("click", () => notify("التراجع غير متاح في هذه المرحلة."));
   one("#saveButton").addEventListener("click", () => notify("حفظ المشروع غير مفعّل في هذا النموذج."));
   one("#exportButton").addEventListener("click", () => notify("تصدير الفيديو غير مفعّل في هذا النموذج."));

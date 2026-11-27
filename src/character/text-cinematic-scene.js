@@ -43,6 +43,15 @@ export const TEXT_SCENE_DEMOS = Object.freeze([
       Object.freeze({ id: "heart-03", speakerId: "nour", expression: "surprised", text: "وتتصور نجم نبدأ من جديد؟" }),
       Object.freeze({ id: "heart-04", speakerId: "youssef", expression: "happy", text: "إي. وموش وحدك المرّة هاذي." })
     ])
+  }),
+  Object.freeze({
+    id: "carthage-siege", title: "دخان فوق قرطاج", language: "ar", theme: "siege",
+    characters: characters(["layla", "youssef", "salim"]).map((character, index) => Object.freeze({ ...character, x: [0.23, 0.5, 0.77][index], scale: 0.55, z: index })),
+    dialogue: Object.freeze([
+      Object.freeze({ id: "siege-01", speakerId: "layla", expression: "afraid", text: "الدخان يقترب من البوابة… علينا أن نخرج الآن!" }),
+      Object.freeze({ id: "siege-02", speakerId: "salim", expression: "determined", text: "سأبقى هنا حتى تعبروا. لا تضيّعوا الوقت." }),
+      Object.freeze({ id: "siege-03", speakerId: "youssef", expression: "angry", text: "لن نترك أحدًا خلفنا. نخرج معًا!" })
+    ])
   })
 ]);
 
@@ -122,7 +131,9 @@ function drawBackdrop(ctx, theme) {
   const presets = {
     family: ["#2d241e", "#12141a", "#c69448"],
     ruins: ["#25273a", "#101116", "#7897bc"],
-    rooftop: ["#553c4e", "#12131d", "#e5a66f"]
+    rooftop: ["#553c4e", "#12131d", "#e5a66f"],
+    mystery: ["#101b32", "#080d17", "#98aeca"],
+    siege: ["#45271f", "#140e12", "#e87538"]
   };
   const [top, bottom, glowColor] = presets[theme] ?? presets.family;
   const sky = ctx.createLinearGradient(0, 0, 0, height);
@@ -141,6 +152,16 @@ function drawBackdrop(ctx, theme) {
     ctx.fillStyle = "#080a12a8"; ctx.fillRect(0, height * .43, width, height * .29);
     for (let i = 0; i < 4; i++) { const x = width * (.08 + i * .23); ctx.fillStyle = "#131721"; ctx.fillRect(x, height * (.31 + (i % 2) * .04), width * .1, height * .4); ctx.beginPath(); ctx.arc(x + width * .05, height * (.31 + (i % 2) * .04), width * .05, Math.PI, 0); ctx.fill(); }
     ctx.strokeStyle = "#c5b9954a"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, height * .71); ctx.lineTo(width, height * .71); ctx.stroke();
+  } else if (theme === "mystery") {
+    ctx.fillStyle = "#080a12c9"; ctx.fillRect(0, height * .42, width, height * .3);
+    for (let i = 0; i < 5; i++) { const x = width * (.04 + i * .22), base = height * (.68 - (i % 2) * .08); ctx.fillStyle = i % 2 ? "#121b2a" : "#0d1421"; ctx.fillRect(x, base - height * .23, width * .11, height * .33); ctx.beginPath(); ctx.arc(x + width * .055, base - height * .23, width * .055, Math.PI, 0); ctx.fill(); }
+    ctx.fillStyle = "#cbd8e8"; ctx.globalAlpha = .58; ctx.beginPath(); ctx.arc(width * .77, height * .19, width * .045, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+    ctx.fillStyle = "#080c14"; ctx.fillRect(0, height * .69, width, height * .04);
+  } else if (theme === "siege") {
+    ctx.fillStyle = "#171115"; ctx.fillRect(0, height * .45, width, height * .28);
+    for (let i = 0; i < 4; i++) { const x = width * (.06 + i * .24); ctx.fillStyle = "#241b1b"; ctx.fillRect(x, height * .36, width * .08, height * .35); ctx.fillStyle = "#351d18"; ctx.fillRect(x + width * .11, height * .49, width * .03, height * .22); }
+    const fire = ctx.createRadialGradient(width * .25, height * .63, 2, width * .25, height * .63, width * .37); fire.addColorStop(0, "#ed713a75"); fire.addColorStop(1, "#d3422500"); ctx.fillStyle = fire; ctx.fillRect(0, height * .3, width * .8, height * .55);
+    ctx.fillStyle = "#090a0d"; ctx.fillRect(0, height * .7, width, height * .04);
   } else {
     ctx.fillStyle = "#11121b99"; ctx.fillRect(0, height * .46, width, height * .22);
     ctx.fillStyle = "#0b0d12"; ctx.beginPath(); ctx.moveTo(0, height * .7); ctx.lineTo(0, height * .58); ctx.lineTo(width * .12, height * .58); ctx.lineTo(width * .12, height * .52); ctx.lineTo(width * .3, height * .52); ctx.lineTo(width * .3, height * .61); ctx.lineTo(width * .49, height * .61); ctx.lineTo(width * .49, height * .54); ctx.lineTo(width * .72, height * .54); ctx.lineTo(width * .72, height * .6); ctx.lineTo(width, height * .6); ctx.lineTo(width, height * .72); ctx.closePath(); ctx.fill();
@@ -189,6 +210,9 @@ function drawTextBox(ctx, text, speaker, expression, progress, showAll) {
 function drawFaceRig(ctx, character, x, top, spriteW, spriteH, pose, expression, speaking, expressionWeight, activeSpeakerX) {
   const face = character.face;
   if (!face) return;
+  const mirrored = character.facing === "left";
+  ctx.save();
+  if (mirrored) { ctx.translate(x * 2, 0); ctx.scale(-1, 1); }
   const fx = x + (face.x - .5) * spriteW, fy = top + face.y * spriteH;
   const width = spriteW * .034, scale = spriteH / 700;
   const mouthOpen = speaking ? pose.mouthOpen : 0;
@@ -214,7 +238,7 @@ function drawFaceRig(ctx, character, x, top, spriteW, spriteH, pose, expression,
   ctx.strokeStyle = "#382623"; ctx.lineWidth = Math.max(1.3, scale * 2.6); ctx.lineCap = "round";
   for (const side of [-1, 1]) { ctx.beginPath(); ctx.moveTo(fx + side * eyeDX - width * .34, eyeY - brow * width); ctx.quadraticCurveTo(fx + side * eyeDX, eyeY - width * .14 + brow * width, fx + side * eyeDX + width * .34, eyeY - width * .08); ctx.stroke(); }
   ctx.fillStyle = "#5a392e"; ctx.globalAlpha = .62;
-  const gaze = Math.max(-1, Math.min(1, (activeSpeakerX - character.x) * 2.2));
+  const gaze = Math.max(-1, Math.min(1, (activeSpeakerX - character.x) * 2.2 * (mirrored ? -1 : 1)));
   for (const side of [-1, 1]) { ctx.beginPath(); ctx.ellipse(fx + side * eyeDX + gaze * width * .2, eyeY + width * .42, width * .11, width * .13, 0, 0, Math.PI * 2); ctx.fill(); }
   ctx.globalAlpha = 1;
   if (pose.blink > .62) { ctx.strokeStyle = face.skin; ctx.lineWidth = Math.max(2, scale * 4); ctx.beginPath(); ctx.moveTo(fx - eyeDX - width * .26, eyeY); ctx.lineTo(fx - eyeDX + width * .26, eyeY); ctx.moveTo(fx + eyeDX - width * .26, eyeY); ctx.lineTo(fx + eyeDX + width * .26, eyeY); ctx.stroke(); }
@@ -234,7 +258,7 @@ function drawCharacter(ctx, character, art, turn, localMs, sceneMs, active, acti
     const spriteW = spriteH * .64;
     const x = width * character.x, top = height * character.y - spriteH + Math.sin(sceneMs / 720 + character.x * 8) * 2.6;
     ctx.save(); ctx.globalAlpha = active ? 1 : .82;
-    drawLayeredCharacter(ctx, image.layers, { x, top, width: spriteW, height: spriteH, headRotation: (pose.headRotation + Math.sin(sceneMs / 2300 + character.x) * 2.2) * Math.PI / 180, armMotion: active ? Math.sin(localMs / 390) * .18 : Math.sin(sceneMs / 1900 + character.x) * .035, expression, pose: character.pose ?? "front", viseme: pose.viseme, blink: pose.blink > .62 });
+    drawLayeredCharacter(ctx, image.layers, { x, top, width: spriteW, height: spriteH, headRotation: (pose.headRotation + Math.sin(sceneMs / 2300 + character.x) * 2.2) * Math.PI / 180, armMotion: active ? Math.sin(localMs / 390) * .18 : Math.sin(sceneMs / 1900 + character.x) * .035, expression, pose: character.pose ?? "front", viseme: pose.viseme, blink: pose.blink > .62, facing: character.facing ?? "right" });
     ctx.restore();
     return { x, pose, expression, top, spriteW, spriteH };
   }
@@ -257,9 +281,15 @@ function drawCharacter(ctx, character, art, turn, localMs, sceneMs, active, acti
   return { x, pose, expression, top, spriteW, spriteH };
 }
 
-export function drawTextCinematicScene(ctx, scene, timeMs, { background, transparent = false, assets = new Map(), showAll = false } = {}) {
+export function drawTextCinematicScene(ctx, scene, timeMs, { background, transparent = false, assets = new Map(), showAll = false, camera = null, drawSceneOverlay = null } = {}) {
   if (!ctx || !scene || !Number.isFinite(timeMs)) throw new TypeError("Canvas context, compiled scene, and time are required");
   const { width, height } = ctx.canvas;
+  const cameraPose = camera ?? { x: 0, y: 0, zoom: 1, rotation: 0 };
+  ctx.save();
+  ctx.translate(width / 2 + cameraPose.x, height / 2 + cameraPose.y);
+  ctx.rotate(cameraPose.rotation * Math.PI / 180);
+  ctx.scale(cameraPose.zoom, cameraPose.zoom);
+  ctx.translate(-width / 2, -height / 2);
   if (!transparent) drawBackdrop(ctx, scene.theme);
   const active = scene.turns.find(turn => timeMs >= turn.startMs && timeMs < turn.endMs);
   const mostRecent = new Map();
@@ -270,6 +300,8 @@ export function drawTextCinematicScene(ctx, scene, timeMs, { background, transpa
     const elapsed = active?.speakerId === character.id ? Math.max(0, timeMs - active.startMs) : turn ? Math.min(turn.animation.durationMs, timeMs - turn.startMs) : 0;
     drawCharacter(ctx, character, assets, turn, elapsed, timeMs, active?.speakerId === character.id, active?.character.x ?? .5);
   }
+  ctx.restore();
+  if (typeof drawSceneOverlay === "function") drawSceneOverlay(ctx);
   if (active) {
     const elapsed = Math.max(0, timeMs - active.startMs);
     const fullText = active.text;

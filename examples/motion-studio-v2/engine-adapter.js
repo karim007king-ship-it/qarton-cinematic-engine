@@ -10,12 +10,14 @@ import {
   sampleFrame,
   sampleStudioSequence
 } from "../../packages/motion-studio/index.js";
+import { createStudioSequenceCompositor } from "../../packages/motion-studio/studio-sequence-compositor.js";
 import { createAssetRegistry } from "../../packages/motion-studio/asset-registry.js";
 import { createSceneClock } from "../../src/motion/scene-clock.js";
 import { createCameraMotionProject } from "../motion-studio-lab/studio-motion-presets.js";
 import { decodeImageBitmap } from "../motion-studio-lab/studio-image.js";
 import { drawTextCinematicScene, TEXT_SCENE_DEMOS, compileTextScene } from "../../src/character/text-cinematic-scene.js";
 import { parseCharacterLayerFilename, normalizeCharacterLayer, countCharacterPixels, MAX_IMPORTED_CHARACTER_PIXELS } from "../../src/character/sprite-character.js";
+import { compileTextCinematicDirection, sampleCinematicDirector, drawCinematicAtmosphere, CINEMATIC_MOODS, CINEMATIC_SHOTS, CINEMATIC_TRANSITIONS } from "../../src/effects/cinematic-director.js";
 
 const DEFAULT_VIEWPORT = Object.freeze({ width: 720, height: 1280, fps: 24 });
 const ASPECTS = Object.freeze({ "9:16": [720, 1280], "16:9": [1280, 720], "1:1": [1080, 1080], "4:5": [864, 1080], "4:3": [960, 720], "3:4": [720, 960] });
@@ -117,6 +119,9 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
   const decodedImages = new Map([[PLACEHOLDER_ID, placeholderSurface]]);
   const objectUrls = new Map();
   const motionSettings = new Map([[currentSceneId, { ...DEFAULT_MOTION }]]);
+  const directorSettings = new Map([[currentSceneId, { mood: "calm", shot: "medium", timeOfDay: "day", enabled: true, strength: .75, transition: "cut" }]]);
+  const directorCache = new Map();
+  const transitionCompositor = createStudioSequenceCompositor();
   let compiledSequence = compileStudioSequence(sequence);
   let compiledProjects = new WeakMap();
   let clock = createSceneClock({ durationMs: compiledSequence.durationMs });
@@ -142,8 +147,19 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
     } catch (error) { onError(error); }
   }));
   let textScene = compileTextScene(TEXT_SCENE_DEMOS[selectedDemoIndex], { language: TEXT_SCENE_DEMOS[selectedDemoIndex].language, speed: dialogueSpeed });
+  const textScenes = new Map([[currentSceneId, textScene]]);
 
-  function textSnapshot() { return Object.freeze({ demoIndex: selectedDemoIndex, title: textScene.title, language: textScene.language, characters: textScene.characters.map(({ id, name, speed, x, scale }) => ({ id, name, speed: speed ?? dialogueSpeed, x, scale })), turns: textScene.turns.map(({ id, speakerId, speaker, text, expression }) => ({ id, speakerId, speaker, text, expression })), selectedCharacterIndex, selectedDialogueIndex, speed: textScene.characters[selectedCharacterIndex]?.speed ?? dialogueSpeed, durationMs: textScene.durationMs, artReady: characterArt.size === Object.keys(demoAssets).length, importedLayerCount: [...importedCharacters.values()].reduce((sum, entry) => sum + (entry.layers?.length ?? 0), 0), importedPortraitCount: [...importedCharacters.values()].filter(entry => entry.portrait).length }); }
+  function saveTextScene() { textScenes.set(currentSceneId, textScene); }
+  function directorFor(scene) {
+    const settings = directorSettings.get(scene.id) ?? { mood: "calm", shot: "medium", timeOfDay: "day", enabled: true, strength: .75, transition: "cut" };
+    const cached = directorCache.get(scene.id);
+    if (cached?.settings === settings && cached.durationMs === scene.project.durationMs) return cached.director;
+    const director = compileTextCinematicDirection({ durationMs: scene.project.durationMs, ...settings });
+    directorCache.set(scene.id, { settings, durationMs: scene.project.durationMs, director });
+    return director;
+  }
+
+  function textSnapshot() { const director = directorSettings.get(currentSceneId) ?? {}; return Object.freeze({ demoIndex: selectedDemoIndex, title: textScene.title, language: textScene.language, characters: textScene.characters.map(({ id, name, speed, x, scale }) => ({ id, name, speed: speed ?? dialogueSpeed, x, scale })), turns: textScene.turns.map(({ id, speakerId, speaker, text, expression }) => ({ id, speakerId, speaker, text, expression })), selectedCharacterIndex, selectedDialogueIndex, speed: textScene.characters[selectedCharacterIndex]?.speed ?? dialogueSpeed, durationMs: textScene.durationMs, artReady: characterArt.size === Object.keys(demoAssets).length, importedLayerCount: [...importedCharacters.values()].reduce((sum, entry) => sum + (entry.layers?.length ?? 0), 0), importedPortraitCount: [...importedCharacters.values()].filter(entry => entry.portrait).length, mood: director.mood ?? "calm", shot: director.shot ?? "medium", timeOfDay: director.timeOfDay ?? "day", effectStrength: director.strength ?? .75, effectsEnabled: director.enabled !== false, transition: director.transition ?? "cut" }); }
 
   function selectedScene() {
     return assetRegistry.sequence.scenes.find(scene => scene.id === currentSceneId) ?? assetRegistry.sequence.scenes[0];
@@ -216,6 +232,8 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
     const scenes = assetRegistry.sequence.scenes;
     const sceneIndex = scenes.findIndex(scene => scene.id === sample.sceneId);
     const scene = sample.scene;
+    const sceneText = textScenes.get(scene.id) ?? textScene;
+    const activeDialogueTurn = sceneText.turns.find(turn => sample.sceneTimeMs >= turn.startMs && sample.sceneTimeMs < turn.endMs);
     const assetId = scene.project.layers[0]?.assetId ?? PLACEHOLDER_ID;
     const metadata = assetRegistry.sequence.assets.find(asset => asset.id === assetId);
     const motion = motionSettings.get(scene.id) ?? { ...DEFAULT_MOTION };
@@ -249,13 +267,14 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
       camera: sampleFrame(compiledProject(scene.project), sample.sceneTimeMs).camera,
       cameraKeyframes: keyframes.map(frame => frame.atMs),
       motion,
+      cinematic: directorSettings.get(scene.id) ?? { mood: "calm", shot: "medium", timeOfDay: "day", enabled: true, strength: .75, transition: "cut" },
       imageAssetCount: assetRegistry.sequence.assets.filter(asset => asset.kind === "image" && asset.id !== PLACEHOLDER_ID).length,
       canDelete: scenes.length > 1,
       canMoveRight: sceneIndex > 0,
       canMoveLeft: sceneIndex >= 0 && sceneIndex < scenes.length - 1,
-      activeSpeaker: textScene.turns.find(turn => sample.sceneTimeMs >= turn.startMs && sample.sceneTimeMs < turn.endMs)?.speaker ?? "",
-      activeCharacterId: textScene.turns.find(turn => sample.sceneTimeMs >= turn.startMs && sample.sceneTimeMs < turn.endMs)?.speakerId ?? "",
-      activeViseme: textScene.turns.find(turn => sample.sceneTimeMs >= turn.startMs && sample.sceneTimeMs < turn.endMs)?.animation.sample(sample.sceneTimeMs - (textScene.turns.find(turn => sample.sceneTimeMs >= turn.startMs && sample.sceneTimeMs < turn.endMs)?.startMs ?? 0)).viseme ?? "rest",
+      activeSpeaker: activeDialogueTurn?.speaker ?? "",
+      activeCharacterId: activeDialogueTurn?.speakerId ?? "",
+      activeViseme: activeDialogueTurn?.animation.sample(sample.sceneTimeMs - activeDialogueTurn.startMs).viseme ?? "rest",
       demoArtReady: characterArt.size === Object.keys(demoAssets).length
     });
   }
@@ -264,23 +283,66 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
     if (disposed) return;
     try {
       const timeMs = clock.time();
-        const sample = sampleStudioSequence(compiledSequence, timeMs);
+      const sample = sampleStudioSequence(compiledSequence, timeMs);
       currentSceneId = sample.sceneId;
-      const frame = sampleFrame(compiledProject(sample.scene.project), sample.sceneTimeMs);
-      drawFrame(context, frame);
-      const selectedAssetId = sample.scene.project.layers[0]?.assetId ?? PLACEHOLDER_ID;
-      const hasCustomBackground = selectedAssetId !== PLACEHOLDER_ID;
+      if (textScenes.has(sample.sceneId) && textScenes.get(sample.sceneId) !== textScene) {
+        textScene = textScenes.get(sample.sceneId);
+        selectedDemoIndex = TEXT_SCENE_DEMOS.findIndex(demo => demo.id === textScene.id);
+        selectedCharacterIndex = Math.min(selectedCharacterIndex, textScene.characters.length - 1);
+        selectedDialogueIndex = Math.min(selectedDialogueIndex, textScene.turns.length - 1);
+      }
       const art = new Map(characterArt);
       for (const [id, entry] of importedCharacters) if (entry.portrait || entry.layers?.length) art.set(id, entry);
-      const textState = drawTextCinematicScene(context, textScene, sample.sceneTimeMs, { transparent: hasCustomBackground, assets: art, showAll: showAllDialogue });
+      let textState = null;
+      const drawSceneAt = (target, scene, localTimeMs) => {
+        const frame = sampleFrame(compiledProject(scene.project), localTimeMs);
+        const direction = sampleCinematicDirector(directorFor(scene), localTimeMs);
+        const sceneText = textScenes.get(scene.id) ?? textScene;
+        const turn = sceneText.turns.find(item => localTimeMs >= item.startMs && localTimeMs < item.endMs);
+        const focusDelta = turn ? (.5 - turn.character.x) * viewport.width * .08 : 0;
+        const parallaxLayers = direction.effects.layers;
+        const parallaxDelta = parallaxLayers.length > 1 ? (parallaxLayers.at(-1).x - parallaxLayers[0].x) * .12 : 0;
+        const camera = Object.freeze({ ...frame.camera,
+          x: frame.camera.x + direction.effects.camera.x + focusDelta + parallaxDelta,
+          y: frame.camera.y + direction.effects.camera.y,
+          zoom: frame.camera.zoom * direction.shotScale,
+          rotation: frame.camera.rotation + direction.effects.camera.rotation });
+        drawFrame(target, { ...frame, camera });
+        const selectedAssetId = scene.project.layers[0]?.assetId ?? PLACEHOLDER_ID;
+        const hasCustomBackground = selectedAssetId !== PLACEHOLDER_ID;
+        textState = drawTextCinematicScene(target, sceneText, localTimeMs, { transparent: hasCustomBackground, assets: art,
+          showAll: showAllDialogue, camera, drawSceneOverlay: targetContext => drawCinematicAtmosphere(targetContext, direction) });
+      };
+      const transitionConfig = directorSettings.get(sample.sceneId) ?? {};
+      const transitionMs = Math.min(900, Math.max(250, Math.floor(sample.scene.project.durationMs * .16)));
+      if (sample.sceneIndex > 0 && transitionConfig.transition && transitionConfig.transition !== "cut" && sample.sceneTimeMs < transitionMs) {
+        const outgoing = compiledSequence.scenes[sample.sceneIndex - 1];
+        const progress = Math.max(0, Math.min(1, sample.sceneTimeMs / transitionMs));
+        const transitionType = transitionConfig.transition === "crossfade" ? "crossfade" : transitionConfig.transition;
+        const outgoingOpacity = transitionType === "through-black" || transitionType === "through-light"
+          ? (progress < .5 ? 1 - 2 * progress : 0) : 1 - progress;
+        const incomingOpacity = transitionType === "through-black" || transitionType === "through-light"
+          ? (progress < .5 ? 0 : 2 * progress - 1) : progress;
+        const incomingText = textScenes.get(sample.sceneId) ?? textScene;
+        const activeTurn = incomingText.turns.find(item => sample.sceneTimeMs >= item.startMs && sample.sceneTimeMs < item.endMs);
+        transitionCompositor.draw(context, { kind: "transition", progress,
+          transition: { type: transitionType === "crossfade" ? "dissolve" : transitionType,
+            focusX: activeTurn?.character.x ?? .5, focusY: .42, color: "#f1d39b" },
+          outgoing: { scene: outgoing, sceneTimeMs: outgoing.project.durationMs, opacity: outgoingOpacity },
+          incoming: { scene: sample.scene, sceneTimeMs: sample.sceneTimeMs, opacity: incomingOpacity } }, drawSceneAt);
+      } else {
+        transitionCompositor.release();
+        drawSceneAt(context, sample.scene, sample.sceneTimeMs);
+      }
       canvas.dataset.activeSpeaker = textState.activeSpeaker;
       canvas.dataset.activeCharacterId = textState.activeCharacterId;
       canvas.dataset.activeViseme = textState.viseme;
       canvas.dataset.renderedCharacterIds = textState.renderedCharacterIds.join(",");
       canvas.dataset.renderedScene = sample.sceneId;
-      canvas.dataset.cameraPose = [
-        frame.camera.x, frame.camera.y, frame.camera.zoom, frame.camera.rotation
-      ].map(value => Number(value).toFixed(4)).join(",");
+      const activeDirector = directorSettings.get(sample.sceneId) ?? {};
+      canvas.dataset.cinematicMood = activeDirector.mood ?? "calm";
+      canvas.dataset.cinematicTransition = activeDirector.transition ?? "cut";
+      canvas.dataset.cameraPose = [sample.sceneTimeMs, sample.sequenceTimeMs].map(value => Number(value).toFixed(2)).join(",");
       canvas.dataset.cameraKeyframes = (sample.scene.project.camera ?? []).map(item => item.atMs).join(",");
       if (sample.sceneId !== lastSceneId) lastSceneId = sample.sceneId;
       onState(makeState(sample));
@@ -386,6 +448,8 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
     const scene = { ...blank, project: { ...blank.project, viewport } };
     const next = addStudioSequenceScene(assetRegistry.sequence, scene);
     motionSettings.set(id, { ...DEFAULT_MOTION });
+    directorSettings.set(id, { mood: "calm", shot: "medium", timeOfDay: "day", enabled: true, strength: .75, transition: "cut" });
+    textScenes.set(id, textScene);
     editSequence(next, { sceneId: id, seekToStart: true });
     return id;
   }
@@ -396,6 +460,8 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
     const id = makeSceneId(sceneCounter);
     const next = duplicateStudioSequenceScene(assetRegistry.sequence, source.id, { newId: id });
     motionSettings.set(id, { ...(motionSettings.get(source.id) ?? DEFAULT_MOTION) });
+    directorSettings.set(id, { ...(directorSettings.get(source.id) ?? {}) });
+    textScenes.set(id, textScenes.get(source.id) ?? textScene);
     editSequence(next, { sceneId: id, seekToStart: true });
     return id;
   }
@@ -408,6 +474,7 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
     const removedAssetIds = scenes[index].project.layers.map(layer => layer.assetId);
     const next = deleteStudioSequenceScene(assetRegistry.sequence, removedId);
     motionSettings.delete(removedId);
+    directorSettings.delete(removedId); directorCache.delete(removedId); textScenes.delete(removedId);
     const nextId = next.scenes[Math.max(0, index - 1)].id;
     editSequence(next, { sceneId: nextId, seekToStart: true });
     removedAssetIds.forEach(cleanAsset);
@@ -518,6 +585,7 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
       for (const bitmap of new Set([...(prior?.layers ?? []).map(layer => layer.image), prior?.portrait].filter(Boolean))) if (!retained.has(bitmap)) bitmap.close?.();
       const characters = textScene.characters.map(item => item.id === characterId ? { ...item, face: manifest.face ?? item.face, facing: manifest.facing ?? item.facing, pose: manifest.pose ?? item.pose } : item);
       textScene = compileTextScene({ characters, dialogue: textScene.dialogue }, { language: textScene.language, speed: dialogueSpeed });
+      saveTextScene();
       render();
       return Object.freeze({ characterId, mode: portrait ? "portrait" : "layers", layerCount: next.layers.length, imageCount: images.length });
     } catch (error) {
@@ -544,6 +612,7 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
     if (!textScene.characters.some(character => character.id === characterId)) throw new RangeError("الشخصية غير موجودة.");
     const dialogue = textScene.dialogue.map((line, index) => index === selectedDialogueIndex ? { ...line, speakerId: characterId } : line);
     textScene = compileTextScene({ characters: textScene.characters, dialogue }, { language: textScene.language, speed: dialogueSpeed });
+    saveTextScene();
     selectedCharacterIndex = textScene.characters.findIndex(character => character.id === characterId);
     ensureDialogueFits(); render(); return textSnapshot();
   }
@@ -551,11 +620,13 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
   function setCharacterPlacement(characterId, patch) {
     const characters = textScene.characters.map(character => character.id === characterId ? { ...character, ...patch } : character);
     textScene = compileTextScene({ characters, dialogue: textScene.dialogue }, { language: textScene.language, speed: dialogueSpeed });
+    saveTextScene();
     render(); return textSnapshot();
   }
 
   function setTextScene(definition) {
     textScene = compileTextScene(definition, { language: definition?.language ?? "tn", speed: dialogueSpeed });
+    saveTextScene();
     selectedDemoIndex = -1; selectedCharacterIndex = 0; selectedDialogueIndex = 0; showAllDialogue = false;
     ensureDialogueFits(); render(); return textSnapshot();
   }
@@ -582,6 +653,10 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
     playing = false;
     clock.pause();
     currentSceneId = id;
+    if (textScenes.has(id)) textScene = textScenes.get(id);
+    selectedDemoIndex = TEXT_SCENE_DEMOS.findIndex(demo => demo.id === textScene.id);
+    selectedCharacterIndex = Math.min(selectedCharacterIndex, textScene.characters.length - 1);
+    selectedDialogueIndex = Math.min(selectedDialogueIndex, textScene.turns.length - 1);
     clock.seek(sceneStartMs(id));
     render();
   }
@@ -618,6 +693,18 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
     renderImages.clear();
     compiledProjects = new WeakMap();
     render();
+  }
+
+  function updateCinematicSettings(patch) {
+    const scene = selectedScene();
+    const prior = directorSettings.get(scene.id) ?? { mood: "calm", shot: "medium", timeOfDay: "day", enabled: true, strength: .75, transition: "cut" };
+    const next = { ...prior, ...patch };
+    if (!Object.hasOwn(CINEMATIC_MOODS, next.mood)) throw new TypeError("إعداد درامي غير معروف.");
+    if (!Object.hasOwn(CINEMATIC_SHOTS, next.shot)) throw new TypeError("حجم اللقطة غير معروف.");
+    if (!CINEMATIC_TRANSITIONS.includes(next.transition)) throw new TypeError("الانتقال غير مدعوم.");
+    if (!Number.isFinite(next.strength) || next.strength < 0 || next.strength > 1) throw new RangeError("شدة المؤثر من 0 إلى 100٪.");
+    if (! ["day", "dusk", "night"].includes(next.timeOfDay)) throw new TypeError("وقت المشهد غير معروف.");
+    directorSettings.set(scene.id, next); directorCache.delete(scene.id); render(); return Object.freeze({ ...next });
   }
 
   function setAspectRatio(value) {
@@ -669,13 +756,32 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
     moveScene,
     getTextState: textSnapshot,
     getDialogueVisemes,
+    addCinematicDemo(index) {
+      if (!Number.isInteger(index) || index < 0 || index >= TEXT_SCENE_DEMOS.length) throw new RangeError("رقم المشهد السينمائي غير صالح.");
+      const id = addScene();
+      const demo = TEXT_SCENE_DEMOS[index];
+      selectedDemoIndex = index; selectedCharacterIndex = 0; selectedDialogueIndex = 0; dialogueSpeed = 1; showAllDialogue = false;
+      textScene = compileTextScene(demo, { language: demo.language, speed: dialogueSpeed }); textScenes.set(id, textScene);
+      const mood = ["calm", "mystery", "confrontation", "siege"][index];
+      directorSettings.set(id, { mood, shot: index === 1 ? "wide" : index === 2 ? "medium" : "close",
+        timeOfDay: index === 1 || index === 3 ? "night" : "dusk", enabled: true, strength: .78,
+        transition: compileTextCinematicDirection({ durationMs: Math.max(1000, selectedScene().project.durationMs), mood }).profile.transition });
+      directorCache.delete(id); ensureDialogueFits(); render(); return id;
+    },
     loadTextDemo(index) {
-      if (!Number.isInteger(index) || index < 0 || index >= TEXT_SCENE_DEMOS.length) throw new RangeError("اختر مشهدًا تجريبيًا من 1 إلى 3.");
+      if (!Number.isInteger(index) || index < 0 || index >= TEXT_SCENE_DEMOS.length) throw new RangeError("رقم المشهد التجريبي غير صالح.");
       selectedDemoIndex = index; selectedCharacterIndex = 0; selectedDialogueIndex = 0; dialogueSpeed = 1; showAllDialogue = false;
       const demo = TEXT_SCENE_DEMOS[index]; textScene = compileTextScene(demo, { language: demo.language, speed: dialogueSpeed });
+      saveTextScene();
       ensureDialogueFits(); render(); return textSnapshot();
     },
     setTextScene,
+    setCinematicMood(mood) { const profile = CINEMATIC_MOODS[mood]; if (!profile) throw new TypeError("إعداد درامي غير معروف."); return updateCinematicSettings({ mood, transition: profile.transition }); },
+    setShotSize(shot) { return updateCinematicSettings({ shot }); },
+    setTimeOfDay(timeOfDay) { return updateCinematicSettings({ timeOfDay }); },
+    setEffectStrength(value) { return updateCinematicSettings({ strength: Number(value) / 100 }); },
+    setEffectsEnabled(enabled) { return updateCinematicSettings({ enabled: Boolean(enabled) }); },
+    setTransitionPreset(transition) { return updateCinematicSettings({ transition }); },
     selectTextCharacter(index) {
       if (!Number.isInteger(index) || index < 0 || index >= textScene.characters.length) throw new RangeError("الشخصية غير موجودة في المشهد.");
       selectedCharacterIndex = index;
@@ -687,7 +793,7 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
     assignDialogueSpeaker,
     setDialogue(text, expression = textScene.turns[selectedDialogueIndex].expression) {
       const dialogue = textScene.dialogue.map((line, index) => index === selectedDialogueIndex ? { ...line, text, expression } : line);
-      textScene = compileTextScene({ characters: textScene.characters, dialogue }, { language: textScene.language, speed: dialogueSpeed }); ensureDialogueFits(); render(); return textSnapshot();
+      textScene = compileTextScene({ characters: textScene.characters, dialogue }, { language: textScene.language, speed: dialogueSpeed }); saveTextScene(); ensureDialogueFits(); render(); return textSnapshot();
     },
     setDialogueReveal(showAll) { showAllDialogue = Boolean(showAll); render(); return showAllDialogue; },
     setCharacterPlacement,
@@ -695,6 +801,7 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
       if (!Number.isFinite(speed) || speed < 0.5 || speed > 2) throw new RangeError("سرعة الكلام بين 0.5× و2×.");
       const characters = textScene.characters.map(character => character.id === characterId ? { ...character, speed } : character);
       textScene = compileTextScene({ characters, dialogue: textScene.dialogue }, { language: textScene.language, speed: dialogueSpeed });
+      saveTextScene();
       ensureDialogueFits(); render(); return textSnapshot();
     },
     setDialogueSpeed(speed) {

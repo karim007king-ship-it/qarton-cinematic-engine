@@ -3,15 +3,16 @@ from playwright.sync_api import sync_playwright
 import json
 import os
 import shutil
+import base64
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
-HTML = ROOT / "dist/motion-studio-v2-l14c2-android-preview/index.html"
+HTML = ROOT / "dist/motion-studio-v2-l14c3-android-preview/index.html"
 OUT = HTML.parent
 SHOTS = OUT / "screenshots"
 SHOTS.mkdir(parents=True, exist_ok=True)
 if not HTML.exists():
-    raise SystemExit("Build the standalone L14-C2 HTML before running this check")
+    raise SystemExit("Build the standalone L14-C3 HTML before running this check")
 
 
 def set_range(page, selector, value):
@@ -37,8 +38,14 @@ def visual_regression(page):
     with tempfile.TemporaryDirectory(prefix="qarton-layer-fixture-") as folder:
         body = Path(folder) / "layla__body.webp"
         head = Path(folder) / "layla__head.webp"
-        shutil.copyfile(portrait, body)
-        shutil.copyfile(portrait, head)
+        parts = page.evaluate("""async url => {
+          const image=new Image(); image.src=url; await image.decode();
+          const crop=(y,height) => { const c=document.createElement('canvas'); c.width=256;c.height=256; const x=c.getContext('2d'); x.drawImage(image,0,y*image.naturalHeight,image.naturalWidth,height*image.naturalHeight,0,0,256,256); return c.toDataURL('image/webp',.92); };
+          return {body:crop(.34,.66),head:crop(0,.38)};
+        }""", portrait.resolve().as_uri())
+        body.write_bytes(base64.b64decode(parts["body"].split(",", 1)[1]))
+        head.write_bytes(base64.b64decode(parts["head"].split(",", 1)[1]))
+        assert body.read_bytes() != head.read_bytes(), "layer fixtures must be real distinct image regions, not repeated full portraits"
         page.locator("#characterImageInput").set_input_files([str(body), str(head)])
         page.wait_for_function("window.__QARTON_TEST_API.state().importedLayerCount === 2")
         assert page.locator("#previewCanvas").evaluate("el => el.dataset.renderedCharacterIds.split(',').length === 2")
@@ -61,6 +68,12 @@ def visual_regression(page):
     assert set(ids) == {"nour", "youssef"} and len(ids) == len(set(ids)), ids
     page.evaluate("window.__QARTON_TEST_API.setDialogueReveal(true)")
     page.locator("#previewCanvas").screenshot(path=str(SHOTS / "emotional-two-character.png"))
+    page.evaluate("window.__QARTON_TEST_API.setTextScene({id:'mirror-face',title:'اختبار انعكاس الوجه',language:'tn',theme:'family',characters:[{id:'right-facing',name:'ليلى',spriteKey:'layla',x:.3,y:.82,scale:.72,z:0,face:{x:.55,y:.113,skin:'#d99a78'},facing:'right'},{id:'left-facing',name:'يوسف',spriteKey:'youssef',x:.7,y:.82,scale:.72,z:1,face:{x:.55,y:.109,skin:'#dca47e'},facing:'left'}],dialogue:[{id:'mirror-line',speakerId:'left-facing',expression:'surprised',text:'بُ، فِي قرطاج؟'}]})")
+    page.evaluate("window.__QARTON_TEST_API.setDialogueReveal(true)")
+    mirror_events = page.evaluate("window.__QARTON_TEST_API.visemes(0)")
+    mirror_event = next(item for item in mirror_events["events"] if item["viseme"] == "round")
+    page.evaluate("time => window.__QARTON_TEST_API.seek(time)", mirror_events["startMs"] + mirror_event["offsetMs"] + 30)
+    page.locator("#previewCanvas").screenshot(path=str(SHOTS / "mirrored-face-rig.png"))
     reports = []
     sprite_keys = ["layla", "youssef", "nour", "salim"]
     for count in (4, 8):
@@ -90,7 +103,28 @@ def visual_regression(page):
         pose_hashes.add(region)
         pose_reports.append({"viseme": viseme, "capture": f"mouth-{viseme}.png"})
     assert len(pose_hashes) >= 4, "Viseme ROI did not produce visibly distinct render samples"
-    return {"scenes": 3, "uniqueCharacterIds": True, "renderCounts": reports, "mouthPoseCaptures": pose_reports, "visuallyDistinctMouthRegions": len(pose_hashes), "screenshots": ["family-two-character.png", "confrontation-three-character.png", "emotional-two-character.png", "eight-character-scene.png"]}
+    cinematic_reports = []
+    cinematic_shots = []
+    for index, name in enumerate(("family-home", "night-mystery", "three-character-confrontation", "smoke-danger")):
+        page.evaluate("index => window.__QARTON_TEST_API.addCinematicDemo(index)", index)
+        sequence = page.evaluate("window.__QARTON_TEST_API.sequenceState()")
+        current = sequence["scenes"][sequence["selectedIndex"]]
+        start = sum(scene["durationMs"] for scene in sequence["scenes"][:sequence["selectedIndex"]])
+        page.evaluate("time => window.__QARTON_TEST_API.seek(time)", start + 420)
+        transition = page.locator("#previewCanvas").get_attribute("data-cinematic-transition")
+        mood = page.locator("#previewCanvas").get_attribute("data-cinematic-mood")
+        assert page.locator("#previewCanvas").get_attribute("data-rendered-scene") == current["id"]
+        page.locator("#previewCanvas").screenshot(path=str(SHOTS / f"cinematic-{name}.png"))
+        cinematic_reports.append({"scene": name, "mood": mood, "transition": transition, "characters": len(page.locator("#previewCanvas").get_attribute("data-rendered-character-ids").split(","))})
+        cinematic_shots.append(f"cinematic-{name}.png")
+    page.evaluate("window.__QARTON_TEST_API.setMood('emotional')")
+    sequence = page.evaluate("window.__QARTON_TEST_API.sequenceState()")
+    current_start = sum(scene["durationMs"] for scene in sequence["scenes"][:sequence["selectedIndex"]])
+    page.evaluate("time => window.__QARTON_TEST_API.seek(time)", current_start + 420)
+    assert page.locator("#previewCanvas").get_attribute("data-cinematic-transition") == "focus"
+    return {"scenes": 4, "uniqueCharacterIds": True, "renderCounts": reports, "mouthPoseCaptures": pose_reports,
+      "visuallyDistinctMouthRegions": len(pose_hashes), "cinematicScenes": cinematic_reports,
+      "screenshots": ["family-two-character.png", "confrontation-three-character.png", "emotional-two-character.png", "eight-character-scene.png", "mirrored-face-rig.png", *cinematic_shots]}
 
 
 def exercise(page, width, height):
@@ -156,5 +190,5 @@ with sync_playwright() as playwright:
     landscape = exercise(page, 844, 390)
     assert not errors, errors
     (OUT / "text-animation-check-results.json").write_text(json.dumps({"responsive": reports, "landscape": landscape, "visualScenes": visuals, "pageErrors": errors}, ensure_ascii=False, indent=2))
-    print("L14-C2 text-animation and visual-scene checks passed at 320, 360, 390, 412, 480px and landscape; unique character IDs, silent playback and PNG/WebP layering UI verified.")
+    print("L14-C3 visual-scene, transitions, mirrored-face, and silent text-animation checks passed at 320, 360, 390, 412, 480px and landscape.")
     browser.close()

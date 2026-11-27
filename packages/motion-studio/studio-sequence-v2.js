@@ -56,7 +56,7 @@ export function createStudioSequenceV2Core({ createStudioSequenceV1, validateStu
       if (transition.fromSceneId !== from.id || transition.toSceneId !== to.id) {
         throw new TypeError(`Sequence V2 transition ${index} must connect its adjacent scenes in order`);
       }
-      if (!["cut", "fade", "dissolve"].includes(transition.type)) {
+      if (!["cut", "fade", "dissolve", "crossfade", "through-black", "through-light", "focus"].includes(transition.type)) {
         throw new TypeError(`Sequence V2 transition ${index} has an unsupported type`);
       }
       integer(transition.durationMs, 0, 3000, `Sequence V2 transition ${index} durationMs`);
@@ -65,7 +65,7 @@ export function createStudioSequenceV2Core({ createStudioSequenceV1, validateStu
         throw new RangeError("Cut transitions must have zero duration");
       }
       if (transition.type !== "cut" && transition.durationMs === 0) {
-        throw new RangeError("Fade and Dissolve transitions must have positive duration");
+        throw new RangeError("Animated transitions must have positive duration");
       }
       if (transition.type === "cut" && transition.audioCrossfadeMs !== 0) {
         throw new RangeError("Cut transitions cannot have an audio crossfade in StudioSequenceV2");
@@ -189,7 +189,7 @@ export function createStudioSequenceV2Core({ createStudioSequenceV1, validateStu
       let outgoingOpacity = 1 - progress;
       let incomingOpacity = progress;
       let blackOpacity = 0;
-      if (transition.type === "fade") {
+      if (["fade", "through-black", "through-light"].includes(transition.type)) {
         outgoingOpacity = progress < 0.5 ? 1 - 2 * progress : 0;
         incomingOpacity = progress < 0.5 ? 0 : 2 * progress - 1;
         blackOpacity = progress < 0.5 ? 2 * progress : 2 * (1 - progress);

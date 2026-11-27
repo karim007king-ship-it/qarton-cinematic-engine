@@ -1,4 +1,4 @@
-# L14-C2 character art provenance
+# L14-C3 character art provenance
 
 The four bundled character portrait sprites in `characters/` were newly generated for this QARTON preview with OpenAI image generation on 2026-11-27. Their character names and IDs are Layla (`layla`), Youssef (`youssef`), Nour (`nour`) and Salim (`salim`). The alpha-channel WebP files are original generated artwork, not downloaded, traced, or derived from an existing anime or film character. They are included only as preview/demo assets; replace them with approved production art before shipping a commercial title.
 
@@ -14,3 +14,5 @@ No external stock images, font files, runtime image API, model download, paid as
 - The browser validates PNG/WebP decoding and bounds decoded pixel dimensions. Imported character images share a 12-megapixel decoded-memory budget across the session. Large uploads are rejected before the renderer retains them.
 
 Each generated bundled sprite has one portrait layer. The renderer supports independently imported face/body/hand/hair layers and expression/viseme variants; these preview portraits do not contain separated artwork parts. For production skeletal motion, an artist must supply correctly segmented and pivot-aligned transparent layers or alternate poses.
+
+The Chromium multi-layer regression derives distinct body/head crops from the bundled Layla WebP at test time so it exercises the importer and layer renderer with real anime pixels without pretending the full portrait is two separate production layers. It is test-only and is not included as an authored animation asset.

@@ -243,6 +243,19 @@ test("V2 overlap timeline samples both scenes and centered short audio crossfade
   assert.deepEqual(sampleStudioSequenceV2(compiled, 800), sampleStudioSequenceV2(compiled, 800));
 });
 
+test("V2 supports cinematic crossfade, light, black, and character-focus transition samples", () => {
+  for (const type of ["crossfade", "through-black", "through-light", "focus"]) {
+    const compiled = compileStudioSequenceV2(sequenceV2([scene("a", 1000), scene("b", 1000)], [transition("a", "b", type, 400, 0)]));
+    const middle = sampleStudioSequenceV2(compiled, 800);
+    assert.equal(middle.kind, "transition");
+    assert.equal(middle.transition.type, type);
+    assert.equal(middle.progress, .5);
+    assert.equal(middle.outgoing.sceneTimeMs, 800);
+    assert.equal(middle.incoming.sceneTimeMs, 200);
+    assert.equal(sampleStudioSequenceV2(compiled, 800).progress, .5, `${type} is deterministic at an absolute time`);
+  }
+});
+
 test("zero-duration audio crossfade is a hard cut and Fade has a defined black midpoint", () => {
   const cut = compileStudioSequenceV2(sequenceV2([scene("a", 1000), scene("b", 1000)], [transition("a", "b")]));
   assert.equal(cut.durationMs, 2000);
