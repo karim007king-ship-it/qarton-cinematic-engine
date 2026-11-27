@@ -8,8 +8,8 @@ import wave
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[2]
-HTML = ROOT / "dist/motion-studio-v2-l14b-android-preview/index.html"
-SCREENSHOTS = ROOT / "dist/motion-studio-v2-l14b-android-preview/screenshots"
+HTML = ROOT / "dist/motion-studio-v2-l14c1-android-preview/index.html"
+SCREENSHOTS = ROOT / "dist/motion-studio-v2-l14c1-android-preview/screenshots"
 SCREENSHOTS.mkdir(parents=True, exist_ok=True)
 
 def png(width, height, rgba):
@@ -276,7 +276,7 @@ with sync_playwright() as p:
         for button in page.locator("button:visible").all():
             box = button.bounding_box()
             assert box and box["width"] >= 44 and box["height"] >= 44, f"small landscape target at {width}: {box}"
-    page.screenshot(path=str(SCREENSHOTS / "l14b-integrated-preview.png"), full_page=True)
+    page.screenshot(path=str(SCREENSHOTS / "l14c1-audio-preview.png"), full_page=True)
     assert not external_requests, f"offline test made network requests: {external_requests}"
     assert not console_errors, f"browser errors: {console_errors}"
     browser.close()
