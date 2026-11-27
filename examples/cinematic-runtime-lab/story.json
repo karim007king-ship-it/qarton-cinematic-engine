@@ -1,0 +1,726 @@
+{
+  "version": "CinematicStoryV1",
+  "scenes": [
+    {
+      "version": "CinematicSceneV1",
+      "id": "home",
+      "chapterId": "last-night",
+      "title": "دار على البحر",
+      "language": "tn",
+      "assets": [
+        {
+          "id": "layla-portrait",
+          "src": "assets/characters/layla.webp"
+        },
+        {
+          "id": "youssef-portrait",
+          "src": "assets/characters/youssef.webp"
+        },
+        {
+          "id": "nour-portrait",
+          "src": "assets/characters/nour.webp"
+        },
+        {
+          "id": "salim-portrait",
+          "src": "assets/characters/salim.webp"
+        },
+        {
+          "id": "bg-home",
+          "src": "assets/backgrounds/day.svg"
+        }
+      ],
+      "backgrounds": [
+        {
+          "id": "home-backdrop",
+          "assetId": "bg-home",
+          "role": "background",
+          "z": 0,
+          "depth": 0.2
+        }
+      ],
+      "characters": [
+        {
+          "id": "layla",
+          "name": "ليلى",
+          "assetId": "layla-portrait",
+          "x": 0.27,
+          "y": 0.89,
+          "scale": 0.66,
+          "z": 0,
+          "facing": "right",
+          "expression": "listening",
+          "speed": 1
+        },
+        {
+          "id": "youssef",
+          "name": "يوسف",
+          "assetId": "youssef-portrait",
+          "x": 0.73,
+          "y": 0.89,
+          "scale": 0.66,
+          "z": 1,
+          "facing": "left",
+          "expression": "listening",
+          "speed": 1
+        }
+      ],
+      "dialogue": [
+        {
+          "id": "home-line-1",
+          "speakerId": "layla",
+          "text": "يا جماعة، الليلة قرطاج موش كيما كل ليلة.",
+          "expression": "thinking",
+          "speed": 1
+        },
+        {
+          "id": "home-line-2",
+          "speakerId": "youssef",
+          "text": "سمعت صوت جاي من جهة الميناء.",
+          "expression": "afraid",
+          "speed": 1
+        },
+        {
+          "id": "home-line-3",
+          "speakerId": "layla",
+          "text": "نمشيو نفتشوا ولا نبقاو مع العايلة؟",
+          "expression": "determined",
+          "speed": 1
+        }
+      ],
+      "camera": {
+        "mode": "auto",
+        "shot": "wide",
+        "timeOfDay": "day"
+      },
+      "direction": {
+        "mood": "calm",
+        "seed": 2800,
+        "strength": 0.48
+      },
+      "lighting": {
+        "intensity": 0.7,
+        "tint": "#D5AE61"
+      },
+      "effects": {
+        "enabled": true,
+        "strength": 0.45
+      },
+      "transition": {
+        "type": "crossfade",
+        "durationMs": 480
+      },
+      "music": {
+        "mood": "family",
+        "intensity": 0.45,
+        "fadeInMs": 400,
+        "fadeOutMs": 500
+      },
+      "choices": [
+        {
+          "id": "route",
+          "afterDialogueId": "home-line-3",
+          "prompt": "وين نمشيو؟",
+          "options": [
+            {
+              "id": "gate",
+              "text": "نمشي للبوابة",
+              "targetSceneId": "gate"
+            },
+            {
+              "id": "harbor",
+              "text": "نمشيو للميناء",
+              "targetSceneId": "harbor"
+            }
+          ]
+        }
+      ],
+      "flow": {
+        "nextSceneId": "confrontation",
+        "conditions": []
+      },
+      "events": [
+        {
+          "id": "story-beat",
+          "atMs": 0,
+          "type": "story:beat",
+          "payload": {
+            "scene": "home"
+          }
+        }
+      ]
+    },
+    {
+      "version": "CinematicSceneV1",
+      "id": "gate",
+      "chapterId": "last-night",
+      "title": "باب المدينة",
+      "language": "tn",
+      "assets": [
+        {
+          "id": "layla-portrait",
+          "src": "assets/characters/layla.webp"
+        },
+        {
+          "id": "youssef-portrait",
+          "src": "assets/characters/youssef.webp"
+        },
+        {
+          "id": "nour-portrait",
+          "src": "assets/characters/nour.webp"
+        },
+        {
+          "id": "salim-portrait",
+          "src": "assets/characters/salim.webp"
+        },
+        {
+          "id": "bg-gate",
+          "src": "assets/backgrounds/night.svg"
+        }
+      ],
+      "backgrounds": [
+        {
+          "id": "gate-backdrop",
+          "assetId": "bg-gate",
+          "role": "background",
+          "z": 0,
+          "depth": 0.2
+        }
+      ],
+      "characters": [
+        {
+          "id": "layla",
+          "name": "ليلى",
+          "assetId": "layla-portrait",
+          "x": 0.27,
+          "y": 0.89,
+          "scale": 0.66,
+          "z": 0,
+          "facing": "right",
+          "expression": "listening",
+          "speed": 1
+        },
+        {
+          "id": "youssef",
+          "name": "يوسف",
+          "assetId": "youssef-portrait",
+          "x": 0.73,
+          "y": 0.89,
+          "scale": 0.66,
+          "z": 1,
+          "facing": "left",
+          "expression": "listening",
+          "speed": 1
+        }
+      ],
+      "dialogue": [
+        {
+          "id": "gate-line-1",
+          "speakerId": "youssef",
+          "text": "البوابة محلولة، أما آثار العجلات جديدة.",
+          "expression": "thinking",
+          "speed": 1
+        },
+        {
+          "id": "gate-line-2",
+          "speakerId": "youssef",
+          "text": "نعدّيو بسرعة ونشوفوا شكون سبقنا.",
+          "expression": "afraid",
+          "speed": 1
+        },
+        {
+          "id": "gate-line-3",
+          "speakerId": "layla",
+          "text": "خلّيو عيونكم محلولة.",
+          "expression": "determined",
+          "speed": 1
+        }
+      ],
+      "camera": {
+        "mode": "auto",
+        "shot": "medium",
+        "timeOfDay": "night"
+      },
+      "direction": {
+        "mood": "mystery",
+        "seed": 2801,
+        "strength": 0.48
+      },
+      "lighting": {
+        "intensity": 0.7,
+        "tint": "#61799B"
+      },
+      "effects": {
+        "enabled": true,
+        "strength": 0.45
+      },
+      "transition": {
+        "type": "through-black",
+        "durationMs": 480
+      },
+      "music": {
+        "mood": "mystery",
+        "intensity": 0.45,
+        "fadeInMs": 400,
+        "fadeOutMs": 500
+      },
+      "choices": [],
+      "flow": {
+        "conditions": [],
+        "nextSceneId": "confrontation"
+      },
+      "events": [
+        {
+          "id": "story-beat",
+          "atMs": 0,
+          "type": "story:beat",
+          "payload": {
+            "scene": "gate"
+          }
+        }
+      ]
+    },
+    {
+      "version": "CinematicSceneV1",
+      "id": "harbor",
+      "chapterId": "last-night",
+      "title": "الميناء القديم",
+      "language": "tn",
+      "assets": [
+        {
+          "id": "layla-portrait",
+          "src": "assets/characters/layla.webp"
+        },
+        {
+          "id": "youssef-portrait",
+          "src": "assets/characters/youssef.webp"
+        },
+        {
+          "id": "nour-portrait",
+          "src": "assets/characters/nour.webp"
+        },
+        {
+          "id": "salim-portrait",
+          "src": "assets/characters/salim.webp"
+        },
+        {
+          "id": "bg-harbor",
+          "src": "assets/backgrounds/night.svg"
+        }
+      ],
+      "backgrounds": [
+        {
+          "id": "harbor-backdrop",
+          "assetId": "bg-harbor",
+          "role": "background",
+          "z": 0,
+          "depth": 0.2
+        }
+      ],
+      "characters": [
+        {
+          "id": "nour",
+          "name": "نور",
+          "assetId": "nour-portrait",
+          "x": 0.27,
+          "y": 0.89,
+          "scale": 0.66,
+          "z": 0,
+          "facing": "right",
+          "expression": "listening",
+          "speed": 1
+        },
+        {
+          "id": "salim",
+          "name": "سليم",
+          "assetId": "salim-portrait",
+          "x": 0.73,
+          "y": 0.89,
+          "scale": 0.66,
+          "z": 1,
+          "facing": "left",
+          "expression": "listening",
+          "speed": 1
+        }
+      ],
+      "dialogue": [
+        {
+          "id": "harbor-line-1",
+          "speakerId": "nour",
+          "text": "البحر هادئ، لكن الضباب مخبّي كل شي.",
+          "expression": "thinking",
+          "speed": 1
+        },
+        {
+          "id": "harbor-line-2",
+          "speakerId": "salim",
+          "text": "لقيت رسالة تحت الحبل.",
+          "expression": "afraid",
+          "speed": 1
+        },
+        {
+          "id": "harbor-line-3",
+          "speakerId": "nour",
+          "text": "الاسم المكتوب هو اسم عايلتنا!",
+          "expression": "determined",
+          "speed": 1
+        }
+      ],
+      "camera": {
+        "mode": "auto",
+        "shot": "close",
+        "timeOfDay": "night"
+      },
+      "direction": {
+        "mood": "sad",
+        "seed": 2802,
+        "strength": 0.48
+      },
+      "lighting": {
+        "intensity": 0.7,
+        "tint": "#61799B"
+      },
+      "effects": {
+        "enabled": true,
+        "strength": 0.45
+      },
+      "transition": {
+        "type": "crossfade",
+        "durationMs": 480
+      },
+      "music": {
+        "mood": "sad",
+        "intensity": 0.45,
+        "fadeInMs": 400,
+        "fadeOutMs": 500
+      },
+      "choices": [],
+      "flow": {
+        "conditions": [],
+        "nextSceneId": "confrontation"
+      },
+      "events": [
+        {
+          "id": "story-beat",
+          "atMs": 0,
+          "type": "story:beat",
+          "payload": {
+            "scene": "harbor"
+          }
+        }
+      ]
+    },
+    {
+      "version": "CinematicSceneV1",
+      "id": "confrontation",
+      "chapterId": "last-night",
+      "title": "سرّ الأسوار",
+      "language": "tn",
+      "assets": [
+        {
+          "id": "layla-portrait",
+          "src": "assets/characters/layla.webp"
+        },
+        {
+          "id": "youssef-portrait",
+          "src": "assets/characters/youssef.webp"
+        },
+        {
+          "id": "nour-portrait",
+          "src": "assets/characters/nour.webp"
+        },
+        {
+          "id": "salim-portrait",
+          "src": "assets/characters/salim.webp"
+        },
+        {
+          "id": "bg-confrontation",
+          "src": "assets/backgrounds/night.svg"
+        }
+      ],
+      "backgrounds": [
+        {
+          "id": "confrontation-backdrop",
+          "assetId": "bg-confrontation",
+          "role": "background",
+          "z": 0,
+          "depth": 0.2
+        }
+      ],
+      "characters": [
+        {
+          "id": "layla",
+          "name": "ليلى",
+          "assetId": "layla-portrait",
+          "x": 0.27,
+          "y": 0.89,
+          "scale": 0.53,
+          "z": 0,
+          "facing": "right",
+          "expression": "listening",
+          "speed": 1
+        },
+        {
+          "id": "youssef",
+          "name": "يوسف",
+          "assetId": "youssef-portrait",
+          "x": 0.73,
+          "y": 0.89,
+          "scale": 0.53,
+          "z": 1,
+          "facing": "left",
+          "expression": "listening",
+          "speed": 1
+        },
+        {
+          "id": "nour",
+          "name": "نور",
+          "assetId": "nour-portrait",
+          "x": 0.48,
+          "y": 0.89,
+          "scale": 0.53,
+          "z": 2,
+          "facing": "right",
+          "expression": "listening",
+          "speed": 1
+        }
+      ],
+      "dialogue": [
+        {
+          "id": "confrontation-line-1",
+          "speakerId": "layla",
+          "text": "وصلنا للحقيقة. ما عادش فما وقت.",
+          "expression": "thinking",
+          "speed": 1
+        },
+        {
+          "id": "confrontation-line-2",
+          "speakerId": "youssef",
+          "text": "نواجهوهم مع بعضنا؟",
+          "expression": "afraid",
+          "speed": 1
+        },
+        {
+          "id": "confrontation-line-3",
+          "speakerId": "nour",
+          "text": "قلبي خايف، أما ما نخلّيو حتى حد وحدو.",
+          "expression": "determined",
+          "speed": 1
+        }
+      ],
+      "camera": {
+        "mode": "auto",
+        "shot": "wide",
+        "timeOfDay": "night"
+      },
+      "direction": {
+        "mood": "confrontation",
+        "seed": 2803,
+        "strength": 0.48
+      },
+      "lighting": {
+        "intensity": 0.7,
+        "tint": "#61799B"
+      },
+      "effects": {
+        "enabled": true,
+        "strength": 0.45
+      },
+      "transition": {
+        "type": "through-light",
+        "durationMs": 480
+      },
+      "music": {
+        "mood": "confrontation",
+        "intensity": 0.45,
+        "fadeInMs": 400,
+        "fadeOutMs": 500
+      },
+      "choices": [],
+      "flow": {
+        "conditions": [],
+        "nextSceneId": "finale"
+      },
+      "events": [
+        {
+          "id": "story-beat",
+          "atMs": 0,
+          "type": "story:beat",
+          "payload": {
+            "scene": "confrontation"
+          }
+        }
+      ]
+    },
+    {
+      "version": "CinematicSceneV1",
+      "id": "finale",
+      "chapterId": "last-night",
+      "title": "فجر قرطاج",
+      "language": "tn",
+      "assets": [
+        {
+          "id": "layla-portrait",
+          "src": "assets/characters/layla.webp"
+        },
+        {
+          "id": "youssef-portrait",
+          "src": "assets/characters/youssef.webp"
+        },
+        {
+          "id": "nour-portrait",
+          "src": "assets/characters/nour.webp"
+        },
+        {
+          "id": "salim-portrait",
+          "src": "assets/characters/salim.webp"
+        },
+        {
+          "id": "bg-finale",
+          "src": "assets/backgrounds/dusk.svg"
+        }
+      ],
+      "backgrounds": [
+        {
+          "id": "finale-backdrop",
+          "assetId": "bg-finale",
+          "role": "background",
+          "z": 0,
+          "depth": 0.2
+        }
+      ],
+      "characters": [
+        {
+          "id": "layla",
+          "name": "ليلى",
+          "assetId": "layla-portrait",
+          "x": 0.27,
+          "y": 0.89,
+          "scale": 0.53,
+          "z": 0,
+          "facing": "right",
+          "expression": "listening",
+          "speed": 1
+        },
+        {
+          "id": "youssef",
+          "name": "يوسف",
+          "assetId": "youssef-portrait",
+          "x": 0.73,
+          "y": 0.89,
+          "scale": 0.53,
+          "z": 1,
+          "facing": "left",
+          "expression": "listening",
+          "speed": 1
+        },
+        {
+          "id": "nour",
+          "name": "نور",
+          "assetId": "nour-portrait",
+          "x": 0.48,
+          "y": 0.89,
+          "scale": 0.53,
+          "z": 2,
+          "facing": "right",
+          "expression": "listening",
+          "speed": 1
+        },
+        {
+          "id": "salim",
+          "name": "سليم",
+          "assetId": "salim-portrait",
+          "x": 0.18,
+          "y": 0.89,
+          "scale": 0.53,
+          "z": 3,
+          "facing": "left",
+          "expression": "listening",
+          "speed": 1
+        }
+      ],
+      "dialogue": [
+        {
+          "id": "finale-line-1",
+          "speakerId": "youssef",
+          "text": "الشمس طلعت على قرطاج.",
+          "expression": "thinking",
+          "speed": 1
+        },
+        {
+          "id": "finale-line-2",
+          "speakerId": "layla",
+          "text": "اختيارنا بدّل مصير المدينة.",
+          "expression": "afraid",
+          "speed": 1
+        },
+        {
+          "id": "finale-line-3",
+          "speakerId": "nour",
+          "text": "نبدأو صفحة جديدة، مع بعضنا.",
+          "expression": "determined",
+          "speed": 1
+        }
+      ],
+      "camera": {
+        "mode": "auto",
+        "shot": "medium",
+        "timeOfDay": "dusk"
+      },
+      "direction": {
+        "mood": "heroic",
+        "seed": 2804,
+        "strength": 0.48
+      },
+      "lighting": {
+        "intensity": 0.7,
+        "tint": "#D5AE61"
+      },
+      "effects": {
+        "enabled": true,
+        "strength": 0.45
+      },
+      "transition": {
+        "type": "crossfade",
+        "durationMs": 480
+      },
+      "music": {
+        "mood": "heroic",
+        "intensity": 0.45,
+        "fadeInMs": 400,
+        "fadeOutMs": 500
+      },
+      "choices": [
+        {
+          "id": "ending",
+          "afterDialogueId": "finale-line-3",
+          "prompt": "كيفاش نختمو الحكاية؟",
+          "options": [
+            {
+              "id": "united",
+              "text": "نحافظوا على الوحدة",
+              "endingId": "united-carthage"
+            },
+            {
+              "id": "exile",
+              "text": "نحميوا العائلة ونغادروا",
+              "endingId": "family-safe"
+            }
+          ]
+        }
+      ],
+      "flow": {
+        "conditions": []
+      },
+      "events": [
+        {
+          "id": "story-beat",
+          "atMs": 0,
+          "type": "story:beat",
+          "payload": {
+            "scene": "finale"
+          }
+        }
+      ]
+    }
+  ]
+}

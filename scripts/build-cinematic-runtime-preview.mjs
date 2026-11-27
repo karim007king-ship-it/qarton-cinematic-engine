@@ -1,0 +1,20 @@
+import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
+import { build } from "esbuild";
+const root=resolve(dirname(fileURLToPath(import.meta.url)),".."), lab=resolve(root,"examples/cinematic-runtime-lab"), out=resolve(root,"dist/cinematic-runtime-preview");
+const commit=process.env.GITHUB_SHA||execFileSync("git",["rev-parse","HEAD"],{cwd:root,encoding:"utf8"}).trim();
+await mkdir(out,{recursive:true});
+for(const name of ["index.html","style.css","story.json","README.md","ASSET_PROVENANCE.md"]) await cp(resolve(lab,name),resolve(out,name));
+await cp(resolve(lab,"assets"),resolve(out,"assets"),{recursive:true});
+const [html,css,story]=await Promise.all([readFile(resolve(lab,"index.html"),"utf8"),readFile(resolve(lab,"style.css"),"utf8"),readFile(resolve(lab,"story.json"),"utf8")]);
+const bundle=await build({entryPoints:[resolve(lab,"runtime-lab.js")],bundle:true,write:false,format:"esm",platform:"browser",target:["chrome100"],legalComments:"none"});
+const storyObject=JSON.parse(story);
+const assetData={};
+for(const scene of storyObject.scenes) for(const asset of scene.assets) if(!assetData[asset.src]){const file=resolve(lab,asset.src);const bytes=await readFile(file);const mime=file.endsWith(".webp")?"image/webp":"image/svg+xml";assetData[asset.src]=`data:${mime};base64,${bytes.toString("base64")}`;}
+const standalone=html.replace('<link rel="stylesheet" href="style.css">',`<style>${css}</style>`).replace('<script type="module" src="runtime-lab.js"></script>',`<script type="module">globalThis.__QARTON_STORY__=${JSON.stringify(storyObject)};globalThis.__QARTON_ASSETS__=${JSON.stringify(assetData)};globalThis.__QARTON_COMMIT__=${JSON.stringify(commit)};\n${bundle.outputFiles[0].text.replace(/<\/script/giu,"<\\/script")}</script>`);
+await writeFile(resolve(out,"index.html"),standalone);await writeFile(resolve(root,"dist/qarton-cinematic-runtime-standalone.html"),standalone);
+await writeFile(resolve(out,"README.txt"),`QARTON Cinematic Runtime Android Preview\nCommit: ${commit}\n\nOpen index.html offline in Android Chrome/WebView. Five-scene Tunisian story, local generated art, branching choices, JSON save/restore. No microphone, AudioContext, HTTPS, or network assets.\n`);
+execFileSync("zip",["-qr",resolve(root,"dist/qarton-cinematic-runtime-android-preview.zip"),"."],{cwd:out});
+console.log(`Built Runtime preview for ${commit.slice(0,12)}`);

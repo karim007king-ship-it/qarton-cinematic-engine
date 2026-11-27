@@ -1,0 +1,39 @@
+name: Cinematic Runtime
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm install --no-save --no-package-lock esbuild@0.25.12
+      - run: npm test
+      - run: python -m pip install playwright
+      - run: python -m playwright install --with-deps chromium
+      - run: python tests/cinematic-runtime-browser.py
+        env:
+          QARTON_RUNTIME_SECONDS: 30
+      - run: python tests/cinematic-runtime-browser.py
+        env:
+          QARTON_RUNTIME_SECONDS: 300
+      - run: npm run build:cinematic-runtime
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qarton-cinematic-runtime-preview
+          path: |
+            dist/qarton-cinematic-runtime-android-preview.zip
+            dist/qarton-cinematic-runtime-standalone.html
+            dist/cinematic-runtime-preview/
