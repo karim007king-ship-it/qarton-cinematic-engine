@@ -2,10 +2,10 @@ import { compileTextVisemes } from "./text-viseme.js";
 import { drawLayeredCharacter } from "./sprite-character.js";
 
 const portraits = Object.freeze({
-  layla: Object.freeze({ name: "ليلى", x: 0.31, scale: 0.72, z: 2, face: Object.freeze({ x: 0.55, y: 0.137, skin: "#d99a78" }) }),
-  youssef: Object.freeze({ name: "يوسف", x: 0.69, scale: 0.72, z: 1, face: Object.freeze({ x: 0.55, y: 0.118, skin: "#dca47e" }) }),
-  nour: Object.freeze({ name: "نور", x: 0.69, scale: 0.72, z: 1, face: Object.freeze({ x: 0.56, y: 0.12, skin: "#d99c76" }) }),
-  salim: Object.freeze({ name: "سليم", x: 0.5, scale: 0.56, z: 2, face: Object.freeze({ x: 0.56, y: 0.111, skin: "#d69a74" }) })
+  layla: Object.freeze({ name: "ليلى", x: 0.31, scale: 0.72, z: 2, face: Object.freeze({ x: 0.55, y: 0.113, skin: "#d99a78" }) }),
+  youssef: Object.freeze({ name: "يوسف", x: 0.69, scale: 0.72, z: 1, face: Object.freeze({ x: 0.55, y: 0.109, skin: "#dca47e" }) }),
+  nour: Object.freeze({ name: "نور", x: 0.69, scale: 0.72, z: 1, face: Object.freeze({ x: 0.56, y: 0.111, skin: "#d99c76" }) }),
+  salim: Object.freeze({ name: "سليم", x: 0.5, scale: 0.56, z: 2, face: Object.freeze({ x: 0.56, y: 0.105, skin: "#d69a74" }) })
 });
 
 const characters = (ids) => Object.freeze(ids.map((id, index) => Object.freeze({
@@ -190,14 +190,14 @@ function drawFaceRig(ctx, character, x, top, spriteW, spriteH, pose, expression,
   const face = character.face;
   if (!face) return;
   const fx = x + (face.x - .5) * spriteW, fy = top + face.y * spriteH;
-  const width = spriteW * .046, scale = spriteH / 700;
+  const width = spriteW * .034, scale = spriteH / 700;
   const mouthOpen = speaking ? pose.mouthOpen : 0;
   const viseme = speaking ? pose.viseme : "rest";
   const brow = (EXPRESSION_BROW[expression] ?? 0) * expressionWeight;
   ctx.save();
   // A small skin patch hides the original painted mouth before the live mouth pose is drawn.
-  ctx.fillStyle = face.skin; ctx.beginPath(); ctx.ellipse(fx, fy, width * 1.13, width * .56, -.08, 0, Math.PI * 2); ctx.fill();
-  const mouthW = width * (.56 + (viseme === "wide" || viseme === "teeth" ? .26 : 0));
+  ctx.fillStyle = face.skin; ctx.beginPath(); ctx.ellipse(fx, fy, width * .56, width * .34, -.08, 0, Math.PI * 2); ctx.fill();
+  const mouthW = width * (.46 + (viseme === "wide" || viseme === "teeth" ? .22 : 0));
   const open = Math.max(1.2 * scale, (viseme === "round" ? width * .55 : viseme === "wide" ? width * .18 : viseme === "teeth" ? width * .34 : mouthOpen * width * .5));
   ctx.fillStyle = "#54232c";
   if (viseme === "round" && speaking) { ctx.beginPath(); ctx.ellipse(fx, fy, width * .23, width * .3, 0, 0, Math.PI * 2); ctx.fill(); }

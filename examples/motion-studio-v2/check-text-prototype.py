@@ -32,6 +32,7 @@ def visual_regression(page):
     portrait = ROOT / "examples/motion-studio-v2/assets/characters/layla.webp"
     page.locator("#characterImageInput").set_input_files(str(portrait))
     page.wait_for_function("window.__QARTON_TEST_API.state().importedPortraitCount === 1")
+    page.locator("#closeSheetButton").click()
     with tempfile.TemporaryDirectory(prefix="qarton-layer-fixture-") as folder:
         body = Path(folder) / "layla__body.webp"
         head = Path(folder) / "layla__head.webp"
@@ -79,7 +80,7 @@ def visual_regression(page):
         page.evaluate("time => window.__QARTON_TEST_API.seek(time)", timestamp)
         assert canvas.get_attribute("data-active-viseme") == viseme, {"wanted": viseme, "got": canvas.get_attribute("data-active-viseme")}
         page.locator("#previewCanvas").screenshot(path=str(SHOTS / f"mouth-{viseme}.png"))
-        region = page.evaluate("() => { const c=document.querySelector('#previewCanvas'); const d=c.getContext('2d').getImageData(220,460,80,80).data; let h=2166136261; for(let i=0;i<d.length;i+=4){h=Math.imul(h^d[i],16777619);h=Math.imul(h^d[i+1],16777619);h=Math.imul(h^d[i+2],16777619);} return String(h>>>0); }")
+        region = page.evaluate("() => { const c=document.querySelector('#previewCanvas'); const d=c.getContext('2d').getImageData(234,469,22,18).data; let h=2166136261; for(let i=0;i<d.length;i+=4){h=Math.imul(h^d[i],16777619);h=Math.imul(h^d[i+1],16777619);h=Math.imul(h^d[i+2],16777619);} return String(h>>>0); }")
         pose_hashes.add(region)
         pose_reports.append({"viseme": viseme, "capture": f"mouth-{viseme}.png"})
     assert len(pose_hashes) >= 4, "Viseme ROI did not produce visibly distinct render samples"
