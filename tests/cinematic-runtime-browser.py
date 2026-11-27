@@ -27,11 +27,11 @@ with sync_playwright() as p:
  assert visual['changedPixels']>1000,visual
  assert [item['drawn'] for item in visual['characterCounts']]==[2,4,8],visual
  page.screenshot(path=str(ARTIFACTS/'cinematic-runtime-renderer-visual.png'),full_page=True)
- transition_result=page.evaluate('''async()=>{const r=window.qartonCinematicRenderer,rt=window.qartonCinematicRuntime;for(const id of ['gate','harbor','confrontation','dawn'])await rt.loadScene(id);const handle=window.__runtimeLastFrame.transitionHandle;window.__focusTransition=r.transition({from:handle,to:handle,type:'focus',durationMs:500});return {count:r.metrics.transitionCount,scene:rt.getState().sceneId} }''')
- assert transition_result['count']>=3 and transition_result['scene']=='dawn',transition_result
+ transition_result=page.evaluate('''async()=>{const r=window.qartonCinematicRenderer,rt=window.qartonCinematicRuntime;for(const id of ['gate','harbor','confrontation','finale'])await rt.loadScene(id);const handle=window.__runtimeLastFrame.transitionHandle;window.__focusTransition=r.transition({from:handle,to:handle,type:'focus',durationMs:500});return {count:r.metrics.transitionCount,scene:rt.getState().sceneId} }''')
+ assert transition_result['count']>=3 and transition_result['scene']=='finale',transition_result
  page.wait_for_timeout(180);page.screenshot(path=str(ARTIFACTS/'cinematic-runtime-focus-transition.png'),full_page=True)
  transition_result=page.evaluate('''async()=>({count:window.qartonCinematicRenderer.metrics.transitionCount,focus:await window.__focusTransition,scene:window.qartonCinematicRuntime.getState().sceneId})''')
- assert transition_result['count']>=4 and transition_result['focus'] and transition_result['scene']=='dawn',transition_result
+ assert transition_result['count']>=4 and transition_result['focus'] and transition_result['scene']=='finale',transition_result
  page.goto(base+'layered-character-test.html',wait_until='networkidle');page.wait_for_function('window.qartonLayeredVisualTest')
  mouth_hashes=[]
  for pose in ['closed','open','round','wide','teeth']:
