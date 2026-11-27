@@ -28,6 +28,7 @@ def exercise(page, width, height):
     page.locator("#dialogueText").fill("يا صاحبي، لن نترك الحقيقة!")
     page.locator("#expressionSelect").select_option("determined")
     page.locator("#dialogueSpeed").evaluate("el => { el.value='1.6'; el.dispatchEvent(new Event('input', {bubbles:true})); }")
+    page.locator("#closeSheetButton").click()
     page.locator("#playButton").click()
     assert page.locator("#studio").get_attribute("data-playing") == "true"
     page.wait_for_timeout(380)
