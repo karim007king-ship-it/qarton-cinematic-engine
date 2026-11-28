@@ -62,6 +62,10 @@ export function normalizeCharacterLayer(layer, index = 0) {
     image: layer.image ?? layer.bitmap ?? null
   };
   for (const field of ["x", "y", "width", "height", "pivotX", "pivotY"]) normalized[field] = clampUnit(normalized[field], base[field]);
+  // Keep the authored anchor record alongside its flattened draw fields. The
+  // renderer uses the flattened values; the calibrated-rig validator must be
+  // able to distinguish authored anchors from fallback layout defaults.
+  normalized.layout = Object.freeze(Object.fromEntries(["x", "y", "width", "height", "pivotX", "pivotY"].map(field => [field, normalized[field]])));
   if (!["any", "front", "side"].includes(normalized.view)) throw new TypeError("Sprite layer view must be any, front, or side");
   if (normalized.width <= 0 || normalized.height <= 0 || !Number.isFinite(normalized.z)) throw new RangeError("Sprite layer dimensions and z order must be valid");
   return Object.freeze(normalized);
