@@ -156,18 +156,15 @@ def visual_regression(page):
     pose_hashes = set()
     pose_texts = {"closed": "بْ", "round": "بُ", "wide": "بِ", "teeth": "ف", "open": "عَ"}
     page.set_viewport_size({"width": 720, "height": 1280})
-    # The visual rig manifest is bound to Layla's stable character ID. Earlier
-    # crowd-scene checks change the selected demo, so reset to Layla explicitly
-    # before importing instead of depending on the prior selection state.
     page.evaluate("window.__QARTON_TEST_API.loadDemo(0)")
-    page.wait_for_function("document.querySelectorAll('#characterSelect option').length === 2")
-    page.locator('[data-section="characters"]').click()
-    page.locator("#characterSelect").select_option("0")
-    page.locator("#closeSheetButton").click()
     with tempfile.TemporaryDirectory(prefix="qarton-calibrated-face-rig-") as folder:
         rig_files = create_face_rig_files(page, folder)
-        page.locator("#characterImageInput").set_input_files([str(path) for path in rig_files])
-        page.wait_for_function("window.__QARTON_TEST_API.state().importedLayerCount === 13")
+        payload = [{"name": path.name, "type": "application/json" if path.suffix == ".json" else "image/webp", "data": base64.b64encode(path.read_bytes()).decode("ascii")} for path in rig_files]
+        imported = page.evaluate("""async items => {
+          const files=items.map(item=>new File([Uint8Array.from(atob(item.data),char=>char.charCodeAt(0))],item.name,{type:item.type}));
+          return await window.__QARTON_TEST_API.importCharacterAssets(files,'layla');
+        }""", payload)
+        assert imported["mode"] == "layers" and imported["layerCount"] == 13, imported
         for viseme, text in pose_texts.items():
             page.evaluate("text => window.__QARTON_TEST_API.setTextScene({id:'mouth-poses',title:'أوضاع الفم',language:'tn',theme:'family',characters:[{id:'layla',name:'ليلى',spriteKey:'layla',x:.5,y:1,scale:1.1,z:0}],dialogue:[{id:'visemes',speakerId:'layla',expression:'neutral',text}]})", text)
             page.evaluate("window.__QARTON_TEST_API.setDialogueReveal(true)")
