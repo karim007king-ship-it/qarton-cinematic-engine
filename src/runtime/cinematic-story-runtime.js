@@ -242,7 +242,7 @@ export function createCinematicStoryRuntime({ scenes, render, decodeAsset = deco
     const characterAssets = new Map();
     for (const character of currentScene.characters) {
       if (character.assetId) characterAssets.set(character.id, currentAssets.get(character.assetId));
-      else characterAssets.set(character.id, { layers: character.layers.map(layer => ({ role: layer.role, variant: layer.variant, z: layer.z, ...(layer.layout ? { layout: layer.layout } : {}), image: currentAssets.get(layer.assetId) })) });
+      else characterAssets.set(character.id, { layers: character.layers.map(layer => ({ ...layer, image: currentAssets.get(layer.assetId) })) });
     }
     const renderFrame = Object.freeze({ scene: renderScene, timeMs: currentTime, transport,
       assets: currentAssets, characterAssets, camera: Object.freeze({ ...pose, zoom: pose.zoom * rawDirection.shotScale }),

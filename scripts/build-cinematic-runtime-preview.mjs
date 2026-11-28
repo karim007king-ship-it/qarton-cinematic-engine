@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { build } from "esbuild";
+import { withOriginalFaceRigs } from "../examples/cinematic-runtime-lab/apply-original-face-rigs.js";
 const root=resolve(dirname(fileURLToPath(import.meta.url)),".."), lab=resolve(root,"examples/cinematic-runtime-lab"), out=resolve(root,"dist/cinematic-runtime-preview");
 const commit=process.env.QARTON_PREVIEW_COMMIT||process.env.GITHUB_SHA||execFileSync("git",["rev-parse","HEAD"],{cwd:root,encoding:"utf8"}).trim();
 await rm(out,{recursive:true,force:true});await mkdir(out,{recursive:true});
@@ -14,7 +15,7 @@ const layeredBundle=await build({entryPoints:[resolve(lab,"layered-character-vie
 await writeFile(resolve(out,"layered-character-viewer.js"),layeredBundle.outputFiles[0].text);
 const storyObject=JSON.parse(story);
 const assetData={};
-for(const scene of storyObject.scenes) for(const asset of scene.assets) if(!assetData[asset.src]){const file=resolve(lab,asset.src);const bytes=await readFile(file);const mime=file.endsWith(".webp")?"image/webp":"image/svg+xml";assetData[asset.src]=`data:${mime};base64,${bytes.toString("base64")}`;}
+for(const scene of withOriginalFaceRigs(storyObject).scenes) for(const asset of scene.assets) if(!assetData[asset.src]){const file=resolve(lab,asset.src);const bytes=await readFile(file);const mime=file.endsWith(".webp")?"image/webp":"image/svg+xml";assetData[asset.src]=`data:${mime};base64,${bytes.toString("base64")}`;}
 const standalone=html.replace('<link rel="stylesheet" href="style.css">',`<style>${css}</style>`).replace('<script type="module" src="runtime-lab.js"></script>',`<script type="module">globalThis.__QARTON_STORY__=${JSON.stringify(storyObject)};globalThis.__QARTON_ASSETS__=${JSON.stringify(assetData)};globalThis.__QARTON_COMMIT__=${JSON.stringify(commit)};\n${bundle.outputFiles[0].text.replace(/<\/script/giu,"<\\/script")}</script>`);
 const layeredPreview=layeredHtml.replace('<link rel="stylesheet" href="style.css">',`<style>${css}</style>`).replace('<script type="module" src="layered-character-viewer.js"></script>',`<script>globalThis.__QARTON_COMMIT__=${JSON.stringify(commit)};</script><script type="module" src="layered-character-viewer.js"></script>`);
 await writeFile(resolve(out,"index.html"),standalone);await writeFile(resolve(root,"dist/qarton-cinematic-runtime-standalone.html"),standalone);

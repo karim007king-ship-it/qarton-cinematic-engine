@@ -59,7 +59,8 @@ export function normalizeCharacterLayer(layer, index = 0) {
     variant: String(layer.variant ?? "neutral").toLowerCase(),
     view: String(layer.view ?? "any").toLowerCase(),
     z: Number(layer.z ?? layer.layout?.z ?? base.z + index * 0.001),
-    image: layer.image ?? layer.bitmap ?? null
+    image: layer.image ?? layer.bitmap ?? null,
+    sourceRect: layer.sourceRect
   };
   for (const field of ["x", "y", "width", "height", "pivotX", "pivotY"]) normalized[field] = clampUnit(normalized[field], base[field]);
   // Keep the authored anchor record alongside its flattened draw fields. The
@@ -74,13 +75,14 @@ export function normalizeCharacterLayer(layer, index = 0) {
 export function selectCharacterLayers(layers, { expression = "neutral", pose = "front", viseme = "rest", blink = false } = {}) {
   const normalized = layers.map((layer, index) => normalizeCharacterLayer(layer, index));
   const view = pose === "side" ? "side" : "front";
+  const visible = normalized.filter(layer => layer.view === "any" || layer.view === view);
   const variantByRole = new Map();
-  for (const layer of normalized) if (!new Set(["neutral", "front"]).has(layer.variant)) {
+  for (const layer of visible) if (layer.variant !== "neutral" && layer.variant !== "front") {
     const key = layer.role;
     if (!variantByRole.has(key)) variantByRole.set(key, new Set());
     variantByRole.get(key).add(layer.variant);
   }
-  return normalized.filter(layer => (layer.view === "any" || layer.view === view)).filter(layer => {
+  return visible.filter(layer => {
     const variants = variantByRole.get(layer.role) ?? new Set();
     const desired = layer.role === "mouth" ? (viseme === "rest" ? "closed" : viseme) : ["eyes", "eye_left", "eye_right"].includes(layer.role) ? (blink ? "closed" : expression) : ["brows", "brow_left", "brow_right"].includes(layer.role) ? expression : ["body", "head", "hand_left", "hand_right"].includes(layer.role) ? pose : "";
     if (!variants.size) return layer.variant === "neutral" || layer.variant === "front";
@@ -116,7 +118,8 @@ export function drawLayeredCharacter(ctx, layers, { x, top, width, height, headR
     if (!layer.image) continue;
     const w = width * layer.width, h = height * layer.height;
     const mirrored = facing === "left";
-    const eyeLayer = ["eyes", "eye_left", "eye_right"].includes(layer.role);
+    // Atlas portrait tiles include the immediate skin around each eye.
+    const eyeLayer = !layer.sourceRect && ["eyes", "eye_left", "eye_right"].includes(layer.role);
     const localX = width * (layer.x - 0.5) + (eyeLayer ? eyeX * width * 0.025 * mirrorSign : 0);
     const localY = height * layer.y + (eyeLayer ? eyeY * height * 0.012 : 0);
     let rotation = 0;
@@ -129,7 +132,13 @@ export function drawLayeredCharacter(ctx, layers, { x, top, width, height, headR
     if (attached) { ctx.translate(headPivotX, headPivotY); ctx.rotate(headRotation * mirrorSign); ctx.translate(-headPivotX, -headPivotY); }
     ctx.translate(localX, localY); if (layer.role === "head") ctx.rotate(headRotation * mirrorSign);
     if (layer.role === "body" || layer.role === "hand_left" || layer.role === "hand_right") ctx.rotate(rotation);
-    ctx.drawImage(layer.image, -w * layer.pivotX, -h * layer.pivotY, w, h);
+    const destination = [-w * layer.pivotX, -h * layer.pivotY, w, h];
+    if (layer.sourceRect) {
+      const { x: sx, y: sy, width: sw, height: sh } = layer.sourceRect;
+      ctx.drawImage(layer.image, sx, sy, sw, sh, ...destination);
+    } else {
+      ctx.drawImage(layer.image, ...destination);
+    }
     ctx.restore(); drawn.push(layer.role + (layer.variant === "neutral" ? "" : `:${layer.variant}`));
     geometry.push(Object.freeze({ role: layer.role, variant: layer.variant, z: layer.z, anchorX: x + localX * mirrorSign,
       anchorY: top + localY, width: w, height: h, pivotX: layer.pivotX, pivotY: layer.pivotY,

@@ -19,7 +19,7 @@ with sync_playwright() as p:
  assert page.locator('#screen').evaluate('(c)=>c.width===720&&c.height===1280')
  assert page.evaluate('window.__audioCreated===0 && !window.__micRequested')
  page.wait_for_function("Object.keys(window.qartonCinematicRenderer.metrics.lastDraw.faceRigValid||{}).length===2")
- assert page.evaluate('Object.values(window.qartonCinematicRenderer.metrics.lastDraw.faceRigValid).every(valid=>valid===false)'), 'full portraits without transparent rigs must not receive auto facial animation'
+ assert page.evaluate('Object.values(window.qartonCinematicRenderer.metrics.lastDraw.faceRigValid).every(Boolean)'), 'original actors must load their calibrated facial layers'
  assert page.evaluate('window.qartonCinematicRuntime.assetCount')>=1
  page.evaluate('window.qartonCinematicRuntime.seek(1000)')
  page.wait_for_function('window.__runtimeLastFrame && window.__runtimeLastFrame.timeMs>=1000')
