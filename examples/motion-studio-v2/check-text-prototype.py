@@ -159,9 +159,7 @@ def visual_regression(page):
     # The visual rig manifest is bound to Layla's stable character ID. Earlier
     # crowd-scene checks change the selected demo, so reset to Layla explicitly
     # before importing instead of depending on the prior selection state.
-    # Use the visible demo control so the editor synchronizes its character
-    # selector before the manifest-bound asset import.
-    page.locator('[data-demo="0"]').click()
+    page.evaluate("window.__QARTON_TEST_API.loadDemo(0)")
     page.wait_for_function("document.querySelectorAll('#characterSelect option').length === 2")
     page.locator('[data-section="characters"]').click()
     page.locator("#characterSelect").select_option("0")
