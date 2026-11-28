@@ -18,6 +18,8 @@ test("normalized layer layout validates sizes, anchors, pivots and z order", () 
   const layer = normalizeCharacterLayer({ role: "head", image: texture, layout: { x: .5, y: .25, width: .4, height: .3, pivotX: .5, pivotY: .9, z: 4 } });
   assert.equal(layer.z, 4);
   assert.equal(layer.pivotY, .9);
+  assert.deepEqual(layer.layout, { x: .5, y: .25, width: .4, height: .3, pivotX: .5, pivotY: .9 });
+  assert.equal(Object.isFrozen(layer.layout), true);
   assert.throws(() => normalizeCharacterLayer({ role: "head", image: texture, layout: { x: 1.5 } }), RangeError);
 });
 
