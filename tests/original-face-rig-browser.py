@@ -57,6 +57,11 @@ async ({ names, originals }) => {
     const actor = {...source, x: .5, y: 1, scale: 1/.7, facing: 'right', expression: 'neutral'};
     const still = {...scene, characters: [actor], backgrounds: [], lighting: {intensity:0},
       textScene: {...scene.textScene, characters: [actor], turns: []}};
+    const turn = {startMs:0,endMs:200,speakerId:name,expression:'neutral',animation:null};
+    const samplePose = (viseme, blink = false) => {
+      turn.animation = {sample:()=>({viseme,blink:blink?1:0,headRotation:0})};
+      still.textScene.turns = [turn];
+    };
     const crop = document.createElement('canvas');
     crop.width = 330; crop.height = 260;
     const ctx = crop.getContext('2d');
@@ -69,6 +74,7 @@ async ({ names, originals }) => {
       ctx.drawImage(source,sx,sy);
       portraits.push(crop.toDataURL());
     };
+    samplePose('closed');
     closeup.render({...frame, scene:still, characterAssets:new Map([[name,original]]),
       timeMs:0, camera:null, direction:null});
     drawCrop(canvas, -325, -2);
@@ -77,9 +83,7 @@ async ({ names, originals }) => {
     let headed = false;
     for (const variant of ['closed','open','round','wide','teeth','blink']) {
       const blink = variant === 'blink';
-      const turn = {startMs:0,endMs:200,speakerId:name,expression:'neutral',
-        animation:{sample:()=>({viseme:blink?'closed':variant,blink:blink?1:0,headRotation:0})}};
-      still.textScene.turns = [turn];
+      samplePose(blink?'closed':variant, blink);
       closeup.render({...frame, scene:still, timeMs:0, camera:null, direction:null});
       const geometry = closeup.metrics.lastDraw.characterGeometry[name];
       if (!geometry.faceRigValid) throw Error('Uncalibrated ' + name);
