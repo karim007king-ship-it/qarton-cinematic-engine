@@ -12,4 +12,4 @@ const allAssets=new Map(assets);const bg=new Image();bg.src="assets/backgrounds/
 const characterLayers=layers.map(layer=>({...layer,image:assets.get(layer.assetId)}));
 function paint(pose){const times=textScene.turns[0].animation.events.filter(event=>event.viseme===pose).map(event=>event.atMs+8);const time=times[0]??textScene.turns[0].startMs;const drawStats=renderer.renderEndpoint(scene,allAssets,undefined,time);document.querySelector("#mouth-state").textContent=`الفم: ${pose} • الوقت: ${Math.round(time)} ms • الطبقات: ${characterLayers.length}`;globalThis.qartonLayeredVisualTest.lastDraw=drawStats;return time}
 for(const button of document.querySelectorAll("[data-pose]"))button.onclick=()=>paint(button.dataset.pose);
-paint("closed");document.querySelector("#commit").textContent=`Commit: ${globalThis.__QARTON_COMMIT__??"local preview"}`;globalThis.qartonLayeredVisualTest={paint,renderer,assets,characterLayers};
+globalThis.qartonLayeredVisualTest={paint,renderer,assets,characterLayers};paint("closed");document.querySelector("#commit").textContent=`Commit: ${globalThis.__QARTON_COMMIT__??"local preview"}`;
