@@ -8,11 +8,11 @@ function drawable(image) {
   return image && Number(image.width ?? image.naturalWidth) > 0 && Number(image.height ?? image.naturalHeight);
 }
 
-function drawImageFit(ctx, image, width, height, fit = "cover") {
+function drawImageFit(ctx, image, width, height, fit = "cover", role = "background") {
   if (!drawable(image)) return false;
   const iw = Number(image.width ?? image.naturalWidth), ih = Number(image.height ?? image.naturalHeight);
   if (fit === "fill") { ctx.drawImage(image, 0, 0, width, height); return true; }
-  if (fit === "contain") {
+  if (fit === "contain" && role !== "foreground") {
     // Use a subdued crop of the same artwork as the matte, then draw the
     // complete uncropped image over it. Fit never exposes accidental black.
     ctx.save(); ctx.globalAlpha *= 0.34;
@@ -58,7 +58,7 @@ function drawBackgrounds(ctx, scene, assets, camera, direction) {
     ctx.translate(width / 2, height / 2);
     ctx.scale(scale, scale);
     ctx.translate(-width / 2, -height / 2);
-    drawImageFit(ctx, image, width, height, layer.fit ?? "cover");
+    drawImageFit(ctx, image, width, height, layer.fit ?? "cover", layer.role);
     ctx.restore();
   }
   ctx.restore();
