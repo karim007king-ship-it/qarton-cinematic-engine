@@ -156,6 +156,12 @@ def visual_regression(page):
     pose_hashes = set()
     pose_texts = {"closed": "بْ", "round": "بُ", "wide": "بِ", "teeth": "ف", "open": "عَ"}
     page.set_viewport_size({"width": 720, "height": 1280})
+    # Earlier UI-import checks deliberately retain large portraits to exercise
+    # asset ownership. Start a fresh page so this rig-only visual proof stays
+    # inside the same enforced 12 MP imported-character budget.
+    page.goto(HTML.as_uri() + "?testVisual=1", wait_until="load")
+    page.wait_for_function("window.__QARTON_TEST_API?.state().artReady === true")
+    canvas = page.locator("#previewCanvas")
     page.evaluate("window.__QARTON_TEST_API.loadDemo(0)")
     with tempfile.TemporaryDirectory(prefix="qarton-calibrated-face-rig-") as folder:
         rig_files = create_face_rig_files(page, folder)
