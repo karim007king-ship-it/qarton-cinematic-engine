@@ -38,6 +38,17 @@ function drawAtmosphereAndEffects(ctx, direction, assets) {
 function drawBackgrounds(ctx, scene, assets, camera, direction) {
   const { width, height } = ctx.canvas;
   const pose = adaptCamera(camera, width, height);
+  const layers = [...scene.backgrounds].sort((a, b) => a.z - b.z);
+  // Keep a same-art cover matte fixed to the viewport beneath the camera pass.
+  // Pan, zoom, and rotation can expose canvas edges; this prevents those gaps
+  // from revealing the black clear color while keeping a neutral shot identical.
+  const primary = layers.find(layer => layer.role === "background");
+  const primaryImage = primary && assets.get(primary.assetId);
+  if (drawable(primaryImage)) {
+    ctx.save(); ctx.globalAlpha = primary.opacity ?? 1;
+    drawImageFit(ctx, primaryImage, width, height, "cover", "background");
+    ctx.restore();
+  }
   ctx.save();
   ctx.translate(width / 2 + pose.x, height / 2 + pose.y);
   ctx.rotate((pose.rotation ?? 0) * Math.PI / 180);
@@ -46,7 +57,6 @@ function drawBackgrounds(ctx, scene, assets, camera, direction) {
   ctx.fillStyle = "#090a0d";
   ctx.fillRect(0, 0, width, height);
   const parallax = direction?.parallaxLayers ?? [];
-  const layers = [...scene.backgrounds].sort((a, b) => a.z - b.z);
   for (const layer of layers) {
     const image = assets.get(layer.assetId);
     if (!drawable(image)) continue;

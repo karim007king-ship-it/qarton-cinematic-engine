@@ -37,6 +37,7 @@ with sync_playwright() as p:
  for item in aspect_frames:
   assert len(item['drawn'])==2,item
   assert len({tuple(color) for color in item['corners']})>=3,f"background has an uncovered matte at {item['name']}: {item['corners']}"
+  assert all(not (color[0]<24 and color[1]<26 and color[2]<30) for color in item['corners']),f"camera exposed a black canvas edge at {item['name']}: {item['corners']}"
   (ARTIFACTS/f"cinematic-runtime-{item['name']}.png").write_bytes(base64.b64decode(item['png'].split(',',1)[1]))
  page.screenshot(path=str(ARTIFACTS/'cinematic-runtime-renderer-visual.png'),full_page=True)
  transition_result=page.evaluate('''async()=>{const r=window.qartonCinematicRenderer,rt=window.qartonCinematicRuntime;for(const id of ['gate','harbor','confrontation','finale'])await rt.loadScene(id);const handle=window.__runtimeLastFrame.transitionHandle;window.__focusTransition=r.transition({from:handle,to:handle,type:'focus',durationMs:500});return {count:r.metrics.transitionCount,scene:rt.getState().sceneId} }''')
