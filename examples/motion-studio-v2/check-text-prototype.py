@@ -161,7 +161,9 @@ def visual_regression(page):
     # before importing instead of depending on the prior selection state.
     page.evaluate("window.__QARTON_TEST_API.loadDemo(0)")
     page.wait_for_function("document.querySelectorAll('#characterSelect option').length === 2")
+    page.locator('[data-section="characters"]').click()
     page.locator("#characterSelect").select_option("0")
+    page.locator("#closeSheetButton").click()
     with tempfile.TemporaryDirectory(prefix="qarton-calibrated-face-rig-") as folder:
         rig_files = create_face_rig_files(page, folder)
         page.locator("#characterImageInput").set_input_files([str(path) for path in rig_files])
