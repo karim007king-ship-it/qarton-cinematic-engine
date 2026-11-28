@@ -1,5 +1,4 @@
 import { drawTextCinematicScene } from "../character/text-cinematic-scene.js";
-import { drawCinematicEffects } from "../effects/cinematic-effects.js";
 import { drawCinematicAtmosphere, sampleCinematicDirector } from "../effects/cinematic-director.js";
 import { composeCameraPose, sampleCameraTrack } from "../camera/camera-track.js";
 
@@ -13,15 +12,32 @@ function drawImageFit(ctx, image, width, height, fit = "cover") {
   if (!drawable(image)) return false;
   const iw = Number(image.width ?? image.naturalWidth), ih = Number(image.height ?? image.naturalHeight);
   if (fit === "fill") { ctx.drawImage(image, 0, 0, width, height); return true; }
+  if (fit === "contain") {
+    // Use a subdued crop of the same artwork as the matte, then draw the
+    // complete uncropped image over it. Fit never exposes accidental black.
+    ctx.save(); ctx.globalAlpha *= 0.34;
+    const coverScale = Math.max(width / iw, height / ih), coverW = iw * coverScale, coverH = ih * coverScale;
+    ctx.drawImage(image, (width - coverW) / 2, (height - coverH) / 2, coverW, coverH);
+    ctx.restore();
+  }
   const scale = fit === "contain" ? Math.min(width / iw, height / ih) : Math.max(width / iw, height / ih);
   const w = iw * scale, h = ih * scale;
   ctx.drawImage(image, (width - w) / 2, (height - h) / 2, w, h);
   return true;
 }
 
+function adaptCamera(camera, width, height) {
+  const pose = camera ?? { x: 0, y: 0, zoom: 1, rotation: 0 };
+  return { ...pose, x: (pose.x ?? 0) * width / 720, y: (pose.y ?? 0) * height / 1280 };
+}
+
+function drawAtmosphereAndEffects(ctx, direction, assets) {
+  if (direction) drawCinematicAtmosphere(ctx, direction, Object.fromEntries(assets));
+}
+
 function drawBackgrounds(ctx, scene, assets, camera, direction) {
   const { width, height } = ctx.canvas;
-  const pose = camera ?? { x: 0, y: 0, zoom: 1, rotation: 0 };
+  const pose = adaptCamera(camera, width, height);
   ctx.save();
   ctx.translate(width / 2 + pose.x, height / 2 + pose.y);
   ctx.rotate((pose.rotation ?? 0) * Math.PI / 180);
@@ -94,12 +110,9 @@ export class CinematicRenderer {
       if (art) characters.set(character.id, art);
     }
     const poseStats = drawTextCinematicScene(ctx, scene.textScene, timeMs, {
-      transparent: true, assets: characters, camera, drawDialogue: false,
+      transparent: true, assets: characters, camera: adaptCamera(camera, width, height), drawDialogue: false,
       drawSceneOverlay: overlayCtx => {
-        if (direction) {
-          drawCinematicAtmosphere(overlayCtx, direction);
-          drawCinematicEffects(overlayCtx, direction.effects, Object.fromEntries(assets));
-        }
+        drawAtmosphereAndEffects(overlayCtx, direction, assets);
         const tint = scene.lighting?.tint ?? "#000000";
         const intensity = Math.max(0, Math.min(1, scene.lighting?.intensity ?? 0));
         if (intensity) {
@@ -110,6 +123,7 @@ export class CinematicRenderer {
     });
     this.#frameCount += 1;
     this.#lastDraw = Object.freeze({ timeMs, sceneId: scene.id, drawnCharacterIds: poseStats.drawnCharacterIds,
+      characterGeometry: poseStats.characterGeometry,
       focusCharacterId: frame.focusCharacterId ?? null, visibleBackgroundIds: Object.freeze(scene.backgrounds.filter(layer => drawable(assets.get(layer.assetId))).map(layer => layer.id)) });
     return this.#lastDraw;
   }
@@ -123,13 +137,13 @@ export class CinematicRenderer {
     const direction = sampleCinematicDirector(scene.direction, timeMs);
     const sampledCamera = scene.camera.mode === "manual" && scene.camera.keyframes
       ? sampleCameraTrack(scene.camera.keyframes, timeMs) : direction.effects.camera;
-    const pose = composeCameraPose(sampledCamera, direction.effects.shake);
+    const pose = adaptCamera(composeCameraPose(sampledCamera, direction.effects.shake), width, height);
     const camera = { ...pose, zoom: pose.zoom * direction.shotScale };
     drawBackgrounds(ctx, scene, assets, camera, direction);
     const characters = new Map(scene.characters.map(character => [character.id, character.assetId ? assets.get(character.assetId) : { layers: character.layers.map(layer => ({ ...layer, image: assets.get(layer.assetId) })) }]));
-    const rendered = drawTextCinematicScene(ctx, scene.textScene, timeMs, { transparent: true, assets: characters, camera, drawDialogue: false,
+    const rendered = drawTextCinematicScene(ctx, scene.textScene, timeMs, { transparent: true, assets: characters, camera: pose, drawDialogue: false,
       drawSceneOverlay: overlayCtx => {
-        drawCinematicAtmosphere(overlayCtx, direction); drawCinematicEffects(overlayCtx, direction.effects, Object.fromEntries(assets));
+        drawAtmosphereAndEffects(overlayCtx, direction, assets);
         const intensity = Math.max(0, Math.min(1, scene.lighting?.intensity ?? 0));
         if (intensity) { overlayCtx.save(); overlayCtx.globalAlpha = intensity * 0.14; overlayCtx.fillStyle = scene.lighting?.tint ?? "#000000"; overlayCtx.fillRect(0, 0, width, height); overlayCtx.restore(); }
       } });

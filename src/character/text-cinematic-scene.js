@@ -268,13 +268,13 @@ function drawCharacter(ctx, character, art, turn, localMs, sceneMs, active, acti
     const spriteW = spriteH * .64;
     const x = width * character.x, top = height * character.y - spriteH + Math.sin(sceneMs / 720 + character.x * 8) * 2.6;
     ctx.save(); ctx.globalAlpha = active ? 1 : .82;
-    drawLayeredCharacter(ctx, image.layers, { x, top, width: spriteW, height: spriteH,
+    const sprite = drawLayeredCharacter(ctx, image.layers, { x, top, width: spriteW, height: spriteH,
       headRotation: (pose.headRotation + Math.sin(sceneMs / 2300 + character.x) * 2.2) * Math.PI / 180,
       armMotion: active ? Math.sin(localMs / 390) * (turn?.motions?.gesture ? .28 : .18) : Math.sin(sceneMs / 1900 + character.x) * .035,
       bodySway: Math.sin(sceneMs / 2700 + character.x) * .012, eyeX: pose.eyeX ?? 0, eyeY: pose.eyeY ?? 0,
       expression, pose: character.pose ?? "front", viseme: pose.viseme, blink: pose.blink > .62, facing: character.facing ?? "right" });
     ctx.restore();
-    return { x, pose, expression, top, spriteW, spriteH };
+    return { x, pose, expression, top, spriteW, spriteH, layers: sprite.geometry };
   }
   const source = image?.portrait ?? image?.bitmap ?? image;
   if (!source || !source.width || !source.height) return null;
@@ -310,10 +310,15 @@ export function drawTextCinematicScene(ctx, scene, timeMs, { background, transpa
   for (const turn of scene.turns) { if (turn.startMs <= timeMs) mostRecent.set(turn.speakerId, turn); }
   const actors = scene.characters.slice().sort((a, b) => a.z - b.z);
   const drawnCharacterIds = [];
+  const characterGeometry = Object.create(null);
   for (const character of actors) {
     const turn = active?.speakerId === character.id ? active : mostRecent.get(character.id);
     const elapsed = active?.speakerId === character.id ? Math.max(0, timeMs - active.startMs) : turn ? Math.min(turn.animation.durationMs, timeMs - turn.startMs) : 0;
-    if (drawCharacter(ctx, character, assets, turn, elapsed, timeMs, active?.speakerId === character.id, active?.character.x ?? .5)) drawnCharacterIds.push(character.id);
+    const result = drawCharacter(ctx, character, assets, turn, elapsed, timeMs, active?.speakerId === character.id, active?.character.x ?? .5);
+    if (result) {
+      drawnCharacterIds.push(character.id);
+      if (result.layers) characterGeometry[character.id] = result.layers;
+    }
   }
   ctx.restore();
   if (typeof drawSceneOverlay === "function") drawSceneOverlay(ctx);
@@ -324,5 +329,5 @@ export function drawTextCinematicScene(ctx, scene, timeMs, { background, transpa
     const progress = showAll ? 1 : Math.min(1, elapsed / Math.max(1, active.animation.durationMs));
     drawTextBox(ctx, visible, active.speaker, active.expression, progress, showAll);
   }
-  return Object.freeze({ activeSpeaker: active?.speaker ?? "", activeCharacterId: active?.speakerId ?? "", viseme: active ? active.animation.sample(timeMs - active.startMs).viseme : "rest", expression: active?.expression ?? "neutral", speechActive: Boolean(active), renderedCharacterIds: Object.freeze(actors.map(item => item.id)), drawnCharacterIds: Object.freeze(drawnCharacterIds) });
+  return Object.freeze({ activeSpeaker: active?.speaker ?? "", activeCharacterId: active?.speakerId ?? "", viseme: active ? active.animation.sample(timeMs - active.startMs).viseme : "rest", expression: active?.expression ?? "neutral", speechActive: Boolean(active), renderedCharacterIds: Object.freeze(actors.map(item => item.id)), drawnCharacterIds: Object.freeze(drawnCharacterIds), characterGeometry: Object.freeze(characterGeometry) });
 }

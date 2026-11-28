@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import http.server, os, pathlib, threading, time, json, statistics
+import base64, http.server, os, pathlib, threading, time, json, statistics
 from playwright.sync_api import sync_playwright
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 ARTIFACTS=ROOT/'dist';ARTIFACTS.mkdir(exist_ok=True)
@@ -17,6 +17,8 @@ with sync_playwright() as p:
  assert page.locator('#screen').evaluate('(c)=>c.width===720&&c.height===1280')
  assert page.evaluate('window.__audioCreated===0 && !window.__micRequested')
  assert page.evaluate('window.qartonCinematicRuntime.assetCount')>=1
+ page.evaluate('window.qartonCinematicRuntime.seek(1000)')
+ page.wait_for_function('window.__runtimeLastFrame && window.__runtimeLastFrame.timeMs>=1000')
  for width in [320,360,390,480]:
   page.set_viewport_size({'width':width,'height':844})
   assert page.evaluate('document.documentElement.scrollWidth<=innerWidth'),f'horizontal overflow at {width}px'
@@ -26,10 +28,14 @@ with sync_playwright() as p:
  assert len(visual['backgrounds'])>=2,visual
  assert visual['changedPixels']>1000,visual
  assert [item['drawn'] for item in visual['characterCounts']]==[2,4,8],visual
- page.evaluate('window.qartonCinematicRuntime.seek(1000)')
- page.wait_for_function('window.__runtimeLastFrame && window.__runtimeLastFrame.timeMs>=1000')
  actor_pixels=page.evaluate('''()=>{const r=window.qartonCinematicRenderer,f=window.__runtimeLastFrame,c=document.querySelector('#screen'),ctx=c.getContext('2d');r.render(f);const visible=ctx.getImageData(0,0,c.width,c.height).data;r.render({...f,characterAssets:new Map()});const background=ctx.getImageData(0,0,c.width,c.height).data;let changed=0;for(let i=0;i<visible.length;i+=4)if(visible[i]!==background[i]||visible[i+1]!==background[i+1]||visible[i+2]!==background[i+2])changed++;r.render(f);return {changedPixels:changed,drawn:r.metrics.lastDraw.drawnCharacterIds,timeMs:f.timeMs}}''')
  assert len(actor_pixels['drawn'])==2 and actor_pixels['changedPixels']>10000,actor_pixels
+ aspect_frames=page.evaluate('''()=>{const f=window.__runtimeLastFrame,Renderer=window.qartonCinematicRenderer.constructor,out=[];for(const [name,width,height] of [['9x16',720,1280],['16x9',1280,720],['4x3',960,720]]){const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;const renderer=new Renderer(canvas,{quality:'low'}),scene={...f.scene,backgrounds:f.scene.backgrounds.map(layer=>({...layer,fit:'contain'}))};renderer.render({...f,scene,camera:{...f.camera,x:22,y:-8,zoom:1.04,rotation:0}});const ctx=canvas.getContext('2d'),points=[[0,0],[width-1,0],[0,height-1],[width-1,height-1],[Math.floor(width/2),Math.floor(height/2)]],corners=points.map(([x,y])=>Array.from(ctx.getImageData(x,y,1,1).data).slice(0,3));out.push({name,width,height,drawn:renderer.metrics.lastDraw.drawnCharacterIds,corners,png:canvas.toDataURL('image/png')});renderer.dispose()}return out}''')
+ assert len(aspect_frames)==3,aspect_frames
+ for item in aspect_frames:
+  assert len(item['drawn'])==2,item
+  assert len({tuple(color) for color in item['corners']})>=3,f"background has an uncovered matte at {item['name']}: {item['corners']}"
+  (ARTIFACTS/f"cinematic-runtime-{item['name']}.png").write_bytes(base64.b64decode(item['png'].split(',',1)[1]))
  page.screenshot(path=str(ARTIFACTS/'cinematic-runtime-renderer-visual.png'),full_page=True)
  transition_result=page.evaluate('''async()=>{const r=window.qartonCinematicRenderer,rt=window.qartonCinematicRuntime;for(const id of ['gate','harbor','confrontation','finale'])await rt.loadScene(id);const handle=window.__runtimeLastFrame.transitionHandle;window.__focusTransition=r.transition({from:handle,to:handle,type:'focus',durationMs:500});return {count:r.metrics.transitionCount,scene:rt.getState().sceneId} }''')
  assert transition_result['count']>=3 and transition_result['scene']=='finale',transition_result
@@ -46,6 +52,13 @@ with sync_playwright() as p:
   page.locator(f'[data-pose="{pose}"]').click();page.wait_for_timeout(30)
   mouth_hashes.append(page.locator('#test-stage').evaluate('c=>{const d=c.getContext("2d").getImageData(326,570,68,72).data;let h=2166136261;for(let i=0;i<d.length;i+=4){h^=d[i];h=Math.imul(h,16777619);h^=d[i+1];h=Math.imul(h,16777619);h^=d[i+2];h=Math.imul(h,16777619)}return h>>>0}'))
  assert len(set(mouth_hashes))==5,{'mouthHashes':mouth_hashes}
+ page.locator('[data-pose="closed"]').click();page.wait_for_timeout(30)
+ rig=page.evaluate('''()=>{const layers=window.qartonLayeredVisualTest.lastDraw.characterGeometry.mira,byRole=Object.fromEntries(layers.map(layer=>[layer.role,layer])),bodyTop=byRole.body.anchorY-byRole.body.height*byRole.body.pivotY,headBottom=byRole.head.anchorY+byRole.head.height*(1-byRole.head.pivotY),bodyArmTip=byRole.body.anchorY+byRole.body.height*(.344-byRole.body.pivotY);return {roles:layers.map(layer=>layer.role),headBodyOverlap:headBottom-bodyTop,headHeight:byRole.head.height,leftWristError:Math.abs(byRole.hand_left.anchorY-bodyArmTip),rightWristError:Math.abs(byRole.hand_right.anchorY-bodyArmTip),handHeight:byRole.hand_left.height,facialRotation:new Set(['hair_back','hair_front','eyes','brows','mouth'].map(role=>byRole[role].rotation)).size}}''')
+ assert 0<rig['headBodyOverlap']<rig['headHeight']*.15,rig
+ assert rig['leftWristError']<rig['handHeight']*.1 and rig['rightWristError']<rig['handHeight']*.1,rig
+ assert rig['facialRotation']==1,rig
+ roles=rig['roles']
+ assert all(roles.index(a)<roles.index(b) for a,b in [('body','hair_back'),('hair_back','head'),('head','hand_left'),('hand_left','hair_front'),('hair_front','eyes'),('eyes','brows'),('brows','mouth')]),roles
  page.screenshot(path=str(ARTIFACTS/'cinematic-runtime-mouth-poses.png'),full_page=True)
  page.goto(base,wait_until='networkidle');page.wait_for_function('window.qartonCinematicRuntime')
  page.evaluate('window.qartonCinematicRuntime.play()')

@@ -120,7 +120,7 @@ function hexRgba(hex, alpha) {
 }
 
 /** Draw lightweight atmospheric overlays with bounded deterministic particles. */
-export function drawCinematicAtmosphere(ctx, sample) {
+export function drawCinematicAtmosphere(ctx, sample, assets = {}) {
   if (!ctx?.canvas || !sample) throw new TypeError("Canvas context and cinematic sample are required");
   const { width, height } = ctx.canvas;
   if (sample.blur > 0.05) applySoftBlur(ctx, sample.blur);
@@ -179,6 +179,11 @@ export function drawCinematicAtmosphere(ctx, sample) {
       ctx.restore();
     }
   } finally { ctx.restore(); }
-  drawCinematicEffects(ctx, sample.effects);
+  const effectWidth = sample.effects.width, effectHeight = sample.effects.height;
+  ctx.save();
+  try {
+    ctx.scale(width / effectWidth, height / effectHeight);
+    drawCinematicEffects(ctx, sample.effects, assets);
+  } finally { ctx.restore(); }
   return true;
 }

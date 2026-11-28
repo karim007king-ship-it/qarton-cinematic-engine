@@ -1,13 +1,13 @@
 export const CHARACTER_LAYER_LAYOUTS = Object.freeze({
-  body: Object.freeze({ x: 0.5, y: 0.68, width: 0.86, height: 0.66, pivotX: 0.5, pivotY: 0.1, z: 0 }),
-  hand_left: Object.freeze({ x: 0.31, y: 0.56, width: 0.25, height: 0.22, pivotX: 0.5, pivotY: 0.1, z: 2 }),
-  hand_right: Object.freeze({ x: 0.69, y: 0.56, width: 0.25, height: 0.22, pivotX: 0.5, pivotY: 0.1, z: 2 }),
-  head: Object.freeze({ x: 0.5, y: 0.27, width: 0.4, height: 0.34, pivotX: 0.5, pivotY: 0.86, z: 3 }),
-  eyes: Object.freeze({ x: 0.5, y: 0.267, width: 0.28, height: 0.09, pivotX: 0.5, pivotY: 0.5, z: 5 }),
-  brows: Object.freeze({ x: 0.5, y: 0.224, width: 0.28, height: 0.07, pivotX: 0.5, pivotY: 0.5, z: 6 }),
-  mouth: Object.freeze({ x: 0.5, y: 0.342, width: 0.13, height: 0.07, pivotX: 0.5, pivotY: 0.5, z: 7 }),
-  hair_back: Object.freeze({ x: 0.5, y: 0.24, width: 0.49, height: 0.46, pivotX: 0.5, pivotY: 0.75, z: 2 }),
-  hair_front: Object.freeze({ x: 0.5, y: 0.17, width: 0.46, height: 0.3, pivotX: 0.5, pivotY: 0.9, z: 8 }),
+  body: Object.freeze({ x: 0.5, y: 0.34, width: 0.86, height: 0.66, pivotX: 0.5, pivotY: 0.05, z: 0 }),
+  hand_left: Object.freeze({ x: 0.245, y: 0.535, width: 0.22, height: 0.22, pivotX: 0.5, pivotY: 0.9, z: 3 }),
+  hand_right: Object.freeze({ x: 0.755, y: 0.535, width: 0.22, height: 0.22, pivotX: 0.5, pivotY: 0.9, z: 3 }),
+  head: Object.freeze({ x: 0.5, y: 0.29, width: 0.4, height: 0.36, pivotX: 0.5, pivotY: 0.88, z: 2 }),
+  eyes: Object.freeze({ x: 0.5, y: 0.14, width: 0.28, height: 0.09, pivotX: 0.5, pivotY: 0.5, z: 5 }),
+  brows: Object.freeze({ x: 0.5, y: 0.095, width: 0.28, height: 0.07, pivotX: 0.5, pivotY: 0.5, z: 6 }),
+  mouth: Object.freeze({ x: 0.5, y: 0.22, width: 0.19, height: 0.075, pivotX: 0.5, pivotY: 0.5, z: 7 }),
+  hair_back: Object.freeze({ x: 0.5, y: 0.24, width: 0.49, height: 0.46, pivotX: 0.5, pivotY: 0.75, z: 1 }),
+  hair_front: Object.freeze({ x: 0.5, y: 0.17, width: 0.46, height: 0.3, pivotX: 0.5, pivotY: 0.9, z: 4 }),
   full: Object.freeze({ x: 0.5, y: 0.5, width: 1, height: 1, pivotX: 0.5, pivotY: 0.5, z: 0 })
 });
 
@@ -65,7 +65,7 @@ export function selectCharacterLayers(layers, { expression = "neutral", pose = "
   }
   return normalized.filter(layer => {
     const variants = variantByRole.get(layer.role) ?? new Set();
-    const desired = layer.role === "mouth" ? viseme : layer.role === "eyes" ? (blink ? "closed" : expression) : layer.role === "brows" ? expression : ["body", "head", "hand_left", "hand_right"].includes(layer.role) ? pose : "";
+    const desired = layer.role === "mouth" ? (viseme === "rest" ? "closed" : viseme) : layer.role === "eyes" ? (blink ? "closed" : expression) : layer.role === "brows" ? expression : ["body", "head", "hand_left", "hand_right"].includes(layer.role) ? pose : "";
     if (!variants.size) return layer.variant === "neutral" || layer.variant === "front";
     if (desired && variants.has(desired)) return layer.variant === desired;
     return layer.variant === "neutral" || layer.variant === "front";
@@ -76,22 +76,34 @@ export function drawLayeredCharacter(ctx, layers, { x, top, width, height, headR
   if (!ctx || !Array.isArray(layers) || ![x, top, width, height].every(Number.isFinite) || width <= 0 || height <= 0) throw new TypeError("Canvas, character layers, and finite character bounds are required");
   if (!["left", "right"].includes(facing)) throw new TypeError("Character facing must be left or right");
   const selected = selectCharacterLayers(layers, { expression, pose, viseme, blink });
+  const head = selected.find(layer => layer.role === "head") ?? CHARACTER_LAYER_LAYOUTS.head;
+  const headPivotX = width * (head.x - 0.5), headPivotY = height * head.y;
+  const mirrorSign = facing === "left" ? -1 : 1;
+  const headAttached = new Set(["hair_back", "hair_front", "eyes", "brows", "mouth"]);
   const drawn = [];
+  const geometry = [];
   for (const layer of selected) {
     if (!layer.image) continue;
     const w = width * layer.width, h = height * layer.height;
     const mirrored = facing === "left";
     const eyeLayer = layer.role === "eyes";
-    const px = x - width / 2 + width * (mirrored ? 1 - layer.x : layer.x) + (eyeLayer ? eyeX * width * 0.025 * (mirrored ? -1 : 1) : 0);
-    const py = top + height * layer.y + (eyeLayer ? eyeY * height * 0.012 : 0);
+    const localX = width * (layer.x - 0.5) + (eyeLayer ? eyeX * width * 0.025 * mirrorSign : 0);
+    const localY = height * layer.y + (eyeLayer ? eyeY * height * 0.012 : 0);
     let rotation = 0;
-    if (layer.role === "head") rotation = headRotation * (mirrored ? -1 : 1);
-    if (layer.role === "body") rotation = bodySway * (mirrored ? -1 : 1);
-    if (layer.role === "hand_left") rotation = (mirrored ? 1 : -1) * armMotion;
-    if (layer.role === "hand_right") rotation = (mirrored ? -1 : 1) * armMotion;
-    ctx.save(); ctx.translate(px, py); if (mirrored) ctx.scale(-1, 1); ctx.rotate(rotation);
+    if (layer.role === "head" || headAttached.has(layer.role)) rotation = headRotation * mirrorSign;
+    if (layer.role === "body") rotation = bodySway * mirrorSign;
+    if (layer.role === "hand_left") rotation = -armMotion * mirrorSign;
+    if (layer.role === "hand_right") rotation = armMotion * mirrorSign;
+    const attached = headAttached.has(layer.role);
+    ctx.save(); ctx.translate(x, top); if (mirrored) ctx.scale(-1, 1);
+    if (attached) { ctx.translate(headPivotX, headPivotY); ctx.rotate(headRotation * mirrorSign); ctx.translate(-headPivotX, -headPivotY); }
+    ctx.translate(localX, localY); if (layer.role === "head") ctx.rotate(headRotation * mirrorSign);
+    if (layer.role === "body" || layer.role === "hand_left" || layer.role === "hand_right") ctx.rotate(rotation);
     ctx.drawImage(layer.image, -w * layer.pivotX, -h * layer.pivotY, w, h);
     ctx.restore(); drawn.push(layer.role + (layer.variant === "neutral" ? "" : `:${layer.variant}`));
+    geometry.push(Object.freeze({ role: layer.role, variant: layer.variant, z: layer.z, anchorX: x + localX * mirrorSign,
+      anchorY: top + localY, width: w, height: h, pivotX: layer.pivotX, pivotY: layer.pivotY,
+      headAttached: attached || layer.role === "head", rotation }));
   }
-  return Object.freeze({ drawnLayers: Object.freeze(drawn), layerCount: selected.length });
+  return Object.freeze({ drawnLayers: Object.freeze(drawn), layerCount: selected.length, geometry: Object.freeze(geometry) });
 }
