@@ -54,6 +54,7 @@ with sync_playwright() as p:
  for pose in ['closed','open','round','wide','teeth']:
   page.locator(f'[data-pose="{pose}"]').click();page.wait_for_timeout(30)
   mouth_hashes.append(page.locator('#test-stage').evaluate('c=>{const d=c.getContext("2d").getImageData(326,570,68,72).data;let h=2166136261;for(let i=0;i<d.length;i+=4){h^=d[i];h=Math.imul(h,16777619);h^=d[i+1];h=Math.imul(h,16777619);h^=d[i+2];h=Math.imul(h,16777619)}return h>>>0}'))
+  page.screenshot(path=str(ARTIFACTS/f'cinematic-runtime-mouth-{pose}.png'),full_page=True)
  assert len(set(mouth_hashes))==5,{'mouthHashes':mouth_hashes}
  page.locator('[data-pose="closed"]').click();page.wait_for_timeout(30)
  rig=page.evaluate('''()=>{const layers=window.qartonLayeredVisualTest.lastDraw.characterGeometry.mira,byRole=Object.fromEntries(layers.map(layer=>[layer.role,layer])),bodyTop=byRole.body.anchorY-byRole.body.height*byRole.body.pivotY,headBottom=byRole.head.anchorY+byRole.head.height*(1-byRole.head.pivotY),bodyArmTip=byRole.body.anchorY+byRole.body.height*(.344-byRole.body.pivotY);return {roles:layers.map(layer=>layer.role),headBodyOverlap:headBottom-bodyTop,headHeight:byRole.head.height,leftWristError:Math.abs(byRole.hand_left.anchorY-bodyArmTip),rightWristError:Math.abs(byRole.hand_right.anchorY-bodyArmTip),handHeight:byRole.hand_left.height,facialRotation:new Set(['hair_back','hair_front','eyes','brows','mouth'].map(role=>byRole[role].rotation)).size}}''')
