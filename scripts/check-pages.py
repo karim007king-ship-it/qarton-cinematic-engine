@@ -22,6 +22,10 @@ def exercise(context, url):
     page.get_by_role("link", name="افتح تجربة المحرك").click()
     page.wait_for_selector(".qarton-character img")
     for control, scene in [("scene-two", "dusk"), ("scene-one", "dawn")]:
+        # The showcase publishes its status text just before its finally block
+        # re-enables the scene buttons. Wait for readiness so this click cannot
+        # be discarded during that short transition window.
+        page.wait_for_function("control => !document.querySelector(`#${control}`).disabled", arg=control)
         page.locator(f"#{control}").click()
         page.get_by_text(f"Scene {scene} active", exact=False).wait_for()
 

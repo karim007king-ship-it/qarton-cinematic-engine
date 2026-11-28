@@ -172,7 +172,7 @@ export function drawFrame(ctx, frame) {
   }
 }
 
-const SEQUENCE_LIMITS = Object.freeze({ scenes: 32, assets: 256, durationMs: 300_000 });
+const SEQUENCE_LIMITS = Object.freeze({ scenes: 64, assets: 256, durationMs: 300_000 });
 const SEQUENCE_ASSET_KINDS = new Set(["image", "audio", "font", "other"]);
 const SEQUENCE_MIME = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/iu;
 const compiledSequences = new WeakMap();
@@ -446,3 +446,4 @@ export function legacyStudioProjectToSequence(project, options = {}) {
   };
   return createStudioSequenceV1({ viewport: project?.viewport, scenes: [scene], assets: options.assets ?? [] });
 }
+

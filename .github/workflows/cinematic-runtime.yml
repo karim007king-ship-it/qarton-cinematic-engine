@@ -1,0 +1,51 @@
+name: Cinematic Runtime
+on:
+  push:
+    branches: [feature/motion-studio-v2-l14a]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm install --no-save --no-package-lock esbuild@0.25.12
+      - run: npm test
+      - run: python -m pip install playwright
+      - run: python -m playwright install --with-deps chromium
+      - run: python tests/cinematic-runtime-browser.py
+        env:
+          QARTON_RUNTIME_SECONDS: 30
+          QARTON_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+      - run: python tests/cinematic-runtime-browser.py
+        env:
+          QARTON_RUNTIME_SECONDS: 300
+          QARTON_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+      - run: npm run build:cinematic-runtime
+        env:
+          QARTON_PREVIEW_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qarton-cinematic-runtime-preview
+          path: |
+            dist/qarton-cinematic-runtime-android-preview.zip
+            dist/qarton-cinematic-runtime-standalone.html
+            dist/cinematic-runtime-preview/
+            dist/cinematic-runtime-renderer-visual.png
+            dist/cinematic-runtime-mouth-poses.png
+            dist/cinematic-runtime-mouth-*.png
+            dist/cinematic-runtime-face-*.png
+            dist/cinematic-runtime-focus-transition.png
+            dist/cinematic-runtime-9x16.png
+            dist/cinematic-runtime-16x9.png
+            dist/cinematic-runtime-4x3.png
+            dist/cinematic-runtime-performance/

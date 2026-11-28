@@ -6,6 +6,9 @@ export { createCharacterController } from "./character/character-controller.js";
 export { createCharacterAnimation, createCharacterAnimationPlayer } from "./character/animation-core.js";
 export { createDOMCharacterRenderer } from "./character/dom-character-renderer.js";
 export { createCharacterStage } from "./character/character-stage.js";
+export { compileTextVisemes, classifyViseme } from "./character/text-viseme.js";
+export { createTextSceneModel, compileTextScene, drawTextCinematicScene, sampleVisibleDialogueText, TEXT_SCENE_DEMOS } from "./character/text-cinematic-scene.js";
+export { CHARACTER_LAYER_LAYOUTS, FACIAL_LAYER_ROLES, MAX_IMPORTED_CHARACTER_PIXELS, countCharacterPixels, parseCharacterLayerFilename, normalizeCharacterLayer, selectCharacterLayers, isCalibratedFaceRig, drawLayeredCharacter } from "./character/sprite-character.js";
 export { createSceneDefinition } from "./scene/scene-definition.js";
 export { buildLayerPlan } from "./scene/layer-plan.js";
 export { BackgroundRenderer, SceneTransitionManager, createDOMTransitionAdapter, createCinematicDirector } from "./runtime/index.js";
@@ -17,6 +20,7 @@ export { compileCinematicEffects, sampleCinematicEffects, drawCinematicEffects, 
 export { createCameraTrack, sampleCameraTrack, composeCameraPose, toCameraCSS } from "./camera/camera-track.js";
 export { createParticleField } from "./effects/particle-field.js";
 export { resolveLighting, sampleFog } from "./effects/atmosphere.js";
+export { CINEMATIC_MOODS, CINEMATIC_SHOTS, CINEMATIC_TRANSITIONS, compileTextCinematicDirection, drawCinematicAtmosphere, sampleCinematicDirector } from "./effects/cinematic-director.js";
 export { createAudioCueController } from "./audio/audio-cue-controller.js";
 export { createAdaptivePerformanceMonitor, createRuntimeActivityGate } from "./runtime/adaptive-performance.js";
 export { createCinematicRuntime } from "./runtime/cinematic-runtime.js";
@@ -25,3 +29,6 @@ export { compileCinematicAudioProject, createCinematicAudioPlayer } from "./audi
 export { createScenePackage } from "./scene/scene-package.js";
 export { createSceneClock } from "./motion/scene-clock.js";
 export { createCinematicPlayback } from "./runtime/cinematic-playback.js";
+export { createCinematicStoryRuntime } from "./runtime/cinematic-story-runtime.js";
+export { CinematicRenderer, CINEMATIC_RENDER_QUALITY } from "./runtime/cinematic-renderer.js";
+export { CINEMATIC_SCENE_VERSION, CINEMATIC_STORY_VERSION, CINEMATIC_RUNTIME_STATE_VERSION, compileCinematicSceneV1, compileCinematicStoryV1, validateCinematicRuntimeState } from "./runtime/cinematic-scene-v1.js";

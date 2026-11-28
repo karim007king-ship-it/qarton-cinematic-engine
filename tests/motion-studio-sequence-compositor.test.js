@@ -32,6 +32,9 @@ class FakeContext {
     this.filter, this.shadowColor, this.shadowBlur, this.shadowOffsetX, this.shadowOffsetY]); }
   drawImage(...args) { this.calls.push(["drawImage", this.globalAlpha, this.globalCompositeOperation, ...args,
     this.filter, this.shadowColor, this.shadowBlur, this.shadowOffsetX, this.shadowOffsetY]); }
+  beginPath() { this.calls.push(["beginPath"]); }
+  arc(...args) { this.calls.push(["arc", ...args]); }
+  clip() { this.calls.push(["clip"]); }
 }
 
 class FakeCanvas {
@@ -89,6 +92,22 @@ test("Fade uses black as its explicit backing and only draws the visible side", 
   assert.equal(compositor.getDiagnostics().liveSurfaces, 1);
   compositor.draw(target.context, sample("fade", 0.5, 0, 0), (_ctx, scene) => observed.push(scene.id));
   assert.deepEqual(observed, ["out"], "the black midpoint requires no scene render");
+});
+
+test("crossfade, through-light, and character-focus transitions use the shared scratch surface", () => {
+  const target = new FakeCanvas(64, 64);
+  const compositor = createStudioSequenceCompositor({ createSurface: (w, h) => new FakeCanvas(w, h) });
+  const draw = (_context, scene) => scene.id;
+  compositor.draw(target.context, sample("crossfade", .5), draw);
+  assert.ok(target.context.calls.some(call => call[0] === "drawImage" && call[2] === "lighter"));
+  target.context.calls.length = 0;
+  compositor.draw(target.context, sample("through-light", .5, 0, 0), draw);
+  assert.ok(target.context.calls.some(call => call[0] === "fillRect" && call[1] === "#fff"));
+  target.context.calls.length = 0;
+  compositor.draw(target.context, { ...sample("focus", .5), transition: { type: "focus", focusX: .72, focusY: .42 } }, draw);
+  assert.ok(target.context.calls.some(call => call[0] === "arc"));
+  assert.ok(target.context.calls.some(call => call[0] === "clip"));
+  assert.equal(compositor.getDiagnostics().surfaceCreations, 1);
 });
 
 test("compositor restores Canvas state and reports unsupported asynchronous scene painters", () => {

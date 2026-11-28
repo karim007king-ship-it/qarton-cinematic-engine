@@ -157,6 +157,28 @@ test("ordinary images are accepted on the first bounded decode", async () => {
   assert.deepEqual([bitmap.width, bitmap.height], [96, 96]);
 });
 
+test("small transparent WebP layers are not upscaled into the 1280px texture budget", async () => {
+  const header = new Uint8Array(30);
+  header.set([..."RIFF"].map(char => char.charCodeAt(0)), 0);
+  header.set([..."WEBP"].map(char => char.charCodeAt(0)), 8);
+  header.set([..."VP8X"].map(char => char.charCodeAt(0)), 12);
+  const width = 420, height = 560;
+  for (let i = 0; i < 3; i++) {
+    header[24 + i] = ((width - 1) >> (8 * i)) & 255;
+    header[27 + i] = ((height - 1) >> (8 * i)) & 255;
+  }
+  const file = { name: "layer.webp", type: "image/webp", size: 1000, slice: () => ({ arrayBuffer: async () => header.buffer }) };
+  const requested = [];
+  const bitmap = await decodeImageBitmap(file, {
+    createBitmap: async (_source, options) => {
+      requested.push(options.resizeWidth);
+      return { width: options.resizeWidth, height: Math.round(height * options.resizeWidth / width), close() {} };
+    }
+  });
+  assert.equal(requested[0], width);
+  assert.deepEqual([bitmap.width, bitmap.height], [420, 560]);
+});
+
 test("decoding failures and ignored resize requests produce a clear safe error", async () => {
   const file = { name: "large.png", type: "image/png", size: 9000 };
   await assert.rejects(decodeImageBitmap(file, { createBitmap: async () => { throw new Error("decoder failed"); } }), /تعذر فك ترميز الصورة أو تصغيرها/);

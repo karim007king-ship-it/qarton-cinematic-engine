@@ -162,8 +162,10 @@ test("asset references, descriptors, total durations, and record-count budgets a
   assert.throws(() => sequence([scene("scene-a", 150_000), scene("scene-b", 150_001)]), /duration/iu);
   assert.equal(sequence([scene("scene-a", 150_000), scene("scene-b", 150_000)]).scenes.length, 2);
 
-  const tooManyScenes = Array.from({ length: 33 }, (_, index) => scene(`scene-${index}`, 1));
-  assert.throws(() => sequence(tooManyScenes), /32 scenes/iu);
+  const fiftyScenes = Array.from({ length: 50 }, (_, index) => scene(`perf-${index}`, 1));
+  assert.equal(sequence(fiftyScenes).scenes.length, 50);
+  const tooManyScenes = Array.from({ length: 65 }, (_, index) => scene(`scene-${index}`, 1));
+  assert.throws(() => sequence(tooManyScenes), /64 scenes/iu);
   const tooManyAssets = Array.from({ length: 257 }, (_, index) => ({ ...image, id: `image-${index}` }));
   assert.throws(() => sequence([scene("scene-a")], tooManyAssets), /256 records/iu);
 });
@@ -239,6 +241,19 @@ test("V2 overlap timeline samples both scenes and centered short audio crossfade
   assert.equal(end.sceneTimeMs, 400, "incoming local time advances through the overlap");
   assert.equal(sampleStudioSequenceV2(compiled, 1600).sceneTimeMs, 1000, "final endpoint remains inclusive");
   assert.deepEqual(sampleStudioSequenceV2(compiled, 800), sampleStudioSequenceV2(compiled, 800));
+});
+
+test("V2 supports cinematic crossfade, light, black, and character-focus transition samples", () => {
+  for (const type of ["crossfade", "through-black", "through-light", "focus"]) {
+    const compiled = compileStudioSequenceV2(sequenceV2([scene("a", 1000), scene("b", 1000)], [transition("a", "b", type, 400, 0)]));
+    const middle = sampleStudioSequenceV2(compiled, 800);
+    assert.equal(middle.kind, "transition");
+    assert.equal(middle.transition.type, type);
+    assert.equal(middle.progress, .5);
+    assert.equal(middle.outgoing.sceneTimeMs, 800);
+    assert.equal(middle.incoming.sceneTimeMs, 200);
+    assert.equal(sampleStudioSequenceV2(compiled, 800).progress, .5, `${type} is deterministic at an absolute time`);
+  }
 });
 
 test("zero-duration audio crossfade is a hard cut and Fade has a defined black midpoint", () => {

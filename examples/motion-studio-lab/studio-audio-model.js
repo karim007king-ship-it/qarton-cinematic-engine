@@ -3,7 +3,7 @@ import { compileCinematicAudioProject } from "../../src/audio/cinematic-audio-co
 export const AUDIO_TRACK_TYPES = Object.freeze(["dialogue", "music", "sfx"]);
 export const AUDIO_VISEMES = Object.freeze(["rest", "open", "wide", "round", "closed", "teeth"]);
 export const AUDIO_MAX_FILE_BYTES = 20 * 1024 * 1024;
-export const AUDIO_FORMATS = Object.freeze(["audio/mpeg", "audio/mp4", "audio/aac", "audio/wav", "audio/x-wav", "audio/ogg", "audio/webm"]);
+export const AUDIO_FORMATS = Object.freeze(["audio/mpeg", "audio/mp4", "audio/aac", "audio/wav", "audio/x-wav", "audio/ogg", "audio/webm", "audio/amr"]);
 
 export function makeAudioTracks() {
   return AUDIO_TRACK_TYPES.map((type) => ({ id: `audio-${type}`, type, volume: 1, clips: [] }));
@@ -78,7 +78,7 @@ export function validateAudioFile(file) {
   }
   const mime = String(file.type || "").toLowerCase();
   const extension = file.name.split(".").at(-1)?.toLowerCase();
-  const byExtension = { mp3: "audio/mpeg", m4a: "audio/mp4", mp4: "audio/mp4", aac: "audio/aac", wav: "audio/wav", ogg: "audio/ogg", oga: "audio/ogg", webm: "audio/webm" };
+  const byExtension = { mp3: "audio/mpeg", m4a: "audio/mp4", mp4: "audio/mp4", aac: "audio/aac", wav: "audio/wav", ogg: "audio/ogg", oga: "audio/ogg", webm: "audio/webm", amr: "audio/amr" };
   if (!AUDIO_FORMATS.includes(mime) && !byExtension[extension]) throw new TypeError("صيغة الصوت غير مدعومة. اختر MP3 أو M4A/AAC أو WAV أو OGG أو WebM.");
   return { mime: AUDIO_FORMATS.includes(mime) ? mime : byExtension[extension], name: file.name.slice(0, 180), size: file.size };
 }
@@ -151,3 +151,4 @@ export async function readAudioDuration(file, { AudioClass = globalThis.Audio,
 export function compileAudioTracks(tracks, durationMs) {
   return compileCinematicAudioProject({ durationMs, tracks });
 }
+

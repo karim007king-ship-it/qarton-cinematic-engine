@@ -1,0 +1,82 @@
+name: Motion Studio V2 Text Animation Preview
+on:
+  pull_request:
+    paths:
+      - 'examples/motion-studio-v2/**'
+      - 'packages/motion-studio/**'
+      - 'src/character/**'
+      - 'src/effects/**'
+      - 'src/motion/scene-clock.js'
+      - 'examples/motion-studio-lab/studio-image.js'
+      - 'examples/motion-studio-lab/studio-motion-presets.js'
+      - 'scripts/build-motion-studio-v2-preview.mjs'
+      - 'tests/motion-studio-v2-standalone.test.mjs'
+      - 'tests/text-viseme.test.js'
+      - 'tests/motion-studio-v2-performance.py'
+      - 'tests/run-cinematic-stability-performance.py'
+      - 'tests/cinematic-stability-performance.html'
+      - '.github/workflows/motion-studio-v2-prototype.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  standalone-preview:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install bundler and Chromium checks
+        run: |
+          npm install --no-save --no-package-lock esbuild@0.25.12
+          python -m pip install playwright==1.56.0
+          python -m playwright install --with-deps chromium
+      - name: Run all Node engine tests
+        run: node --test
+      - name: Guard standalone CSS and engine bundle
+        run: node --test tests/motion-studio-v2-standalone.test.mjs
+      - name: Build single-file offline preview
+        env:
+          L14C3_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/build-motion-studio-v2-preview.mjs
+      - name: Test Arabic text animation in Chromium
+        run: python examples/motion-studio-v2/check-text-prototype.py
+      - name: Check out performance reference
+        uses: actions/checkout@v4
+        with:
+          ref: 9918fae5799222b960b342051cff5d3b8c41838c
+          path: baseline-source
+      - name: Build performance reference
+        run: |
+          ln -s "$GITHUB_WORKSPACE/node_modules" baseline-source/node_modules
+          sed -i 's/scenes: 32, assets: 256/scenes: 64, assets: 256/' baseline-source/packages/motion-studio/index.js
+          cd baseline-source
+          L14B_COMMIT=9918fae5799222b960b342051cff5d3b8c41838c node scripts/build-motion-studio-v2-preview.mjs
+      - name: Compare 10, 20 and 50 scenes
+        run: |
+          set -o pipefail
+          python tests/motion-studio-v2-performance.py baseline-source/dist/motion-studio-v2-l14b-android-preview/index.html dist/motion-studio-v2-l14c3-android-preview/index.html | tee dist/motion-studio-v2-l14c3-android-preview/performance-results.json
+      - name: Stress cinematic rendering for 30 seconds and 5 minutes
+        run: python tests/run-cinematic-stability-performance.py
+      - name: Package Android preview ZIP
+        run: |
+          cd dist/motion-studio-v2-l14c3-android-preview
+          zip -j ../qarton-motion-studio-v2-l14c3-android-preview.zip index.html qarton-motion-studio-v2.html README.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qarton-motion-studio-v2-l14c3-android-preview
+          path: |
+            dist/qarton-motion-studio-v2-l14c3-android-preview.zip
+            dist/motion-studio-v2-l14c3-android-preview/index.html
+            dist/motion-studio-v2-l14c3-android-preview/qarton-motion-studio-v2.html
+            dist/motion-studio-v2-l14c3-android-preview/README.txt
+            dist/motion-studio-v2-l14c3-android-preview/performance-results.json
+            dist/motion-studio-v2-l14c3-android-preview/cinematic-stability-performance.json
+            dist/motion-studio-v2-l14c3-android-preview/text-animation-check-results.json
+            dist/motion-studio-v2-l14c3-android-preview/screenshots/**
+          if-no-files-found: error
+          retention-days: 14

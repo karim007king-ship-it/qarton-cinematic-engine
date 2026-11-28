@@ -1,0 +1,654 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:qarton:cinematic-scene-v1",
+  "title": "QARTON CinematicSceneV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "id",
+    "chapterId",
+    "title",
+    "language",
+    "assets",
+    "backgrounds",
+    "characters",
+    "dialogue",
+    "camera",
+    "direction",
+    "lighting",
+    "effects",
+    "transition",
+    "music",
+    "choices",
+    "flow",
+    "events"
+  ],
+  "properties": {
+    "version": {
+      "const": "CinematicSceneV1"
+    },
+    "id": {
+      "$ref": "#/$defs/id"
+    },
+    "chapterId": {
+      "$ref": "#/$defs/id"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "language": {
+      "enum": [
+        "tn",
+        "ar",
+        "fr",
+        "en"
+      ]
+    },
+    "durationMs": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3600000
+    },
+    "manualDialogue": {
+      "type": "boolean"
+    },
+    "assets": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": {
+        "$ref": "#/$defs/asset"
+      }
+    },
+    "backgrounds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "assetId",
+          "role",
+          "z"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "assetId": {
+            "$ref": "#/$defs/id"
+          },
+          "role": {
+            "enum": [
+              "background",
+              "midground",
+              "foreground"
+            ]
+          },
+          "z": {
+            "type": "integer"
+          },
+          "opacity": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "depth": {
+            "type": "number",
+            "minimum": -4,
+            "maximum": 4
+          },
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "scale": {
+            "type": "number",
+            "minimum": 0.1
+          },
+          "fit": {
+            "enum": [
+              "cover",
+              "contain",
+              "fill"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "characters": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "x",
+          "y",
+          "scale",
+          "z",
+          "facing"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "name": {
+            "type": "string"
+          },
+          "x": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "y": {
+            "type": "number",
+            "minimum": 0.35,
+            "maximum": 1
+          },
+          "scale": {
+            "type": "number",
+            "minimum": 0.12,
+            "maximum": 1.1
+          },
+          "z": {
+            "type": "number"
+          },
+          "facing": {
+            "enum": [
+              "left",
+              "right"
+            ]
+          },
+          "assetId": {
+            "$ref": "#/$defs/id"
+          },
+          "layers": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "required": ["role", "assetId"],
+              "properties": {
+                "role": { "enum": ["body", "hand_left", "hand_right", "head", "eyes", "eye_left", "eye_right", "brows", "brow_left", "brow_right", "mouth", "hair_back", "hair_front"] },
+                "assetId": { "$ref": "#/$defs/id" },
+                "variant": { "type": "string", "pattern": "^[a-z0-9_-]{1,24}$" },
+                "view": { "enum": ["any", "front", "side"] },
+                "z": { "type": "integer" },
+                "layout": {
+                  "type": "object",
+                  "properties": {
+                    "x": { "type": "number", "minimum": 0, "maximum": 1 },
+                    "y": { "type": "number", "minimum": 0, "maximum": 1 },
+                    "width": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+                    "height": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+                    "pivotX": { "type": "number", "minimum": 0, "maximum": 1 },
+                    "pivotY": { "type": "number", "minimum": 0, "maximum": 1 }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "expression": {
+            "enum": [
+              "neutral",
+              "happy",
+              "sad",
+              "angry",
+              "afraid",
+              "surprised",
+              "thinking",
+              "determined",
+              "listening"
+            ]
+          },
+          "pose": {
+            "enum": [
+              "front",
+              "side",
+              "pose1",
+              "pose2"
+            ]
+          },
+          "speed": {
+            "type": "number",
+            "minimum": 0.5,
+            "maximum": 2
+          },
+          "focus": {
+            "type": "boolean"
+          }
+        },
+        "oneOf": [
+          {
+            "required": [
+              "assetId"
+            ]
+          },
+          {
+            "required": [
+              "layers"
+            ]
+          }
+        ],
+        "additionalProperties": false
+      }
+    },
+    "dialogue": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 120,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "speakerId"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "speakerId": {
+            "$ref": "#/$defs/id"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 5000
+          },
+          "textId": {
+            "$ref": "#/$defs/id"
+          },
+          "translations": {
+            "type": "object",
+            "properties": {
+              "tn": {
+                "type": "string"
+              },
+              "ar": {
+                "type": "string"
+              },
+              "fr": {
+                "type": "string"
+              },
+              "en": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "expression": {
+            "type": "string"
+          },
+          "speed": {
+            "type": "number",
+            "minimum": 0.5,
+            "maximum": 2
+          },
+          "motions": {
+            "type": "object"
+          }
+        },
+        "anyOf": [
+          {
+            "required": [
+              "text"
+            ]
+          },
+          {
+            "required": [
+              "textId"
+            ]
+          }
+        ],
+        "additionalProperties": false
+      }
+    },
+    "camera": {
+      "type": "object",
+      "required": [
+        "mode",
+        "shot"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "auto",
+            "manual"
+          ]
+        },
+        "shot": {
+          "enum": [
+            "wide",
+            "medium",
+            "close"
+          ]
+        },
+        "timeOfDay": {
+          "enum": [
+            "day",
+            "dusk",
+            "night"
+          ]
+        },
+        "keyframes": {
+          "type": "array"
+        }
+      },
+      "additionalProperties": false
+    },
+    "direction": {
+      "type": "object",
+      "required": [
+        "mood"
+      ],
+      "properties": {
+        "mood": {
+          "enum": [
+            "calm",
+            "emotional",
+            "mystery",
+            "fear",
+            "confrontation",
+            "sad",
+            "heroic",
+            "siege"
+          ]
+        },
+        "seed": {
+          "type": "integer"
+        },
+        "strength": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "lighting": {
+      "type": "object",
+      "properties": {
+        "intensity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "tint": {
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "effects": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "strength": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "transition": {
+      "type": "object",
+      "required": [
+        "type",
+        "durationMs"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "cut",
+            "crossfade",
+            "through-black",
+            "through-light",
+            "focus"
+          ]
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        }
+      },
+      "additionalProperties": false
+    },
+    "music": {
+      "type": "object",
+      "required": [
+        "mood",
+        "intensity",
+        "fadeInMs",
+        "fadeOutMs"
+      ],
+      "properties": {
+        "mood": {
+          "type": "string"
+        },
+        "intensity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "fadeInMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fadeOutMs": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "choices": {
+      "type": "array",
+      "maxItems": 24,
+      "items": {
+        "$ref": "#/$defs/choice"
+      }
+    },
+    "flow": {
+      "type": "object",
+      "properties": {
+        "nextSceneId": {
+          "$ref": "#/$defs/id"
+        },
+        "conditions": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/condition"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "events": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "$ref": "#/$defs/event"
+      }
+    },
+    "description": {
+      "type": "string"
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+    },
+    "asset": {
+      "type": "object",
+      "required": [
+        "id",
+        "src"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "src": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "type": {
+          "const": "image"
+        }
+      },
+      "additionalProperties": false
+    },
+    "condition": {
+      "type": "object",
+      "required": [
+        "id",
+        "expression",
+        "targetSceneId"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "expression": {
+          "type": "string",
+          "minLength": 1
+        },
+        "targetSceneId": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "additionalProperties": false
+    },
+    "choice": {
+      "type": "object",
+      "required": [
+        "id",
+        "afterDialogueId",
+        "prompt",
+        "options"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "afterDialogueId": {
+          "$ref": "#/$defs/id"
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "options": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "id",
+                  "text",
+                  "targetSceneId"
+                ],
+                "properties": {
+                  "id": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "targetSceneId": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "condition": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "id",
+                  "text",
+                  "endingId"
+                ],
+                "properties": {
+                  "id": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "endingId": {
+                    "$ref": "#/$defs/id"
+                  },
+                  "condition": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "event": {
+      "type": "object",
+      "required": [
+        "id",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "type": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9:_-]{0,63}$"
+        },
+        "atMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3600000
+        },
+        "afterDialogueId": {
+          "$ref": "#/$defs/id"
+        },
+        "payload": {}
+      },
+      "additionalProperties": false
+    }
+  }
+}

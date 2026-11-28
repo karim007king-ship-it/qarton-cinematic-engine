@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QARTON cinematic stability performance fixture</title>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script type="module">
+import { compileTextScene, drawTextCinematicScene } from "../src/character/text-cinematic-scene.js";
+import { drawCinematicAtmosphere, compileTextCinematicDirection, sampleCinematicDirector } from "../src/effects/cinematic-director.js";
+
+const canvas = document.querySelector("#stage");
+const ctx = canvas.getContext("2d", { alpha: false });
+const makeSurface = (width, height) => { const surface = document.createElement("canvas"); surface.width = width; surface.height = height; return surface; };
+const images = {};
+let layersById = new Map(), backgroundCanvases = [], scene, director, sceneIndex = -1;
+let outgoing = makeSurface(canvas.width, canvas.height), frameSurface = makeSurface(canvas.width, canvas.height);
+let frameContext = frameSurface.getContext("2d", { alpha: false });
+
+function loadImage(url) { return new Promise((resolve, reject) => { const image = new Image(); image.onload = () => resolve(image); image.onerror = reject; image.src = url; }); }
+
+async function highResolutionBackground(width, height, seed) {
+  const source = makeSurface(width, height), paint = source.getContext("2d");
+  const hue = 18 + seed * 42, gradient = paint.createLinearGradient(0, 0, width, height);
+  gradient.addColorStop(0, `hsl(${hue} 28% 22%)`); gradient.addColorStop(.52, `hsl(${hue + 18} 34% 12%)`); gradient.addColorStop(1, "#090b12");
+  paint.fillStyle = gradient; paint.fillRect(0, 0, width, height);
+  for (let i = 0; i < 44; i += 1) {
+    const x = ((i * 7919 + seed * 1901) % 10000) / 10000 * width, y = ((i * 3571 + seed * 2137) % 10000) / 10000 * height;
+    const radius = width * (.008 + ((i * 17) % 9) * .002), glow = paint.createRadialGradient(x, y, 0, x, y, radius);
+    glow.addColorStop(0, `hsla(${hue + i * 3} 45% 55% / .14)`); glow.addColorStop(1, "transparent");
+    paint.fillStyle = glow; paint.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+  }
+  for (let i = 0; i < 16; i += 1) { const x = i * width / 16, tower = height * (.34 + (i % 4) * .025); paint.fillStyle = i % 2 ? "#13151d" : "#19161a"; paint.fillRect(x, height - tower, width / 18, tower); }
+  const blob = await new Promise(resolve => source.toBlob(resolve, "image/webp", .86));
+  return createImageBitmap(blob);
+}
+
+function cropBitmap(source, sx, sy, sw, sh, outWidth, outHeight) {
+  const crop = makeSurface(outWidth, outHeight);
+  crop.getContext("2d").drawImage(source, sx * source.width, sy * source.height, sw * source.width, sh * source.height, 0, 0, outWidth, outHeight);
+  return createImageBitmap(crop);
+}
+
+async function prepare() {
+  await Promise.all(["layla", "youssef", "nour", "salim"].map(async id => { images[id] = await loadImage(`../examples/motion-studio-v2/assets/characters/${id}.webp`); }));
+  backgroundCanvases = await Promise.all([highResolutionBackground(4096, 2160, 1), highResolutionBackground(3072, 2048, 2)]);
+  const keys = ["layla", "youssef", "nour", "salim", "layla", "youssef", "nour", "salim"];
+  await Promise.all(keys.map(async (key, index) => {
+    const source = images[key], id = `stress-${index + 1}`;
+    const [body, head, hair, eyes, brows, mouth, handLeft, handRight] = await Promise.all([
+      cropBitmap(source, 0, .34, 1, .66, 1024, 1014), cropBitmap(source, .18, 0, .64, .42, 768, 645), cropBitmap(source, .14, .01, .72, .29, 640, 420),
+      cropBitmap(source, .28, .105, .48, .105, 384, 162), cropBitmap(source, .28, .07, .48, .085, 384, 130), cropBitmap(source, .39, .21, .3, .13, 300, 200),
+      cropBitmap(source, .22, .42, .27, .31, 276, 477), cropBitmap(source, .5, .42, .27, .31, 276, 477)
+    ]);
+    layersById.set(id, { body, head, hair, eyes, brows, mouth, handLeft, handRight });
+  }));
+  window.__QARTON_STABILITY_READY = true;
+}
+
+function buildScene(index) {
+  const count = [2, 4, 8][index % 3], points = count === 2 ? [.31, .69] : Array.from({ length: count }, (_, i) => (i + 1) / (count + 1));
+  const actorList = points.map((x, i) => ({ id: `stress-${i + 1}`, name: `شخصية ${i + 1}`, spriteKey: `stress-${i + 1}`, x, y: .94, scale: count === 8 ? .42 : count === 4 ? .55 : .72, z: i, facing: i % 2 ? "left" : "right", face: { x: .55, y: .113, skin: "#d99a78" } }));
+  const dialogue = actorList.map((actor, i) => ({ id: `line-${index}-${i}`, speakerId: actor.id, expression: ["thinking", "afraid", "angry", "determined", "sad", "surprised", "happy", "neutral"][i], text: "مَبْسُوطٌ، هل نواصل الطريق؟\nما زال أمامنا وقتٌ لاكتشاف الحقيقة." }));
+  scene = compileTextScene({ id: `stress-scene-${index}`, title: `Cinematic stress ${index}`, language: index % 2 ? "ar" : "tn", theme: ["family", "mystery", "siege", "ruins"][index % 4], characters: actorList, dialogue });
+  const assets = new Map();
+  for (const actor of actorList) {
+    const art = layersById.get(actor.id);
+    assets.set(actor.id, { layers: [
+      { role: "body", variant: "neutral", image: art.body }, { role: "hair_back", variant: "neutral", image: art.hair }, { role: "head", variant: "neutral", image: art.head },
+      { role: "hand_left", variant: "neutral", image: art.handLeft }, { role: "hand_right", variant: "neutral", image: art.handRight }, { role: "eyes", variant: "neutral", image: art.eyes },
+      { role: "brows", variant: "neutral", image: art.brows }, { role: "mouth", variant: "neutral", image: art.mouth }
+    ] });
+  }
+  const context = frameContext; context.setTransform(1, 0, 0, 1, 0, 0); context.globalAlpha = 1; context.globalCompositeOperation = "source-over"; context.clearRect(0, 0, canvas.width, canvas.height);
+  return { count, assets, context };
+}
+
+function estimatedDecodedImageBytes() {
+  const original = Object.values(images).reduce((sum, image) => sum + image.naturalWidth * image.naturalHeight * 4, 0);
+  const layers = [...layersById.values()].reduce((sum, art) => sum + Object.values(art).reduce((n, bitmap) => n + bitmap.width * bitmap.height * 4, 0), 0);
+  const backgrounds = backgroundCanvases.reduce((sum, bitmap) => sum + bitmap.width * bitmap.height * 4, 0);
+  const canvasSurfaces = canvas.width * canvas.height * 4 * 3;
+  return { original, layers, backgrounds, canvasSurfaces, total: original + layers + backgrounds + canvasSurfaces };
+}
+
+async function run(durationMs) {
+  const intervals = [], heapSamples = [], resource = estimatedDecodedImageBytes();
+  const heapStart = performance.memory?.usedJSHeapSize ?? null;
+  if (heapStart !== null) heapSamples.push(heapStart);
+  const start = performance.now(); let previous = start, frames = 0, slow33 = 0, slow50 = 0, changes = 0, lastChange = -1, lastCheckpoint = 0;
+  let active = buildScene(0);
+  director = compileTextCinematicDirection({ durationMs: 8000, mood: "mystery", seed: 3103, timeOfDay: "night", shot: "wide", strength: .7 });
+  const outCtx = outgoing.getContext("2d", { alpha: false });
+  function drawFrame(now) {
+    const elapsed = now - start, index = Math.floor(elapsed / 8000) % 6;
+    if (index !== lastChange) {
+      if (frames) { outCtx.setTransform(1, 0, 0, 1, 0, 0); outCtx.globalAlpha = 1; outCtx.drawImage(canvas, 0, 0); }
+      lastChange = index; changes += 1; active = buildScene(index);
+      const moods = ["mystery", "emotional", "fear", "confrontation", "sad", "siege"];
+      director = compileTextCinematicDirection({ durationMs: 8000, mood: moods[index], seed: 3103 + index * 17, timeOfDay: index % 2 ? "dusk" : "night", shot: index % 3 ? "medium" : "wide", strength: .72 });
+    }
+    const local = elapsed % 8000, sample = sampleCinematicDirector(director, local), bg = backgroundCanvases[index % backgroundCanvases.length];
+    const zoom = 1 + Math.sin(elapsed / 1900) * .025;
+    active.context.save(); active.context.translate(canvas.width / 2 + Math.sin(elapsed / 1700) * 12, canvas.height / 2 + Math.cos(elapsed / 2200) * 7); active.context.scale(zoom, zoom); active.context.translate(-canvas.width / 2, -canvas.height / 2);
+    active.context.drawImage(bg, -16, -10, canvas.width + 32, canvas.height + 20);
+    drawTextCinematicScene(active.context, scene, local % scene.durationMs, { transparent: true, assets: active.assets,
+      camera: { x: sample.effects.camera.x, y: sample.effects.camera.y, zoom: sample.shotScale, rotation: sample.effects.camera.rotation },
+      drawSceneOverlay: context => drawCinematicAtmosphere(context, sample) });
+    active.context.restore();
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1; ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const progress = Math.min(1, local / 900), inTransition = local < 900 && index > 0;
+    if (inTransition) { ctx.globalAlpha = 1 - progress; ctx.drawImage(outgoing, 0, 0); ctx.globalAlpha = progress; }
+    ctx.drawImage(frameSurface, 0, 0); ctx.globalAlpha = 1;
+    const interval = Math.max(0, now - previous); if (frames) { intervals.push(interval); if (interval > 33.333) slow33 += 1; if (interval > 50) slow50 += 1; }
+    previous = now; frames += 1;
+    if (elapsed - lastCheckpoint >= 15000) { lastCheckpoint = elapsed; if (performance.memory) heapSamples.push(performance.memory.usedJSHeapSize); console.log(`PERF_PROGRESS|${durationMs}|${Math.round(elapsed)}|${frames}`); }
+    if (elapsed < durationMs) requestAnimationFrame(drawFrame);
+    else window.__QARTON_STABILITY_RESULT = { requestedDurationMs: durationMs, actualDurationMs: Math.round(elapsed), frames, avgFps: Number((frames * 1000 / elapsed).toFixed(2)),
+      p95FrameTimeMs: Number(([...intervals].sort((a,b)=>a-b)[Math.floor(intervals.length * .95)] ?? 0).toFixed(2)), slowFramesOver33Ms: slow33, slowFramesOver50Ms: slow50,
+      sceneTransitions: changes - 1, characterCounts: [2,4,8], heapStartBytes: heapStart,
+      heapEndBytes: performance.memory?.usedJSHeapSize ?? null, heapPeakObservedBytes: heapSamples.length ? Math.max(...heapSamples) : null,
+      heapDeltaBytes: heapStart !== null && performance.memory ? performance.memory.usedJSHeapSize - heapStart : null,
+      retainedDomCanvasCount: document.querySelectorAll("canvas").length,
+      decodedAssetBytes: resource, decodedAssetMiB: Number((resource.total / 1048576).toFixed(2)), breakdown: resource };
+  }
+  window.__QARTON_STABILITY_RESULT = null;
+  await new Promise(resolve => { const timer = setInterval(() => { if (window.__QARTON_STABILITY_RESULT) { clearInterval(timer); resolve(); } }, 100); requestAnimationFrame(drawFrame); });
+  const result = window.__QARTON_STABILITY_RESULT; window.__QARTON_STABILITY_RESULT = null; return result;
+}
+
+window.__QARTON_STABILITY = Object.freeze({ run, ready: true });
+await prepare();
+</script>
+</html>
