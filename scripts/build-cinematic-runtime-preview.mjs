@@ -20,5 +20,6 @@ const layeredPreview=layeredHtml.replace('<link rel="stylesheet" href="style.css
 await writeFile(resolve(out,"index.html"),standalone);await writeFile(resolve(root,"dist/qarton-cinematic-runtime-standalone.html"),standalone);
 await writeFile(resolve(out,"layered-character-test.html"),layeredPreview);
 await writeFile(resolve(out,"README.txt"),`QARTON Cinematic Runtime Android Preview\nCommit: ${commit}\n\nOpen index.html offline in Android Chrome/WebView. Five-scene Tunisian story, local generated art, branching choices, JSON save/restore. No microphone, AudioContext, HTTPS, or network assets.\n`);
+await rm(resolve(root,"dist/qarton-cinematic-runtime-android-preview.zip"),{force:true});
 execFileSync("zip",["-qr",resolve(root,"dist/qarton-cinematic-runtime-android-preview.zip"),"."],{cwd:out});
 console.log(`Built Runtime preview for ${commit.slice(0,12)}`);
