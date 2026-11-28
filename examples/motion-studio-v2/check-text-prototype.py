@@ -40,8 +40,9 @@ def create_face_rig_files(page, folder):
       const out={};
       for(const [name,markup] of Object.entries(parts)){
         const image=new Image();image.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(markup);await image.decode();
-        const canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;
-        canvas.getContext('2d').drawImage(image,0,0);out[name]=canvas.toDataURL('image/webp',.95);
+        const scale=Math.min(1,256/Math.max(image.naturalWidth,image.naturalHeight));
+        const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));
+        canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);out[name]=canvas.toDataURL('image/webp',.95);
       }
       return out;
     }""", svg)
