@@ -1,9 +1,11 @@
 import { CinematicRenderer, createCinematicStoryRuntime } from "../../src/index.js";
 
+import { withOriginalFaceRigs } from "./apply-original-face-rigs.js";
+
 const $ = id => document.getElementById(id), canvas = $("screen");
 const ENDING_LABELS = Object.freeze({ "family-safe": "نهاية آمنة للعائلة", "united-carthage": "قرطاج موحّدة" });
 const storyData = globalThis.__QARTON_STORY__ ?? await (await fetch("story.json")).json();
-const scenes = storyData.scenes, log = [], renderer = new CinematicRenderer(canvas, { quality: "medium" });
+const scenes = withOriginalFaceRigs(storyData).scenes, log = [], renderer = new CinematicRenderer(canvas, { quality: "medium" });
 let runtime, showAll = false, lastFrame = null, choiceKey = "";
 
 function resolvedAsset(src) { return globalThis.__QARTON_ASSETS__?.[src] ?? src; }

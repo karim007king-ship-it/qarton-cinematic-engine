@@ -30,7 +30,7 @@ function makeHarness(scenes, options = {}) {
     cancelFrame: () => { scheduled = null; },
     decodeAsset: async (_url, descriptor) => {
       if (options.failAsset === descriptor.id) throw new Error(`decode ${descriptor.id} failed`);
-      return { width: 64, height: 64, key: descriptor.id };
+      return { width: 64, height: 64, key: descriptor.id, ...options.imageDimensions?.[descriptor.id] };
     },
     releaseAsset: resource => { released.push(resource.key); },
     render: async frame => { await options.beforeRender?.(frame); rendered.push({ scene: frame.scene.id, timeMs: frame.timeMs, transport: frame.transport, viseme: frame.direction.effects.timeMs, activeSpeakerId: frame.dialogue?.speakerId ?? null, expression: frame.dialogue?.expression ?? null, characterViseme: frame.characterStates?.layla?.viseme ?? null, focusCharacterId: frame.focusCharacterId, motions: frame.dialogue?.motions ?? null, assets: frame.assets.size }); },
@@ -252,4 +252,69 @@ test("an in-flight asynchronous frame cannot render over a newly selected scene"
   assert.equal(h.rendered.at(-1).scene, "two");
   assert.equal(h.rendered.some((frame, index) => frame.scene === "one" && index > h.rendered.findLastIndex(item => item.scene === "two")), false);
   await h.runtime.dispose();
+});
+
+function atlasScene(id, sourceRect, assetId = "layla-art") {
+  const data = scene(id);
+  const actor = data.characters[0];
+  delete actor.assetId;
+  data.assets[1] = { id: assetId, src: `assets/${assetId}.webp` };
+  data.characters[0] = { ...actor, layers: [{ role: "mouth", variant: "round", view: "side", assetId, sourceRect }] };
+  return data;
+}
+
+test("sourceRect preserves pixel coordinates and rejects malformed crops", () => {
+  const rect = { x: 24, y: 30, width: 8, height: 10 };
+  const compiled = compileCinematicSceneV1(atlasScene("atlas", rect));
+  assert.deepEqual(compiled.characters[0].layers[0].sourceRect, rect);
+  assert.ok(Object.isFrozen(compiled.characters[0].layers[0].sourceRect));
+  for (const bad of [{ ...rect, width: 0 }, { ...rect, x: -1 }, { ...rect, y: 1.5 },
+    { ...rect, width: 16385 }, { x: 1, y: 2, width: 3 }, { ...rect, unknown: 1 }]) {
+    assert.throws(() => compileCinematicSceneV1(atlasScene("atlas", bad)), /sourceRect/u);
+  }
+});
+
+test("mount and preload validate every atlas crop against intrinsic image size and release rejected assets", async () => {
+  const exact = atlasScene("good", { x: 24, y: 30, width: 8, height: 10 });
+  const invalidX = atlasScene("invalid-x", { x: 25, y: 30, width: 8, height: 10 }, "atlas-x");
+  const invalidY = atlasScene("invalid-y", { x: 24, y: 31, width: 8, height: 10 }, "atlas-y");
+  const spare = atlasScene("spare", { x: 0, y: 0, width: 8, height: 10 }, "atlas-spare");
+  const intrinsic = { naturalWidth: 32, naturalHeight: 40 };
+  const h = makeHarness([exact, invalidX, invalidY, spare], {
+    imageDimensions: { "layla-art": intrinsic, "atlas-x": intrinsic, "atlas-y": intrinsic }
+  });
+  await h.runtime.loadScene("good");
+  assert.equal(h.runtime.decodedAssetBytes, (64 * 64 + 32 * 40) * 4);
+  await h.runtime.preloadAssets("spare");
+  assert.equal(h.runtime.assetLeaseCount, 2);
+  await assert.rejects(h.runtime.preloadAssets("invalid-x"), /atlas-x.*sourceRect.*32 × 40/u);
+  assert.equal(h.runtime.assetLeaseCount, 1);
+  assert.ok(h.released.includes("atlas-x"));
+  assert.ok(h.released.includes("atlas-spare"));
+  await assert.rejects(h.runtime.loadScene("invalid-y"), /atlas-y.*sourceRect.*32 × 40/u);
+  assert.equal(h.runtime.getState().sceneId, "good");
+  assert.equal(h.runtime.assetCount, 2);
+  assert.ok(h.released.includes("atlas-y"));
+  await h.runtime.dispose();
+  assert.equal(h.runtime.decodedAssetBytes, 0);
+});
+
+test("an asset finishing after a sibling decode fails is released without a lease", async () => {
+  let finishDecode;
+  const released = [];
+  const runtime = createCinematicStoryRuntime({
+    scenes: [scene("late")], render() {},
+    async decodeAsset(_url, { id }) {
+      if (id === "bg-day") throw new Error("background decode failed");
+      return new Promise(resolve => { finishDecode = resolve; });
+    },
+    releaseAsset: image => released.push(image)
+  });
+  await assert.rejects(runtime.loadScene("late"), /background decode failed/u);
+  const image = { width: 32, height: 40 };
+  finishDecode(image);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(runtime.assetCount, 0);
+  assert.deepEqual(released, [image]);
+  await runtime.dispose();
 });

@@ -73,3 +73,11 @@ Open `examples/cinematic-runtime-lab/index.html` through a local file viewer/Web
 ## Performance and production limitations
 
 The runtime's decoded-asset pool deduplicates by asset ID and retains one scene plus at most one preloaded next-scene lease; it closes image resources when the last owner releases them. Runtime performance is measured with a Canvas host and real bundled portraits/backdrops, not an empty-scene clock. Chromium results are not Android measurements. A real HONOR/Android 30 FPS and memory test remains required before production acceptance. The Canvas sample is a functional reference host, not an authored multi-layer anime rig; character-specific layered animation and mouth artwork quality still depend on suitable production assets and host rendering.
+
+## تكامل مشاهد الأطلس مع محركات QARTON
+
+- طبقات الشخصية تدعم `sourceRect: { x, y, width, height }` بوحدات بكسل الصورة بعد فكّها. `x` و`y` يبدأان من صفر، والمقاسان موجبان. الحد المساوي لحافة الصورة مقبول. الحقل اختياري لطبقة تستخدم الصورة كاملة.
+- `compileCinematicSceneV1` يتحقق من شكل المستطيل. `loadScene` و`preloadAssets` يتحققان من كل القصاصات عند توفر الصورة المفكوكة، بما فيها الوضعيات التي لم تُعرض بعد. خطأ الحدود يحدد المشهد والشخصية والأصل والطبقة. يستطيع المضيف معالجة رفض التحميل وعرض الرسالة مع إبقاء المشهد السابق.
+- مرّر إلى `decodeAsset(src, descriptor)` محمّل الأصول المحلي الذي يعيد `ImageBitmap` أو صورة HTML بعد `decode()`. يستدعي المحرك `releaseAsset(image, descriptor)` في نهاية آخر استخدام للصورة. إذا كان للمضيف مخزن أصول مشترك، يجب أن يحرّر حصته فقط داخل هذا المحوّل. حجم `decodedAssetBytes` تقدير RGBA ‏(4 بايت لكل بكسل) ولا يحصي التخزين المضغوط أو نسخ GPU.
+- محرك الألعاب يربط `game.emit(event)` بموجّه الأحداث ويستعمل `event.eventKey` لإعادة المحاولة الآمنة، ويربط `game.evaluateCondition(condition, state)` بحالة اللعبة. محرك اللغة يربط `language.resolve({ textId, language, fallback })` لإرجاع النص تزامنيًا قبل التحريك. محرك الموسيقى يختار كيفية تحويل `music.setScene(intent)` و`music.stop(context)` إلى موسيقى محلية.
+- اعرض `render(frame)` وأرسل `transition(payload)` إلى `CinematicRenderer`. لتحرير موارد المضيف، انتظر `runtime.dispose()` ثم نفّذ `renderer.dispose()`. راجع [قالب ومعايرة شخصية أنمي](ANIME_CHARACTER_CALIBRATION.md) لربط الأصول بالمشهد.

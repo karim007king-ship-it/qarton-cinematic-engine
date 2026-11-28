@@ -73,7 +73,7 @@ function normalizeCharacter(item, index, assetIds) {
       array(item.layers, `${characterId}.layers`, 1, 32);
     const seen = new Set();
     layers = Object.freeze(item.layers.map((layer, layerIndex) => {
-      object(layer, `${characterId}.layers[${layerIndex}]`, ["role", "assetId"], ["variant", "view", "layout", "z"]);
+      object(layer, `${characterId}.layers[${layerIndex}]`, ["role", "assetId"], ["variant", "view", "layout", "z", "sourceRect"]);
       if (!SHAPES.has(layer.role) || layer.role === "full") throw new TypeError(`${characterId}.layers[${layerIndex}].role is unsupported`);
       const partId = id(layer.assetId, `${characterId}.layers[${layerIndex}].assetId`);
       if (!assetIds.has(partId)) throw new TypeError(`${characterId} layer references missing asset ${partId}`);
@@ -91,7 +91,15 @@ function normalizeCharacter(item, index, assetIds) {
         layout = Object.freeze(Object.fromEntries(Object.entries(layer.layout).map(([keyName, value]) => [keyName, finite(value, `${characterId}.layout.${keyName}`, 0, 1)])));
         if (layout.width === 0 || layout.height === 0) throw new RangeError(`${characterId} layer width and height must be positive`);
       }
-      return Object.freeze({ role: layer.role, assetId: partId, variant, view, z: zOrder, ...(layout ? { layout } : {}) });
+      let sourceRect;
+      if (layer.sourceRect !== undefined) {
+        const fields = ["x", "y", "width", "height"];
+        object(layer.sourceRect, `${characterId}.sourceRect`, fields);
+        sourceRect = Object.freeze(Object.fromEntries(fields.map(field => [
+          field, whole(layer.sourceRect[field], `${characterId}.sourceRect.${field}`, field === "width" || field === "height" ? 1 : 0, 16384)
+        ])));
+      }
+      return Object.freeze({ role: layer.role, assetId: partId, variant, view, z: zOrder, ...(layout ? { layout } : {}), ...(sourceRect ? { sourceRect } : {}) });
     }));
   }
   const expression = item.expression ?? "listening";

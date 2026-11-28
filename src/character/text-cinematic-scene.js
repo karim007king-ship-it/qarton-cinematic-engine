@@ -222,14 +222,16 @@ function drawCharacter(ctx, character, art, turn, localMs, sceneMs, active) {
     const faceRigValid = isCalibratedFaceRig(image.layers, character.pose ?? "front");
     const layers = faceRigValid ? image.layers : image.layers.filter(layer => !FACIAL_LAYER_ROLES.includes(layer.role));
     const spriteH = height * .7 * character.scale * (1 + Math.sin(sceneMs / 1600 + character.x * 5) * .007);
-    const spriteW = spriteH * .64;
+    const body = layers.find(layer => layer.role === "body" && layer.sourceRect && layer.layout?.width > 0 && layer.layout?.height > 0);
+    const aspect = body ? (body.sourceRect.width / body.layout.width) / (body.sourceRect.height / body.layout.height) : .64;
+    const spriteW = spriteH * aspect;
     const x = width * character.x, top = height * character.y - spriteH + Math.sin(sceneMs / 720 + character.x * 8) * 2.6;
     ctx.save(); ctx.globalAlpha = active ? 1 : .82;
     const sprite = drawLayeredCharacter(ctx, layers, { x, top, width: spriteW, height: spriteH,
       headRotation: (pose.headRotation + Math.sin(sceneMs / 2300 + character.x) * 2.2) * Math.PI / 180,
       armMotion: active ? Math.sin(localMs / 390) * (turn?.motions?.gesture ? .28 : .18) : Math.sin(sceneMs / 1900 + character.x) * .035,
       bodySway: Math.sin(sceneMs / 2700 + character.x) * .012,
-      expression: faceRigValid ? expression : "neutral", pose: character.pose ?? "front", viseme: faceRigValid ? pose.viseme : "rest", blink: faceRigValid && pose.blink > .62,
+      expression: faceRigValid ? expression : "neutral", pose: character.pose ?? "front", viseme: faceRigValid && active ? pose.viseme : "rest", blink: faceRigValid && pose.blink > .62,
       eyeX: faceRigValid ? pose.eyeX ?? 0 : 0, eyeY: faceRigValid ? pose.eyeY ?? 0 : 0, facing: character.facing ?? "right" });
     ctx.restore();
     return { x, pose, expression, top, spriteW, spriteH, layers: sprite.geometry, faceRig: faceRigValid };

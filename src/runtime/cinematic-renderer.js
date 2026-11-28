@@ -5,7 +5,7 @@ import { composeCameraPose, sampleCameraTrack } from "../camera/camera-track.js"
 const DEFAULT_QUALITY = Object.freeze({ low: 0.5, medium: 0.75, high: 1 });
 
 function drawable(image) {
-  return image && Number(image.width ?? image.naturalWidth) > 0 && Number(image.height ?? image.naturalHeight);
+  return image && Number(image.naturalWidth ?? image.width) > 0 && Number(image.naturalHeight ?? image.height);
 }
 
 function enforceDecodedPixelBudget(assetMaps, budget) {
@@ -14,14 +14,14 @@ function enforceDecodedPixelBudget(assetMaps, budget) {
     for (const image of [value, value?.portrait, value?.bitmap, ...(value?.layers ?? []).map(layer => layer.image ?? layer.bitmap)]) if (drawable(image)) images.add(image);
   }
   let pixels = 0;
-  for (const image of images) pixels += Number(image.width ?? image.naturalWidth) * Number(image.height ?? image.naturalHeight);
+  for (const image of images) pixels += Number(image.naturalWidth ?? image.width) * Number(image.naturalHeight ?? image.height);
   if (pixels > budget) throw new RangeError(`Decoded image budget exceeded: ${pixels} > ${budget} pixels`);
   return pixels;
 }
 
 function drawImageFit(ctx, image, width, height, fit = "cover", role = "background") {
   if (!drawable(image)) return false;
-  const iw = Number(image.width ?? image.naturalWidth), ih = Number(image.height ?? image.naturalHeight);
+  const iw = Number(image.naturalWidth ?? image.width), ih = Number(image.naturalHeight ?? image.height);
   if (fit === "fill") { ctx.drawImage(image, 0, 0, width, height); return true; }
   if (fit === "contain" && role !== "foreground") {
     // Use a subdued crop of the same artwork as the matte, then draw the
