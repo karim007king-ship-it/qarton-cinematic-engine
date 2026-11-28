@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { build } from "esbuild";
 const root=resolve(dirname(fileURLToPath(import.meta.url)),".."), lab=resolve(root,"examples/cinematic-runtime-lab"), out=resolve(root,"dist/cinematic-runtime-preview");
-const commit=process.env.GITHUB_SHA||execFileSync("git",["rev-parse","HEAD"],{cwd:root,encoding:"utf8"}).trim();
+const commit=process.env.QARTON_PREVIEW_COMMIT||process.env.GITHUB_SHA||execFileSync("git",["rev-parse","HEAD"],{cwd:root,encoding:"utf8"}).trim();
 await rm(out,{recursive:true,force:true});await mkdir(out,{recursive:true});
 for(const name of ["index.html","style.css","story.json","README.md","ASSET_PROVENANCE.md","layered-character-test.html"]) await cp(resolve(lab,name),resolve(out,name));
 await cp(resolve(lab,"assets"),resolve(out,"assets"),{recursive:true});
