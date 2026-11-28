@@ -55,8 +55,6 @@ export const TEXT_SCENE_DEMOS = Object.freeze([
   })
 ]);
 
-const EXPRESSION_MOUTH = Object.freeze({ happy: "smile", sad: "frown", angry: "frown", afraid: "small", surprised: "round", thinking: "small", determined: "line", listening: "line", neutral: "line" });
-const EXPRESSION_BROW = Object.freeze({ happy: 0.08, sad: -0.2, angry: 0.33, afraid: 0.24, surprised: 0.02, thinking: -0.06, determined: 0.27, listening: 0.04, neutral: 0 });
 
 export function createTextSceneModel({ characters: definitions, dialogue } = {}) {
   if (!Array.isArray(definitions) || definitions.length < 1 || definitions.length > 8) throw new TypeError("A cinematic scene needs 1–8 stable character definitions");
@@ -207,7 +205,7 @@ function drawTextBox(ctx, text, speaker, expression, progress, showAll) {
   ctx.restore();
 }
 
-function drawCharacter(ctx, character, art, turn, localMs, sceneMs, active, activeSpeakerX) {
+function drawCharacter(ctx, character, art, turn, localMs, sceneMs, active) {
   const { width, height } = ctx.canvas;
   const sampledPose = { ...(turn?.animation.sample(localMs) ?? { headRotation: 0, eyeX: 0, eyeY: 0, blink: 0, mouthOpen: 0, viseme: "rest" }) };
   if (turn?.motions) {
@@ -275,7 +273,7 @@ export function drawTextCinematicScene(ctx, scene, timeMs, { background, transpa
   for (const character of actors) {
     const turn = active?.speakerId === character.id ? active : mostRecent.get(character.id);
     const elapsed = active?.speakerId === character.id ? Math.max(0, timeMs - active.startMs) : turn ? Math.min(turn.animation.durationMs, timeMs - turn.startMs) : 0;
-    const result = drawCharacter(ctx, character, assets, turn, elapsed, timeMs, active?.speakerId === character.id, active?.character.x ?? .5);
+    const result = drawCharacter(ctx, character, assets, turn, elapsed, timeMs, active?.speakerId === character.id);
     if (result) {
       drawnCharacterIds.push(character.id);
       faceRigStatus[character.id] = Boolean(result.faceRig);

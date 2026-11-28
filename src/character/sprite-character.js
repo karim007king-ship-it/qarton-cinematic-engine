@@ -27,11 +27,16 @@ export function countCharacterPixels(entry) {
 
 export function parseCharacterLayerFilename(filename, selectedCharacterId) {
   const name = String(filename ?? "").split(/[\\/]/u).pop();
-  const match = /^([a-z0-9][a-z0-9._-]{0,63})__(body|hand_left|hand_right|head|eyes|eye_left|eye_right|brows|brow_left|brow_right|mouth|hair_back|hair_front|full)(?:__([a-z0-9_-]+))?\.(png|webp)$/iu.exec(name);
+  const match = /^([a-z0-9][a-z0-9._-]{0,63})__(body|hand_left|hand_right|head|eyes|eye_left|eye_right|brows|brow_left|brow_right|mouth|hair_back|hair_front|full)(?:__([a-z0-9-]+))?(?:__(front|side))?\.(png|webp)$/iu.exec(name);
   if (match) {
-    const [, characterId, role, variant = "neutral"] = match;
-    if (!VALID_VARIANTS.has(variant.toLowerCase())) throw new TypeError(`Unsupported sprite variant in ${name}`);
-    return Object.freeze({ characterId, role: role.toLowerCase(), variant: variant.toLowerCase() });
+    const [, characterId, rawRole, rawVariant = "neutral", explicitView] = match;
+    const role = rawRole.toLowerCase();
+    let variant = rawVariant.toLowerCase(), view = explicitView?.toLowerCase();
+    if (!view && ["eyes", "eye_left", "eye_right", "brows", "brow_left", "brow_right", "mouth"].includes(role) && ["front", "side"].includes(variant)) {
+      view = variant; variant = "neutral";
+    }
+    if (!VALID_VARIANTS.has(variant)) throw new TypeError(`Unsupported sprite variant in ${name}`);
+    return Object.freeze({ characterId, role, variant, ...(view ? { view } : {}) });
   }
   if (!/\.(png|webp)$/iu.test(name)) throw new TypeError(`Use PNG or WebP artwork: ${name}`);
   return Object.freeze({ characterId: selectedCharacterId, role: "full", variant: "neutral" });

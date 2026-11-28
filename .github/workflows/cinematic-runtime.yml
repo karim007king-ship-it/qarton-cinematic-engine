@@ -43,6 +43,7 @@ jobs:
             dist/cinematic-runtime-renderer-visual.png
             dist/cinematic-runtime-mouth-poses.png
             dist/cinematic-runtime-mouth-*.png
+            dist/cinematic-runtime-face-*.png
             dist/cinematic-runtime-focus-transition.png
             dist/cinematic-runtime-9x16.png
             dist/cinematic-runtime-16x9.png

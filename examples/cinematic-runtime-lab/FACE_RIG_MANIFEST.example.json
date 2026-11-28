@@ -1,0 +1,13 @@
+{
+  "characterId": "layla",
+  "pose": "front",
+  "facing": "right",
+  "layers": {
+    "head": { "view": "front", "layout": { "x": 0.5, "y": 0.29, "width": 0.4, "height": 0.36, "pivotX": 0.5, "pivotY": 0.88 } },
+    "eye_left": { "view": "front", "layout": { "x": 0.405, "y": 0.14, "width": 0.13, "height": 0.09, "pivotX": 0.5, "pivotY": 0.5 } },
+    "eye_right": { "view": "front", "layout": { "x": 0.595, "y": 0.14, "width": 0.13, "height": 0.09, "pivotX": 0.5, "pivotY": 0.5 } },
+    "brow_left": { "view": "front", "layout": { "x": 0.405, "y": 0.095, "width": 0.13, "height": 0.07, "pivotX": 0.5, "pivotY": 0.5 } },
+    "brow_right": { "view": "front", "layout": { "x": 0.595, "y": 0.095, "width": 0.13, "height": 0.07, "pivotX": 0.5, "pivotY": 0.5 } },
+    "mouth": { "view": "front", "layout": { "x": 0.5, "y": 0.22, "width": 0.19, "height": 0.075, "pivotX": 0.5, "pivotY": 0.5 } }
+  }
+}

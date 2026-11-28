@@ -4,6 +4,9 @@ import { CHARACTER_LAYER_LAYOUTS, countCharacterPixels, drawLayeredCharacter, is
 
 test("PNG and WebP names resolve a stable character ID, part and variant", () => {
   assert.deepEqual(parseCharacterLayerFilename("layla__mouth__round.webp", "layla"), { characterId: "layla", role: "mouth", variant: "round" });
+  assert.deepEqual(parseCharacterLayerFilename("layla__eye_left.webp", "layla"), { characterId: "layla", role: "eye_left", variant: "neutral" });
+  assert.deepEqual(parseCharacterLayerFilename("layla__eye_left__side.png", "layla"), { characterId: "layla", role: "eye_left", variant: "neutral", view: "side" });
+  assert.deepEqual(parseCharacterLayerFilename("layla__mouth__round__side.webp", "layla"), { characterId: "layla", role: "mouth", variant: "round", view: "side" });
   assert.deepEqual(parseCharacterLayerFilename("layla__brows__angry.png", "layla"), { characterId: "layla", role: "brows", variant: "angry" });
   assert.deepEqual(parseCharacterLayerFilename("portrait.png", "layla"), { characterId: "layla", role: "full", variant: "neutral" });
   assert.throws(() => parseCharacterLayerFilename("layla__mouth__glowing.png", "layla"), /Unsupported sprite variant/u);
@@ -97,6 +100,16 @@ test("face animation requires independent authored anchors and all five mouth po
   assert.equal(isCalibratedFaceRig(rig.map(layer => layer.role === "eye_left" ? { ...layer, layout: undefined } : layer), "front"), false);
   const side = rig.map(layer => ({ ...layer, view: "side", layout: { ...layer.layout, x: .46 } }));
   assert.equal(isCalibratedFaceRig(side, "side"), true);
+});
+
+test("front and profile transparent parts select only their authored view", () => {
+  const layers = [
+    { role: "eye_left", variant: "neutral", view: "front", image: { id: "front" } },
+    { role: "eye_left", variant: "neutral", view: "side", image: { id: "side" } }
+  ];
+  assert.deepEqual(selectCharacterLayers(layers, { pose: "front" }).map(layer => layer.image.id), ["front"]);
+  assert.deepEqual(selectCharacterLayers(layers, { pose: "side" }).map(layer => layer.image.id), ["side"]);
+  assert.throws(() => normalizeCharacterLayer({ role: "eye_left", image: {}, view: "three-quarter" }), /view must be any, front, or side/u);
 });
 
 test("layer renderer sorts z-order and applies the authored pivot and movement", () => {

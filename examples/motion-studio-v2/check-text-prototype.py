@@ -24,6 +24,51 @@ def capture_canvas(page, name):
     (SHOTS / name).write_bytes(base64.b64decode(data_url.split(",", 1)[1]))
 
 
+def create_face_rig_files(page, folder):
+    source = ROOT / "examples/cinematic-runtime-lab/assets/layered-test"
+    parts = {
+        "layla__body.webp": "body.svg", "layla__head.webp": "head.svg",
+        "layla__hair_back.webp": "hair-back.svg", "layla__hair_front.webp": "hair-front.svg",
+        "layla__eye_left.webp": "eye-left.svg", "layla__eye_right.webp": "eye-right.svg",
+        "layla__brow_left.webp": "brow-left.svg", "layla__brow_right.webp": "brow-right.svg",
+        "layla__mouth__closed.webp": "mouth-closed.svg", "layla__mouth__open.webp": "mouth-open.svg",
+        "layla__mouth__round.webp": "mouth-round.svg", "layla__mouth__wide.webp": "mouth-wide.svg",
+        "layla__mouth__teeth.webp": "mouth-teeth.svg"
+    }
+    svg = {name: (source / filename).read_text() for name, filename in parts.items()}
+    encoded = page.evaluate("""async parts => {
+      const out={};
+      for(const [name,markup] of Object.entries(parts)){
+        const image=new Image();image.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(markup);await image.decode();
+        const canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;
+        canvas.getContext('2d').drawImage(image,0,0);out[name]=canvas.toDataURL('image/webp',.95);
+      }
+      return out;
+    }""", svg)
+    layouts = {
+        "head": {"x": .5, "y": .29, "width": .4, "height": .36, "pivotX": .5, "pivotY": .88},
+        "eye_left": {"x": .405, "y": .14, "width": .13, "height": .09, "pivotX": .5, "pivotY": .5},
+        "eye_right": {"x": .595, "y": .14, "width": .13, "height": .09, "pivotX": .5, "pivotY": .5},
+        "brow_left": {"x": .405, "y": .095, "width": .13, "height": .07, "pivotX": .5, "pivotY": .5},
+        "brow_right": {"x": .595, "y": .095, "width": .13, "height": .07, "pivotX": .5, "pivotY": .5},
+        "mouth": {"x": .5, "y": .22, "width": .19, "height": .075, "pivotX": .5, "pivotY": .5}
+    }
+    files = []
+    manifest_layers = {}
+    for name, data_url in encoded.items():
+        path = Path(folder) / name
+        path.write_bytes(base64.b64decode(data_url.split(",", 1)[1]))
+        role = name.split("__")[1].split(".")[0]
+        config = {"view": "front"}
+        if role in layouts:
+            config["layout"] = layouts[role]
+        manifest_layers[name] = config
+        files.append(path)
+    manifest_path = Path(folder) / "layla.character.json"
+    manifest_path.write_text(json.dumps({"characterId": "layla", "pose": "front", "layers": manifest_layers}, ensure_ascii=False))
+    return [*files, manifest_path]
+
+
 def visual_regression(page):
     page.set_viewport_size({"width": 390, "height": 844})
     page.goto(HTML.as_uri() + "?testVisual=1", wait_until="load")
@@ -111,26 +156,32 @@ def visual_regression(page):
     pose_hashes = set()
     pose_texts = {"closed": "بْ", "round": "بُ", "wide": "بِ", "teeth": "ف", "open": "عَ"}
     page.set_viewport_size({"width": 720, "height": 1280})
-    for viseme, text in pose_texts.items():
-        page.evaluate("text => window.__QARTON_TEST_API.setTextScene({id:'mouth-poses',title:'أوضاع الفم',language:'tn',theme:'family',characters:[{id:'layla',name:'ليلى',spriteKey:'layla',x:.5,y:1,scale:1.1,z:0,face:{x:.55,y:.113,skin:'#d99a78'}}],dialogue:[{id:'visemes',speakerId:'layla',expression:'neutral',text}]})", text)
-        page.evaluate("window.__QARTON_TEST_API.setDialogueReveal(true)")
-        timeline = page.evaluate("window.__QARTON_TEST_API.visemes(0)")
-        event = next(item for item in timeline["events"] if item["viseme"] == viseme)
-        timestamp = timeline["startMs"] + event["offsetMs"] + max(1, event["durationMs"] // 2)
-        page.evaluate("time => window.__QARTON_TEST_API.seek(time)", timestamp)
-        assert canvas.get_attribute("data-active-viseme") == viseme, {"wanted": viseme, "got": canvas.get_attribute("data-active-viseme")}
-        capture_canvas(page, f"mouth-{viseme}.png")
-        region = page.evaluate("""() => {
-          const c=document.querySelector('#previewCanvas');
-          const x=Math.round(c.width*.4)-32, y=Math.round(c.height*.31)-20;
-          const d=c.getContext('2d').getImageData(x,y,64,40).data;
-          let h=2166136261;
-          for(let i=0;i<d.length;i+=4){h=Math.imul(h^d[i],16777619);h=Math.imul(h^d[i+1],16777619);h=Math.imul(h^d[i+2],16777619);}
-          return String(h>>>0);
-        }""")
-        pose_hashes.add(region)
-        pose_reports.append({"viseme": viseme, "capture": f"mouth-{viseme}.png", "regionHash": region})
-    assert len(pose_hashes) == 5, {"reason": "All five viseme poses must produce distinct render samples", "distinctRegions": len(pose_hashes), "hashes": sorted(pose_hashes), "poses": pose_reports}
+    with tempfile.TemporaryDirectory(prefix="qarton-calibrated-face-rig-") as folder:
+        rig_files = create_face_rig_files(page, folder)
+        page.locator("#characterImageInput").set_input_files([str(path) for path in rig_files])
+        page.wait_for_function("window.__QARTON_TEST_API.state().importedLayerCount === 13")
+        for viseme, text in pose_texts.items():
+            page.evaluate("text => window.__QARTON_TEST_API.setTextScene({id:'mouth-poses',title:'أوضاع الفم',language:'tn',theme:'family',characters:[{id:'layla',name:'ليلى',spriteKey:'layla',x:.5,y:1,scale:1.1,z:0}],dialogue:[{id:'visemes',speakerId:'layla',expression:'neutral',text}]})", text)
+            page.evaluate("window.__QARTON_TEST_API.setDialogueReveal(true)")
+            timeline = page.evaluate("window.__QARTON_TEST_API.visemes(0)")
+            event = next(item for item in timeline["events"] if item["viseme"] == viseme)
+            timestamp = timeline["startMs"] + event["offsetMs"] + max(1, event["durationMs"] // 2)
+            page.evaluate("time => window.__QARTON_TEST_API.seek(time)", timestamp)
+            assert canvas.get_attribute("data-active-viseme") == viseme, {"wanted": viseme, "got": canvas.get_attribute("data-active-viseme")}
+            capture_canvas(page, f"mouth-{viseme}.png")
+            region = page.evaluate("""() => {
+              const draw=window.__QARTON_TEST_API.textDrawDiagnostics(), rig=draw.characterGeometry.layla;
+              if(!rig?.faceRigValid) throw Error('viseme rendering requires a calibrated transparent face rig');
+              const c=document.querySelector('#previewCanvas'), mouth=rig.layers.find(layer=>layer.role==='mouth');
+              const x=Math.max(0,Math.floor(mouth.anchorX-mouth.width/2)-2), y=Math.max(0,Math.floor(mouth.anchorY-mouth.height/2)-2);
+              const w=Math.min(c.width-x,Math.max(1,Math.ceil(mouth.width)+4)), h=Math.min(c.height-y,Math.max(1,Math.ceil(mouth.height)+4));
+              const d=c.getContext('2d').getImageData(x,y,w,h).data;let hsh=2166136261;
+              for(let i=0;i<d.length;i+=4){hsh=Math.imul(hsh^d[i],16777619);hsh=Math.imul(hsh^d[i+1],16777619);hsh=Math.imul(hsh^d[i+2],16777619);}
+              return String(hsh>>>0);
+            }""")
+            pose_hashes.add(region)
+            pose_reports.append({"viseme": viseme, "capture": f"mouth-{viseme}.png", "regionHash": region, "calibratedFaceRig": True})
+        assert len(pose_hashes) == 5, {"reason": "All five viseme poses on a calibrated transparent rig must produce distinct render samples", "distinctRegions": len(pose_hashes), "hashes": sorted(pose_hashes), "poses": pose_reports}
     cinematic_reports = []
     cinematic_shots = []
     for index, name in enumerate(("family-home", "night-mystery", "three-character-confrontation", "smoke-danger")):

@@ -152,6 +152,7 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
     } catch (error) { onError(error); }
   }));
   let textScene = compileTextScene(TEXT_SCENE_DEMOS[selectedDemoIndex], { language: TEXT_SCENE_DEMOS[selectedDemoIndex].language, speed: dialogueSpeed });
+  let lastTextDraw = null;
   const textScenes = new Map([[currentSceneId, textScene]]);
 
   function saveTextScene() { textScenes.set(currentSceneId, textScene); }
@@ -317,6 +318,7 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
         const hasCustomBackground = selectedAssetId !== PLACEHOLDER_ID;
         textState = drawTextCinematicScene(target, sceneText, localTimeMs, { transparent: hasCustomBackground, assets: art,
           showAll: showAllDialogue, camera, drawSceneOverlay: targetContext => drawCinematicAtmosphere(targetContext, direction) });
+        lastTextDraw = textState;
       };
       const transitionConfig = directorSettings.get(sample.sceneId) ?? {};
       const transitionMs = Math.min(900, Math.max(250, Math.floor(sample.scene.project.durationMs * .16)));
@@ -579,11 +581,13 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
         decoded.push(bitmap);
         if (images.length === 1 && info.role === "full") { portrait = bitmap; continue; }
         if (info.role === "full") throw new TypeError("عند استيراد أكثر من صورة، استعمل أسماء مثل layla__body.png وlayla__head.png.");
-        const layout = manifest.layers?.[file.name] ?? manifest.layers?.[info.role] ?? {};
-        layers.push(normalizeCharacterLayer({ role: info.role, variant: info.variant, image: bitmap, layout, z: layout.z }));
+        const partConfig = manifest.layers?.[file.name] ?? manifest.layers?.[info.role] ?? {};
+        const layout = partConfig.layout ?? partConfig;
+        const view = partConfig.view ?? info.view ?? "any";
+        layers.push(normalizeCharacterLayer({ role: info.role, variant: info.variant, view, image: bitmap, layout, z: layout.z }));
       }
       const prior = importedCharacters.get(characterId);
-      const next = portrait ? { portrait, layers: [] } : { portrait: prior?.portrait ?? null, layers: [...(prior?.layers ?? []).filter(old => !layers.some(layer => layer.role === old.role && layer.variant === old.variant)), ...layers].sort((a, b) => a.z - b.z) };
+      const next = portrait ? { portrait, layers: [] } : { portrait: prior?.portrait ?? null, layers: [...(prior?.layers ?? []).filter(old => !layers.some(layer => layer.role === old.role && layer.variant === old.variant && layer.view === old.view)), ...layers].sort((a, b) => a.z - b.z) };
       const retainedPixelCount = [...importedCharacters.entries()].reduce((sum, [id, entry]) => sum + (id === characterId ? 0 : countCharacterPixels(entry)), countCharacterPixels(next));
       if (retainedPixelCount > MAX_IMPORTED_CHARACTER_PIXELS) throw new RangeError("مجموع صور وطبقات الشخصيات يتجاوز حد الذاكرة الآمن (12 مليون بكسل).");
       importedCharacters.set(characterId, next);
@@ -761,6 +765,7 @@ export function createStudioV2Engine({ canvas, onState = () => {}, onError = () 
     },
     moveScene,
     getTextState: textSnapshot,
+    getTextDrawDiagnostics() { return lastTextDraw; },
     getDialogueVisemes,
     getDemoArtDiagnostics() {
       return Object.freeze([...characterArt].map(([id, image]) => {

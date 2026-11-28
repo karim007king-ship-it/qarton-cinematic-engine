@@ -6,7 +6,7 @@ import { build } from "esbuild";
 const root=resolve(dirname(fileURLToPath(import.meta.url)),".."), lab=resolve(root,"examples/cinematic-runtime-lab"), out=resolve(root,"dist/cinematic-runtime-preview");
 const commit=process.env.QARTON_PREVIEW_COMMIT||process.env.GITHUB_SHA||execFileSync("git",["rev-parse","HEAD"],{cwd:root,encoding:"utf8"}).trim();
 await rm(out,{recursive:true,force:true});await mkdir(out,{recursive:true});
-for(const name of ["index.html","style.css","story.json","README.md","ASSET_PROVENANCE.md","layered-character-test.html"]) await cp(resolve(lab,name),resolve(out,name));
+for(const name of ["index.html","style.css","story.json","README.md","ASSET_PROVENANCE.md","FACE_RIG_MANIFEST.example.json","layered-character-test.html"]) await cp(resolve(lab,name),resolve(out,name));
 await cp(resolve(lab,"assets"),resolve(out,"assets"),{recursive:true});
 const [html,css,story,layeredHtml]=await Promise.all([readFile(resolve(lab,"index.html"),"utf8"),readFile(resolve(lab,"style.css"),"utf8"),readFile(resolve(lab,"story.json"),"utf8"),readFile(resolve(lab,"layered-character-test.html"),"utf8")]);
 const bundle=await build({entryPoints:[resolve(lab,"runtime-lab.js")],bundle:true,write:false,format:"esm",platform:"browser",target:["chrome100"],legalComments:"none"});
