@@ -26,6 +26,10 @@ with sync_playwright() as p:
  assert len(visual['backgrounds'])>=2,visual
  assert visual['changedPixels']>1000,visual
  assert [item['drawn'] for item in visual['characterCounts']]==[2,4,8],visual
+ page.evaluate('window.qartonCinematicRuntime.seek(1000)')
+ page.wait_for_function('window.__runtimeLastFrame && window.__runtimeLastFrame.timeMs>=1000')
+ actor_pixels=page.evaluate('''()=>{const r=window.qartonCinematicRenderer,f=window.__runtimeLastFrame,c=document.querySelector('#screen'),ctx=c.getContext('2d');r.render(f);const visible=ctx.getImageData(0,0,c.width,c.height).data;r.render({...f,characterAssets:new Map()});const background=ctx.getImageData(0,0,c.width,c.height).data;let changed=0;for(let i=0;i<visible.length;i+=4)if(visible[i]!==background[i]||visible[i+1]!==background[i+1]||visible[i+2]!==background[i+2])changed++;r.render(f);return {changedPixels:changed,drawn:r.metrics.lastDraw.drawnCharacterIds,timeMs:f.timeMs}}''')
+ assert len(actor_pixels['drawn'])==2 and actor_pixels['changedPixels']>10000,actor_pixels
  page.screenshot(path=str(ARTIFACTS/'cinematic-runtime-renderer-visual.png'),full_page=True)
  transition_result=page.evaluate('''async()=>{const r=window.qartonCinematicRenderer,rt=window.qartonCinematicRuntime;for(const id of ['gate','harbor','confrontation','finale'])await rt.loadScene(id);const handle=window.__runtimeLastFrame.transitionHandle;window.__focusTransition=r.transition({from:handle,to:handle,type:'focus',durationMs:500});return {count:r.metrics.transitionCount,scene:rt.getState().sceneId} }''')
  assert transition_result['count']>=3 and transition_result['scene']=='finale',transition_result
