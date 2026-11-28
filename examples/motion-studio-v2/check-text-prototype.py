@@ -155,32 +155,32 @@ def visual_regression(page):
     pose_reports = []
     pose_hashes = set()
     pose_texts = {"closed": "بْ", "round": "بُ", "wide": "بِ", "teeth": "ف", "open": "عَ"}
-    page.set_viewport_size({"width": 720, "height": 1280})
-    # Earlier UI-import checks deliberately retain large portraits to exercise
-    # asset ownership. Start a fresh page so this rig-only visual proof stays
-    # inside the same enforced 12 MP imported-character budget.
-    page.goto(HTML.as_uri() + "?testVisual=1", wait_until="load")
-    page.wait_for_function("window.__QARTON_TEST_API?.state().artReady === true")
-    canvas = page.locator("#previewCanvas")
-    page.evaluate("window.__QARTON_TEST_API.loadDemo(0)")
+    # Use an isolated browser context so persistent asset storage from the UI
+    # import checks cannot consume the calibrated rig's enforced 12 MP budget.
+    rig_context = page.context.browser.new_context(viewport={"width": 720, "height": 1280})
+    rig_page = rig_context.new_page()
+    rig_page.goto(HTML.as_uri() + "?testVisual=1", wait_until="load")
+    rig_page.wait_for_function("window.__QARTON_TEST_API?.state().artReady === true")
+    rig_canvas = rig_page.locator("#previewCanvas")
+    rig_page.evaluate("window.__QARTON_TEST_API.loadDemo(0)")
     with tempfile.TemporaryDirectory(prefix="qarton-calibrated-face-rig-") as folder:
-        rig_files = create_face_rig_files(page, folder)
+        rig_files = create_face_rig_files(rig_page, folder)
         payload = [{"name": path.name, "type": "application/json" if path.suffix == ".json" else "image/webp", "data": base64.b64encode(path.read_bytes()).decode("ascii")} for path in rig_files]
-        imported = page.evaluate("""async items => {
+        imported = rig_page.evaluate("""async items => {
           const files=items.map(item=>new File([Uint8Array.from(atob(item.data),char=>char.charCodeAt(0))],item.name,{type:item.type}));
           return await window.__QARTON_TEST_API.importCharacterAssets(files,'layla');
         }""", payload)
         assert imported["mode"] == "layers" and imported["layerCount"] == 13, imported
         for viseme, text in pose_texts.items():
-            page.evaluate("text => window.__QARTON_TEST_API.setTextScene({id:'mouth-poses',title:'أوضاع الفم',language:'tn',theme:'family',characters:[{id:'layla',name:'ليلى',spriteKey:'layla',x:.5,y:1,scale:1.1,z:0}],dialogue:[{id:'visemes',speakerId:'layla',expression:'neutral',text}]})", text)
-            page.evaluate("window.__QARTON_TEST_API.setDialogueReveal(true)")
-            timeline = page.evaluate("window.__QARTON_TEST_API.visemes(0)")
+            rig_page.evaluate("text => window.__QARTON_TEST_API.setTextScene({id:'mouth-poses',title:'أوضاع الفم',language:'tn',theme:'family',characters:[{id:'layla',name:'ليلى',spriteKey:'layla',x:.5,y:1,scale:1.1,z:0}],dialogue:[{id:'visemes',speakerId:'layla',expression:'neutral',text}]})", text)
+            rig_page.evaluate("window.__QARTON_TEST_API.setDialogueReveal(true)")
+            timeline = rig_page.evaluate("window.__QARTON_TEST_API.visemes(0)")
             event = next(item for item in timeline["events"] if item["viseme"] == viseme)
             timestamp = timeline["startMs"] + event["offsetMs"] + max(1, event["durationMs"] // 2)
-            page.evaluate("time => window.__QARTON_TEST_API.seek(time)", timestamp)
-            assert canvas.get_attribute("data-active-viseme") == viseme, {"wanted": viseme, "got": canvas.get_attribute("data-active-viseme")}
-            capture_canvas(page, f"mouth-{viseme}.png")
-            region = page.evaluate("""() => {
+            rig_page.evaluate("time => window.__QARTON_TEST_API.seek(time)", timestamp)
+            assert rig_canvas.get_attribute("data-active-viseme") == viseme, {"wanted": viseme, "got": rig_canvas.get_attribute("data-active-viseme")}
+            capture_canvas(rig_page, f"mouth-{viseme}.png")
+            region = rig_page.evaluate("""() => {
               const draw=window.__QARTON_TEST_API.textDrawDiagnostics(), rig=draw.characterGeometry.layla;
               if(!rig?.faceRigValid) throw Error('viseme rendering requires a calibrated transparent face rig');
               const c=document.querySelector('#previewCanvas'), mouth=rig.layers.find(layer=>layer.role==='mouth');
@@ -193,6 +193,7 @@ def visual_regression(page):
             pose_hashes.add(region)
             pose_reports.append({"viseme": viseme, "capture": f"mouth-{viseme}.png", "regionHash": region, "calibratedFaceRig": True})
         assert len(pose_hashes) == 5, {"reason": "All five viseme poses on a calibrated transparent rig must produce distinct render samples", "distinctRegions": len(pose_hashes), "hashes": sorted(pose_hashes), "poses": pose_reports}
+    rig_context.close()
     cinematic_reports = []
     cinematic_shots = []
     for index, name in enumerate(("family-home", "night-mystery", "three-character-confrontation", "smoke-danger")):
