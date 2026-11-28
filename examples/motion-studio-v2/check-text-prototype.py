@@ -156,6 +156,12 @@ def visual_regression(page):
     pose_hashes = set()
     pose_texts = {"closed": "بْ", "round": "بُ", "wide": "بِ", "teeth": "ف", "open": "عَ"}
     page.set_viewport_size({"width": 720, "height": 1280})
+    # The visual rig manifest is bound to Layla's stable character ID. Earlier
+    # crowd-scene checks change the selected demo, so reset to Layla explicitly
+    # before importing instead of depending on the prior selection state.
+    page.evaluate("window.__QARTON_TEST_API.loadDemo(0)")
+    page.wait_for_function("document.querySelectorAll('#characterSelect option').length === 2")
+    page.locator("#characterSelect").select_option("0")
     with tempfile.TemporaryDirectory(prefix="qarton-calibrated-face-rig-") as folder:
         rig_files = create_face_rig_files(page, folder)
         page.locator("#characterImageInput").set_input_files([str(path) for path in rig_files])
