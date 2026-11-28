@@ -104,10 +104,25 @@ export function isCalibratedFaceRig(layers, pose = "front") {
     face.filter(layer => layer.role === "mouth").every(layer => layer.layout && ANCHOR_FIELDS.every(field => Number.isFinite(layer.layout[field])));
 }
 
+// HTMLImageElement.width can be the layout width, not the decoded width.
+export function assertCharacterSourceRect(rect, image, label = "Character layer") {
+  const { x, y, width, height } = rect;
+  const imageWidth = image?.naturalWidth ?? image?.width;
+  const imageHeight = image?.naturalHeight ?? image?.height;
+  if (![x, y, width, height].every(Number.isInteger) || x < 0 || y < 0 || width < 1 || height < 1 ||
+      !Number.isFinite(imageWidth) || !Number.isFinite(imageHeight) ||
+      x + width > imageWidth || y + height > imageHeight) {
+    throw new RangeError(`${label} sourceRect exceeds decoded atlas bounds (${imageWidth} × ${imageHeight}) or is invalid`);
+  }
+}
+
 export function drawLayeredCharacter(ctx, layers, { x, top, width, height, headRotation = 0, armMotion = 0, bodySway = 0, eyeX = 0, eyeY = 0, expression = "neutral", pose = "front", viseme = "rest", blink = false, facing = "right" } = {}) {
   if (!ctx || !Array.isArray(layers) || ![x, top, width, height].every(Number.isFinite) || width <= 0 || height <= 0) throw new TypeError("Canvas, character layers, and finite character bounds are required");
   if (!["left", "right"].includes(facing)) throw new TypeError("Character facing must be left or right");
   const selected = selectCharacterLayers(layers, { expression, pose, viseme, blink });
+  for (const layer of selected) {
+    if (layer.sourceRect) assertCharacterSourceRect(layer.sourceRect, layer.image, layer.role);
+  }
   const head = selected.find(layer => layer.role === "head") ?? CHARACTER_LAYER_LAYOUTS.head;
   const headPivotX = width * (head.x - 0.5), headPivotY = height * head.y;
   const mirrorSign = facing === "left" ? -1 : 1;

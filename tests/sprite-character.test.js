@@ -143,3 +143,15 @@ test("left-facing layered characters mirror sprite anchors, art, and rotation", 
   assert.ok(events.some(event => event[0] === "scale" && event[1] === -1 && event[2] === 1));
   assert.ok(events.some(event => event[0] === "rotate" && event[1] === -.2));
 });
+
+test("direct Canvas drawing accepts an exact-edge atlas crop and rejects an overflowing crop before drawing", () => {
+  const calls = [];
+  const ctx = { save() {}, translate() {}, restore() {}, rotate() {}, drawImage(...args) { calls.push(args); } };
+  const image = { width: 128, height: 128, naturalWidth: 16, naturalHeight: 32 };
+  const layer = { role: "body", image, sourceRect: { x: 8, y: 16, width: 8, height: 16 } };
+  const bounds = { x: 0, top: 0, width: 100, height: 100 };
+  drawLayeredCharacter(ctx, [layer], bounds);
+  assert.deepEqual(calls[0].slice(0, 5), [image, 8, 16, 8, 16]);
+  assert.throws(() => drawLayeredCharacter(ctx, [{ ...layer, sourceRect: { ...layer.sourceRect, x: 9 } }], bounds), /decoded atlas bounds/u);
+  assert.equal(calls.length, 1);
+});

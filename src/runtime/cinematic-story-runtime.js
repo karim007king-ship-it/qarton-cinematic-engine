@@ -1,3 +1,4 @@
+import { assertCharacterSourceRect } from "../character/sprite-character.js";
 import { AssetManager } from "../assets/asset-manager.js";
 import { sampleVisibleDialogueText } from "../character/text-cinematic-scene.js";
 import { composeCameraPose, sampleCameraTrack } from "../camera/camera-track.js";
@@ -16,7 +17,7 @@ const defaultCancelFrame = handle => typeof globalThis.cancelAnimationFrame === 
   : globalThis.clearTimeout(handle);
 
 function drawable(resource) {
-  return Boolean(resource && Number(resource.width ?? resource.naturalWidth) > 0 && Number(resource.height ?? resource.naturalHeight) > 0);
+  return Boolean(resource && Number(resource.naturalWidth ?? resource.width) > 0 && Number(resource.naturalHeight ?? resource.height) > 0);
 }
 
 async function decodeImage(url) {
@@ -40,10 +41,10 @@ function createDecodedAssetPool({ assetById, decodeAsset, releaseAsset }) {
   const leaseAssets = new Map();
   let closed = false;
 
-  async function acquire(leaseId, ids) {
+  async function acquire(leaseId, scene) {
     if (closed) throw new Error("Cinematic asset pool has been disposed");
     if (leaseAssets.has(leaseId)) throw new Error(`Asset lease ${leaseId} already exists`);
-    const uniqueIds = [...new Set(ids)];
+    const uniqueIds = scene.assets.map(asset => asset.id);
     leaseAssets.set(leaseId, new Set(uniqueIds));
     for (const key of uniqueIds) {
       let references = owners.get(key);
@@ -63,7 +64,7 @@ function createDecodedAssetPool({ assetById, decodeAsset, releaseAsset }) {
               await releaseAsset(value, descriptor);
               throw new TypeError(`Decoded asset ${key} has no drawable dimensions`);
             }
-            if (closed || owners.get(key)?.size === 0) await releaseAsset(value, descriptor);
+            if (closed || !owners.get(key)?.size) await releaseAsset(value, descriptor);
             else decoded.set(key, value);
             return value;
           })().finally(() => pending.delete(key));
@@ -71,7 +72,14 @@ function createDecodedAssetPool({ assetById, decodeAsset, releaseAsset }) {
         }
         await task;
       }));
-      return new Map(uniqueIds.map(key => [key, decoded.get(key) ?? null]));
+      const images = new Map(uniqueIds.map(key => [key, decoded.get(key) ?? null]));
+      for (const character of scene.characters) {
+        for (const layer of character.layers ?? []) {
+          if (layer.sourceRect) assertCharacterSourceRect(layer.sourceRect, images.get(layer.assetId),
+            `Scene ${scene.id}, character ${character.id}, asset ${layer.assetId}, layer ${layer.role}/${layer.variant}`);
+        }
+      }
+      return images;
     } catch (error) {
       await release(leaseId);
       throw error;
@@ -107,7 +115,7 @@ function createDecodedAssetPool({ assetById, decodeAsset, releaseAsset }) {
   }
 
   return Object.freeze({ acquire, release, dispose, get count() { return decoded.size; },
-    get decodedBytes() { return [...decoded.values()].reduce((total, resource) => total + Number(resource.width ?? resource.naturalWidth) * Number(resource.height ?? resource.naturalHeight) * 4, 0); },
+    get decodedBytes() { return [...decoded.values()].reduce((total, resource) => total + Number(resource.naturalWidth ?? resource.width) * Number(resource.naturalHeight ?? resource.height) * 4, 0); },
     get leaseCount() { return leaseAssets.size; } });
 }
 
@@ -151,7 +159,7 @@ export function createCinematicStoryRuntime({ scenes, render, decodeAsset = deco
   const transitions = new SceneTransitionManager({
     mount: async scene => {
       const token = `scene:${scene.id}:${++loadSequence}`;
-      const imageAssets = await assets.acquire(token, scene.assets.map(item => item.id));
+      const imageAssets = await assets.acquire(token, scene);
       return Object.freeze({ scene, token, assets: imageAssets });
     },
     crossfade: payload => transition ? transition({ ...payload, type: payload.to?.scene?.transition?.type ?? "cut", durationMs: payload.duration }) : true,
@@ -317,13 +325,13 @@ export function createCinematicStoryRuntime({ scenes, render, decodeAsset = deco
     const previous = preloadToken;
     preloadToken = token;
     try {
-      await assets.acquire(token, scene.assets.map(asset => asset.id));
-      if (previous) await assets.release(previous);
+      await assets.acquire(token, scene);
       return Object.freeze({ sceneId, assets: scene.assets.length, reused: false });
     } catch (error) {
       if (preloadToken === token) preloadToken = null;
-      await assets.release(token);
       throw error;
+    } finally {
+      if (previous) await assets.release(previous);
     }
   }
   async function fireEventsUntil(timeMs) { await moveForward(timeMs, { dispatch: true }); }

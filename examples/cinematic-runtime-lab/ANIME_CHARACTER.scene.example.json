@@ -1,0 +1,354 @@
+{
+  "version": "CinematicSceneV1",
+  "id": "anime-rig-template",
+  "chapterId": "rig-calibration",
+  "title": "معايرة شخصية",
+  "language": "tn",
+  "assets": [
+    {
+      "id": "rig-atlas",
+      "src": "assets/characters/layla-face-atlas.webp"
+    },
+    {
+      "id": "rig-background",
+      "src": "assets/backgrounds/day.svg"
+    }
+  ],
+  "backgrounds": [
+    {
+      "id": "background",
+      "assetId": "rig-background",
+      "role": "background",
+      "z": 0,
+      "depth": 0
+    }
+  ],
+  "characters": [
+    {
+      "id": "anime-character",
+      "name": "شخصية",
+      "x": 0.5,
+      "y": 0.89,
+      "scale": 0.8,
+      "facing": "right",
+      "z": 0,
+      "layers": [
+        {
+          "role": "body",
+          "assetId": "rig-atlas",
+          "variant": "neutral",
+          "view": "front",
+          "z": 0,
+          "layout": {
+            "x": 0.50634765625,
+            "y": 0.5611979166666666,
+            "width": 0.9482421875,
+            "height": 0.8776041666666666,
+            "pivotX": 0.5,
+            "pivotY": 0.5
+          },
+          "sourceRect": {
+            "x": 2,
+            "y": 2,
+            "width": 971,
+            "height": 1348
+          }
+        },
+        {
+          "role": "head",
+          "assetId": "rig-atlas",
+          "variant": "neutral",
+          "view": "front",
+          "z": 1,
+          "layout": {
+            "x": 0.486328125,
+            "y": 0.14322916666666666,
+            "width": 0.7744140625,
+            "height": 0.15690104166666666,
+            "pivotX": 0.5510718789407314,
+            "pivotY": 0.9128630705394191
+          },
+          "sourceRect": {
+            "x": 2,
+            "y": 1354,
+            "width": 793,
+            "height": 241
+          }
+        },
+        {
+          "role": "mouth",
+          "assetId": "rig-atlas",
+          "variant": "closed",
+          "view": "front",
+          "z": 2,
+          "layout": {
+            "x": 0.537109375,
+            "y": 0.11100260416666667,
+            "width": 0.046875,
+            "height": 0.020182291666666668,
+            "pivotX": 0.5,
+            "pivotY": 0.5
+          },
+          "sourceRect": {
+            "x": 799,
+            "y": 1354,
+            "width": 48,
+            "height": 31
+          }
+        },
+        {
+          "role": "mouth",
+          "assetId": "rig-atlas",
+          "variant": "open",
+          "view": "front",
+          "z": 3,
+          "layout": {
+            "x": 0.537109375,
+            "y": 0.11100260416666667,
+            "width": 0.046875,
+            "height": 0.020182291666666668,
+            "pivotX": 0.5,
+            "pivotY": 0.5
+          },
+          "sourceRect": {
+            "x": 851,
+            "y": 1354,
+            "width": 48,
+            "height": 31
+          }
+        },
+        {
+          "role": "mouth",
+          "assetId": "rig-atlas",
+          "variant": "round",
+          "view": "front",
+          "z": 4,
+          "layout": {
+            "x": 0.537109375,
+            "y": 0.11100260416666667,
+            "width": 0.046875,
+            "height": 0.020182291666666668,
+            "pivotX": 0.5,
+            "pivotY": 0.5
+          },
+          "sourceRect": {
+            "x": 903,
+            "y": 1354,
+            "width": 48,
+            "height": 31
+          }
+        },
+        {
+          "role": "mouth",
+          "assetId": "rig-atlas",
+          "variant": "wide",
+          "view": "front",
+          "z": 5,
+          "layout": {
+            "x": 0.537109375,
+            "y": 0.11100260416666667,
+            "width": 0.046875,
+            "height": 0.020182291666666668,
+            "pivotX": 0.5,
+            "pivotY": 0.5
+          },
+          "sourceRect": {
+            "x": 955,
+            "y": 1354,
+            "width": 48,
+            "height": 31
+          }
+        },
+        {
+          "role": "mouth",
+          "assetId": "rig-atlas",
+          "variant": "teeth",
+          "view": "front",
+          "z": 6,
+          "layout": {
+            "x": 0.537109375,
+            "y": 0.11100260416666667,
+            "width": 0.046875,
+            "height": 0.020182291666666668,
+            "pivotX": 0.5,
+            "pivotY": 0.5
+          },
+          "sourceRect": {
+            "x": 2,
+            "y": 1599,
+            "width": 48,
+            "height": 31
+          }
+        },
+        {
+          "role": "eye_left",
+          "assetId": "rig-atlas",
+          "variant": "neutral",
+          "view": "front",
+          "z": 7,
+          "layout": {
+            "x": 0.5166015625,
+            "y": 0.07486979166666667,
+            "width": 0.06640625,
+            "height": 0.026041666666666668,
+            "pivotX": 0.5,
+            "pivotY": 0.5
+          },
+          "sourceRect": {
+            "x": 54,
+            "y": 1599,
+            "width": 68,
+            "height": 40
+          }
+        },
+        {
+          "role": "eye_left",
+          "assetId": "rig-atlas",
+          "variant": "closed",
+          "view": "front",
+          "z": 8,
+          "layout": {
+            "x": 0.5166015625,
+            "y": 0.07486979166666667,
+            "width": 0.06640625,
+            "height": 0.026041666666666668,
+            "pivotX": 0.5,
+            "pivotY": 0.5
+          },
+          "sourceRect": {
+            "x": 126,
+            "y": 1599,
+            "width": 68,
+            "height": 40
+          }
+        },
+        {
+          "role": "brow_left",
+          "assetId": "rig-atlas",
+          "variant": "neutral",
+          "view": "front",
+          "z": 9,
+          "layout": {
+            "x": 0.5205078125,
+            "y": 0.06412760416666667,
+            "width": 0.056640625,
+            "height": 0.021484375,
+            "pivotX": 0.5,
+            "pivotY": 0.5
+          },
+          "sourceRect": {
+            "x": 198,
+            "y": 1599,
+            "width": 58,
+            "height": 33
+          }
+        },
+        {
+          "role": "eye_right",
+          "assetId": "rig-atlas",
+          "variant": "neutral",
+          "view": "front",
+          "z": 17,
+          "layout": {
+            "x": 0.56396484375,
+            "y": 0.08170572916666667,
+            "width": 0.0341796875,
+            "height": 0.021484375,
+            "pivotX": 0.5,
+            "pivotY": 0.5
+          },
+          "sourceRect": {
+            "x": 260,
+            "y": 1599,
+            "width": 35,
+            "height": 33
+          }
+        },
+        {
+          "role": "eye_right",
+          "assetId": "rig-atlas",
+          "variant": "closed",
+          "view": "front",
+          "z": 18,
+          "layout": {
+            "x": 0.56396484375,
+            "y": 0.08170572916666667,
+            "width": 0.0341796875,
+            "height": 0.021484375,
+            "pivotX": 0.5,
+            "pivotY": 0.5
+          },
+          "sourceRect": {
+            "x": 299,
+            "y": 1599,
+            "width": 35,
+            "height": 33
+          }
+        },
+        {
+          "role": "brow_right",
+          "assetId": "rig-atlas",
+          "variant": "neutral",
+          "view": "front",
+          "z": 19,
+          "layout": {
+            "x": 0.56201171875,
+            "y": 0.072265625,
+            "width": 0.0263671875,
+            "height": 0.016927083333333332,
+            "pivotX": 0.5,
+            "pivotY": 0.5
+          },
+          "sourceRect": {
+            "x": 338,
+            "y": 1599,
+            "width": 27,
+            "height": 26
+          }
+        }
+      ]
+    }
+  ],
+  "dialogue": [
+    {
+      "id": "calibration-line",
+      "speakerId": "anime-character",
+      "text": "ماما، وين نمشيو؟ فرحانة برشة!",
+      "expression": "neutral",
+      "speed": 1
+    }
+  ],
+  "camera": {
+    "mode": "auto",
+    "shot": "wide",
+    "timeOfDay": "day"
+  },
+  "direction": {
+    "mood": "calm",
+    "seed": 2800,
+    "strength": 0.48
+  },
+  "lighting": {
+    "intensity": 0.7,
+    "tint": "#D5AE61"
+  },
+  "effects": {
+    "enabled": true,
+    "strength": 0.45
+  },
+  "transition": {
+    "type": "crossfade",
+    "durationMs": 480
+  },
+  "music": {
+    "mood": "family",
+    "intensity": 0.45,
+    "fadeInMs": 400,
+    "fadeOutMs": 500
+  },
+  "choices": [],
+  "flow": {
+    "conditions": []
+  },
+  "events": []
+}
