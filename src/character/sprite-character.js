@@ -4,7 +4,11 @@ export const CHARACTER_LAYER_LAYOUTS = Object.freeze({
   hand_right: Object.freeze({ x: 0.755, y: 0.535, width: 0.22, height: 0.22, pivotX: 0.5, pivotY: 0.9, z: 3 }),
   head: Object.freeze({ x: 0.5, y: 0.29, width: 0.4, height: 0.36, pivotX: 0.5, pivotY: 0.88, z: 2 }),
   eyes: Object.freeze({ x: 0.5, y: 0.14, width: 0.28, height: 0.09, pivotX: 0.5, pivotY: 0.5, z: 5 }),
+  eye_left: Object.freeze({ x: 0.43, y: 0.14, width: 0.14, height: 0.09, pivotX: 0.5, pivotY: 0.5, z: 5 }),
+  eye_right: Object.freeze({ x: 0.57, y: 0.14, width: 0.14, height: 0.09, pivotX: 0.5, pivotY: 0.5, z: 5.01 }),
   brows: Object.freeze({ x: 0.5, y: 0.095, width: 0.28, height: 0.07, pivotX: 0.5, pivotY: 0.5, z: 6 }),
+  brow_left: Object.freeze({ x: 0.43, y: 0.095, width: 0.14, height: 0.07, pivotX: 0.5, pivotY: 0.5, z: 6 }),
+  brow_right: Object.freeze({ x: 0.57, y: 0.095, width: 0.14, height: 0.07, pivotX: 0.5, pivotY: 0.5, z: 6.01 }),
   mouth: Object.freeze({ x: 0.5, y: 0.22, width: 0.19, height: 0.075, pivotX: 0.5, pivotY: 0.5, z: 7 }),
   hair_back: Object.freeze({ x: 0.5, y: 0.24, width: 0.49, height: 0.46, pivotX: 0.5, pivotY: 0.75, z: 1 }),
   hair_front: Object.freeze({ x: 0.5, y: 0.17, width: 0.46, height: 0.3, pivotX: 0.5, pivotY: 0.9, z: 4 }),
@@ -12,6 +16,7 @@ export const CHARACTER_LAYER_LAYOUTS = Object.freeze({
 });
 
 const VALID_ROLES = new Set(Object.keys(CHARACTER_LAYER_LAYOUTS));
+export const FACIAL_LAYER_ROLES = Object.freeze(["eyes", "eye_left", "eye_right", "brows", "brow_left", "brow_right", "mouth"]);
 const VALID_VARIANTS = new Set(["neutral", "happy", "sad", "angry", "afraid", "surprised", "thinking", "determined", "front", "side", "pose1", "pose2", "open", "round", "wide", "teeth", "closed", "rest"]);
 export const MAX_IMPORTED_CHARACTER_PIXELS = 12_000_000;
 
@@ -22,7 +27,7 @@ export function countCharacterPixels(entry) {
 
 export function parseCharacterLayerFilename(filename, selectedCharacterId) {
   const name = String(filename ?? "").split(/[\\/]/u).pop();
-  const match = /^([a-z0-9][a-z0-9._-]{0,63})__(body|hand_left|hand_right|head|eyes|brows|mouth|hair_back|hair_front|full)(?:__([a-z0-9_-]+))?\.(png|webp)$/iu.exec(name);
+  const match = /^([a-z0-9][a-z0-9._-]{0,63})__(body|hand_left|hand_right|head|eyes|eye_left|eye_right|brows|brow_left|brow_right|mouth|hair_back|hair_front|full)(?:__([a-z0-9_-]+))?\.(png|webp)$/iu.exec(name);
   if (match) {
     const [, characterId, role, variant = "neutral"] = match;
     if (!VALID_VARIANTS.has(variant.toLowerCase())) throw new TypeError(`Unsupported sprite variant in ${name}`);
@@ -47,29 +52,45 @@ export function normalizeCharacterLayer(layer, index = 0) {
     ...(layer.layout ?? {}),
     role,
     variant: String(layer.variant ?? "neutral").toLowerCase(),
+    view: String(layer.view ?? "any").toLowerCase(),
     z: Number(layer.z ?? layer.layout?.z ?? base.z + index * 0.001),
     image: layer.image ?? layer.bitmap ?? null
   };
   for (const field of ["x", "y", "width", "height", "pivotX", "pivotY"]) normalized[field] = clampUnit(normalized[field], base[field]);
+  if (!["any", "front", "side"].includes(normalized.view)) throw new TypeError("Sprite layer view must be any, front, or side");
   if (normalized.width <= 0 || normalized.height <= 0 || !Number.isFinite(normalized.z)) throw new RangeError("Sprite layer dimensions and z order must be valid");
   return Object.freeze(normalized);
 }
 
 export function selectCharacterLayers(layers, { expression = "neutral", pose = "front", viseme = "rest", blink = false } = {}) {
   const normalized = layers.map((layer, index) => normalizeCharacterLayer(layer, index));
+  const view = pose === "side" ? "side" : "front";
   const variantByRole = new Map();
   for (const layer of normalized) if (!new Set(["neutral", "front"]).has(layer.variant)) {
     const key = layer.role;
     if (!variantByRole.has(key)) variantByRole.set(key, new Set());
     variantByRole.get(key).add(layer.variant);
   }
-  return normalized.filter(layer => {
+  return normalized.filter(layer => (layer.view === "any" || layer.view === view)).filter(layer => {
     const variants = variantByRole.get(layer.role) ?? new Set();
-    const desired = layer.role === "mouth" ? (viseme === "rest" ? "closed" : viseme) : layer.role === "eyes" ? (blink ? "closed" : expression) : layer.role === "brows" ? expression : ["body", "head", "hand_left", "hand_right"].includes(layer.role) ? pose : "";
+    const desired = layer.role === "mouth" ? (viseme === "rest" ? "closed" : viseme) : ["eyes", "eye_left", "eye_right"].includes(layer.role) ? (blink ? "closed" : expression) : ["brows", "brow_left", "brow_right"].includes(layer.role) ? expression : ["body", "head", "hand_left", "hand_right"].includes(layer.role) ? pose : "";
     if (!variants.size) return layer.variant === "neutral" || layer.variant === "front";
     if (desired && variants.has(desired)) return layer.variant === desired;
     return layer.variant === "neutral" || layer.variant === "front";
   }).sort((a, b) => a.z - b.z);
+}
+
+const ANCHOR_FIELDS = ["x", "y", "width", "height", "pivotX", "pivotY"];
+export function isCalibratedFaceRig(layers, pose = "front") {
+  if (!Array.isArray(layers)) return false;
+  const view = pose === "side" ? "side" : "front";
+  const face = layers.filter(layer => FACIAL_LAYER_ROLES.includes(layer.role) && (layer.view ?? "any") === view);
+  const anchored = role => face.filter(layer => layer.role === role).length > 0 && face.filter(layer => layer.role === role).every(layer =>
+    layer.layout && ANCHOR_FIELDS.every(field => Number.isFinite(layer.layout[field])));
+  const head = layers.some(layer => layer.role === "head" && (layer.view ?? "any") === view && layer.layout && ANCHOR_FIELDS.every(field => Number.isFinite(layer.layout[field])));
+  const mouth = new Set(face.filter(layer => layer.role === "mouth").map(layer => layer.variant));
+  return head && ["eye_left", "eye_right", "brow_left", "brow_right"].every(anchored) && ["closed", "open", "round", "wide", "teeth"].every(variant => mouth.has(variant)) &&
+    face.filter(layer => layer.role === "mouth").every(layer => layer.layout && ANCHOR_FIELDS.every(field => Number.isFinite(layer.layout[field])));
 }
 
 export function drawLayeredCharacter(ctx, layers, { x, top, width, height, headRotation = 0, armMotion = 0, bodySway = 0, eyeX = 0, eyeY = 0, expression = "neutral", pose = "front", viseme = "rest", blink = false, facing = "right" } = {}) {
@@ -79,14 +100,14 @@ export function drawLayeredCharacter(ctx, layers, { x, top, width, height, headR
   const head = selected.find(layer => layer.role === "head") ?? CHARACTER_LAYER_LAYOUTS.head;
   const headPivotX = width * (head.x - 0.5), headPivotY = height * head.y;
   const mirrorSign = facing === "left" ? -1 : 1;
-  const headAttached = new Set(["hair_back", "hair_front", "eyes", "brows", "mouth"]);
+  const headAttached = new Set(["hair_back", "hair_front", ...FACIAL_LAYER_ROLES]);
   const drawn = [];
   const geometry = [];
   for (const layer of selected) {
     if (!layer.image) continue;
     const w = width * layer.width, h = height * layer.height;
     const mirrored = facing === "left";
-    const eyeLayer = layer.role === "eyes";
+    const eyeLayer = ["eyes", "eye_left", "eye_right"].includes(layer.role);
     const localX = width * (layer.x - 0.5) + (eyeLayer ? eyeX * width * 0.025 * mirrorSign : 0);
     const localY = height * layer.y + (eyeLayer ? eyeY * height * 0.012 : 0);
     let rotation = 0;

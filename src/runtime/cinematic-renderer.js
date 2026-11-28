@@ -8,6 +8,17 @@ function drawable(image) {
   return image && Number(image.width ?? image.naturalWidth) > 0 && Number(image.height ?? image.naturalHeight);
 }
 
+function enforceDecodedPixelBudget(assetMaps, budget) {
+  const images = new Set();
+  for (const map of assetMaps) if (map instanceof Map) for (const value of map.values()) {
+    for (const image of [value, value?.portrait, value?.bitmap, ...(value?.layers ?? []).map(layer => layer.image ?? layer.bitmap)]) if (drawable(image)) images.add(image);
+  }
+  let pixels = 0;
+  for (const image of images) pixels += Number(image.width ?? image.naturalWidth) * Number(image.height ?? image.naturalHeight);
+  if (pixels > budget) throw new RangeError(`Decoded image budget exceeded: ${pixels} > ${budget} pixels`);
+  return pixels;
+}
+
 function drawImageFit(ctx, image, width, height, fit = "cover", role = "background") {
   if (!drawable(image)) return false;
   const iw = Number(image.width ?? image.naturalWidth), ih = Number(image.height ?? image.naturalHeight);
@@ -42,10 +53,10 @@ function drawBackgrounds(ctx, scene, assets, camera, direction) {
   // Keep a same-art cover matte fixed to the viewport beneath the camera pass.
   // Pan, zoom, and rotation can expose canvas edges; this prevents those gaps
   // from revealing the black clear color while keeping a neutral shot identical.
-  const primary = layers.find(layer => layer.role === "background");
+  const primary = layers.find(layer => layer.role === "background") ?? layers.find(layer => drawable(assets.get(layer.assetId)));
   const primaryImage = primary && assets.get(primary.assetId);
   if (drawable(primaryImage)) {
-    ctx.save(); ctx.globalAlpha = primary.opacity ?? 1;
+    ctx.save(); ctx.globalAlpha = 1;
     drawImageFit(ctx, primaryImage, width, height, "cover", "background");
     ctx.restore();
   }
@@ -83,24 +94,31 @@ export class CinematicRenderer {
   #ctx;
   #quality;
   #maxCanvasPixels;
+  #maxDecodedPixels;
+  #decodedPixels = 0;
   #disposed = false;
   #frameCount = 0;
   #transitionCount = 0;
+  #transitionSurfacePixels = 0;
   #lastDraw = null;
   #transitionCancel = null;
 
-  constructor(canvasOrContext, { quality = "medium", maxCanvasPixels = 2_400_000 } = {}) {
+  constructor(canvasOrContext, { quality = "medium", maxCanvasPixels = 2_400_000, maxDecodedPixels = 12_000_000 } = {}) {
     this.#ctx = canvasOrContext?.getContext ? canvasOrContext.getContext("2d", { alpha: false }) : canvasOrContext;
     if (!this.#ctx?.canvas || typeof this.#ctx.drawImage !== "function") throw new TypeError("CinematicRenderer needs a Canvas or 2D context");
     if (!Object.hasOwn(DEFAULT_QUALITY, quality)) throw new TypeError("quality must be low, medium, or high");
     if (!Number.isSafeInteger(maxCanvasPixels) || maxCanvasPixels < 1) throw new RangeError("maxCanvasPixels must be a positive integer");
+    if (!Number.isSafeInteger(maxDecodedPixels) || maxDecodedPixels < 1) throw new RangeError("maxDecodedPixels must be a positive integer");
     this.#quality = quality;
     const canvas = this.#ctx.canvas;
+    const backingPixels = canvas.width * canvas.height;
+    if (backingPixels > maxCanvasPixels) throw new RangeError(`Canvas backing budget exceeded: ${backingPixels} > ${maxCanvasPixels} pixels`);
     canvas.dataset && (canvas.dataset.qartonQuality = quality);
     // Keep the authored 720×1280 coordinate system stable; silently resizing
     // the backing store would misalign the existing effects core. Hosts can
     // choose a lower-resolution canvas before construction if required.
     this.#maxCanvasPixels = maxCanvasPixels;
+    this.#maxDecodedPixels = maxDecodedPixels;
     this.#ctx.imageSmoothingEnabled = true;
     this.#ctx.imageSmoothingQuality = quality === "high" ? "high" : quality === "low" ? "low" : "medium";
   }
@@ -109,6 +127,7 @@ export class CinematicRenderer {
     if (this.#disposed) return false;
     if (!frame?.scene?.textScene || !Number.isFinite(frame.timeMs) || !(frame.assets instanceof Map)) throw new TypeError("A Runtime frame with compiled text scene and decoded assets is required");
     const { scene, timeMs, assets, camera, direction } = frame;
+    this.#decodedPixels = enforceDecodedPixelBudget([assets, frame.characterAssets], this.#maxDecodedPixels);
     const ctx = this.#ctx, { width, height } = ctx.canvas;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over"; ctx.filter = "none";
@@ -133,7 +152,7 @@ export class CinematicRenderer {
     });
     this.#frameCount += 1;
     this.#lastDraw = Object.freeze({ timeMs, sceneId: scene.id, drawnCharacterIds: poseStats.drawnCharacterIds,
-      characterGeometry: poseStats.characterGeometry,
+      characterGeometry: poseStats.characterGeometry, faceRigValid: poseStats.faceRigValid,
       focusCharacterId: frame.focusCharacterId ?? null, visibleBackgroundIds: Object.freeze(scene.backgrounds.filter(layer => drawable(assets.get(layer.assetId))).map(layer => layer.id)) });
     return this.#lastDraw;
   }
@@ -145,10 +164,12 @@ export class CinematicRenderer {
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
     ctx.clearRect(0, 0, width, height);
     const direction = sampleCinematicDirector(scene.direction, timeMs);
+    this.#decodedPixels = enforceDecodedPixelBudget([assets], this.#maxDecodedPixels);
     const sampledCamera = scene.camera.mode === "manual" && scene.camera.keyframes
       ? sampleCameraTrack(scene.camera.keyframes, timeMs) : direction.effects.camera;
-    const pose = adaptCamera(composeCameraPose(sampledCamera, direction.effects.shake), width, height);
-    const camera = { ...pose, zoom: pose.zoom * direction.shotScale };
+    const sampledPose = composeCameraPose(sampledCamera, direction.effects.shake);
+    const camera = { ...sampledPose, zoom: sampledPose.zoom * direction.shotScale };
+    const pose = adaptCamera(camera, width, height);
     drawBackgrounds(ctx, scene, assets, camera, direction);
     const characters = new Map(scene.characters.map(character => [character.id, character.assetId ? assets.get(character.assetId) : { layers: character.layers.map(layer => ({ ...layer, image: assets.get(layer.assetId) })) }]));
     const rendered = drawTextCinematicScene(ctx, scene.textScene, timeMs, { transparent: true, assets: characters, camera: pose, drawDialogue: false,
@@ -169,12 +190,17 @@ export class CinematicRenderer {
       return true;
     }
     const canvas = this.#ctx.canvas, width = canvas.width, height = canvas.height;
+    const basePixels = width * height, availablePixels = this.#maxCanvasPixels - basePixels;
+    if (availablePixels < 2) { this.renderEndpoint(to.scene, to.assets); return true; }
+    const scale = Math.min(1, Math.sqrt(availablePixels / (2 * basePixels)));
+    const surfaceWidth = Math.max(1, Math.floor(width * scale)), surfaceHeight = Math.max(1, Math.floor(height * scale));
     const makeSurface = () => {
-      const surface = typeof OffscreenCanvas === "function" ? new OffscreenCanvas(width, height) : canvas.ownerDocument.createElement("canvas");
-      surface.width = width; surface.height = height; return surface;
+      const surface = typeof OffscreenCanvas === "function" ? new OffscreenCanvas(surfaceWidth, surfaceHeight) : canvas.ownerDocument.createElement("canvas");
+      surface.width = surfaceWidth; surface.height = surfaceHeight; return surface;
     };
     const source = makeSurface(), target = makeSurface();
-    source.getContext("2d").drawImage(canvas, 0, 0, width, height);
+    this.#transitionSurfacePixels = 2 * surfaceWidth * surfaceHeight;
+    source.getContext("2d").drawImage(canvas, 0, 0, surfaceWidth, surfaceHeight);
     this.renderEndpoint(to.scene, to.assets, target.getContext("2d"), 0);
     const started = globalThis.performance?.now?.() ?? Date.now();
     let cancel;
@@ -191,17 +217,17 @@ export class CinematicRenderer {
       if (type === "through-black" || type === "through-light") {
         const color = type === "through-light" ? "#fffaf0" : "#000000";
         ctx.fillStyle = color; ctx.fillRect(0, 0, width, height);
-        if (progress < 0.5) { ctx.globalAlpha = 1 - progress * 2; ctx.drawImage(source, 0, 0); }
-        else { ctx.globalAlpha = (progress - 0.5) * 2; ctx.drawImage(target, 0, 0); }
+        if (progress < 0.5) { ctx.globalAlpha = 1 - progress * 2; ctx.drawImage(source, 0, 0, width, height); }
+        else { ctx.globalAlpha = (progress - 0.5) * 2; ctx.drawImage(target, 0, 0, width, height); }
       } else {
-        ctx.drawImage(source, 0, 0);
+        ctx.drawImage(source, 0, 0, width, height);
         if (type === "focus") {
           const focus = to.scene.characters.find(item => item.id === (to.scene.dialogue[0]?.speakerId ?? to.scene.characters[0]?.id));
           const x = (focus?.x ?? .5) * width, y = (focus?.y ?? .5) * height;
           const radius = Math.hypot(width, height) * progress;
-          ctx.save(); ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.clip(); ctx.drawImage(target, 0, 0); ctx.restore();
+          ctx.save(); ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.clip(); ctx.drawImage(target, 0, 0, width, height); ctx.restore();
         } else {
-          ctx.globalAlpha = progress; ctx.drawImage(target, 0, 0);
+          ctx.globalAlpha = progress; ctx.drawImage(target, 0, 0, width, height);
         }
       }
       ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
@@ -216,14 +242,22 @@ export class CinematicRenderer {
         if (progress >= 1) return true;
       }
     };
-    const result = await Promise.race([animate(), cancelled]);
-    if (this.#transitionCancel === cancel) this.#transitionCancel = null;
+    let result;
+    try { result = await Promise.race([animate(), cancelled]); }
+    finally {
+      if (this.#transitionCancel === cancel) this.#transitionCancel = null;
+      this.#transitionSurfacePixels = 0;
+      source.width = 0; source.height = 0; target.width = 0; target.height = 0;
+    }
     if (result) { this.renderEndpoint(to.scene, to.assets); this.#transitionCount += 1; }
     return result;
   }
 
   get metrics() { return Object.freeze({ frameCount: this.#frameCount, transitionCount: this.#transitionCount, quality: this.#quality, lastDraw: this.#lastDraw,
-    backingPixels: this.#ctx.canvas.width * this.#ctx.canvas.height, withinCanvasBudget: this.#ctx.canvas.width * this.#ctx.canvas.height <= this.#maxCanvasPixels }); }
+    backingPixels: this.#ctx.canvas.width * this.#ctx.canvas.height, maxCanvasPixels: this.#maxCanvasPixels,
+    transitionSurfacePixels: this.#transitionSurfacePixels, totalCanvasPixels: this.#ctx.canvas.width * this.#ctx.canvas.height + this.#transitionSurfacePixels,
+    decodedPixels: this.#decodedPixels, maxDecodedPixels: this.#maxDecodedPixels,
+    withinCanvasBudget: this.#ctx.canvas.width * this.#ctx.canvas.height <= this.#maxCanvasPixels }); }
   dispose() { this.#disposed = true; this.#transitionCancel?.(); this.#transitionCancel = null; this.#lastDraw = null; }
 }
 

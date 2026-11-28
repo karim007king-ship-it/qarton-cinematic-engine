@@ -9,7 +9,7 @@ export const CINEMATIC_RUNTIME_STATE_VERSION = "CinematicRuntimeStateV1";
 const ID = /^[a-z0-9][a-z0-9._-]{0,63}$/iu;
 const LANGUAGES = new Set(["tn", "ar", "fr", "en"]);
 const EXPRESSIONS = new Set(["neutral", "happy", "sad", "angry", "afraid", "surprised", "thinking", "determined", "listening"]);
-const SHAPES = new Set(["body", "hand_left", "hand_right", "head", "eyes", "brows", "mouth", "hair_back", "hair_front", "full"]);
+const SHAPES = new Set(["body", "hand_left", "hand_right", "head", "eyes", "eye_left", "eye_right", "brows", "brow_left", "brow_right", "mouth", "hair_back", "hair_front", "full"]);
 const ROLES = new Set(["background", "midground", "foreground"]);
 const MOODS = new Set(Object.keys(CINEMATIC_MOODS));
 const SHOTS = new Set(Object.keys(CINEMATIC_SHOTS));
@@ -70,16 +70,18 @@ function normalizeCharacter(item, index, assetIds) {
   let layers;
   if (item.assetId !== undefined) { assetId = id(item.assetId, `${characterId}.assetId`); if (!assetIds.has(assetId)) throw new TypeError(`${characterId} references missing asset ${assetId}`); }
   if (item.layers !== undefined) {
-    array(item.layers, `${characterId}.layers`, 1, 16);
+      array(item.layers, `${characterId}.layers`, 1, 32);
     const seen = new Set();
     layers = Object.freeze(item.layers.map((layer, layerIndex) => {
-      object(layer, `${characterId}.layers[${layerIndex}]`, ["role", "assetId"], ["variant", "layout", "z"]);
+      object(layer, `${characterId}.layers[${layerIndex}]`, ["role", "assetId"], ["variant", "view", "layout", "z"]);
       if (!SHAPES.has(layer.role) || layer.role === "full") throw new TypeError(`${characterId}.layers[${layerIndex}].role is unsupported`);
       const partId = id(layer.assetId, `${characterId}.layers[${layerIndex}].assetId`);
       if (!assetIds.has(partId)) throw new TypeError(`${characterId} layer references missing asset ${partId}`);
       const variant = layer.variant ?? "neutral";
       if (!/^[a-z0-9_-]{1,24}$/iu.test(variant)) throw new TypeError(`${characterId} layer variant is invalid`);
-      const key = `${layer.role}:${variant}`;
+      const view = layer.view ?? "any";
+      if (!new Set(["any", "front", "side"]).has(view)) throw new TypeError(`${characterId} layer view is unsupported`);
+      const key = `${layer.role}:${view}:${variant}`;
       if (seen.has(key)) throw new TypeError(`${characterId} has duplicate layer variant ${key}`);
       seen.add(key);
       const zOrder = whole(layer.z ?? layerIndex, `${characterId}.layers[${layerIndex}].z`, -10000, 10000);
@@ -89,7 +91,7 @@ function normalizeCharacter(item, index, assetIds) {
         layout = Object.freeze(Object.fromEntries(Object.entries(layer.layout).map(([keyName, value]) => [keyName, finite(value, `${characterId}.layout.${keyName}`, 0, 1)])));
         if (layout.width === 0 || layout.height === 0) throw new RangeError(`${characterId} layer width and height must be positive`);
       }
-      return Object.freeze({ role: layer.role, assetId: partId, variant, z: zOrder, ...(layout ? { layout } : {}) });
+      return Object.freeze({ role: layer.role, assetId: partId, variant, view, z: zOrder, ...(layout ? { layout } : {}) });
     }));
   }
   const expression = item.expression ?? "listening";

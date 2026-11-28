@@ -18,6 +18,8 @@ with sync_playwright() as p:
   assert page.locator('#commit').inner_text()==f"Commit: {os.environ['QARTON_COMMIT']}"
  assert page.locator('#screen').evaluate('(c)=>c.width===720&&c.height===1280')
  assert page.evaluate('window.__audioCreated===0 && !window.__micRequested')
+ page.wait_for_function("Object.keys(window.qartonCinematicRenderer.metrics.lastDraw.faceRigValid||{}).length===2")
+ assert page.evaluate('Object.values(window.qartonCinematicRenderer.metrics.lastDraw.faceRigValid).every(valid=>valid===false)'), 'full portraits without transparent rigs must not receive auto facial animation'
  assert page.evaluate('window.qartonCinematicRuntime.assetCount')>=1
  page.evaluate('window.qartonCinematicRuntime.seek(1000)')
  page.wait_for_function('window.__runtimeLastFrame && window.__runtimeLastFrame.timeMs>=1000')
@@ -39,30 +41,42 @@ with sync_playwright() as p:
   assert len({tuple(color) for color in item['corners']})>=3,f"background has an uncovered matte at {item['name']}: {item['corners']}"
   assert all(not (color[0]<24 and color[1]<26 and color[2]<30) for color in item['corners']),f"camera exposed a black canvas edge at {item['name']}: {item['corners']}"
   (ARTIFACTS/f"cinematic-runtime-{item['name']}.png").write_bytes(base64.b64decode(item['png'].split(',',1)[1]))
+ camera_transform=page.evaluate('''async()=>{const {createCameraTrack}=await import('/src/camera/camera-track.js'),{compileTextCinematicDirection}=await import('/src/effects/cinematic-director.js'),Renderer=window.qartonCinematicRenderer.constructor,canvas=document.createElement('canvas');canvas.width=360;canvas.height=640;const renderer=new Renderer(canvas,{quality:'low'}),art=document.createElement('canvas');art.width=360;art.height=640;const a=art.getContext('2d');a.fillStyle='#101010';a.fillRect(0,0,360,640);a.fillStyle='#f5c542';a.fillRect(150,250,20,20);const frame=window.__runtimeLastFrame,scene={...frame.scene,characters:[],textScene:{...frame.scene.textScene,characters:[],turns:[]},backgrounds:[{id:'camera-marker',assetId:'marker',role:'background',z:0,opacity:1,depth:0,x:0,y:0,scale:1,fit:'fill'}],camera:{mode:'manual',shot:'medium',timeOfDay:'day',keyframes:createCameraTrack([{atMs:0,x:72,y:-24,zoom:1,rotation:0}])},direction:compileTextCinematicDirection({durationMs:1000,mood:'calm',shot:'medium',enabled:false}),lighting:{intensity:0}};renderer.renderEndpoint(scene,new Map([['marker',art]]),undefined,0);const c=canvas.getContext('2d'),sample=(x,y)=>Array.from(c.getImageData(x,y,1,1).data).slice(0,3);return {expected:sample(186,238),original:sample(150,250),pixels:{backing:renderer.metrics.backingPixels,max:renderer.metrics.maxCanvasPixels}}}''')
+ assert camera_transform['expected']==[245,197,66] and camera_transform['original']==[16,16,16],camera_transform
  page.screenshot(path=str(ARTIFACTS/'cinematic-runtime-renderer-visual.png'),full_page=True)
- transition_result=page.evaluate('''async()=>{const r=window.qartonCinematicRenderer,rt=window.qartonCinematicRuntime;for(const id of ['gate','harbor','confrontation','finale'])await rt.loadScene(id);const handle=window.__runtimeLastFrame.transitionHandle;window.__focusTransition=r.transition({from:handle,to:handle,type:'focus',durationMs:500});return {count:r.metrics.transitionCount,scene:rt.getState().sceneId} }''')
+ transition_result=page.evaluate('''async()=>{const r=window.qartonCinematicRenderer,rt=window.qartonCinematicRuntime;for(const id of ['gate','harbor','confrontation','finale'])await rt.loadScene(id);const handle=window.__runtimeLastFrame.transitionHandle;window.__focusTransition=r.transition({from:handle,to:handle,type:'focus',durationMs:500});return {count:r.metrics.transitionCount,scene:rt.getState().sceneId,canvasBudget:r.metrics.totalCanvasPixels,maxCanvasPixels:r.metrics.maxCanvasPixels,transitionSurfacePixels:r.metrics.transitionSurfacePixels} }''')
  assert transition_result['count']>=3 and transition_result['scene']=='finale',transition_result
+ assert 0<transition_result['transitionSurfacePixels'] and transition_result['canvasBudget']<=transition_result['maxCanvasPixels'],transition_result
  page.wait_for_timeout(180);page.screenshot(path=str(ARTIFACTS/'cinematic-runtime-focus-transition.png'),full_page=True)
- transition_result=page.evaluate('''async()=>({count:window.qartonCinematicRenderer.metrics.transitionCount,focus:await window.__focusTransition,scene:window.qartonCinematicRuntime.getState().sceneId})''')
- assert transition_result['count']>=4 and transition_result['focus'] and transition_result['scene']=='finale',transition_result
+ transition_result=page.evaluate('''async()=>({count:window.qartonCinematicRenderer.metrics.transitionCount,focus:await window.__focusTransition,scene:window.qartonCinematicRuntime.getState().sceneId,transitionSurfacePixels:window.qartonCinematicRenderer.metrics.transitionSurfacePixels})''')
+ assert transition_result['count']>=4 and transition_result['focus'] and transition_result['scene']=='finale' and transition_result['transitionSurfacePixels']==0,transition_result
  page.goto(base+'layered-character-test.html',wait_until='networkidle')
  try: page.wait_for_function('window.qartonLayeredVisualTest',timeout=5000)
  except Exception as error:
   state=page.evaluate('''()=>({title:document.title,body:document.body.innerText,canvas:document.querySelector('#test-stage')?.toDataURL().slice(0,80),ready:document.readyState})''')
   raise AssertionError(f'layered visual fixture did not initialize; pageErrors={errors}; state={state}') from error
- mouth_hashes=[]
- for pose in ['closed','open','round','wide','teeth']:
-  page.locator(f'[data-pose="{pose}"]').click();page.wait_for_timeout(30)
-  mouth_hashes.append(page.locator('#test-stage').evaluate('c=>{const d=c.getContext("2d").getImageData(326,570,68,72).data;let h=2166136261;for(let i=0;i<d.length;i+=4){h^=d[i];h=Math.imul(h,16777619);h^=d[i+1];h=Math.imul(h,16777619);h^=d[i+2];h=Math.imul(h,16777619)}return h>>>0}'))
-  page.screenshot(path=str(ARTIFACTS/f'cinematic-runtime-mouth-{pose}.png'),full_page=True)
- assert len(set(mouth_hashes))==5,{'mouthHashes':mouth_hashes}
- page.locator('[data-pose="closed"]').click();page.wait_for_timeout(30)
- rig=page.evaluate('''()=>{const layers=window.qartonLayeredVisualTest.lastDraw.characterGeometry.mira,byRole=Object.fromEntries(layers.map(layer=>[layer.role,layer])),bodyTop=byRole.body.anchorY-byRole.body.height*byRole.body.pivotY,headBottom=byRole.head.anchorY+byRole.head.height*(1-byRole.head.pivotY),bodyArmTip=byRole.body.anchorY+byRole.body.height*(.344-byRole.body.pivotY);return {roles:layers.map(layer=>layer.role),headBodyOverlap:headBottom-bodyTop,headHeight:byRole.head.height,leftWristError:Math.abs(byRole.hand_left.anchorY-bodyArmTip),rightWristError:Math.abs(byRole.hand_right.anchorY-bodyArmTip),handHeight:byRole.hand_left.height,facialRotation:new Set(['hair_back','hair_front','eyes','brows','mouth'].map(role=>byRole[role].rotation)).size}}''')
+ mouth_hashes_by_character={}
+ for character_id in ["layla","youssef","nour","salim"]:
+  page.locator("#character-id").select_option(character_id)
+  hashes=[]
+  for pose in ["closed","open","round","wide","teeth"]:
+   page.locator(f'[data-pose="{pose}"]').click();page.wait_for_timeout(20)
+   sample=page.locator("#test-stage").evaluate("""(c)=>{const id=document.querySelector('#character-id').value,stats=window.qartonLayeredVisualTest.lastDraw,rig=stats.characterGeometry[id];if(!rig?.faceRigValid)throw Error('missing calibrated face rig '+id);const m=rig.layers.find(l=>l.role==='mouth');const x=Math.max(0,Math.floor(m.anchorX-m.width/2)),y=Math.max(0,Math.floor(m.anchorY-m.height/2)),w=Math.min(c.width-x,Math.max(1,Math.ceil(m.width))),h=Math.min(c.height-y,Math.max(1,Math.ceil(m.height))),d=c.getContext('2d').getImageData(x,y,w,h).data;let hash=2166136261;for(let i=0;i<d.length;i+=4){hash^=d[i];hash=Math.imul(hash,16777619);hash^=d[i+1];hash=Math.imul(hash,16777619);hash^=d[i+2];hash=Math.imul(hash,16777619)}return {hash:hash>>>0,rig:rig.faceRigValid,roles:rig.layers.map(l=>l.role)}}""")
+   hashes.append(sample["hash"])
+   page.screenshot(path=str(ARTIFACTS/f'cinematic-runtime-face-{character_id}-{pose}.png'),full_page=True)
+  assert len(set(hashes))==5,{"character":character_id,"mouthHashes":hashes}
+  mouth_hashes_by_character[character_id]=hashes
+ page.locator("#view-id").select_option("side");page.wait_for_timeout(20)
+ side=page.locator("#test-stage").evaluate("""()=>{const g=window.qartonLayeredVisualTest.lastDraw.characterGeometry[document.querySelector('#character-id').value];return {valid:g?.faceRigValid,roles:g?.layers.map(l=>l.role)}}""")
+ assert side["valid"] and all(role in side["roles"] for role in ["eye_left","eye_right","brow_left","brow_right","mouth"]),side
+ page.locator("#view-id").select_option("front");page.locator("[data-pose=closed]").click()
+ rig=page.locator("#test-stage").evaluate("""()=>{const layers=window.qartonLayeredVisualTest.lastDraw.characterGeometry[document.querySelector('#character-id').value].layers,byRole=Object.fromEntries(layers.map(layer=>[layer.role,layer])),bodyTop=byRole.body.anchorY-byRole.body.height*byRole.body.pivotY,headBottom=byRole.head.anchorY+byRole.head.height*(1-byRole.head.pivotY),bodyArmTip=byRole.body.anchorY+byRole.body.height*(.344-byRole.body.pivotY);return {roles:layers.map(layer=>layer.role),headBodyOverlap:headBottom-bodyTop,headHeight:byRole.head.height,leftWristError:Math.abs(byRole.hand_left.anchorY-bodyArmTip),rightWristError:Math.abs(byRole.hand_right.anchorY-bodyArmTip),handHeight:byRole.hand_left.height,facialRotations:new Set(['hair_back','hair_front','eye_left','eye_right','brow_left','brow_right','mouth'].map(role=>byRole[role].rotation)).size}}""")
  assert 0<rig['headBodyOverlap']<rig['headHeight']*.15,rig
  assert rig['leftWristError']<rig['handHeight']*.1 and rig['rightWristError']<rig['handHeight']*.1,rig
- assert rig['facialRotation']==1,rig
+ assert rig['facialRotations']==1,rig
  roles=rig['roles']
- assert all(roles.index(a)<roles.index(b) for a,b in [('body','hair_back'),('hair_back','head'),('head','hand_left'),('hand_left','hair_front'),('hair_front','eyes'),('eyes','brows'),('brows','mouth')]),roles
+ assert all(roles.index(a)<roles.index(b) for a,b in [('body','hair_back'),('hair_back','head'),('head','hand_left'),('hand_left','hair_front'),('hair_front','eye_left'),('eye_left','eye_right'),('eye_right','brow_left'),('brow_left','brow_right'),('brow_right','mouth')]),roles
+ result["scenarios"]["character-mouth-poses"]={"characters":mouth_hashes_by_character,"sideRig":side,"alignment":rig}
  page.screenshot(path=str(ARTIFACTS/'cinematic-runtime-mouth-poses.png'),full_page=True)
  page.goto(base,wait_until='networkidle');page.wait_for_function('window.qartonCinematicRuntime')
  page.evaluate('window.qartonCinematicRuntime.play()')

@@ -1,6 +1,7 @@
 import { CinematicRenderer, createCinematicStoryRuntime } from "../../src/index.js";
 
 const $ = id => document.getElementById(id), canvas = $("screen");
+const ENDING_LABELS = Object.freeze({ "family-safe": "نهاية آمنة للعائلة", "united-carthage": "قرطاج موحّدة" });
 const storyData = globalThis.__QARTON_STORY__ ?? await (await fetch("story.json")).json();
 const scenes = storyData.scenes, log = [], renderer = new CinematicRenderer(canvas, { quality: "medium" });
 let runtime, showAll = false, lastFrame = null, choiceKey = "";
@@ -40,7 +41,7 @@ function draw(frame) {
       }
     }
   }
-  const ending = $("ending"); ending.hidden = !state.endingId; ending.textContent = state.endingId ? `النهاية: ${state.endingId}` : "";
+  const ending = $("ending"); ending.hidden = !state.endingId; ending.textContent = state.endingId ? `النهاية: ${ENDING_LABELS[state.endingId] ?? "نهاية القصة"}` : "";
   lastFrame = frame; return true;
 }
 function showError(error) { $("status").textContent = `خطأ: ${error.message}`; }

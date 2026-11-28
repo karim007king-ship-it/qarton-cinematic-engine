@@ -2,7 +2,7 @@
 
 Offline five-scene Tunisian interactive story using the host-independent QARTON Cinematic Runtime. Start at `index.html`. For strict `file://` browsers use the standalone single HTML build. No microphone, `AudioContext`, remote service, network asset, or Motion Studio element is used.
 
-The host renders through the reusable `CinematicRenderer` and its existing character/effects cores. `layered-character-test.html` is a separate offline visual fixture that composes transparent SVG layers and shows closed/open/round/wide/teeth mouth variants.
+The host renders through the reusable `CinematicRenderer` and its existing character/effects cores. Complete story portraits keep their original static facial art until artist-authored face layers are available; the renderer disables facial animation for these uncalibrated images instead of adding approximate features. `layered-character-test.html` is a separate offline visual fixture that composes independently anchored transparent SVG eye, brow, and mouth layers, with front and side rigs and all five mouth poses for each of four stable actor IDs.
 
 - Opening family scene branches to the city gate or harbor.
 - Both paths meet at the confrontation and continue to the dawn scene.

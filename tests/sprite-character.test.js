@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CHARACTER_LAYER_LAYOUTS, countCharacterPixels, drawLayeredCharacter, MAX_IMPORTED_CHARACTER_PIXELS, normalizeCharacterLayer, parseCharacterLayerFilename, selectCharacterLayers } from "../src/character/sprite-character.js";
+import { CHARACTER_LAYER_LAYOUTS, countCharacterPixels, drawLayeredCharacter, isCalibratedFaceRig, MAX_IMPORTED_CHARACTER_PIXELS, normalizeCharacterLayer, parseCharacterLayerFilename, selectCharacterLayers } from "../src/character/sprite-character.js";
 
 test("PNG and WebP names resolve a stable character ID, part and variant", () => {
   assert.deepEqual(parseCharacterLayerFilename("layla__mouth__round.webp", "layla"), { characterId: "layla", role: "mouth", variant: "round" });
@@ -81,6 +81,22 @@ test("resting layered dialogue selects the closed mouth variant", () => {
     { role: "mouth", variant: "open", image: { id: "open" } }
   ], { viseme: "rest" });
   assert.deepEqual(selected.map(layer => layer.variant), ["closed"]);
+});
+
+test("face animation requires independent authored anchors and all five mouth poses per view", () => {
+  const anchor = { x: .5, y: .2, width: .1, height: .08, pivotX: .5, pivotY: .5 };
+  const roles = ["eye_left", "eye_right", "brow_left", "brow_right"];
+  const rig = [
+    { role: "head", view: "front", layout: { ...anchor }, image: { width: 10, height: 10 } },
+    ...roles.map(role => ({ role, view: "front", layout: { ...anchor }, image: { width: 10, height: 10 } })),
+    ...["closed", "open", "round", "wide", "teeth"].map(variant => ({ role: "mouth", variant, view: "front", layout: { ...anchor }, image: { width: 10, height: 10 } }))
+  ];
+  assert.equal(isCalibratedFaceRig(rig, "front"), true);
+  assert.equal(isCalibratedFaceRig(rig, "side"), false, "a front rig cannot be guessed onto a profile face");
+  assert.equal(isCalibratedFaceRig(rig.filter(layer => !(layer.role === "mouth" && layer.variant === "teeth")), "front"), false);
+  assert.equal(isCalibratedFaceRig(rig.map(layer => layer.role === "eye_left" ? { ...layer, layout: undefined } : layer), "front"), false);
+  const side = rig.map(layer => ({ ...layer, view: "side", layout: { ...layer.layout, x: .46 } }));
+  assert.equal(isCalibratedFaceRig(side, "side"), true);
 });
 
 test("layer renderer sorts z-order and applies the authored pivot and movement", () => {

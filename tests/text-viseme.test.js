@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { classifyViseme, compileTextVisemes } from "../src/character/text-viseme.js";
-import { compileTextScene, createTextSceneModel, sampleVisibleDialogueText, TEXT_SCENE_DEMOS } from "../src/character/text-cinematic-scene.js";
+import { compileTextScene, createTextSceneModel, drawTextCinematicScene, sampleVisibleDialogueText, TEXT_SCENE_DEMOS } from "../src/character/text-cinematic-scene.js";
 
 test("maps Tunisian and MSA letter families to mouth shapes", () => {
   assert.equal(classifyViseme("م"), "closed");
@@ -84,6 +84,24 @@ test("a character stays unique when they have multiple dialogue roles", () => {
   assert.equal(scene.characters.filter(character => character.id === "layla").length, 1);
   assert.equal(laylaTurns[0].character, laylaTurns[1].character);
   assert.equal(laylaTurns[0].character.spriteKey, "layla");
+});
+
+test("a complete portrait without authored transparent face layers never gets guessed facial overlays", () => {
+  const image = { width: 400, height: 900 };
+  let imageDraws = 0, ellipses = 0, strokes = 0;
+  const gradient = { addColorStop() {} };
+  const ctx = {
+    canvas: { width: 720, height: 1280 }, save() {}, restore() {}, translate() {}, rotate() {}, scale() {},
+    drawImage() { imageDraws += 1; }, fillRect() {}, createRadialGradient() { return gradient; },
+    beginPath() {}, ellipse() { ellipses += 1; }, stroke() { strokes += 1; }
+  };
+  const scene = compileTextScene({ characters: [{ id: "layla", name: "ليلى", x: .5, y: .9, scale: .7 }],
+    dialogue: [{ id: "line", speakerId: "layla", text: "نحكي تو" }] });
+  const result = drawTextCinematicScene(ctx, scene, 650, { transparent: true, assets: new Map([["layla", image]]), drawDialogue: false });
+  assert.equal(result.faceRigValid.layla, false);
+  assert.equal(imageDraws, 1, "only the authored full portrait is painted");
+  assert.equal(ellipses, 0, "no approximate mouth, eyes, or skin cover is layered over the portrait");
+  assert.equal(strokes, 0, "no guessed facial outlines are drawn");
 });
 
 test("stable character IDs are unique and dialogue cannot reference unknown characters", () => {

@@ -1,16 +1,16 @@
 import { compileTextVisemes } from "./text-viseme.js";
-import { drawLayeredCharacter } from "./sprite-character.js";
+import { drawLayeredCharacter, FACIAL_LAYER_ROLES, isCalibratedFaceRig } from "./sprite-character.js";
 
 const portraits = Object.freeze({
-  layla: Object.freeze({ name: "ليلى", x: 0.31, scale: 0.72, z: 2, face: Object.freeze({ x: 0.55, y: 0.113, skin: "#d99a78" }) }),
-  youssef: Object.freeze({ name: "يوسف", x: 0.69, scale: 0.72, z: 1, face: Object.freeze({ x: 0.55, y: 0.109, skin: "#dca47e" }) }),
-  nour: Object.freeze({ name: "نور", x: 0.69, scale: 0.72, z: 1, face: Object.freeze({ x: 0.56, y: 0.111, skin: "#d99c76" }) }),
-  salim: Object.freeze({ name: "سليم", x: 0.5, scale: 0.56, z: 2, face: Object.freeze({ x: 0.56, y: 0.105, skin: "#d69a74" }) })
+  layla: Object.freeze({ name: "ليلى", x: 0.31, scale: 0.72, z: 2 }),
+  youssef: Object.freeze({ name: "يوسف", x: 0.69, scale: 0.72, z: 1 }),
+  nour: Object.freeze({ name: "نور", x: 0.69, scale: 0.72, z: 1 }),
+  salim: Object.freeze({ name: "سليم", x: 0.5, scale: 0.56, z: 2 })
 });
 
 const characters = (ids) => Object.freeze(ids.map((id, index) => Object.freeze({
   id, name: portraits[id].name, spriteKey: id, x: portraits[id].x, y: 0.82, scale: portraits[id].scale,
-  z: portraits[id].z ?? index, face: portraits[id].face, speed: 1
+  z: portraits[id].z ?? index, speed: 1
 })));
 
 export const TEXT_SCENE_DEMOS = Object.freeze([
@@ -207,49 +207,6 @@ function drawTextBox(ctx, text, speaker, expression, progress, showAll) {
   ctx.restore();
 }
 
-function drawFaceRig(ctx, character, x, top, spriteW, spriteH, pose, expression, speaking, expressionWeight, activeSpeakerX) {
-  // Full-body anime portraits need a usable mouth/eye rig even when an author
-  // has not supplied a bespoke anchor. Prefer explicit anchors for production
-  // art; the fallback is calibrated for the local transparent full-body demo.
-  const face = character.face ?? { x: 0.53, y: 0.125, skin: "#cf967c" };
-  const mirrored = character.facing === "left";
-  ctx.save();
-  if (mirrored) { ctx.translate(x * 2, 0); ctx.scale(-1, 1); }
-  const fx = x + (face.x - .5) * spriteW, fy = top + face.y * spriteH;
-  const width = spriteW * .034, scale = spriteH / 700;
-  const mouthOpen = speaking ? pose.mouthOpen : 0;
-  const viseme = speaking ? pose.viseme : "rest";
-  const brow = (EXPRESSION_BROW[expression] ?? 0) * expressionWeight;
-  ctx.save();
-  // A small skin patch hides the original painted mouth before the live mouth pose is drawn.
-  ctx.fillStyle = face.skin; ctx.beginPath(); ctx.ellipse(fx, fy, width * .56, width * .34, -.08, 0, Math.PI * 2); ctx.fill();
-  const mouthW = width * (viseme === "round" ? .48 : viseme === "wide" ? .86 : viseme === "teeth" ? .72 : viseme === "open" ? .62 : .46);
-  // Keep each timed pose legible at phone-preview scale: closed is a line, round is
-  // nearly circular, wide is a flattened oval, teeth exposes a bright bar, and open
-  // is a taller oval. The previous wide/open heights collapsed to about two pixels.
-  const open = Math.max(1.2 * scale, viseme === "round" ? width * .52 : viseme === "wide" ? width * .34 : viseme === "teeth" ? width * .46 : viseme === "open" ? width * .78 : mouthOpen * width * .5);
-  ctx.fillStyle = "#54232c";
-  if (viseme === "round" && speaking) { ctx.beginPath(); ctx.ellipse(fx, fy, width * .23, width * .3, 0, 0, Math.PI * 2); ctx.fill(); }
-  else if (speaking && viseme !== "closed" && viseme !== "rest") { ctx.beginPath(); ctx.ellipse(fx, fy, mouthW, Math.max(open, 2), 0, 0, Math.PI * 2); ctx.fill(); }
-  else {
-    ctx.strokeStyle = expression === "happy" ? "#874b45" : "#65353c"; ctx.lineWidth = Math.max(1, scale * 2.2); ctx.beginPath();
-    if (!speaking && expression === "happy") ctx.arc(fx, fy - width * .04, width * .42, .12, Math.PI - .12);
-    else if (!speaking && expression === "sad") ctx.arc(fx, fy + width * .38, width * .36, Math.PI + .15, Math.PI * 2 - .15);
-    else ctx.moveTo(fx - width * .34, fy); ctx.lineTo(fx + width * .34, fy); ctx.stroke();
-  }
-  if (speaking && viseme === "teeth" && open > 2) { ctx.fillStyle = "#fff0dc"; ctx.fillRect(fx - mouthW * .6, fy - open * .1, mouthW * 1.2, Math.max(1, open * .28)); }
-  // Brows and eyelids add expression while retaining the source character's painted identity.
-  const eyeY = fy - width * 2.25, eyeDX = width * 1.55;
-  ctx.strokeStyle = "#382623"; ctx.lineWidth = Math.max(1.3, scale * 2.6); ctx.lineCap = "round";
-  for (const side of [-1, 1]) { ctx.beginPath(); ctx.moveTo(fx + side * eyeDX - width * .34, eyeY - brow * width); ctx.quadraticCurveTo(fx + side * eyeDX, eyeY - width * .14 + brow * width, fx + side * eyeDX + width * .34, eyeY - width * .08); ctx.stroke(); }
-  ctx.fillStyle = "#5a392e"; ctx.globalAlpha = .62;
-  const gaze = Math.max(-1, Math.min(1, (activeSpeakerX - character.x) * 2.2 * (mirrored ? -1 : 1)));
-  for (const side of [-1, 1]) { ctx.beginPath(); ctx.ellipse(fx + side * eyeDX + gaze * width * .2, eyeY + width * .42, width * .11, width * .13, 0, 0, Math.PI * 2); ctx.fill(); }
-  ctx.globalAlpha = 1;
-  if (pose.blink > .62) { ctx.strokeStyle = face.skin; ctx.lineWidth = Math.max(2, scale * 4); ctx.beginPath(); ctx.moveTo(fx - eyeDX - width * .26, eyeY); ctx.lineTo(fx - eyeDX + width * .26, eyeY); ctx.moveTo(fx + eyeDX - width * .26, eyeY); ctx.lineTo(fx + eyeDX + width * .26, eyeY); ctx.stroke(); }
-  ctx.restore();
-}
-
 function drawCharacter(ctx, character, art, turn, localMs, sceneMs, active, activeSpeakerX) {
   const { width, height } = ctx.canvas;
   const sampledPose = { ...(turn?.animation.sample(localMs) ?? { headRotation: 0, eyeX: 0, eyeY: 0, blink: 0, mouthOpen: 0, viseme: "rest" }) };
@@ -264,17 +221,20 @@ function drawCharacter(ctx, character, art, turn, localMs, sceneMs, active, acti
   const expression = active ? turn.expression : (character.expression ?? "listening");
   const image = art?.get?.(character.id) ?? art?.get?.(character.spriteKey) ?? art?.[character.spriteKey];
   if (image?.layers?.length) {
+    const faceRigValid = isCalibratedFaceRig(image.layers, character.pose ?? "front");
+    const layers = faceRigValid ? image.layers : image.layers.filter(layer => !FACIAL_LAYER_ROLES.includes(layer.role));
     const spriteH = height * .7 * character.scale * (1 + Math.sin(sceneMs / 1600 + character.x * 5) * .007);
     const spriteW = spriteH * .64;
     const x = width * character.x, top = height * character.y - spriteH + Math.sin(sceneMs / 720 + character.x * 8) * 2.6;
     ctx.save(); ctx.globalAlpha = active ? 1 : .82;
-    const sprite = drawLayeredCharacter(ctx, image.layers, { x, top, width: spriteW, height: spriteH,
+    const sprite = drawLayeredCharacter(ctx, layers, { x, top, width: spriteW, height: spriteH,
       headRotation: (pose.headRotation + Math.sin(sceneMs / 2300 + character.x) * 2.2) * Math.PI / 180,
       armMotion: active ? Math.sin(localMs / 390) * (turn?.motions?.gesture ? .28 : .18) : Math.sin(sceneMs / 1900 + character.x) * .035,
-      bodySway: Math.sin(sceneMs / 2700 + character.x) * .012, eyeX: pose.eyeX ?? 0, eyeY: pose.eyeY ?? 0,
-      expression, pose: character.pose ?? "front", viseme: pose.viseme, blink: pose.blink > .62, facing: character.facing ?? "right" });
+      bodySway: Math.sin(sceneMs / 2700 + character.x) * .012,
+      expression: faceRigValid ? expression : "neutral", pose: character.pose ?? "front", viseme: faceRigValid ? pose.viseme : "rest", blink: faceRigValid && pose.blink > .62,
+      eyeX: faceRigValid ? pose.eyeX ?? 0 : 0, eyeY: faceRigValid ? pose.eyeY ?? 0 : 0, facing: character.facing ?? "right" });
     ctx.restore();
-    return { x, pose, expression, top, spriteW, spriteH, layers: sprite.geometry };
+    return { x, pose, expression, top, spriteW, spriteH, layers: sprite.geometry, faceRig: faceRigValid };
   }
   const source = image?.portrait ?? image?.bitmap ?? image;
   if (!source || !source.width || !source.height) return null;
@@ -287,12 +247,12 @@ function drawCharacter(ctx, character, art, turn, localMs, sceneMs, active, acti
   ctx.translate(x, top + spriteH); ctx.scale(character.facing === "left" ? -1 : 1, 1);
   ctx.drawImage(source, -spriteW / 2, -spriteH, spriteW, spriteH);
   ctx.restore();
-  const expressionWeight = active ? Math.min(1, Math.max(0, localMs / 340)) : 1;
-  drawFaceRig(ctx, character, x, top, spriteW, spriteH, pose, expression, active && pose.active, expressionWeight, activeSpeakerX);
+  // A complete-image portrait already contains its own face. Never paint a
+  // guessed face rig over it: only transparent, authored layers may animate.
   const focus = ctx.createRadialGradient(x, height * .61, 5, x, height * .61, width * .31);
   focus.addColorStop(0, active ? "#d5ae612b" : "#d5ae610a"); focus.addColorStop(1, "#d5ae6100");
   ctx.fillStyle = focus; ctx.fillRect(Math.max(0, x - width * .32), height * .34, width * .64, height * .39);
-  return { x, pose, expression, top, spriteW, spriteH };
+  return { x, pose, expression, top, spriteW, spriteH, faceRig: false };
 }
 
 export function drawTextCinematicScene(ctx, scene, timeMs, { background, transparent = false, assets = new Map(), showAll = false, camera = null, drawSceneOverlay = null, drawDialogue = true } = {}) {
@@ -311,13 +271,15 @@ export function drawTextCinematicScene(ctx, scene, timeMs, { background, transpa
   const actors = scene.characters.slice().sort((a, b) => a.z - b.z);
   const drawnCharacterIds = [];
   const characterGeometry = Object.create(null);
+  const faceRigStatus = Object.create(null);
   for (const character of actors) {
     const turn = active?.speakerId === character.id ? active : mostRecent.get(character.id);
     const elapsed = active?.speakerId === character.id ? Math.max(0, timeMs - active.startMs) : turn ? Math.min(turn.animation.durationMs, timeMs - turn.startMs) : 0;
     const result = drawCharacter(ctx, character, assets, turn, elapsed, timeMs, active?.speakerId === character.id, active?.character.x ?? .5);
     if (result) {
       drawnCharacterIds.push(character.id);
-      if (result.layers) characterGeometry[character.id] = result.layers;
+      faceRigStatus[character.id] = Boolean(result.faceRig);
+      if (result.layers) characterGeometry[character.id] = Object.freeze({ layers: result.layers, faceRigValid: result.faceRig });
     }
   }
   ctx.restore();
@@ -329,5 +291,5 @@ export function drawTextCinematicScene(ctx, scene, timeMs, { background, transpa
     const progress = showAll ? 1 : Math.min(1, elapsed / Math.max(1, active.animation.durationMs));
     drawTextBox(ctx, visible, active.speaker, active.expression, progress, showAll);
   }
-  return Object.freeze({ activeSpeaker: active?.speaker ?? "", activeCharacterId: active?.speakerId ?? "", viseme: active ? active.animation.sample(timeMs - active.startMs).viseme : "rest", expression: active?.expression ?? "neutral", speechActive: Boolean(active), renderedCharacterIds: Object.freeze(actors.map(item => item.id)), drawnCharacterIds: Object.freeze(drawnCharacterIds), characterGeometry: Object.freeze(characterGeometry) });
+  return Object.freeze({ activeSpeaker: active?.speaker ?? "", activeCharacterId: active?.speakerId ?? "", viseme: active ? active.animation.sample(timeMs - active.startMs).viseme : "rest", expression: active?.expression ?? "neutral", speechActive: Boolean(active), renderedCharacterIds: Object.freeze(actors.map(item => item.id)), drawnCharacterIds: Object.freeze(drawnCharacterIds), characterGeometry: Object.freeze(characterGeometry), faceRigValid: Object.freeze(faceRigStatus) });
 }
