@@ -44,7 +44,11 @@ with sync_playwright() as p:
  assert len(set(mouth_hashes))==5,{'mouthHashes':mouth_hashes}
  page.screenshot(path=str(ARTIFACTS/'cinematic-runtime-mouth-poses.png'),full_page=True)
  page.goto(base,wait_until='networkidle');page.wait_for_function('window.qartonCinematicRuntime')
- page.get_by_role('button',name='إظهار النص كاملًا').click();assert page.locator('#line').inner_text()
+ page.evaluate('window.qartonCinematicRuntime.play()')
+ page.wait_for_function("document.querySelector('#line').textContent.trim().length>0",timeout=5000)
+ page.get_by_role('button',name='إظهار النص كاملًا').click()
+ page.wait_for_function("document.querySelector('#line').textContent.includes('قرطاج')",timeout=2000)
+ page.evaluate('window.qartonCinematicRuntime.pause()')
  page.get_by_role('button',name='حفظ التقدم').click();assert page.evaluate('Boolean(localStorage.getItem("qarton-cinematic-save"))')
  page.get_by_role('button',name='إيقاف مؤقت').click();page.get_by_role('button',name='تشغيل').click();page.wait_for_timeout(100)
  # Browser rendering/performance window exercises the actual Runtime Canvas and effects.
