@@ -25,9 +25,11 @@ jobs:
       - run: python tests/cinematic-runtime-browser.py
         env:
           QARTON_RUNTIME_SECONDS: 30
+          QARTON_COMMIT: ${{ github.sha }}
       - run: python tests/cinematic-runtime-browser.py
         env:
           QARTON_RUNTIME_SECONDS: 300
+          QARTON_COMMIT: ${{ github.sha }}
       - run: npm run build:cinematic-runtime
         env:
           GITHUB_SHA: ${{ github.sha }}

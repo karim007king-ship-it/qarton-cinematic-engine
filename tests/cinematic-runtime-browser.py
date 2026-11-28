@@ -11,9 +11,11 @@ result={"browser":"Chromium","viewport":"390x844","scenarios":{}}
 with sync_playwright() as p:
  browser=p.chromium.launch(headless=True,executable_path=os.environ.get("CHROMIUM_PATH"))
  page=browser.new_page(viewport={"width":390,"height":844},device_scale_factor=1)
- page.add_init_script("window.__audioCreated=0; const AC=window.AudioContext; if(AC) window.AudioContext=class extends AC{constructor(...a){super(...a);window.__audioCreated++}}; navigator.mediaDevices.getUserMedia=async()=>{window.__micRequested=(window.__micRequested||0)+1;throw Error('unexpected mic request')};")
+ page.add_init_script("window.__QARTON_COMMIT__="+json.dumps(os.environ.get("QARTON_COMMIT","local test"))+"; window.__audioCreated=0; const AC=window.AudioContext; if(AC) window.AudioContext=class extends AC{constructor(...a){super(...a);window.__audioCreated++}}; navigator.mediaDevices.getUserMedia=async()=>{window.__micRequested=(window.__micRequested||0)+1;throw Error('unexpected mic request')};")
  errors=[];page.on('pageerror',lambda e:errors.append(str(e)));page.goto(base,wait_until='networkidle');page.wait_for_function('window.qartonCinematicRuntime && document.querySelector("#scene-title").textContent.length>0')
  assert page.locator('#scene-title').inner_text()=='دار على البحر'
+ if os.environ.get("QARTON_COMMIT"):
+  assert page.locator('#commit').inner_text()==f"Commit: {os.environ['QARTON_COMMIT']}"
  assert page.locator('#screen').evaluate('(c)=>c.width===720&&c.height===1280')
  assert page.evaluate('window.__audioCreated===0 && !window.__micRequested')
  assert page.evaluate('window.qartonCinematicRuntime.assetCount')>=1
